@@ -87,6 +87,36 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         ];
     }
 
+    /**
+     * Determine whether the site default requires an entire screen share before quiz start.
+     *
+     * @return bool True if the site default requires an entire screen share.
+     */
+    private static function site_requires_entire_screen() {
+        $setting = get_config('quizaccess_proctoring', 'requireentirescreen');
+
+        if ($setting === false || $setting === null || $setting === '') {
+            return true;
+        }
+
+        return (int)$setting === 1;
+    }
+
+    /**
+     * Determine whether this quiz requires an entire screen share before quiz start.
+     *
+     * @return bool True if the preflight form should require an entire screen share.
+     */
+    private function requires_entire_screen() {
+        $quizsetting = $this->quiz->requireentirescreen ?? -1;
+
+        if ($quizsetting === null || (int)$quizsetting === -1) {
+            return self::site_requires_entire_screen();
+        }
+
+        return (int)$quizsetting === 1;
+    }
+
 
     /**
      * Generate the modal content for the webcam proctoring interface.
@@ -150,7 +180,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $imagewidth = get_config('quizaccess_proctoring', 'autoreconfigureimagewidth') ?? '';
         $hasreferenceimage = $DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $USER->id]);
         $registerface = ($faceidcheck === '1' && !$hasreferenceimage);
-        $requireentirescreen = (int)(get_config('quizaccess_proctoring', 'requireentirescreen') ?? 1);
+        $requireentirescreen = $this->requires_entire_screen() ? 1 : 0;
 
         // Prepare data for the JavaScript module.
         $examurl = new moodle_url('/mod/quiz/startattempt.php');
@@ -282,8 +312,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $errors['proctoring'] = get_string('youmustagree', 'quizaccess_proctoring');
         }
 
-        if ((int)(get_config('quizaccess_proctoring', 'requireentirescreen') ?? 1) === 1 &&
-            empty($data['entirescreenconfirmed'])) {
+        if (empty($errors['proctoring']) && $this->requires_entire_screen() && empty($data['entirescreenconfirmed'])) {
             $errors['proctoring'] = get_string('entirescreenrequired', 'quizaccess_proctoring');
         }
 
@@ -327,6 +356,20 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
         // Add a help button for the proctoring setting.
         $mform->addHelpButton('proctoringrequired', 'proctoringrequired', 'quizaccess_proctoring');
+
+        $mform->addElement(
+            'select',
+            'requireentirescreen',
+            get_string('requireentirescreen', 'quizaccess_proctoring'),
+            [
+                -1 => get_string('requireentirescreen_inherit', 'quizaccess_proctoring'),
+                1 => get_string('requireentirescreen_enabled', 'quizaccess_proctoring'),
+                0 => get_string('requireentirescreen_disabled', 'quizaccess_proctoring'),
+            ]
+        );
+        $mform->setDefault('requireentirescreen', -1);
+        $mform->addHelpButton('requireentirescreen', 'requireentirescreen', 'quizaccess_proctoring');
+        $mform->hideIf('requireentirescreen', 'proctoringrequired', 'eq', 0);
     }
 
     /**
@@ -344,12 +387,17 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             // Remove any existing proctoring settings if not required.
             $DB->delete_records('quizaccess_proctoring', ['quizid' => $quiz->id]);
         } else {
-            // Add new proctoring setting if it doesn't exist.
-            if (!$DB->record_exists('quizaccess_proctoring', ['quizid' => $quiz->id])) {
-                $record = (object)[
-                    'quizid' => $quiz->id,
-                    'proctoringrequired' => 1,
-                ];
+            $record = (object)[
+                'quizid' => $quiz->id,
+                'proctoringrequired' => 1,
+                'requireentirescreen' => isset($quiz->requireentirescreen) ? (int)$quiz->requireentirescreen : -1,
+            ];
+
+            // Add or update the proctoring settings for this quiz.
+            if ($existing = $DB->get_record('quizaccess_proctoring', ['quizid' => $quiz->id])) {
+                $record->id = $existing->id;
+                $DB->update_record('quizaccess_proctoring', $record);
+            } else {
                 $DB->insert_record('quizaccess_proctoring', $record);
             }
         }
@@ -378,7 +426,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      */
     public static function get_settings_sql($quizid) {
         return [
-            'proctoringrequired', // Field to select.
+            'proctoring.proctoringrequired, proctoring.requireentirescreen', // Fields to select.
             'LEFT JOIN {quizaccess_proctoring} proctoring ON proctoring.quizid = quiz.id', // Join clause.
             [], // No additional parameters.
         ];

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026051105"
+<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026051107"
        COMMENT="XMLDB file for Moodle mod/quiz/accessrule/proctoring"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:noNamespaceSchemaLocation="../../../../../lib/xmldb/xmldb.xsd"
@@ -11,7 +11,11 @@
                 <FIELD NAME="quizid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" SEQUENCE="false"
                        COMMENT="Foreign key related to quiz.id." PREVIOUS="id" NEXT="proctoringrequired"/>
                 <FIELD NAME="proctoringrequired" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
-                       SEQUENCE="false" COMMENT="If 1 then the quiz require identity validation." PREVIOUS="quizid"/>
+                       SEQUENCE="false" COMMENT="If 1 then the quiz require identity validation." PREVIOUS="quizid"
+                       NEXT="requireentirescreen"/>
+                <FIELD NAME="requireentirescreen" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="-1"
+                       SEQUENCE="false" COMMENT="If 1 this quiz requires entire screen share before start; if 0 it does not; if -1 it inherits the site setting."
+                       PREVIOUS="proctoringrequired"/>
             </FIELDS>
             <KEYS>
                 <KEY NAME="primary" TYPE="primary" FIELDS="id" NEXT="quizid"/>
