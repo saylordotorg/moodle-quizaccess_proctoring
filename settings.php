@@ -136,6 +136,10 @@ if ($hassiteconfig) {
         get_string('setting:monitorbrowseractivity', 'quizaccess_proctoring'),
         get_string('setting:monitorbrowseractivity_desc', 'quizaccess_proctoring'), 1));
 
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/requireentirescreen',
+        get_string('setting:requireentirescreen', 'quizaccess_proctoring'),
+        get_string('setting:requireentirescreen_desc', 'quizaccess_proctoring'), 1));
+
     $settings->add(new admin_setting_configtext('quizaccess_proctoring/rekognitioncostpercheck',
         get_string('setting:rekognitioncostpercheck', 'quizaccess_proctoring'),
         get_string('setting:rekognitioncostpercheck_desc', 'quizaccess_proctoring'), '0.001', PARAM_FLOAT));

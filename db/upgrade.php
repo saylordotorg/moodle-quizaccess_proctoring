@@ -263,5 +263,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051105, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051106) {
+        // No schema changes. Adds the full-screen-share preflight requirement setting.
+        upgrade_plugin_savepoint(true, 2026051106, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

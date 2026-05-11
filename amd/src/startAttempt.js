@@ -10,6 +10,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 {key: 'faceregistered', component: 'quizaccess_proctoring'},
                 {key: 'facenotfoundoncam', component: 'quizaccess_proctoring'},
                 {key: 'facequalityfailed', component: 'quizaccess_proctoring'},
+                {key: 'screenshareaccepted', component: 'quizaccess_proctoring'},
+                {key: 'entirescreenrequired', component: 'quizaccess_proctoring'},
+                {key: 'screensharedenied', component: 'quizaccess_proctoring'},
+                {key: 'screensharenotsupported', component: 'quizaccess_proctoring'},
+                {key: 'screensharestopped', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -22,6 +27,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                     faceregistered: strings[5],
                     facenotfoundoncam: strings[6],
                     facequalityfailed: strings[7],
+                    screenshareaccepted: strings[8],
+                    entirescreenrequired: strings[9],
+                    screensharedenied: strings[10],
+                    screensharenotsupported: strings[11],
+                    screensharestopped: strings[12],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -174,11 +184,92 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 }
 
                 const submitButton = $("#id_submitbutton");
-                if (parseInt(props.registerface, 10) === 1) {
-                    submitButton.hide();
+                const faceRequired = parseInt(props.faceidcheck, 10) === 1;
+                const screenRequired = parseInt(props.requireentirescreen, 10) === 1;
+                let faceReady = !faceRequired;
+                let screenReady = !screenRequired;
+                let screenStream = null;
+
+                const setScreenConfirmed = function(confirmed) {
+                    const input = document.getElementById('id_entirescreenconfirmed');
+                    if (input) {
+                        input.value = confirmed ? 1 : 0;
+                    }
+                };
+
+                const updatePreflightGate = function() {
+                    if (faceReady && screenReady) {
+                        $("#form_activate").css("visibility", "visible");
+                        submitButton.show();
+                    } else {
+                        $("#form_activate").css("visibility", "hidden");
+                        submitButton.hide();
+                    }
+                };
+
+                if (faceRequired || screenRequired) {
+                    updatePreflightGate();
                 }
 
                 $('#fcvalidate').append('<img id="validate-cropimg" style="display: none;" src="" alt=""/>');
+                $("#screensharevalidate").click(async function(event) {
+                    event.preventDefault();
+
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+                        $("#screen_share_result").html(`<span style="color: red">${strings.screensharenotsupported}</span>`);
+                        screenReady = false;
+                        setScreenConfirmed(false);
+                        updatePreflightGate();
+                        return;
+                    }
+
+                    if (screenStream) {
+                        screenStream.getTracks().forEach((track) => track.stop());
+                        screenStream = null;
+                    }
+
+                    try {
+                        screenStream = await navigator.mediaDevices.getDisplayMedia({
+                            video: {
+                                displaySurface: 'monitor'
+                            },
+                            audio: false
+                        });
+                    } catch (error) {
+                        $("#screen_share_result").html(`<span style="color: red">${strings.screensharedenied}</span>`);
+                        screenReady = false;
+                        setScreenConfirmed(false);
+                        updatePreflightGate();
+                        return;
+                    }
+
+                    const videoTrack = screenStream.getVideoTracks()[0];
+                    const settings = videoTrack && videoTrack.getSettings ? videoTrack.getSettings() : {};
+                    if (!videoTrack || settings.displaySurface !== 'monitor') {
+                        if (screenStream) {
+                            screenStream.getTracks().forEach((track) => track.stop());
+                            screenStream = null;
+                        }
+                        $("#screen_share_result").html(`<span style="color: red">${strings.entirescreenrequired}</span>`);
+                        screenReady = false;
+                        setScreenConfirmed(false);
+                        updatePreflightGate();
+                        return;
+                    }
+
+                    videoTrack.addEventListener('ended', function() {
+                        $("#screen_share_result").html(`<span style="color: red">${strings.screensharestopped}</span>`);
+                        screenReady = false;
+                        setScreenConfirmed(false);
+                        updatePreflightGate();
+                    });
+
+                    $("#screen_share_result").html(`<span style="color: green">${strings.screenshareaccepted}</span>`);
+                    screenReady = true;
+                    setScreenConfirmed(true);
+                    updatePreflightGate();
+                });
+
                 $("#fcvalidate").click(async function(event) {
 
                     event.preventDefault();
@@ -236,14 +327,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                                 $("#video").css("border", "10px solid green");
                                 $("#face_validation_result").html(`<span style="color: green">${strings.facematched}</span>`);
                                 document.getElementById("fcvalidate").style.display = "none";
-                                $("#form_activate").css("visibility", "visible");
-                                submitButton.show();
+                                faceReady = true;
+                                updatePreflightGate();
                             } else if (status === 'registered') {
                                 $("#video").css("border", "10px solid green");
                                 $("#face_validation_result").html(`<span style="color: green">${strings.faceregistered}</span>`);
                                 document.getElementById("fcvalidate").style.display = "none";
-                                $("#form_activate").css("visibility", "visible");
-                                submitButton.show();
+                                faceReady = true;
+                                updatePreflightGate();
                             } else if (status === 'photonotuploaded') {
                                 $("#video").css("border", "10px solid red");
                                 $("#face_validation_result").html(`<span style="color: red">${strings.photonotuploaded}</span>`);

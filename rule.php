@@ -150,6 +150,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $imagewidth = get_config('quizaccess_proctoring', 'autoreconfigureimagewidth') ?? '';
         $hasreferenceimage = $DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $USER->id]);
         $registerface = ($faceidcheck === '1' && !$hasreferenceimage);
+        $requireentirescreen = (int)(get_config('quizaccess_proctoring', 'requireentirescreen') ?? 1);
 
         // Prepare data for the JavaScript module.
         $examurl = new moodle_url('/mod/quiz/startattempt.php');
@@ -162,6 +163,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             'screenshotinterval' => $camshotdelay,
             'examurl' => $examurl->out(false),
             'registerface' => $registerface ? 1 : 0,
+            'faceidcheck' => $faceidcheck === '1' ? 1 : 0,
+            'requireentirescreen' => $requireentirescreen,
         ];
 
         // Include Face API JS library if required.
@@ -224,13 +227,31 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $mform->addElement('html', "<div class='container'><div class='row'><div class='col'>{$actionbtns}</div></div></div>");
         }
 
+        if ($requireentirescreen === 1) {
+            $screensharebtn = sprintf(
+                "<div class='container'><div class='row'><div class='col'>
+                    %s&nbsp;<span id='screen_share_result'>%s</span>
+                    <button id='screensharevalidate' class='btn btn-secondary mt-3' style='display: flex;
+                                                justify-content: center; align-items: center;'>
+                        %s
+                    </button>
+                </div></div></div>",
+                get_string('modal:screenshare', 'quizaccess_proctoring'),
+                get_string('modal:pending', 'quizaccess_proctoring'),
+                get_string('modal:shareentirescreen', 'quizaccess_proctoring')
+            );
+            $mform->addElement('html', $screensharebtn);
+        }
+
         // Add hidden inputs and proctoring checkbox.
         $mform->addElement('html', $hiddenvalue);
-        if ($faceidcheck === '1') {
+        $mform->addElement('hidden', 'entirescreenconfirmed', 0);
+        $mform->setType('entirescreenconfirmed', PARAM_INT);
+        if ($faceidcheck === '1' || $requireentirescreen === 1) {
             $mform->addElement('html', '<div id="form_activate" style="visibility: hidden">');
         }
         $mform->addElement('checkbox', 'proctoring', '', get_string('proctoringlabel', 'quizaccess_proctoring'));
-        if ($faceidcheck === '1') {
+        if ($faceidcheck === '1' || $requireentirescreen === 1) {
             $mform->addElement('html', '</div>');
         }
 
@@ -259,6 +280,11 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         // Ensure the proctoring checkbox is checked.
         if (empty($data['proctoring'])) {
             $errors['proctoring'] = get_string('youmustagree', 'quizaccess_proctoring');
+        }
+
+        if ((int)(get_config('quizaccess_proctoring', 'requireentirescreen') ?? 1) === 1 &&
+            empty($data['entirescreenconfirmed'])) {
+            $errors['proctoring'] = get_string('entirescreenrequired', 'quizaccess_proctoring');
         }
 
         return $errors;
