@@ -232,6 +232,7 @@ class quizaccess_proctoring_external extends external_api {
                 'eventdetail' => new external_value(PARAM_RAW, 'JSON event details', VALUE_DEFAULT, ''),
                 'pagevisibility' => new external_value(PARAM_ALPHANUMEXT, 'document visibility state', VALUE_DEFAULT, ''),
                 'currenturl' => new external_value(PARAM_RAW, 'page URL', VALUE_DEFAULT, ''),
+                'screenshot' => new external_value(PARAM_RAW, 'desktop screenshot data URI', VALUE_DEFAULT, ''),
             ]
         );
     }
@@ -247,6 +248,7 @@ class quizaccess_proctoring_external extends external_api {
      * @param string $eventdetail Event detail JSON.
      * @param string $pagevisibility Document visibility state.
      * @param string $currenturl Page URL when the event was observed.
+     * @param string $screenshot Desktop screenshot data URI captured when the event was observed.
      * @return array Event result.
      * @throws dml_exception
      * @throws invalid_parameter_exception
@@ -260,7 +262,8 @@ class quizaccess_proctoring_external extends external_api {
         $eventtype = '',
         $eventdetail = '',
         $pagevisibility = '',
-        $currenturl = ''
+        $currenturl = '',
+        $screenshot = ''
     ) {
         global $DB, $USER;
 
@@ -275,6 +278,7 @@ class quizaccess_proctoring_external extends external_api {
                 'eventdetail' => $eventdetail,
                 'pagevisibility' => $pagevisibility,
                 'currenturl' => $currenturl,
+                'screenshot' => $screenshot,
             ]
         );
 
@@ -304,6 +308,7 @@ class quizaccess_proctoring_external extends external_api {
             'shortcut',
             'possible_ai_tool',
             'page_exit',
+            'screen_share_stopped',
         ];
 
         if (!in_array($eventtype, $allowedevents, true)) {
@@ -320,9 +325,20 @@ class quizaccess_proctoring_external extends external_api {
         $record->eventdetail = substr($eventdetail, 0, 2000);
         $record->pagevisibility = substr($pagevisibility, 0, 20);
         $record->currenturl = substr($currenturl, 0, 1000);
+        $record->screenshoturl = '';
         $record->timemodified = time();
 
         $eventid = $DB->insert_record('quizaccess_proctoring_events', $record, true);
+
+        if (!empty($screenshot)) {
+            try {
+                $record->id = $eventid;
+                $record->screenshoturl = self::save_event_screenshot($courseid, $cm->id, $eventid, $screenshot);
+                $DB->update_record('quizaccess_proctoring_events', $record);
+            } catch (Throwable $e) {
+                // Keep the event log even if the optional desktop capture cannot be stored.
+            }
+        }
 
         return [
             'eventid' => $eventid,
@@ -342,6 +358,48 @@ class quizaccess_proctoring_external extends external_api {
                 'warnings' => new external_warnings(),
             ]
         );
+    }
+
+    /**
+     * Stores a desktop screenshot captured for a suspicious activity event.
+     *
+     * @param int $courseid Course ID.
+     * @param int $cmid Course module ID.
+     * @param int $eventid Event record ID.
+     * @param string $screenshot Desktop screenshot data URI.
+     * @return string Stored screenshot URL.
+     */
+    private static function save_event_screenshot(int $courseid, int $cmid, int $eventid, string $screenshot): string {
+        global $USER;
+
+        $context = context_module::instance($cmid, MUST_EXIST);
+        $fs = get_file_storage();
+
+        $record = new stdClass();
+        $record->filearea = 'violation_screenshot';
+        $record->component = 'quizaccess_proctoring';
+        $record->filepath = file_correct_filepath('');
+        $record->itemid = $eventid;
+        $record->license = '';
+        $record->author = '';
+        $record->courseid = $courseid;
+        $record->filename = 'desktop-event-' . $eventid . '-' . $USER->id . '-' . $courseid . '-' . time() .
+            random_int(1, 1000) . '.png';
+        $record->contextid = $context->id;
+        $record->userid = $USER->id;
+
+        $data = self::add_timecode_to_image(self::decode_base64_image_data($screenshot));
+        $fs->create_file_from_string($record, $data);
+
+        return moodle_url::make_pluginfile_url(
+            $context->id,
+            $record->component,
+            $record->filearea,
+            $record->itemid,
+            $record->filepath,
+            $record->filename,
+            false
+        )->out(false);
     }
 
     /**

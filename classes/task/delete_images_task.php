@@ -87,6 +87,17 @@ class delete_images_task extends scheduled_task {
                 if (!empty($ids)) {
                     list($insql, $params) = $DB->get_in_or_equal($ids);
 
+                    $events = $DB->get_records_select(
+                        'quizaccess_proctoring_events',
+                        "reportid $insql",
+                        $params,
+                        '',
+                        'id, screenshoturl'
+                    );
+                    foreach ($events as $event) {
+                        $this->delete_file($fs, $event->screenshoturl, 'quizaccess_proctoring', 'violation_screenshot');
+                    }
+
                     // Delete the log records from quizaccess_proctoring_logs.
                     $DB->delete_records_list('quizaccess_proctoring_events', 'reportid', $ids);
                     $DB->delete_records_select('quizaccess_proctoring_logs', "id $insql", $params);

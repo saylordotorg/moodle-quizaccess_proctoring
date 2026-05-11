@@ -158,30 +158,30 @@ if (has_capability('quizaccess/proctoring:deletecamshots', $context, $USER->id) 
             'quizid' => $cmid,
             'userid' => $studentid,
         ]);
-
-
-        $params = [
-        'userid' => $studentid,
-        'contextid' => $context->id,
-        'component' => 'quizaccess_proctoring',
-        'filearea'  => 'picture',
-        ];
-
-        $usersfile = $DB->get_records('files', $params);
         $fs = get_file_storage();
-        foreach ($usersfile as $file) {
-            $fileinfo = [
-                'component' => 'quizaccess_proctoring',
-                'filearea' => 'picture',
-                'itemid' => $file->itemid,
+        foreach (['picture', 'violation_screenshot'] as $filearea) {
+            $params = [
+                'userid' => $studentid,
                 'contextid' => $context->id,
-                'filepath' => '/',
-                'filename' => $file->filename,
+                'component' => 'quizaccess_proctoring',
+                'filearea'  => $filearea,
             ];
-            $storedfile = $fs->get_file($fileinfo['contextid'], $fileinfo['component'], $fileinfo['filearea'],
-                        $fileinfo['itemid'], $fileinfo['filepath'], $fileinfo['filename']);
-            if ($storedfile) {
-                $storedfile->delete();
+
+            $usersfile = $DB->get_records('files', $params);
+            foreach ($usersfile as $file) {
+                $fileinfo = [
+                    'component' => 'quizaccess_proctoring',
+                    'filearea' => $filearea,
+                    'itemid' => $file->itemid,
+                    'contextid' => $context->id,
+                    'filepath' => '/',
+                    'filename' => $file->filename,
+                ];
+                $storedfile = $fs->get_file($fileinfo['contextid'], $fileinfo['component'], $fileinfo['filearea'],
+                            $fileinfo['itemid'], $fileinfo['filepath'], $fileinfo['filename']);
+                if ($storedfile) {
+                    $storedfile->delete();
+                }
             }
         }
 
@@ -515,7 +515,7 @@ if (
             $eventwhere,
             $eventparams,
             'timemodified DESC',
-            'id, eventtype, eventdetail, pagevisibility, currenturl, timemodified',
+            'id, eventtype, eventdetail, pagevisibility, currenturl, screenshoturl, timemodified',
             0,
             200
         );
@@ -527,6 +527,8 @@ if (
                 'eventdetail' => quizaccess_proctoring_format_event_detail($event->eventdetail),
                 'pagevisibility' => $event->pagevisibility,
                 'currenturl' => $event->currenturl,
+                'screenshoturl' => $event->screenshoturl,
+                'hasscreenshot' => !empty($event->screenshoturl),
             ];
         }
 

@@ -77,6 +77,7 @@ class provider implements
             'eventdetail' => 'privacy:metadata:eventdetail',
             'pagevisibility' => 'privacy:metadata:pagevisibility',
             'currenturl' => 'privacy:metadata:currenturl',
+            'screenshoturl' => 'privacy:metadata:screenshoturl',
             'timemodified' => 'timemodified',
         ];
 
@@ -218,7 +219,7 @@ class provider implements
                 }
 
                 $eventfields = 'id, courseid, quizid, userid, attemptid, reportid, eventtype, eventdetail, ' .
-                    'pagevisibility, currenturl, timemodified';
+                    'pagevisibility, currenturl, screenshoturl, timemodified';
                 $events = $DB->get_records_select(
                     'quizaccess_proctoring_events',
                     $select,
@@ -247,10 +248,17 @@ class provider implements
                         'eventdetail' => $event->eventdetail,
                         'pagevisibility' => $event->pagevisibility,
                         'currenturl' => $event->currenturl,
+                        'screenshoturl' => $event->screenshoturl,
                         'timemodified' => transform::datetime($event->timemodified),
                     ];
 
-                    writer::with_context($context)->export_data($subcontext, $data);
+                    if (!empty($event->screenshoturl)) {
+                        writer::with_context($context)
+                            ->export_area_files($subcontext, 'quizaccess_proctoring', 'violation_screenshot', $event->id)
+                            ->export_data($subcontext, $data);
+                    } else {
+                        writer::with_context($context)->export_data($subcontext, $data);
+                    }
                 }
             }
         }
@@ -278,6 +286,7 @@ class provider implements
         // Delete all of the webcam images for this user.
         $fs = get_file_storage();
         $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'picture');
+        $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'violation_screenshot');
     }
 
     /**
@@ -305,25 +314,27 @@ class provider implements
         // Delete users' webcam images using Moodle File API.
         $fs = get_file_storage();
 
-        $params = array_merge([
-            'contextid' => $context->id,
-            'component' => 'quizaccess_proctoring',
-            'filearea' => 'picture',
-        ], $inparams);
+        foreach (['picture', 'violation_screenshot'] as $filearea) {
+            $params = array_merge([
+                'contextid' => $context->id,
+                'component' => 'quizaccess_proctoring',
+                'filearea' => $filearea,
+            ], $inparams);
 
-        $sql = "SELECT *
-                  FROM {files}
-                 WHERE contextid = :contextid
-                   AND component = :component
-                   AND filearea = :filearea
-                   AND userid {$insql}";
+            $sql = "SELECT *
+                      FROM {files}
+                     WHERE contextid = :contextid
+                       AND component = :component
+                       AND filearea = :filearea
+                       AND userid {$insql}";
 
-        $files = $DB->get_records_sql($sql, $params);
+            $files = $DB->get_records_sql($sql, $params);
 
-        foreach ($files as $file) {
-            $storedfile = $fs->get_file_instance($file);
-            if ($storedfile) {
-                $storedfile->delete();
+            foreach ($files as $file) {
+                $storedfile = $fs->get_file_instance($file);
+                if ($storedfile) {
+                    $storedfile->delete();
+                }
             }
         }
     }
@@ -347,11 +358,12 @@ class provider implements
         $DB->set_field_select('quizaccess_proctoring_logs', 'userid', 0, "userid = :userid", $params);
         $DB->set_field_select('quizaccess_proctoring_events', 'userid', 0, "userid = :userid", $params);
         foreach ($contextlist as $context) {
-            // Delete user file (webcam images).
+            // Delete user files.
             $userfiles = $DB->get_records('files', $params);
             $fs = get_file_storage();
             foreach ($userfiles as $file):
                 $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'picture', $file->itemid);
+                $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'violation_screenshot', $file->itemid);
             endforeach;
         }
     }

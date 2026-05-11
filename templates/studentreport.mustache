@@ -127,6 +127,7 @@
             <th>{{#str}}eventtype, quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}eventdetails, quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}pagevisibility, quizaccess_proctoring{{/str}}</th>
+            <th>{{#str}}desktopcapture, quizaccess_proctoring{{/str}}</th>
         </tr>
     </thead>
     <tbody>
@@ -136,6 +137,14 @@
             <td>{{eventtype}}</td>
             <td>{{eventdetail}}</td>
             <td>{{pagevisibility}}</td>
+            <td>
+                {{#hasscreenshot}}
+                    <a href="{{screenshoturl}}" data-lightbox="proc-violation-screens" data-title="{{eventtype}}">
+                        <img class="proctoring-event-screenshot" src="{{screenshoturl}}" alt="{{eventtype}}">
+                    </a>
+                {{/hasscreenshot}}
+                {{^hasscreenshot}}-{{/hasscreenshot}}
+            </td>
         </tr>
         {{/events}}
     </tbody>

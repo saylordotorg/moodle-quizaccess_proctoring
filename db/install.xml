@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026051107"
+<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026051108"
        COMMENT="XMLDB file for Moodle mod/quiz/accessrule/proctoring"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:noNamespaceSchemaLocation="../../../../../lib/xmldb/xmldb.xsd"
@@ -106,9 +106,12 @@
                 <FIELD NAME="pagevisibility" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT=""
                        SEQUENCE="false" COMMENT="Document visibility state" PREVIOUS="eventdetail" NEXT="currenturl"/>
                 <FIELD NAME="currenturl" TYPE="text" NOTNULL="false" SEQUENCE="false"
-                       COMMENT="Quiz page URL when the event was logged" PREVIOUS="pagevisibility" NEXT="timemodified"/>
+                       COMMENT="Quiz page URL when the event was logged" PREVIOUS="pagevisibility" NEXT="screenshoturl"/>
+                <FIELD NAME="screenshoturl" TYPE="text" NOTNULL="false" SEQUENCE="false"
+                       COMMENT="Desktop screenshot captured when the event was logged" PREVIOUS="currenturl"
+                       NEXT="timemodified"/>
                 <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" DEFAULT="0"
-                       SEQUENCE="false" COMMENT="Event server time" PREVIOUS="currenturl"/>
+                       SEQUENCE="false" COMMENT="Event server time" PREVIOUS="screenshoturl"/>
             </FIELDS>
             <KEYS>
                 <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

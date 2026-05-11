@@ -380,6 +380,23 @@ class additional_settings_helper {
                 $filename = end($patharray);
 
                 $DB->delete_records('quizaccess_proctoring_fm_warnings', ['reportid' => $id]);
+                $events = $DB->get_records('quizaccess_proctoring_events', ['reportid' => $id], '', 'id, screenshoturl');
+                foreach ($events as $event) {
+                    if (!empty($event->screenshoturl)) {
+                        $eventpath = explode("/", $event->screenshoturl);
+                        $eventfilename = end($eventpath);
+                        $select = "component = :component AND filearea = :filearea AND filename = :filename";
+                        $params = [
+                            'component' => 'quizaccess_proctoring',
+                            'filearea' => 'violation_screenshot',
+                            'filename' => $eventfilename,
+                        ];
+                        $eventfiles = $DB->get_records_select('files', $select, $params);
+                        foreach ($eventfiles as $eventfile) {
+                            $this->deletefile($eventfile, 'violation_screenshot');
+                        }
+                    }
+                }
                 $DB->delete_records('quizaccess_proctoring_events', ['reportid' => $id]);
                 $DB->delete_records('quizaccess_proctoring_logs', ['id' => $id]);
 
@@ -392,7 +409,7 @@ class additional_settings_helper {
                 $usersfiles = $DB->get_records_select('files', $select, $params);
 
                 foreach ($usersfiles as $row) {
-                    $this->deletefile($row);
+                    $this->deletefile($row, 'picture');
                 }
             }
         }
@@ -406,13 +423,14 @@ class additional_settings_helper {
      * details about the file's location and context in the system.
      *
      * @param object $filerow The file row object containing details about the file to delete.
+     * @param string $filearea The plugin file area.
      * @return void
      */
-    public function deletefile($filerow) {
+    public function deletefile($filerow, $filearea = 'picture') {
         $fs = get_file_storage();
         $fileinfo = [
                         'component' => 'quizaccess_proctoring',
-                        'filearea' => 'picture',     // Usually = table name.
+                        'filearea' => $filearea,
                         'itemid' => $filerow->itemid,               // Usually = ID of row in table.
                         'contextid' => $filerow->contextid, // ID of context.
                         'filepath' => '/',           // Any path beginning and ending in /.

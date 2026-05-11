@@ -11,6 +11,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 {key: 'enable_web_camera_before_submitting', component: 'quizaccess_proctoring'},
                 {key: 'webcam', component: 'quizaccess_proctoring'},
                 {key: 'videonotavailable', component: 'quizaccess_proctoring'},
+                {key: 'desktopcaptureprompt', component: 'quizaccess_proctoring'},
+                {key: 'desktopcapturetitle', component: 'quizaccess_proctoring'},
+                {key: 'entirescreenrequired', component: 'quizaccess_proctoring'},
+                {key: 'modal:shareentirescreen', component: 'quizaccess_proctoring'},
+                {key: 'screenshareaccepted', component: 'quizaccess_proctoring'},
+                {key: 'screensharedenied', component: 'quizaccess_proctoring'},
+                {key: 'screensharenotsupported', component: 'quizaccess_proctoring'},
+                {key: 'screensharestopped', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -21,6 +29,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                     enablewebcamerabeforesubmitting: strings[3],
                     webcam: strings[4],
                     videonotavailable: strings[5],
+                    desktopcaptureprompt: strings[6],
+                    desktopcapturetitle: strings[7],
+                    entirescreenrequired: strings[8],
+                    shareentirescreen: strings[9],
+                    screenshareaccepted: strings[10],
+                    screensharedenied: strings[11],
+                    screensharenotsupported: strings[12],
+                    screensharestopped: strings[13],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -98,11 +114,162 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
             }
         };
 
-        const initSuspiciousActivityMonitoring = function(props) {
+        const initSuspiciousActivityMonitoring = function(props, strings) {
             let lastLogged = {};
             let hiddenStarted = 0;
             const throttleMs = 5000;
             const aiPattern = /(gemini|chatgpt|openai|copilot|claude|perplexity|bard|ask\s+gemini|ask\s+ai)/i;
+            const captureDesktop = parseInt(props.captureviolationdesktop, 10) === 1;
+            const desktopCaptureEvents = [
+                'tab_hidden',
+                'focus_lost',
+                'clipboard_copy',
+                'clipboard_cut',
+                'clipboard_paste',
+                'contextmenu',
+                'shortcut',
+                'possible_ai_tool',
+                'page_exit'
+            ];
+            let screenStream = null;
+            let screenVideo = null;
+            let screenCanvas = null;
+            let screenReady = false;
+
+            const captureDesktopFrame = function(eventType) {
+                if (!captureDesktop || !desktopCaptureEvents.includes(eventType) || !screenReady || !screenVideo) {
+                    return '';
+                }
+
+                const sourceWidth = screenVideo.videoWidth || 0;
+                const sourceHeight = screenVideo.videoHeight || 0;
+                if (!sourceWidth || !sourceHeight) {
+                    return '';
+                }
+
+                if (!screenCanvas) {
+                    screenCanvas = document.createElement('canvas');
+                }
+
+                const targetWidth = Math.min(1280, sourceWidth);
+                const targetHeight = Math.round(sourceHeight * (targetWidth / sourceWidth));
+                screenCanvas.width = targetWidth;
+                screenCanvas.height = targetHeight;
+                screenCanvas.getContext('2d').drawImage(screenVideo, 0, 0, targetWidth, targetHeight);
+
+                return screenCanvas.toDataURL('image/jpeg', 0.75);
+            };
+
+            const setScreenShareStatus = function(message, type) {
+                const status = document.getElementById('proctoring-screen-share-status');
+                if (status) {
+                    status.className = `proctoring-screen-share-status text-${type}`;
+                    status.textContent = message;
+                }
+            };
+
+            const showScreenShareGate = function() {
+                const gate = document.getElementById('proctoring-screen-share-gate');
+                if (gate) {
+                    gate.style.display = 'flex';
+                }
+            };
+
+            const hideScreenShareGate = function() {
+                const gate = document.getElementById('proctoring-screen-share-gate');
+                if (gate) {
+                    gate.style.display = 'none';
+                }
+            };
+
+            const stopScreenStream = function() {
+                if (screenStream) {
+                    screenStream.getTracks().forEach((track) => track.stop());
+                    screenStream = null;
+                }
+                screenReady = false;
+            };
+
+            const requestScreenShare = async function(event) {
+                if (event) {
+                    event.preventDefault();
+                }
+
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+                    setScreenShareStatus(strings.screensharenotsupported, 'danger');
+                    return;
+                }
+
+                stopScreenStream();
+
+                try {
+                    screenStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: {
+                            displaySurface: 'monitor'
+                        },
+                        audio: false
+                    });
+                } catch (error) {
+                    setScreenShareStatus(strings.screensharedenied, 'danger');
+                    return;
+                }
+
+                const videoTrack = screenStream.getVideoTracks()[0];
+                const settings = videoTrack && videoTrack.getSettings ? videoTrack.getSettings() : {};
+                if (!videoTrack || settings.displaySurface !== 'monitor') {
+                    stopScreenStream();
+                    setScreenShareStatus(strings.entirescreenrequired, 'danger');
+                    return;
+                }
+
+                if (!screenVideo) {
+                    screenVideo = document.createElement('video');
+                    screenVideo.muted = true;
+                    screenVideo.playsInline = true;
+                }
+                screenVideo.srcObject = screenStream;
+                try {
+                    await screenVideo.play();
+                } catch (error) {
+                    stopScreenStream();
+                    setScreenShareStatus(strings.screensharedenied, 'danger');
+                    return;
+                }
+                screenReady = true;
+
+                videoTrack.addEventListener('ended', function() {
+                    screenReady = false;
+                    setScreenShareStatus(strings.screensharestopped, 'danger');
+                    showScreenShareGate();
+                    logEvent('screen_share_stopped', {
+                        reason: 'screen_share_ended'
+                    });
+                });
+
+                setScreenShareStatus(strings.screenshareaccepted, 'success');
+                hideScreenShareGate();
+            };
+
+            const initScreenShareGate = function() {
+                if (!captureDesktop || document.getElementById('proctoring-screen-share-gate')) {
+                    return;
+                }
+
+                $('body').append(
+                    '<div id="proctoring-screen-share-gate" class="proctoring-screen-share-gate">' +
+                        '<div class="proctoring-screen-share-panel">' +
+                            `<h3>${strings.desktopcapturetitle}</h3>` +
+                            `<p>${strings.desktopcaptureprompt}</p>` +
+                            '<div id="proctoring-screen-share-status" class="proctoring-screen-share-status"></div>' +
+                            '<button id="proctoring-screen-share-button" class="btn btn-primary">' +
+                                strings.shareentirescreen +
+                            '</button>' +
+                        '</div>' +
+                    '</div>'
+                );
+
+                $('#proctoring-screen-share-button').on('click', requestScreenShare);
+            };
 
             const getSelectedTextLength = function() {
                 try {
@@ -141,22 +308,27 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 }
                 lastLogged[throttleKey] = now;
 
+                const args = {
+                    courseid: parseInt(props.courseid, 10) || 0,
+                    quizid: parseInt(props.quizid, 10) || 0,
+                    attemptid: parseInt(props.status, 10) || 0,
+                    reportid: parseInt(props.id, 10) || 0,
+                    eventtype: eventType,
+                    eventdetail: detailText,
+                    pagevisibility: document.visibilityState || '',
+                    currenturl: window.location.href,
+                    screenshot: captureDesktopFrame(eventType)
+                };
+
                 Ajax.call([{
                     methodname: 'quizaccess_proctoring_log_event',
-                    args: {
-                        courseid: parseInt(props.courseid, 10) || 0,
-                        quizid: parseInt(props.quizid, 10) || 0,
-                        attemptid: parseInt(props.status, 10) || 0,
-                        reportid: parseInt(props.id, 10) || 0,
-                        eventtype: eventType,
-                        eventdetail: detailText,
-                        pagevisibility: document.visibilityState || '',
-                        currenturl: window.location.href
-                    }
+                    args: args
                 }])[0].fail(function() {
                     // Do not interrupt the quiz attempt if activity logging is unavailable.
                 });
             };
+
+            initScreenShareGate();
 
             document.addEventListener('visibilitychange', function() {
                 if (document.visibilityState === 'hidden') {
@@ -284,7 +456,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 }
 
                 if (parseInt(props.monitorbrowseractivity, 10) === 1) {
-                    initSuspiciousActivityMonitoring(props);
+                    initSuspiciousActivityMonitoring(props, strings);
                 }
 
                 const width = props.image_width;

@@ -288,5 +288,25 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051107, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051108) {
+        $table = new xmldb_table('quizaccess_proctoring_events');
+        $field = new xmldb_field(
+            'screenshoturl',
+            XMLDB_TYPE_TEXT,
+            null,
+            null,
+            null,
+            null,
+            null,
+            'currenturl'
+        );
+
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_plugin_savepoint(true, 2026051108, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
