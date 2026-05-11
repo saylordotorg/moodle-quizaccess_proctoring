@@ -136,6 +136,10 @@ if ($hassiteconfig) {
         get_string('setting:monitorbrowseractivity', 'quizaccess_proctoring'),
         get_string('setting:monitorbrowseractivity_desc', 'quizaccess_proctoring'), 1));
 
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/blockclipboard',
+        get_string('setting:blockclipboard', 'quizaccess_proctoring'),
+        get_string('setting:blockclipboard_desc', 'quizaccess_proctoring'), 1));
+
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/captureviolationdesktop',
         get_string('setting:captureviolationdesktop', 'quizaccess_proctoring'),
         get_string('setting:captureviolationdesktop_desc', 'quizaccess_proctoring'), 1));

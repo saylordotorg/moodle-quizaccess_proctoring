@@ -119,7 +119,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
             let hiddenStarted = 0;
             const throttleMs = 5000;
             const aiPattern = /(gemini|chatgpt|openai|copilot|claude|perplexity|bard|ask\s+gemini|ask\s+ai)/i;
+            const monitorActivity = parseInt(props.monitorbrowseractivity, 10) === 1;
+            const blockClipboard = parseInt(props.blockclipboard, 10) === 1;
             const captureDesktop = parseInt(props.captureviolationdesktop, 10) === 1;
+            const clipboardEvents = [
+                'clipboard_copy',
+                'clipboard_cut',
+                'clipboard_paste'
+            ];
             const desktopCaptureEvents = [
                 'tab_hidden',
                 'focus_lost',
@@ -299,6 +306,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
             };
 
             const logEvent = function(eventType, detail) {
+                if (!monitorActivity && !(blockClipboard && clipboardEvents.includes(eventType))) {
+                    return;
+                }
+
                 const now = Date.now();
                 const detailText = JSON.stringify(detail || {});
                 const throttleKey = eventType + ':' + detailText.substring(0, 120);
@@ -330,48 +341,61 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
 
             initScreenShareGate();
 
-            document.addEventListener('visibilitychange', function() {
-                if (document.visibilityState === 'hidden') {
-                    hiddenStarted = Date.now();
-                    logEvent('tab_hidden', {
-                        reason: 'document_hidden',
-                        note: 'Quiz tab was hidden. This can indicate tab switching or opening another browser surface.'
+            if (monitorActivity) {
+                document.addEventListener('visibilitychange', function() {
+                    if (document.visibilityState === 'hidden') {
+                        hiddenStarted = Date.now();
+                        logEvent('tab_hidden', {
+                            reason: 'document_hidden',
+                            note: 'Quiz tab was hidden. This can indicate tab switching or opening another browser surface.'
+                        });
+                    } else if (document.visibilityState === 'visible') {
+                        logEvent('tab_visible', {
+                            reason: 'document_visible',
+                            hiddenms: hiddenStarted ? Date.now() - hiddenStarted : 0
+                        });
+                        hiddenStarted = 0;
+                    }
+                }, true);
+
+                window.addEventListener('blur', function() {
+                    logEvent('focus_lost', {
+                        reason: 'window_blur',
+                        note: 'Browser focus left the quiz. This can include another tab, another window, or a browser AI panel.'
                     });
-                } else if (document.visibilityState === 'visible') {
-                    logEvent('tab_visible', {
-                        reason: 'document_visible',
-                        hiddenms: hiddenStarted ? Date.now() - hiddenStarted : 0
+                }, true);
+
+                window.addEventListener('focus', function() {
+                    logEvent('focus_returned', {
+                        reason: 'window_focus'
                     });
-                    hiddenStarted = 0;
+                }, true);
+            }
+
+            document.addEventListener('copy', function(event) {
+                if (blockClipboard) {
+                    event.preventDefault();
                 }
-            }, true);
-
-            window.addEventListener('blur', function() {
-                logEvent('focus_lost', {
-                    reason: 'window_blur',
-                    note: 'Browser focus left the quiz. This can include another tab, another window, or a browser AI panel.'
-                });
-            }, true);
-
-            window.addEventListener('focus', function() {
-                logEvent('focus_returned', {
-                    reason: 'window_focus'
-                });
-            }, true);
-
-            document.addEventListener('copy', function() {
                 logEvent('clipboard_copy', {
-                    selectionlength: getSelectedTextLength()
+                    selectionlength: getSelectedTextLength(),
+                    blocked: blockClipboard
                 });
             }, true);
 
-            document.addEventListener('cut', function() {
+            document.addEventListener('cut', function(event) {
+                if (blockClipboard) {
+                    event.preventDefault();
+                }
                 logEvent('clipboard_cut', {
-                    selectionlength: getSelectedTextLength()
+                    selectionlength: getSelectedTextLength(),
+                    blocked: blockClipboard
                 });
             }, true);
 
             document.addEventListener('paste', function(event) {
+                if (blockClipboard) {
+                    event.preventDefault();
+                }
                 let pastedLength = 0;
                 try {
                     const clipboard = event.clipboardData || window.clipboardData;
@@ -381,60 +405,73 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 }
 
                 logEvent('clipboard_paste', {
-                    pastedlength: pastedLength
+                    pastedlength: pastedLength,
+                    blocked: blockClipboard
                 });
             }, true);
 
-            document.addEventListener('contextmenu', function() {
-                logEvent('contextmenu', {
-                    reason: 'right_click'
-                });
-            }, true);
-
-            document.addEventListener('keydown', function(event) {
-                const key = (event.key || '').toLowerCase();
-                const shortcut = getShortcutName(event);
-                const ctrlOrMeta = event.ctrlKey || event.metaKey;
-                const monitored = event.key === 'F12' ||
-                    (event.altKey && key === 'tab') ||
-                    (ctrlOrMeta && ['c', 'x', 'v', 'a', 'l', 't', 'n', 'w', 'r'].includes(key)) ||
-                    (ctrlOrMeta && event.shiftKey && ['i', 'j', 'c'].includes(key));
-
-                if (monitored) {
-                    logEvent('shortcut', {
-                        shortcut: shortcut
+            document.addEventListener('beforeinput', function(event) {
+                if (blockClipboard && event.inputType === 'insertFromPaste') {
+                    event.preventDefault();
+                    logEvent('clipboard_paste', {
+                        source: 'beforeinput',
+                        blocked: true
                     });
                 }
             }, true);
 
-            document.addEventListener('click', function(event) {
-                const target = event.target && event.target.closest
-                    ? event.target.closest('a, button, [role="button"], [aria-label], [title]')
-                    : null;
-
-                if (!target) {
-                    return;
-                }
-
-                const label = [
-                    target.innerText || '',
-                    target.getAttribute('aria-label') || '',
-                    target.getAttribute('title') || '',
-                    target.getAttribute('href') || ''
-                ].join(' ').trim();
-
-                if (aiPattern.test(label)) {
-                    logEvent('possible_ai_tool', {
-                        label: label.substring(0, 200)
+            if (monitorActivity) {
+                document.addEventListener('contextmenu', function() {
+                    logEvent('contextmenu', {
+                        reason: 'right_click'
                     });
-                }
-            }, true);
+                }, true);
 
-            window.addEventListener('pagehide', function() {
-                logEvent('page_exit', {
-                    reason: 'pagehide'
-                });
-            }, true);
+                document.addEventListener('keydown', function(event) {
+                    const key = (event.key || '').toLowerCase();
+                    const shortcut = getShortcutName(event);
+                    const ctrlOrMeta = event.ctrlKey || event.metaKey;
+                    const monitored = event.key === 'F12' ||
+                        (event.altKey && key === 'tab') ||
+                        (ctrlOrMeta && ['c', 'x', 'v', 'a', 'l', 't', 'n', 'w', 'r'].includes(key)) ||
+                        (ctrlOrMeta && event.shiftKey && ['i', 'j', 'c'].includes(key));
+
+                    if (monitored) {
+                        logEvent('shortcut', {
+                            shortcut: shortcut
+                        });
+                    }
+                }, true);
+
+                document.addEventListener('click', function(event) {
+                    const target = event.target && event.target.closest
+                        ? event.target.closest('a, button, [role="button"], [aria-label], [title]')
+                        : null;
+
+                    if (!target) {
+                        return;
+                    }
+
+                    const label = [
+                        target.innerText || '',
+                        target.getAttribute('aria-label') || '',
+                        target.getAttribute('title') || '',
+                        target.getAttribute('href') || ''
+                    ].join(' ').trim();
+
+                    if (aiPattern.test(label)) {
+                        logEvent('possible_ai_tool', {
+                            label: label.substring(0, 200)
+                        });
+                    }
+                }, true);
+
+                window.addEventListener('pagehide', function() {
+                    logEvent('page_exit', {
+                        reason: 'pagehide'
+                    });
+                }, true);
+            }
         };
 
         return {
@@ -455,7 +492,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                     return false;
                 }
 
-                if (parseInt(props.monitorbrowseractivity, 10) === 1) {
+                if (parseInt(props.monitorbrowseractivity, 10) === 1 || parseInt(props.blockclipboard, 10) === 1) {
                     initSuspiciousActivityMonitoring(props, strings);
                 }
 
