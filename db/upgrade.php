@@ -323,5 +323,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051111, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051112) {
+        // No schema changes. Hardens right-click and keyboard clipboard blocking.
+        upgrade_plugin_savepoint(true, 2026051112, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

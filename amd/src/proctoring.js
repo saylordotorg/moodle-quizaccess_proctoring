@@ -135,6 +135,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 'clipboard_cut',
                 'clipboard_paste'
             ];
+            const clipboardShortcutEvents = {
+                c: 'clipboard_copy',
+                x: 'clipboard_cut',
+                v: 'clipboard_paste'
+            };
             const screenShareEvents = [
                 'screen_marker_missing',
                 'screen_share_stopped'
@@ -549,6 +554,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 return parts.join('+');
             };
 
+            const blockClipboardAction = function(event) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.stopImmediatePropagation) {
+                    event.stopImmediatePropagation();
+                }
+            };
+
             const logEvent = function(eventType, detail) {
                 if (!monitorActivity && !(blockClipboard && clipboardEvents.includes(eventType)) &&
                         !(captureDesktop && screenShareEvents.includes(eventType))) {
@@ -619,7 +632,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
             document.addEventListener('copy', function(event) {
                 if (blockClipboard) {
-                    event.preventDefault();
+                    blockClipboardAction(event);
                 }
                 logEvent('clipboard_copy', {
                     selectionlength: getSelectedTextLength(),
@@ -629,7 +642,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
             document.addEventListener('cut', function(event) {
                 if (blockClipboard) {
-                    event.preventDefault();
+                    blockClipboardAction(event);
                 }
                 logEvent('clipboard_cut', {
                     selectionlength: getSelectedTextLength(),
@@ -639,7 +652,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
             document.addEventListener('paste', function(event) {
                 if (blockClipboard) {
-                    event.preventDefault();
+                    blockClipboardAction(event);
                 }
                 let pastedLength = 0;
                 try {
@@ -657,7 +670,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
             document.addEventListener('beforeinput', function(event) {
                 if (blockClipboard && event.inputType === 'insertFromPaste') {
-                    event.preventDefault();
+                    blockClipboardAction(event);
                     logEvent('clipboard_paste', {
                         source: 'beforeinput',
                         blocked: true
@@ -665,10 +678,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }
             }, true);
 
-            if (monitorActivity) {
-                document.addEventListener('contextmenu', function() {
+            if (monitorActivity || blockClipboard) {
+                document.addEventListener('contextmenu', function(event) {
+                    if (blockClipboard) {
+                        blockClipboardAction(event);
+                    }
                     logEvent('contextmenu', {
-                        reason: 'right_click'
+                        reason: 'right_click',
+                        blocked: blockClipboard
                     });
                 }, true);
 
@@ -676,6 +693,17 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     const key = (event.key || '').toLowerCase();
                     const shortcut = getShortcutName(event);
                     const ctrlOrMeta = event.ctrlKey || event.metaKey;
+                    const clipboardEventType = ctrlOrMeta ? clipboardShortcutEvents[key] || '' : '';
+
+                    if (blockClipboard && clipboardEventType) {
+                        blockClipboardAction(event);
+                        logEvent(clipboardEventType, {
+                            source: 'keyboard_shortcut',
+                            shortcut: shortcut,
+                            blocked: true
+                        });
+                    }
+
                     const monitored = event.key === 'F12' ||
                         (event.altKey && key === 'tab') ||
                         (ctrlOrMeta && ['c', 'x', 'v', 'a', 'l', 't', 'n', 'w', 'r'].includes(key)) ||
