@@ -19,6 +19,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 {key: 'screensharedenied', component: 'quizaccess_proctoring'},
                 {key: 'screensharenotsupported', component: 'quizaccess_proctoring'},
                 {key: 'screensharestopped', component: 'quizaccess_proctoring'},
+                {key: 'screenmarkerlabel', component: 'quizaccess_proctoring'},
+                {key: 'screenmarkerwrongmonitor', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -37,6 +39,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                     screensharedenied: strings[11],
                     screensharenotsupported: strings[12],
                     screensharestopped: strings[13],
+                    screenmarkerlabel: strings[14],
+                    screenmarkerwrongmonitor: strings[15],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -127,6 +131,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 'clipboard_cut',
                 'clipboard_paste'
             ];
+            const screenShareEvents = [
+                'screen_marker_missing',
+                'screen_share_stopped'
+            ];
             const desktopCaptureEvents = [
                 'tab_hidden',
                 'focus_lost',
@@ -136,12 +144,39 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 'contextmenu',
                 'shortcut',
                 'possible_ai_tool',
-                'page_exit'
+                'page_exit',
+                'screen_marker_missing'
             ];
             let screenStream = null;
             let screenVideo = null;
             let screenCanvas = null;
             let screenReady = false;
+            let markerCheckTimer = null;
+            const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
+
+            const initScreenMarker = function() {
+                if (!captureDesktop || document.getElementById('proctoring-screen-verification-marker')) {
+                    return;
+                }
+
+                $('body').append(
+                    '<div id="proctoring-screen-verification-marker" ' +
+                        'class="proctoring-screen-verification-marker" aria-hidden="true" ' +
+                        'style="position:fixed;top:8px;right:8px;z-index:10002;width:220px;padding:8px;' +
+                        'border:3px solid #fff;background:#111;color:#fff;pointer-events:none;">' +
+                        `<div class="proctoring-screen-marker-label">${strings.screenmarkerlabel}</div>` +
+                        '<div class="proctoring-screen-marker-colors">' +
+                            '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-magenta" ' +
+                                'style="display:block;width:58px;height:24px;background:#ff00cc;"></span>' +
+                            '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-cyan" ' +
+                                'style="display:block;width:58px;height:24px;background:#00ffcc;"></span>' +
+                            '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-yellow" ' +
+                                'style="display:block;width:58px;height:24px;background:#ffe600;"></span>' +
+                        '</div>' +
+                        `<div class="proctoring-screen-marker-token">${markerToken}</div>` +
+                    '</div>'
+                );
+            };
 
             const captureDesktopFrame = function(eventType) {
                 if (!captureDesktop || !desktopCaptureEvents.includes(eventType) || !screenReady || !screenVideo) {
@@ -167,6 +202,117 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 return screenCanvas.toDataURL('image/jpeg', 0.75);
             };
 
+            const drawScreenFrame = function() {
+                const sourceWidth = screenVideo ? screenVideo.videoWidth || 0 : 0;
+                const sourceHeight = screenVideo ? screenVideo.videoHeight || 0 : 0;
+                if (!sourceWidth || !sourceHeight) {
+                    return null;
+                }
+
+                if (!screenCanvas) {
+                    screenCanvas = document.createElement('canvas');
+                }
+
+                const targetWidth = Math.min(1280, sourceWidth);
+                const targetHeight = Math.round(sourceHeight * (targetWidth / sourceWidth));
+                screenCanvas.width = targetWidth;
+                screenCanvas.height = targetHeight;
+                const context = screenCanvas.getContext('2d');
+                context.drawImage(screenVideo, 0, 0, targetWidth, targetHeight);
+
+                return context.getImageData(0, 0, targetWidth, targetHeight);
+            };
+
+            const tileKey = function(x, y) {
+                return x + ':' + y;
+            };
+
+            const countMarkerTiles = function(imageData, tileSize) {
+                const data = imageData.data;
+                const width = imageData.width;
+                const height = imageData.height;
+                const tiles = {};
+
+                for (let y = 0; y < height; y += 2) {
+                    for (let x = 0; x < width; x += 2) {
+                        const offset = ((y * width) + x) * 4;
+                        const red = data[offset];
+                        const green = data[offset + 1];
+                        const blue = data[offset + 2];
+                        let color = '';
+
+                        if (red > 210 && green < 90 && blue > 150) {
+                            color = 'magenta';
+                        } else if (red < 90 && green > 180 && blue > 150) {
+                            color = 'cyan';
+                        } else if (red > 210 && green > 180 && blue < 90) {
+                            color = 'yellow';
+                        }
+
+                        if (!color) {
+                            continue;
+                        }
+
+                        const key = tileKey(Math.floor(x / tileSize), Math.floor(y / tileSize));
+                        tiles[key] = tiles[key] || {magenta: 0, cyan: 0, yellow: 0};
+                        tiles[key][color]++;
+                    }
+                }
+
+                return tiles;
+            };
+
+            const sharedScreenContainsMarker = function() {
+                if (!captureDesktop || !screenVideo) {
+                    return true;
+                }
+
+                const imageData = drawScreenFrame();
+                if (!imageData) {
+                    return false;
+                }
+
+                const tileSize = Math.max(8, Math.floor(imageData.width / 80));
+                const tiles = countMarkerTiles(imageData, tileSize);
+                const maxTileX = Math.ceil(imageData.width / tileSize);
+                const maxTileY = Math.ceil(imageData.height / tileSize);
+
+                for (let tileY = 0; tileY < maxTileY; tileY++) {
+                    for (let tileX = 0; tileX < maxTileX; tileX++) {
+                        const totals = {magenta: 0, cyan: 0, yellow: 0};
+
+                        for (let yOffset = 0; yOffset < 4; yOffset++) {
+                            for (let xOffset = 0; xOffset < 6; xOffset++) {
+                                const tile = tiles[tileKey(tileX + xOffset, tileY + yOffset)];
+                                if (!tile) {
+                                    continue;
+                                }
+                                totals.magenta += tile.magenta;
+                                totals.cyan += tile.cyan;
+                                totals.yellow += tile.yellow;
+                            }
+                        }
+
+                        if (totals.magenta >= 18 && totals.cyan >= 18 && totals.yellow >= 18) {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            };
+
+            const waitForScreenFrame = async function() {
+                for (let attempts = 0; attempts < 20; attempts++) {
+                    if (screenVideo && screenVideo.videoWidth && screenVideo.videoHeight) {
+                        return true;
+                    }
+                    await new Promise((resolve) => window.setTimeout(resolve, 100));
+                }
+
+                return false;
+            };
+
             const setScreenShareStatus = function(message, type) {
                 const status = document.getElementById('proctoring-screen-share-status');
                 if (status) {
@@ -190,11 +336,41 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
             };
 
             const stopScreenStream = function() {
+                if (markerCheckTimer) {
+                    window.clearInterval(markerCheckTimer);
+                    markerCheckTimer = null;
+                }
                 if (screenStream) {
                     screenStream.getTracks().forEach((track) => track.stop());
                     screenStream = null;
                 }
                 screenReady = false;
+            };
+
+            const requireCorrectSharedScreen = function(reason) {
+                logEvent('screen_marker_missing', {
+                    reason: reason,
+                    note: 'The shared monitor did not contain the visible Moodle quiz screen marker.'
+                });
+                stopScreenStream();
+                setScreenShareStatus(strings.screenmarkerwrongmonitor, 'danger');
+                showScreenShareGate();
+            };
+
+            const startMarkerChecks = function() {
+                if (!captureDesktop) {
+                    return;
+                }
+
+                if (markerCheckTimer) {
+                    window.clearInterval(markerCheckTimer);
+                }
+
+                markerCheckTimer = window.setInterval(function() {
+                    if (screenReady && !sharedScreenContainsMarker()) {
+                        requireCorrectSharedScreen('periodic_marker_check_failed');
+                    }
+                }, 15000);
             };
 
             const requestScreenShare = async function(event) {
@@ -242,6 +418,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                     setScreenShareStatus(strings.screensharedenied, 'danger');
                     return;
                 }
+
+                if (!await waitForScreenFrame() || !sharedScreenContainsMarker()) {
+                    requireCorrectSharedScreen('initial_marker_check_failed');
+                    return;
+                }
+
                 screenReady = true;
 
                 videoTrack.addEventListener('ended', function() {
@@ -255,12 +437,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
 
                 setScreenShareStatus(strings.screenshareaccepted, 'success');
                 hideScreenShareGate();
+                startMarkerChecks();
             };
 
             const initScreenShareGate = function() {
                 if (!captureDesktop || document.getElementById('proctoring-screen-share-gate')) {
                     return;
                 }
+
+                initScreenMarker();
 
                 $('body').append(
                     '<div id="proctoring-screen-share-gate" class="proctoring-screen-share-gate">' +
@@ -306,7 +491,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
             };
 
             const logEvent = function(eventType, detail) {
-                if (!monitorActivity && !(blockClipboard && clipboardEvents.includes(eventType))) {
+                if (!monitorActivity && !(blockClipboard && clipboardEvents.includes(eventType)) &&
+                        !(captureDesktop && screenShareEvents.includes(eventType))) {
                     return;
                 }
 
@@ -492,7 +678,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                     return false;
                 }
 
-                if (parseInt(props.monitorbrowseractivity, 10) === 1 || parseInt(props.blockclipboard, 10) === 1) {
+                if (parseInt(props.monitorbrowseractivity, 10) === 1 ||
+                        parseInt(props.blockclipboard, 10) === 1 ||
+                        parseInt(props.captureviolationdesktop, 10) === 1) {
                     initSuspiciousActivityMonitoring(props, strings);
                 }
 

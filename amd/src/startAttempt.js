@@ -15,6 +15,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 {key: 'screensharedenied', component: 'quizaccess_proctoring'},
                 {key: 'screensharenotsupported', component: 'quizaccess_proctoring'},
                 {key: 'screensharestopped', component: 'quizaccess_proctoring'},
+                {key: 'screenmarkerlabel', component: 'quizaccess_proctoring'},
+                {key: 'screenmarkerwrongmonitor', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -32,6 +34,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                     screensharedenied: strings[10],
                     screensharenotsupported: strings[11],
                     screensharestopped: strings[12],
+                    screenmarkerlabel: strings[13],
+                    screenmarkerwrongmonitor: strings[14],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -189,6 +193,18 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 let faceReady = !faceRequired;
                 let screenReady = !screenRequired;
                 let screenStream = null;
+                let screenVideo = null;
+                let screenCanvas = null;
+                const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
+
+                const escapeHtml = function(text) {
+                    return String(text || '')
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                };
 
                 const setScreenConfirmed = function(confirmed) {
                     const input = document.getElementById('id_entirescreenconfirmed');
@@ -207,26 +223,172 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                     }
                 };
 
+                const setScreenResult = function(message, success) {
+                    $("#screen_share_result").html(
+                        `<span style="color: ${success ? 'green' : 'red'}">${escapeHtml(message)}</span>`
+                    );
+                };
+
                 if (faceRequired || screenRequired) {
                     updatePreflightGate();
                 }
+
+                const initScreenMarker = function() {
+                    if (!screenRequired || document.getElementById('proctoring-screen-verification-marker')) {
+                        return;
+                    }
+
+                    $('body').append(
+                        '<div id="proctoring-screen-verification-marker" ' +
+                            'class="proctoring-screen-verification-marker" aria-hidden="true" ' +
+                            'style="position:fixed;top:8px;right:8px;z-index:10002;width:220px;padding:8px;' +
+                            'border:3px solid #fff;background:#111;color:#fff;pointer-events:none;">' +
+                            `<div class="proctoring-screen-marker-label">${escapeHtml(strings.screenmarkerlabel)}</div>` +
+                            '<div class="proctoring-screen-marker-colors">' +
+                                '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-magenta" ' +
+                                    'style="display:block;width:58px;height:24px;background:#ff00cc;"></span>' +
+                                '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-cyan" ' +
+                                    'style="display:block;width:58px;height:24px;background:#00ffcc;"></span>' +
+                                '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-yellow" ' +
+                                    'style="display:block;width:58px;height:24px;background:#ffe600;"></span>' +
+                            '</div>' +
+                            `<div class="proctoring-screen-marker-token">${markerToken}</div>` +
+                        '</div>'
+                    );
+                };
+
+                const stopScreenStream = function() {
+                    if (screenStream) {
+                        screenStream.getTracks().forEach((track) => track.stop());
+                        screenStream = null;
+                    }
+                    if (screenVideo) {
+                        screenVideo.srcObject = null;
+                    }
+                };
+
+                const drawScreenFrame = function() {
+                    const sourceWidth = screenVideo ? screenVideo.videoWidth || 0 : 0;
+                    const sourceHeight = screenVideo ? screenVideo.videoHeight || 0 : 0;
+                    if (!sourceWidth || !sourceHeight) {
+                        return null;
+                    }
+
+                    if (!screenCanvas) {
+                        screenCanvas = document.createElement('canvas');
+                    }
+
+                    const targetWidth = Math.min(1280, sourceWidth);
+                    const targetHeight = Math.round(sourceHeight * (targetWidth / sourceWidth));
+                    screenCanvas.width = targetWidth;
+                    screenCanvas.height = targetHeight;
+                    const context = screenCanvas.getContext('2d');
+                    context.drawImage(screenVideo, 0, 0, targetWidth, targetHeight);
+
+                    return context.getImageData(0, 0, targetWidth, targetHeight);
+                };
+
+                const tileKey = function(x, y) {
+                    return x + ':' + y;
+                };
+
+                const countMarkerTiles = function(imageData, tileSize) {
+                    const data = imageData.data;
+                    const width = imageData.width;
+                    const height = imageData.height;
+                    const tiles = {};
+
+                    for (let y = 0; y < height; y += 2) {
+                        for (let x = 0; x < width; x += 2) {
+                            const offset = ((y * width) + x) * 4;
+                            const red = data[offset];
+                            const green = data[offset + 1];
+                            const blue = data[offset + 2];
+                            let color = '';
+
+                            if (red > 210 && green < 90 && blue > 150) {
+                                color = 'magenta';
+                            } else if (red < 90 && green > 180 && blue > 150) {
+                                color = 'cyan';
+                            } else if (red > 210 && green > 180 && blue < 90) {
+                                color = 'yellow';
+                            }
+
+                            if (!color) {
+                                continue;
+                            }
+
+                            const key = tileKey(Math.floor(x / tileSize), Math.floor(y / tileSize));
+                            tiles[key] = tiles[key] || {magenta: 0, cyan: 0, yellow: 0};
+                            tiles[key][color]++;
+                        }
+                    }
+
+                    return tiles;
+                };
+
+                const sharedScreenContainsMarker = function() {
+                    const imageData = drawScreenFrame();
+                    if (!imageData) {
+                        return false;
+                    }
+
+                    const tileSize = Math.max(8, Math.floor(imageData.width / 80));
+                    const tiles = countMarkerTiles(imageData, tileSize);
+                    const maxTileX = Math.ceil(imageData.width / tileSize);
+                    const maxTileY = Math.ceil(imageData.height / tileSize);
+
+                    for (let tileY = 0; tileY < maxTileY; tileY++) {
+                        for (let tileX = 0; tileX < maxTileX; tileX++) {
+                            const totals = {magenta: 0, cyan: 0, yellow: 0};
+
+                            for (let yOffset = 0; yOffset < 4; yOffset++) {
+                                for (let xOffset = 0; xOffset < 6; xOffset++) {
+                                    const tile = tiles[tileKey(tileX + xOffset, tileY + yOffset)];
+                                    if (!tile) {
+                                        continue;
+                                    }
+                                    totals.magenta += tile.magenta;
+                                    totals.cyan += tile.cyan;
+                                    totals.yellow += tile.yellow;
+                                }
+                            }
+
+                            if (totals.magenta >= 18 && totals.cyan >= 18 && totals.yellow >= 18) {
+                                return true;
+                            }
+                        }
+                    }
+
+                    return false;
+                };
+
+                const waitForScreenFrame = async function() {
+                    for (let attempts = 0; attempts < 20; attempts++) {
+                        if (screenVideo && screenVideo.videoWidth && screenVideo.videoHeight) {
+                            return true;
+                        }
+                        await new Promise((resolve) => window.setTimeout(resolve, 100));
+                    }
+
+                    return false;
+                };
+
+                initScreenMarker();
 
                 $('#fcvalidate').append('<img id="validate-cropimg" style="display: none;" src="" alt=""/>');
                 $("#screensharevalidate").click(async function(event) {
                     event.preventDefault();
 
                     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-                        $("#screen_share_result").html(`<span style="color: red">${strings.screensharenotsupported}</span>`);
+                        setScreenResult(strings.screensharenotsupported, false);
                         screenReady = false;
                         setScreenConfirmed(false);
                         updatePreflightGate();
                         return;
                     }
 
-                    if (screenStream) {
-                        screenStream.getTracks().forEach((track) => track.stop());
-                        screenStream = null;
-                    }
+                    stopScreenStream();
 
                     try {
                         screenStream = await navigator.mediaDevices.getDisplayMedia({
@@ -236,7 +398,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                             audio: false
                         });
                     } catch (error) {
-                        $("#screen_share_result").html(`<span style="color: red">${strings.screensharedenied}</span>`);
+                        setScreenResult(strings.screensharedenied, false);
                         screenReady = false;
                         setScreenConfirmed(false);
                         updatePreflightGate();
@@ -246,11 +408,34 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                     const videoTrack = screenStream.getVideoTracks()[0];
                     const settings = videoTrack && videoTrack.getSettings ? videoTrack.getSettings() : {};
                     if (!videoTrack || settings.displaySurface !== 'monitor') {
-                        if (screenStream) {
-                            screenStream.getTracks().forEach((track) => track.stop());
-                            screenStream = null;
-                        }
-                        $("#screen_share_result").html(`<span style="color: red">${strings.entirescreenrequired}</span>`);
+                        stopScreenStream();
+                        setScreenResult(strings.entirescreenrequired, false);
+                        screenReady = false;
+                        setScreenConfirmed(false);
+                        updatePreflightGate();
+                        return;
+                    }
+
+                    if (!screenVideo) {
+                        screenVideo = document.createElement('video');
+                        screenVideo.muted = true;
+                        screenVideo.playsInline = true;
+                    }
+                    screenVideo.srcObject = screenStream;
+                    try {
+                        await screenVideo.play();
+                    } catch (error) {
+                        stopScreenStream();
+                        setScreenResult(strings.screensharedenied, false);
+                        screenReady = false;
+                        setScreenConfirmed(false);
+                        updatePreflightGate();
+                        return;
+                    }
+
+                    if (!await waitForScreenFrame() || !sharedScreenContainsMarker()) {
+                        stopScreenStream();
+                        setScreenResult(strings.screenmarkerwrongmonitor, false);
                         screenReady = false;
                         setScreenConfirmed(false);
                         updatePreflightGate();
@@ -258,13 +443,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                     }
 
                     videoTrack.addEventListener('ended', function() {
-                        $("#screen_share_result").html(`<span style="color: red">${strings.screensharestopped}</span>`);
+                        setScreenResult(strings.screensharestopped, false);
                         screenReady = false;
                         setScreenConfirmed(false);
                         updatePreflightGate();
                     });
 
-                    $("#screen_share_result").html(`<span style="color: green">${strings.screenshareaccepted}</span>`);
+                    setScreenResult(strings.screenshareaccepted, true);
                     screenReady = true;
                     setScreenConfirmed(true);
                     updatePreflightGate();

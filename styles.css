@@ -484,6 +484,58 @@ body.proctoring-lb-disable-scrolling {
     margin: 12px 0;
 }
 
+.proctoring-screen-verification-marker {
+    position: fixed;
+    top: 8px;
+    right: 8px;
+    z-index: 10002;
+    width: 220px;
+    padding: 8px;
+    border: 3px solid #ffffff;
+    background: #111111;
+    color: #ffffff;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+}
+
+.proctoring-screen-marker-label {
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.1;
+    text-transform: uppercase;
+}
+
+.proctoring-screen-marker-colors {
+    display: flex;
+    gap: 6px;
+    margin: 6px 0;
+}
+
+.proctoring-screen-marker-swatch {
+    display: block;
+    width: 58px;
+    height: 24px;
+}
+
+.proctoring-screen-marker-magenta {
+    background: #ff00cc;
+}
+
+.proctoring-screen-marker-cyan {
+    background: #00ffcc;
+}
+
+.proctoring-screen-marker-yellow {
+    background: #ffe600;
+}
+
+.proctoring-screen-marker-token {
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0;
+}
+
 .proctoring-event-screenshot {
     width: 120px;
     max-width: 100%;

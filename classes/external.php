@@ -308,6 +308,7 @@ class quizaccess_proctoring_external extends external_api {
             'shortcut',
             'possible_ai_tool',
             'page_exit',
+            'screen_marker_missing',
             'screen_share_stopped',
         ];
 
