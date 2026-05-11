@@ -1,6 +1,6 @@
 # Moodle Proctoring
 
-The Moodle Proctoring plugin is a Quiz Access plugin designed to capture a user's picture via webcam to identify the individual attempting the Moodle quiz. It automatically captures images from the user's webcam at 30-second intervals (or any configurable time gap) and stores them as PNG files. Admins can analyze these images after the exam for verification purposes using the BS Face Matching API.
+The Moodle Proctoring plugin is a Quiz Access plugin designed to capture a user's picture via webcam to identify the individual attempting the Moodle quiz. It automatically captures images from the user's webcam at 30-second intervals (or any configurable time gap) and stores them as PNG files. Admins can analyze these images after the exam for verification purposes using the Custom AI face matching API.
 
 This plugin enables the capture of random images via webcam while the student or user is attempting a quiz.
 
@@ -16,7 +16,7 @@ This plugin enables the capture of random images via webcam while the student or
 - Allows admins to upload base images for user face recognition.
 - Supports face validation before quiz attempts.
 - Configurable image resolution and capture interval.
-- Face Recognition service(BS). [This feature validates the user image with a profile image. You can use Brain Station Face Recognition service. Please contact us(elearning@brainstation-23.com) if you want to obtain API Key for Brain Station face recognition service]
+- Face recognition using the configured Custom AI API. This feature validates a live user image against the saved reference image.
   
 ## Installation
 
@@ -32,7 +32,7 @@ This plugin enables the capture of random images via webcam while the student or
 Go to Moodle Project `root/mod/quiz/accessrule/` directory and clone code by using following commands:
 
 ```
-git clone https://github.com/eLearning-BS23/moodle-quizaccess_proctoring.git proctoring
+git clone https://github.com/dta121/saylorprocotring.git proctoring
 ```
 
 ### Install from Moodle Plugin directory
@@ -77,18 +77,18 @@ Admins can adjust the camshot interval and camshot resolution from here.
 
 ### Select Face Match Method
 
-Select one of the face match method (BS) from the following settings: 
+Select the face match method from the following settings. Use Custom AI API for Saylor's configured face verification service, or None to disable automatic face matching.
 
 <img width="960" alt="Face match method settings" src="https://github.com/user-attachments/assets/734558fb-1f1c-4a3f-81bd-ce68605ab802">
 
 
-### BS Service API Settings
+### Custom AI API Settings
 
-When using BS facematch, the BS service API, BS API Key has to be entered.
+When using custom AI facematch, the Custom AI API, custom AI API Key has to be entered.
 
-<img width="960" alt="BS Service API Settings" src="https://github.com/user-attachments/assets/d83e527f-a37f-4f36-a779-ecdbf32fb08a">
+<img width="960" alt="Custom AI API Settings" src="https://github.com/user-attachments/assets/d83e527f-a37f-4f36-a779-ecdbf32fb08a">
 
-If you need the BS service API, API key for trial, please contact here: `elearning@brainstation-23.com`.
+If you need the Custom AI API, API key for trial, please contact here: `elearning@saylor.org`.
 
 
 ### Validate Face on Quiz Start
@@ -115,7 +115,7 @@ During attempting the quiz, the quiz page will look like this:
 Admins can view the proctoring report:
 <img width="960" alt="5  Proctoring summary" src="https://github.com/user-attachments/assets/bae1b68c-f845-4d54-b135-af78a926895f">
 
-Admins can view individual proctoring reports and analyze the images using BS Face Matching API:
+Admins can view individual proctoring reports and analyze the images using Custom AI face matching API:
 <img width="960" alt="6  Proctoring individual report" src="https://github.com/user-attachments/assets/0e8b6519-338f-4fc5-b963-0ea3d89c6935">
 
 ## Proctoring Summary
@@ -142,9 +142,9 @@ Proctoring plugin uses the getUserMedia() API. So, the browser compatibility wil
     
     > No, only admins can access. 
 
-4. Where can I get the BS Service API credentials? 
+4. Where can I get the Custom AI API credentials?
     
-    > Please contact here: elearning@brainstation-23.com for a trial key.
+    > Please contact here: elearning@saylor.org for a trial key.
 
 5. Is the screenshot feature available? 
     
@@ -152,7 +152,7 @@ Proctoring plugin uses the getUserMedia() API. So, the browser compatibility wil
 
 6. How can I report an issue regarding this plugin? 
     
-    > Please raise an issue in this link: https://github.com/eLearning-BS23/moodle-quizaccess_proctoring/issues
+    > Please raise an issue in this link: https://github.com/dta121/saylorprocotring/issues
 7. Why is my moodle stuck while validating the face?
     
     > Please check whether the credentials for the face match methods are correct

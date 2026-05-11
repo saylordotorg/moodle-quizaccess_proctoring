@@ -22,7 +22,7 @@
  * it can generate a custom URL for the proctoring protocol.
  *
  * @package    quizaccess_proctoring
- * @copyright  2020 Brain Station 23
+ * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 namespace quizaccess_proctoring;
@@ -36,7 +36,7 @@ use moodle_url;
  * The link can be customized to use either the proctoring:// scheme or the standard HTTP/HTTPS protocol.
  *
  * @package    quizaccess_proctoring
- * @copyright  2020 Brain Station 23
+ * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class link_generator {

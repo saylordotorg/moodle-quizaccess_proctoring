@@ -190,7 +190,7 @@ define(['jquery'],
 
             // Ahnaf Test
            
-            if(fcmethod == 'BS' || fcmethod == 'customapi') {
+            if(fcmethod == 'customapi') {
                 var p = $(`<p class='text-light mt-2'>${analyzeobj.analyzebtnconfirm}</p>`);
                 this.$lightbox.append(p);
     

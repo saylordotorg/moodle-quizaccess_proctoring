@@ -18,7 +18,7 @@
  * Strings for the quizaccess_proctoring plugin.
  *
  * @package    quizaccess_proctoring
- * @copyright  2020 Brain Station 23
+ * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -105,7 +105,7 @@ $string['image_upload'] = 'Upload image';
 $string['info:cameraallow'] = 'Your camera is now in use.';
 $string['initiate_facematch_task'] = 'Initiate face match task';
 $string['initiate_facematch_task_desc'] = 'Initiates a face match task to compare images for proctoring verification.';
-$string['invalid_api'] = 'The provided BS API key is invalid.';
+$string['invalid_api'] = 'The configured custom AI API key is invalid.';
 $string['invalid_facematch_method'] = 'Invalid face match method or missing face match API credentials in settings.';
 $string['invalid_service_api'] = 'The configured face match service API is invalid.';
 $string['invalidapi'] = 'Face match API key is invalid. Please contact the admin.';
@@ -230,12 +230,6 @@ $string['reportpage'] = 'Course Proctoring Summary';
 $string['setting:adminimagedescription'] = 'These images will be used as base images for face verification. Please ensure each image contains a clearly visible face.';
 $string['setting:adminimagepage'] = 'Proctoring User List';
 
-$string['setting:bs_api'] = 'BS service API';
-$string['setting:bs_api_key'] = 'BS API key';
-$string['setting:bs_api_keydesc'] = 'Enter the API key for the BS face-matching service.';
-$string['setting:bs_apidesc'] = 'BS service API endpoint.';
-$string['setting:bs_apifacematchthreshold'] = 'Face match threshold (BS)';
-$string['setting:bs_bs_apifacematchthresholddesc'] = 'The percentage threshold for the face verification using BS service. (Default: 68%)';
 $string['setting:camshotdelay'] = 'The delay between webcam images (seconds)';
 $string['setting:camshotdelay_desc'] = 'The given value will be the delay in seconds between each webcam image.';
 $string['setting:camshotwidth'] = 'The width of the webcam image (pixels)';
@@ -260,7 +254,7 @@ $string['setting:facematch'] = 'Number of face matches per quiz';
 $string['setting:facematchdesc'] = 'Number of face match checks. Use 0 or less to check all snapshots.';
 $string['setting:fc_method'] = 'Face match method';
 $string['setting:fc_method_customapi'] = 'Custom AI API';
-$string['setting:fc_methoddesc'] = 'Service used to match faces. Options: Custom AI API, BS, None.';
+$string['setting:fc_methoddesc'] = 'Service used to match faces. Options: Custom AI API, None.';
 $string['setting:rekognitioncostpercheck'] = 'Estimated cost per face-match check';
 $string['setting:rekognitioncostpercheck_desc'] = 'Used only for the admin cost estimate page. Default is 0.001 USD per AWS Rekognition CompareFaces check.';
 $string['setting:fcthreshold'] = 'Face match threshold percentage';

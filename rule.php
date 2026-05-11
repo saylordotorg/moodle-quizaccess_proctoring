@@ -18,7 +18,7 @@
  * Implementaton for the quizaccess_proctoring plugin.
  *
  * @package    quizaccess_proctoring
- * @copyright  2020 Brain Station 23
+ * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -209,7 +209,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         // Include Face API JS library if required.
         $fcmethod = get_config('quizaccess_proctoring', 'fcmethod');
         $modelurl = null;
-        if (in_array($fcmethod, ['BS', 'customapi'], true)) {
+        if ($fcmethod === 'customapi') {
             $modelurl = $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/thirdpartylibs/models';
             $PAGE->requires->js('/mod/quiz/accessrule/proctoring/amd/build/face-api.min.js', true);
         }
@@ -531,7 +531,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
             // Configure face model URL and include JS.
             $fcmethod = get_config('quizaccess_proctoring', 'fcmethod');
-            $modelurl = in_array($fcmethod, ['BS', 'customapi'], true)
+            $modelurl = $fcmethod === 'customapi'
                 ? $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/thirdpartylibs/models'
                 : null;
 

@@ -30,8 +30,8 @@ require_once($CFG->dirroot.'/mod/quiz/accessrule/proctoring/lib.php');
  * during proctoring in quizzes.
  *
  * @package    quizaccess_proctoring
- * @author     Brain Station 23 Ltd <brainstation-23.com>
- * @copyright  2021 Brain Station 23 Ltd
+ * @author     Saylor Academy <saylor.org>
+ * @copyright  2021 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class initiate_facematch_task extends scheduled_task {

@@ -24,7 +24,7 @@ namespace quizaccess_proctoring;
  * plugin settings and configurations specific to proctoring functionality.
  *
  * @package    quizaccess_proctoring
- * @copyright  2024 Brain Station 23
+ * @copyright  2024 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class additional_settings_helper {

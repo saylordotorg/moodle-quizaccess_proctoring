@@ -22,7 +22,7 @@
  * for quiz attempts.
  *
  * @package    quizaccess_proctoring
- * @copyright  2024 Brain Station 23
+ * @copyright  2024 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -37,7 +37,7 @@ use core\persistent;
  * webcam picture, proctoring status, and the time the record was last modified.
  *
  * @package    quizaccess_proctoring
- * @copyright  2020 Brain Station 23
+ * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class screenshot extends persistent {

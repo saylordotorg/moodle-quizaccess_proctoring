@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.6.14
+- Removed the retired third-party face matching service settings and runtime integration.
+- Kept Custom AI API as the only external face matching method.
+- Added an upgrade step to clear retired face matching configuration from existing installs.
+
 # v1.6.11
 - Added Brazilian Portuguese language support 
 - Add elearning product and proctoring pro version link
@@ -123,9 +128,9 @@ Updates:
 # v1.3.0
 
 ### New Features
-- Added new BS Service API for face matching.
-- Added BS Service API field in the settings page for face verification.
-- Added BS API Key field in the settings page for face verification.
+- Added new Custom AI API for face matching.
+- Added Custom AI API field in the settings page for face verification.
+- Added custom AI API Key field in the settings page for face verification.
 
 ### Update:
 - New report page with proctoring pro promotional page.
@@ -145,4 +150,3 @@ Updates:
 - Change Face Validation status: 'True' to 'Face Match', 'False' to 'Face Not Match',
  and if the site admin has not uploaded the user, display 'Face Not Found, please contact admin'.
 - if the user doesn't upload an image, a warning will be shown, and they will be redirected to the upload page.
-

@@ -18,7 +18,7 @@
  * Strings for the quizaccess_proctoring plugin.
  *
  * @package    quizaccess_proctoring
- * @copyright  2020 Brain Station 23
+ * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -89,10 +89,10 @@ $string['image_upload'] = 'Enviar imagem';
 $string['info:cameraallow'] = 'Sua câmera agora está em uso.';
 $string['initiate_facematch_task'] = 'Iniciar tarefa de correspondência facial';
 $string['initiate_facematch_task_desc'] = 'Inicia uma tarefa de correspondência facial para comparar imagens para verificação de proctoring.';
-$string['invalid_api'] = 'A chave API de BS fornecida é inválida.';
-$string['invalid_facematch_method'] = 'Método de correspondência facial inválido nas configurações. Forneça credenciais válidas de API "BS" para o método de correspondência facial.';
-$string['invalid_service_api'] = 'A API de serviço de BS fornecida é inválida.';
-$string['invalidapi'] = 'A chave API de BS é inválida. Entre em contato com o administrador.';
+$string['invalid_api'] = 'A chave da API personalizada de IA configurada é inválida.';
+$string['invalid_facematch_method'] = 'Método de correspondência facial inválido ou credenciais de API de correspondência facial ausentes nas configurações.';
+$string['invalid_service_api'] = 'A API de correspondência facial configurada é inválida.';
+$string['invalidapi'] = 'A chave da API personalizada de IA é inválida. Entre em contato com o administrador.';
 $string['invalidsesskey'] = 'Chave de sessão inválida. Tente novamente.';
 $string['invalidtype'] = 'O tipo fornecido é inválido.';
 $string['mainsettingspagebtn'] = 'Configurações de proctoring';
@@ -205,12 +205,6 @@ $string['reportpage'] = 'Resumo de Proctoring do Curso';
 $string['setting:adminimagedescription'] = 'Essas imagens serão usadas como imagens base para verificação facial. Certifique-se de que cada imagem contenha um rosto claramente visível.';
 $string['setting:adminimagepage'] = 'Lista de Usuários de Proctoring';
 
-$string['setting:bs_api'] = 'API de serviço de BS';
-$string['setting:bs_api_key'] = 'Chave API de BS';
-$string['setting:bs_api_keydesc'] = 'Digite a chave API para o serviço de correspondência facial de BS.';
-$string['setting:bs_apidesc'] = 'Endpoint de API de serviço de BS.';
-$string['setting:bs_apifacematchthreshold'] = 'Limite de correspondência facial (BS)';
-$string['setting:bs_bs_apifacematchthresholddesc'] = 'O percentual de limite para verificação facial usando o serviço de BS. (Padrão: 68%)';
 $string['setting:camshotdelay'] = 'O atraso entre imagens da webcam (segundos)';
 $string['setting:camshotdelay_desc'] = 'O valor fornecido será o atraso em segundos entre cada imagem da webcam.';
 $string['setting:camshotwidth'] = 'A largura da imagem da webcam (pixels)';
@@ -218,7 +212,7 @@ $string['setting:camshotwidth_desc'] = 'O valor fornecido será a largura da ima
 $string['setting:facematch'] = 'Número de correspondências faciais por questionário';
 $string['setting:facematchdesc'] = 'Número de verificações de correspondência facial. Use 0 ou menos para verificar todos os snapshots.';
 $string['setting:fc_method'] = 'Método de correspondência facial';
-$string['setting:fc_methoddesc'] = 'Serviço usado para corresponder rostos. Opções: BS, Nenhum.';
+$string['setting:fc_methoddesc'] = 'Serviço usado para corresponder rostos. Opções: API personalizada de IA, Nenhum.';
 $string['setting:fcthreshold'] = 'Percentual de limite de correspondência facial';
 $string['setting:fcthresholddesc'] = 'Percentual de limite de correspondência facial';
 $string['setting:uploaduserimages'] = 'Fazer upload de imagem base para usuários';

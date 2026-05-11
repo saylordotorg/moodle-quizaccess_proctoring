@@ -27,7 +27,7 @@ require_once($CFG->dirroot.'/mod/quiz/accessrule/proctoring/lib.php');
  *
  * @package   quizaccess_proctoring
  * @category  external
- * @copyright 2024 Brain Station 23
+ * @copyright 2024 Saylor Academy
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class quizaccess_proctoring_external extends external_api {
@@ -659,9 +659,7 @@ class quizaccess_proctoring_external extends external_api {
         // Face check.
         require_once($CFG->dirroot.'/mod/quiz/accessrule/proctoring/lib.php');
         $method = quizaccess_proctoring_get_proctoring_settings("fcmethod");
-        if ($method == "BS") {
-            quizaccess_proctoring_bs_analyze_specific_image_from_validate($screenshotid);
-        } else if ($method == "customapi") {
+        if ($method == "customapi") {
             $referenceimageurl = quizaccess_proctoring_get_image_url($USER->id);
             if (!$referenceimageurl) {
                 $result = [];

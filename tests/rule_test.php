@@ -18,7 +18,7 @@
  * Unit tests for the quizaccess_proctoring plugin.
  *
  * @package    quizaccess_proctoring
- * @copyright  2020 Brain Station 23
+ * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 namespace quizaccess_proctoring;
@@ -37,7 +37,7 @@ require_once($CFG->dirroot.'/mod/workshop/locallib.php'); // Include the code to
 /**
  * Unit tests for the quizaccess_proctoring plugin.
  *
- * @copyright  2020 Brain Station 23
+ * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class rule_test extends advanced_testcase {
@@ -102,14 +102,14 @@ class rule_test extends advanced_testcase {
         set_config('autoreconfigureimagewidth', '230', 'quizaccess_proctoring');
         set_config('awschecknumber', '0', 'quizaccess_proctoring');
         set_config('awsfcthreshold', '80', 'quizaccess_proctoring');
-        set_config('bsapi', '', 'quizaccess_proctoring');
+        set_config('custom_ai_endpoint', '', 'quizaccess_proctoring');
 
         // Now run the assertions to test the settings.
         $this->assertEquals('30', quizaccess_proctoring_get_proctoring_settings('autoreconfigurecamshotdelay'));
         $this->assertEquals('230', quizaccess_proctoring_get_proctoring_settings('autoreconfigureimagewidth'));
         $this->assertEquals('0', quizaccess_proctoring_get_proctoring_settings('awschecknumber'));
         $this->assertEquals('80', quizaccess_proctoring_get_proctoring_settings('awsfcthreshold'));
-        $this->assertEquals('', quizaccess_proctoring_get_proctoring_settings('bsapi'));
+        $this->assertEquals('', quizaccess_proctoring_get_proctoring_settings('custom_ai_endpoint'));
     }
 
     /*

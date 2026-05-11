@@ -20,7 +20,7 @@
  * This class defines the form structure for uploading images in the quiz proctoring access rule.
  *
  * @package   quizaccess_proctoring
- * @copyright 2024 Brain Station 23
+ * @copyright 2024 Saylor Academy
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 namespace quizaccess_proctoring\form;
@@ -32,7 +32,7 @@ require_once("$CFG->libdir/formslib.php");
  * Form class for uploading user images in quizaccess_proctoring.
  *
  * @package   quizaccess_proctoring
- * @copyright 2024 Brain Station 23
+ * @copyright 2024 Saylor Academy
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class image_upload_form extends \moodleform {

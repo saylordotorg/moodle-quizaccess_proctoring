@@ -18,8 +18,8 @@
  * Quiz access proctoring plugin upgrade code
  *
  * @package     quizaccess_proctoring
- * @author      Brain station 23 ltd <brainstation-23.com>
- * @copyright   2020 Brain station 23 ltd
+ * @author      Saylor Academy <saylor.org>
+ * @copyright   2020 Saylor Academy
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -326,6 +326,20 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
     if ($oldversion < 2026051112) {
         // No schema changes. Hardens right-click and keyboard clipboard blocking.
         upgrade_plugin_savepoint(true, 2026051112, 'quizaccess', 'proctoring');
+    }
+
+    if ($oldversion < 2026051113) {
+        // Remove retired third-party face match settings from existing installations.
+        $fcmethod = get_config('quizaccess_proctoring', 'fcmethod');
+        if ($fcmethod !== false && !in_array($fcmethod, ['customapi', 'None'], true)) {
+            set_config('fcmethod', 'None', 'quizaccess_proctoring');
+        }
+        unset_config('bsapi', 'quizaccess_proctoring');
+        unset_config('bs_api_key', 'quizaccess_proctoring');
+        unset_config('username', 'quizaccess_proctoring');
+        unset_config('password', 'quizaccess_proctoring');
+
+        upgrade_plugin_savepoint(true, 2026051113, 'quizaccess', 'proctoring');
     }
 
     return true;

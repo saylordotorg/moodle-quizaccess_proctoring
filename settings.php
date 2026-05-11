@@ -18,7 +18,7 @@
  * Settings for the quizaccess_proctoring plugin.
  *
  * @package    quizaccess_proctoring
- * @copyright  2024 Brain Station 23
+ * @copyright  2024 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -89,7 +89,6 @@ if ($hassiteconfig) {
     // Face recognition method choice.
     $choices = [
         'customapi' => get_string('setting:fc_method_customapi', 'quizaccess_proctoring'),
-        'BS' => 'BS',
         'None' => 'None',
     ];
     $settings->add(new admin_setting_configselect('quizaccess_proctoring/fcmethod',
@@ -108,20 +107,10 @@ if ($hassiteconfig) {
         get_string('setting:custom_api_key', 'quizaccess_proctoring'),
         get_string('setting:custom_api_key_desc', 'quizaccess_proctoring'), '', PARAM_TEXT));
 
-    // BS API settings.
-    $settings->add(new admin_setting_configtext('quizaccess_proctoring/bsapi',
-        get_string('setting:bs_api', 'quizaccess_proctoring'),
-        get_string('setting:bs_apidesc', 'quizaccess_proctoring'), '', PARAM_TEXT));
-
-    // New Option BS API KEY.
-    $settings->add(new admin_setting_configpasswordunmask('quizaccess_proctoring/bs_api_key',
-        get_string('setting:bs_api_key', 'quizaccess_proctoring'),
-        get_string('setting:bs_api_keydesc', 'quizaccess_proctoring'), '', PARAM_TEXT));
-
     // Face recognition threshold.
     $settings->add(new admin_setting_configtext('quizaccess_proctoring/threshold',
-        get_string('setting:bs_apifacematchthreshold', 'quizaccess_proctoring'),
-        get_string('setting:bs_bs_apifacematchthresholddesc', 'quizaccess_proctoring'), '68', PARAM_INT));
+        get_string('setting:fcthreshold', 'quizaccess_proctoring'),
+        get_string('setting:fcthresholddesc', 'quizaccess_proctoring'), '68', PARAM_INT));
 
     // Continuous face checks during quiz attempts.
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/continuousfacecheck',

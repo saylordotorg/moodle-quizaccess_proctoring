@@ -18,7 +18,7 @@
  * Strings for the quizaccess_proctoring plugin.
  *
  * @package    quizaccess_proctoring
- * @copyright  2020 Brain Station 23
+ * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -89,10 +89,10 @@ $string['image_upload'] = 'Subir imagen';
 $string['info:cameraallow'] = 'Su cámara está ahora en uso.';
 $string['initiate_facematch_task'] = 'Iniciar tarea de coincidencia facial';
 $string['initiate_facematch_task_desc'] = 'Inicia una tarea de coincidencia facial para comparar imágenes con fines de verificación en la supervisión.';
-$string['invalid_api'] = 'La clave de API de BS proporcionada no es válida.';
-$string['invalid_facematch_method'] = 'Método de coincidencia facial no válido en la configuración. Proporcione credenciales válidas de la API "BS" para este método.';
-$string['invalid_service_api'] = 'La API del servicio BS proporcionada no es válida.';
-$string['invalidapi'] = 'La clave de API de BS no es válida. Póngase en contacto con el administrador.';
+$string['invalid_api'] = 'La clave de API personalizada de IA configurada no es válida.';
+$string['invalid_facematch_method'] = 'Método de coincidencia facial no válido o faltan credenciales de la API de coincidencia facial en la configuración.';
+$string['invalid_service_api'] = 'La API de coincidencia facial configurada no es válida.';
+$string['invalidapi'] = 'La clave de API personalizada de IA no es válida. Póngase en contacto con el administrador.';
 $string['invalidsesskey'] = 'Clave de sesión no válida. Inténtelo de nuevo.';
 $string['invalidtype'] = 'El tipo proporcionado no es válido.';
 $string['mainsettingspagebtn'] = 'Configuración de supervisión';
@@ -205,12 +205,6 @@ $string['reportpage'] = 'Resumen de supervisión del curso';
 $string['setting:adminimagedescription'] = 'Estas imágenes se utilizarán como imágenes base para la verificación facial. Asegúrese de que cada imagen contenga un rostro claramente visible.';
 $string['setting:adminimagepage'] = 'Lista de usuarios de supervisión';
 
-$string['setting:bs_api'] = 'API del servicio BS';
-$string['setting:bs_api_key'] = 'Clave API de BS';
-$string['setting:bs_api_keydesc'] = 'Introduzca la clave API para el servicio BS de coincidencia facial.';
-$string['setting:bs_apidesc'] = 'Punto final de la API del servicio BS.';
-$string['setting:bs_apifacematchthreshold'] = 'Umbral de coincidencia facial (BS)';
-$string['setting:bs_bs_apifacematchthresholddesc'] = 'El porcentaje de umbral para la verificación facial mediante el servicio BS. (Predeterminado: 68%)';
 $string['setting:camshotdelay'] = 'Intervalo entre imágenes de la cámara web (segundos)';
 $string['setting:camshotdelay_desc'] = 'El valor indicado será el intervalo en segundos entre cada imagen de la cámara web.';
 $string['setting:camshotwidth'] = 'Ancho de la imagen de la cámara web (píxeles)';
@@ -218,7 +212,7 @@ $string['setting:camshotwidth_desc'] = 'El valor indicado será el ancho de la i
 $string['setting:facematch'] = 'Número de coincidencias faciales por cuestionario';
 $string['setting:facematchdesc'] = 'Número de comprobaciones de coincidencia facial. Use 0 o un valor menor para comprobar todas las capturas.';
 $string['setting:fc_method'] = 'Método de coincidencia facial';
-$string['setting:fc_methoddesc'] = 'Servicio utilizado para comparar rostros. Opciones: BS, Ninguno.';
+$string['setting:fc_methoddesc'] = 'Servicio utilizado para comparar rostros. Opciones: API personalizada de IA, Ninguno.';
 $string['setting:fcthreshold'] = 'Porcentaje de umbral de coincidencia facial';
 $string['setting:fcthresholddesc'] = 'Porcentaje de umbral de coincidencia facial';
 $string['setting:uploaduserimages'] = 'Subir imagen base de los usuarios';

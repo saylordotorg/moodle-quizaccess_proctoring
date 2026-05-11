@@ -18,7 +18,7 @@
  * Analyzes single image.
  *
  * @package    quizaccess_proctoring
- * @copyright  2024 Brain Station 23
+ * @copyright  2024 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later.
  */
 
@@ -84,7 +84,7 @@ if (quizaccess_proctoring_is_facematch_method_enabled($fcmethod)) {
             \core\output\notification::NOTIFY_ERROR
         );
     } else {
-        quizaccess_proctoring_bs_analyze_specific_image($imgid, $redirecturl);
+        quizaccess_proctoring_analyze_specific_image($imgid, $redirecturl);
     }
 } else {
     redirect(

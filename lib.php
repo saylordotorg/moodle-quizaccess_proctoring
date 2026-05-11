@@ -18,8 +18,8 @@
  * Library function for the quizaccess_proctoring plugin.
  *
  * @package     quizaccess_proctoring
- * @author      Brain station 23 <brainstation-23.com>
- * @copyright   2024 Brain station 23
+ * @author      Saylor Academy <saylor.org>
+ * @copyright   2024 Saylor Academy
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -166,9 +166,7 @@ function quizaccess_proctoring_update_match_result($rowid, $matchresult, $awsfla
  * by performing a face recognition operation, and deletes the processed tasks. The face matching is done using the
  * method specified in the `fcmethod` setting.
  *
- * The function supports the 'BS' method for face recognition, where it retrieves face images and calls
- * the `quizaccess_proctoring_extracted`
- * function to perform the face matching. After processing, the task is removed from the table.
+ * The function calls the configured custom AI API for face matching. After processing, the task is removed from the table.
  *
  * @return bool Returns false if no records are found to process, otherwise performs the task and deletes processed records.
  */
@@ -198,13 +196,8 @@ function quizaccess_proctoring_execute_fm_task() {
         $rowid = $row->id;
         $reportid = $row->reportid;
 
-        if (quizaccess_proctoring_is_custom_ai_method($facematchmethod)) {
-            $userfaceimageurl = $row->refimageurl;
-            $webcamfaceimageurl = $row->targetimageurl;
-        } else {
-            // Fetch face image URLs.
-            list($userfaceimageurl, $webcamfaceimageurl) = quizaccess_proctoring_get_face_images($reportid);
-        }
+        $userfaceimageurl = $row->refimageurl;
+        $webcamfaceimageurl = $row->targetimageurl;
 
         mtrace('Profile Image URL: ' . $userfaceimageurl);
         mtrace('Target Image URL: ' . $webcamfaceimageurl);
@@ -381,7 +374,7 @@ function quizaccess_proctoring_log_specific_quiz($courseid, $cmid, $studentid) {
  *
  * @return bool Returns `true` if records were processed successfully, `false` if no records found.
  */
-function quizaccess_proctoring_bs_analyze_specific_quiz($courseid, $cmid, $studentid, $reportpageurl) {
+function quizaccess_proctoring_analyze_specific_quiz($courseid, $cmid, $studentid, $reportpageurl) {
     global $DB;
 
     // Get user profile image.
@@ -441,17 +434,10 @@ function quizaccess_proctoring_bs_analyze_specific_quiz($courseid, $cmid, $stude
     $sqlexecuted = $DB->get_recordset_sql($basequery, $params);
 
     // Process each record.
-    $facematchmethod = quizaccess_proctoring_get_proctoring_settings('fcmethod');
     foreach ($sqlexecuted as $row) {
         $reportid = $row->reportid;
-
-        if (quizaccess_proctoring_is_custom_ai_method($facematchmethod)) {
-            $userfaceimageurl = $profileimageurl;
-            $webcamfaceimageurl = $row->webcampicture;
-        } else {
-            // Get face images for comparison.
-            list($userfaceimageurl, $webcamfaceimageurl) = quizaccess_proctoring_get_face_images($reportid);
-        }
+        $userfaceimageurl = $profileimageurl;
+        $webcamfaceimageurl = $row->webcampicture;
 
         if (!$userfaceimageurl || !$webcamfaceimageurl) {
             // Log warning if faces are not found.
@@ -505,7 +491,7 @@ function quizaccess_proctoring_get_proctoring_settings($settingtype) {
  */
 function quizaccess_proctoring_is_facematch_method_enabled(?string $method = null): bool {
     $method = $method ?? quizaccess_proctoring_get_proctoring_settings('fcmethod');
-    return in_array($method, ['BS', 'customapi'], true);
+    return $method === 'customapi';
 }
 
 /**
@@ -528,11 +514,6 @@ function quizaccess_proctoring_is_custom_ai_method(?string $method = null): bool
 function quizaccess_proctoring_facematch_credentials_available(?string $method = null): bool {
     $method = $method ?? quizaccess_proctoring_get_proctoring_settings('fcmethod');
 
-    if ($method === 'BS') {
-        return !empty(quizaccess_proctoring_get_proctoring_settings('bsapi')) &&
-            !empty(quizaccess_proctoring_get_proctoring_settings('bs_api_key'));
-    }
-
     if ($method === 'customapi') {
         return !empty(quizaccess_proctoring_get_proctoring_settings('custom_ai_endpoint')) &&
             !empty(quizaccess_proctoring_get_proctoring_settings('custom_api_key'));
@@ -553,7 +534,7 @@ function quizaccess_proctoring_facematch_credentials_available(?string $method =
  *
  * @return bool Returns true if the analysis was successful, false if no record is found or if an error occurs.
  */
-function quizaccess_proctoring_bs_analyze_specific_image($reportid, $redirecturl) {
+function quizaccess_proctoring_analyze_specific_image($reportid, $redirecturl) {
     global $DB;
 
     // Fetch the record for the specific report ID.
@@ -573,13 +554,8 @@ function quizaccess_proctoring_bs_analyze_specific_image($reportid, $redirecturl
     $courseid = $reportdata->courseid;
     $cmid = $reportdata->quizid;
 
-    if (quizaccess_proctoring_is_custom_ai_method()) {
-        $userfaceimageurl = quizaccess_proctoring_get_image_url($studentid);
-        $webcamfaceimageurl = $reportdata->webcampicture;
-    } else {
-        // Retrieve face images.
-        list($userfaceimageurl, $webcamfaceimageurl) = quizaccess_proctoring_get_face_images($reportid);
-    }
+    $userfaceimageurl = quizaccess_proctoring_get_image_url($studentid);
+    $webcamfaceimageurl = $reportdata->webcampicture;
 
     if (!$userfaceimageurl || !$webcamfaceimageurl) {
         // Log a face match warning.
@@ -634,7 +610,7 @@ function quizaccess_proctoring_bs_analyze_specific_image($reportid, $redirecturl
  *
  * @return bool Returns true if the analysis was successful, false if no record is found or if an error occurs.
  */
-function quizaccess_proctoring_bs_analyze_specific_image_from_validate($reportid) {
+function quizaccess_proctoring_analyze_specific_image_from_validate($reportid) {
     global $DB;
 
     // Fetch report data from the database based on the provided report ID.
@@ -646,13 +622,8 @@ function quizaccess_proctoring_bs_analyze_specific_image_from_validate($reportid
         $courseid = $reportdata->courseid;
         $cmid = $reportdata->quizid;
 
-        if (quizaccess_proctoring_is_custom_ai_method()) {
-            $userfaceimageurl = quizaccess_proctoring_get_image_url($studentid);
-            $webcamfaceimageurl = $reportdata->webcampicture;
-        } else {
-            // Retrieve the user's face image and webcam image for comparison.
-            list($userfaceimageurl, $webcamfaceimageurl) = quizaccess_proctoring_get_face_images($reportid);
-        }
+        $userfaceimageurl = quizaccess_proctoring_get_image_url($studentid);
+        $webcamfaceimageurl = $reportdata->webcampicture;
 
         // If either face image is not found, log the warning and update the result.
         if (!$userfaceimageurl || !$webcamfaceimageurl) {
@@ -799,58 +770,16 @@ function quizaccess_proctoring_extracted(
         return;
     }
 
-    if ($method === 'customapi') {
-        $similarityresult = quizaccess_proctoring_check_similarity_customapi($profileimageurl, $targetimage, $redirecturl, $reportid);
-        $response = json_decode($similarityresult);
+    $similarityresult = quizaccess_proctoring_check_similarity_customapi($profileimageurl, $targetimage, $redirecturl, $reportid);
+    $response = json_decode($similarityresult);
 
-        if (!$similarityresult || !$response) {
-            quizaccess_proctoring_log_fm_warning($reportid);
-            quizaccess_proctoring_update_match_result($reportid, 0, 101);
-            return;
-        }
-
-        if (isset($response->detail)) {
-            if (!empty($redirecturl)) {
-                redirect(
-                    $redirecturl,
-                    get_string('invalid_api', 'quizaccess_proctoring'),
-                    1,
-                    \core\output\notification::NOTIFY_ERROR
-                );
-            }
-            quizaccess_proctoring_update_match_result($reportid, 0, 101);
-            return;
-        }
-
-        if (isset($response->match)) {
-            $score = isset($response->score) ? (float)$response->score :
-                (isset($response->similarity) ? (float)$response->similarity : 0);
-            if (!empty($response->match)) {
-                $similarity = $score > 0 ? $score : 100;
-                if ($threshold > 0 && $similarity < $threshold) {
-                    quizaccess_proctoring_log_fm_warning($reportid);
-                }
-            } else {
-                quizaccess_proctoring_log_fm_warning($reportid);
-            }
-
-            quizaccess_proctoring_update_match_result($reportid, $similarity, 2);
-            return;
-        }
-
+    if (!$similarityresult || !$response) {
         quizaccess_proctoring_log_fm_warning($reportid);
         quizaccess_proctoring_update_match_result($reportid, 0, 101);
         return;
     }
 
-    // Get the similarity result from the image comparison function.
-    $similarityresult = quizaccess_proctoring_check_similarity_bs($profileimageurl, $targetimage, $redirecturl, $reportid);
-
-    // Decode the JSON response from the similarity check.
-    $response = json_decode($similarityresult);
-
-    // Ensure response is valid and contains the expected data.
-    if (isset($response->message) && $response->message === "Forbidden") {
+    if (isset($response->detail)) {
         if (!empty($redirecturl)) {
             redirect(
                 $redirecturl,
@@ -858,120 +787,29 @@ function quizaccess_proctoring_extracted(
                 1,
                 \core\output\notification::NOTIFY_ERROR
             );
-        } else {
-            quizaccess_proctoring_update_match_result($reportid, 0, 101);// 101 for invalid service api.
-            return;
         }
-    } else if ($response && $response->statusCode == 200 && isset($response->body->distance)) {
-        // Check if the distance is within the allowed threshold.
-        if ($response->body->distance <= $threshold / 100) {
-            $similarity = 100;
+        quizaccess_proctoring_update_match_result($reportid, 0, 101);
+        return;
+    }
+
+    if (isset($response->match)) {
+        $score = isset($response->score) ? (float)$response->score :
+            (isset($response->similarity) ? (float)$response->similarity : 0);
+        if (!empty($response->match)) {
+            $similarity = $score > 0 ? $score : 100;
+            if ($threshold > 0 && $similarity < $threshold) {
+                quizaccess_proctoring_log_fm_warning($reportid);
+            }
         } else {
-            // Log a warning if the distance is above threshold.
             quizaccess_proctoring_log_fm_warning($reportid);
         }
-    } else {
-        // Log a warning if the response is invalid or if no matching data is found.
-        quizaccess_proctoring_log_fm_warning($reportid);
+
+        quizaccess_proctoring_update_match_result($reportid, $similarity, 2);
+        return;
     }
 
-    // Update the match result in the database with the calculated similarity.
-    quizaccess_proctoring_update_match_result($reportid, $similarity, 2);
-}
-
-/**
- * Returns face match similarity.
- *
- * This function sends two images (reference image and target image) to an external API for face comparison
- * and returns the similarity check result. It ensures that the necessary API settings (URL and key) are
- * available, then fetches the images, processes them, and sends a request to the API.
- * If the request succeeds, the API response is returned. Otherwise, an error is logged.
- *
- * @param string $referenceimageurl The URL of the reference image (profile image).
- * @param string $targetimageurl The URL of the target image (webcam image).
- * @param string $redirecturl The URL to redirect to if an error occurs.
- * @param int $reportid The ID of the report associated with the image comparison.
- *
- * @return bool|string The API response as a string, or false on failure.
- */
-function quizaccess_proctoring_check_similarity_bs(string $referenceimageurl, string $targetimageurl, $redirecturl, $reportid) {
-    global $CFG;
-
-    // Fetch the required API settings.
-    $bsapi = quizaccess_proctoring_get_proctoring_settings('bsapi');
-    $bsapikey = quizaccess_proctoring_get_proctoring_settings('bs_api_key');
-
-    // Ensure the API URL and key are available.
-    if (empty($bsapi) || empty($bsapikey)) {
-        mtrace('Error: Missing BS API URL or API key.');
-        return false;
-    }
-
-    // Load images from the provided URLs and save them temporarily.
-    $image1 = basename($referenceimageurl);
-    $image2 = basename($targetimageurl);
-    $imagepath1 = $CFG->dataroot . '/temp/' . $image1;
-    $imagepath2 = $CFG->dataroot . '/temp/' . $image2;
-
-    try {
-        file_put_contents($imagepath1, file_get_contents($referenceimageurl));
-        file_put_contents($imagepath2, file_get_contents($targetimageurl));
-    } catch (Exception $e) {
-        mtrace("Error: Unable to save images to temporary directory.");
-        return false;
-    }
-
-    // Get image data for API request.
-    $imagedata1 = file_get_contents($imagepath1);
-    $imagedata2 = file_get_contents($imagepath2);
-
-    // Prepare the data for the API request.
-    $data = [
-        'original_img_response' => base64_encode($imagedata1),
-        'face_img_response' => base64_encode($imagedata2),
-    ];
-
-    // Convert the data to JSON format.
-    $payload = json_encode($data);
-
-    // Initialize Moodle's cURL.
-    $curl = new curl();
-
-    // Set cURL options.
-    $options = [
-        'CURLOPT_TIMEOUT' => 30, // Set timeout.
-        'CURLOPT_FOLLOWLOCATION' => true, // Allow redirects.
-        'CURLOPT_HTTPHEADER' => [
-            'x-api-key: ' . $bsapikey,
-            'Content-Type: application/json',
-        ],
-    ];
-
-    // Execute the POST request.
-    $response = $curl->post($bsapi, $payload, $options);
-
-    // Handle cURL errors.
-    if ($curl->get_errno()) {
-        if (!empty($redirecturl)) {
-            redirect(
-                $redirecturl,
-                get_string('invalid_service_api', 'quizaccess_proctoring'),
-                1,
-                \core\output\notification::NOTIFY_ERROR
-            );
-        } else {
-            quizaccess_proctoring_update_match_result($reportid, 0, 101); // 101 for invalid service API.
-        }
-
-        return false;
-    }
-
-    // Clean up the temporary images.
-    @unlink($imagepath1);
-    @unlink($imagepath2);
-
-    // Return the response from the API.
-    return $response;
+    quizaccess_proctoring_log_fm_warning($reportid);
+    quizaccess_proctoring_update_match_result($reportid, 0, 101);
 }
 
 /**
@@ -1044,69 +882,6 @@ function quizaccess_proctoring_check_similarity_customapi(
     }
 
     return $response;
-}
-
-
-/**
- * Retrieves an authentication token from the BS API.
- *
- * This function sends a request to the BS API using the provided username and password,
- * retrieves an authentication token, and returns it. If any required settings are missing
- * or an error occurs during the request, it returns `false`.
- *
- * @return string|false The token on success or false on failure.
- */
-function quizaccess_proctoring_get_token() {
-
-    // Fetch required settings from proctoring settings.
-    $bsapi = quizaccess_proctoring_get_proctoring_settings('bsapi') . '/get_token';
-    $bsusername = quizaccess_proctoring_get_proctoring_settings('username');
-    $bspassword = quizaccess_proctoring_get_proctoring_settings('password');
-
-    // Check if all required settings are available.
-    if (empty($bsapi) || empty($bsusername) || empty($bspassword)) {
-        mtrace('Error: Missing BS API URL, username, or password.');
-        return false; // Return false if any required setting is missing.
-    }
-
-    // Prepare the POST data.
-    $postdata = [
-        'username' => $bsusername,
-        'password' => $bspassword,
-    ];
-
-    // Initialize Moodle's cURL class.
-    $curl = new curl();
-
-    // Set cURL options.
-    $options = [
-        'CURLOPT_TIMEOUT' => 30, // Timeout after 30 seconds.
-        'CURLOPT_FOLLOWLOCATION' => true, // Follow redirects.
-        'CURLOPT_HTTPHEADER' => [
-            'Content-Type: multipart/form-data',
-        ],
-    ];
-
-    // Execute the POST request.
-    $response = $curl->post($bsapi, $postdata, $options);
-
-    // Check for cURL errors.
-    if ($curl->get_errno()) {
-        mtrace('cURL Error: ' . $curl->error);
-        return false; // Return false on cURL error.
-    }
-
-    // Decode the JSON response.
-    $tokendata = json_decode($response);
-
-    // Check if the token was received in the response.
-    if (!empty($tokendata->token)) {
-        return $tokendata->token; // Return the token.
-    }
-
-    // Log error if token is not found in the response.
-    mtrace('Error: Token not found in the response.');
-    return false; // Return false if token is not found.
 }
 
 /**

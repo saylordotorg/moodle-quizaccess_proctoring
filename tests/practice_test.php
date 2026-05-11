@@ -18,7 +18,7 @@
  * Testing helper class methods in payments API.
  *
  * @package    quizaccess_proctoring
- * @copyright  2020 Brain Station 23
+ * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 namespace quizaccess_proctoring;
@@ -30,7 +30,7 @@ use advanced_testcase;
  * Testing helper class methods in payments API.
  *
  * @package    quizaccess_proctoring
- * @copyright  2020 Brain Station 23
+ * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class practice_test extends advanced_testcase {

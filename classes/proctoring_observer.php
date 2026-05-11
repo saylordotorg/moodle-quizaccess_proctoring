@@ -21,7 +21,7 @@
  * It also handles specific actions related to proctoring events like taking a screenshot and updating logs.
  *
  * @package    quizaccess_proctoring
- * @copyright  2024 Brain Station 23
+ * @copyright  2024 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -34,7 +34,7 @@ namespace quizaccess_proctoring;
  * It also handles proctoring actions such as taking screenshots and updating related logs.
  *
  * @package    quizaccess_proctoring
- * @copyright  2020 Brain Station 23
+ * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class quizaccess_proctoring_observer {

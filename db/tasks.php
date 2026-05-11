@@ -32,7 +32,7 @@
  *
  * @package    quizaccess_proctoring
  * @category   task
- * @copyright  2024 Brain station 23
+ * @copyright  2024 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
