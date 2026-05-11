@@ -80,6 +80,46 @@ if ($reportid) {
 $url = new moodle_url('/mod/quiz/accessrule/proctoring/report.php', ['courseid' => $courseid, 'cmid' => $cmid]);
 $fcmethod = get_config('quizaccess_proctoring', 'fcmethod');
 
+/**
+ * Gets a readable suspicious activity event label.
+ *
+ * @param string $eventtype Event type.
+ * @return string Event label.
+ */
+function quizaccess_proctoring_get_event_label(string $eventtype): string {
+    $key = 'eventtype:' . $eventtype;
+    if (get_string_manager()->string_exists($key, 'quizaccess_proctoring')) {
+        return get_string($key, 'quizaccess_proctoring');
+    }
+
+    return ucfirst(str_replace('_', ' ', $eventtype));
+}
+
+/**
+ * Formats stored event JSON for the report table.
+ *
+ * @param string $eventdetail JSON event detail.
+ * @return string Formatted detail.
+ */
+function quizaccess_proctoring_format_event_detail(string $eventdetail): string {
+    $decoded = json_decode($eventdetail, true);
+    if (!is_array($decoded)) {
+        return substr($eventdetail, 0, 300);
+    }
+
+    $parts = [];
+    foreach ($decoded as $key => $value) {
+        if (is_array($value) || is_object($value)) {
+            $value = json_encode($value);
+        } else if (is_bool($value)) {
+            $value = $value ? 'true' : 'false';
+        }
+        $parts[] = $key . ': ' . substr((string)$value, 0, 160);
+    }
+
+    return implode('; ', $parts);
+}
+
 // Page setup.
 $PAGE->set_url($url);
 $PAGE->set_pagelayout('course');
@@ -109,6 +149,11 @@ if (has_capability('quizaccess/proctoring:deletecamshots', $context, $USER->id) 
             'userid' => $studentid,
         ]);
         $DB->delete_records('quizaccess_proctoring_fm_warnings', [
+            'courseid' => $courseid,
+            'quizid' => $cmid,
+            'userid' => $studentid,
+        ]);
+        $DB->delete_records('quizaccess_proctoring_events', [
             'courseid' => $courseid,
             'quizid' => $cmid,
             'userid' => $studentid,
@@ -319,6 +364,12 @@ if (
             $row['email'] = $info->email;
             $row['timemodified'] = date('Y/M/d H:i:s', $info->timemodified);
             $row['warningicon'] = ($info->warningid == '') ? true : false;
+            $row['eventcount'] = $DB->count_records('quizaccess_proctoring_events', [
+                'courseid' => $courseid,
+                'quizid' => $cmid,
+                'userid' => $info->studentid,
+            ]);
+            $row['eventwarning'] = $row['eventcount'] > 0;
 
             $actionmenu = new action_menu();
             $actionmenu->set_kebab_trigger(get_string('actions'));
@@ -447,6 +498,38 @@ if (
                 $row['lightbox_data'] = basename($info->webcampicture, '.png');
                 $studentdata[] = $row;
         }
+        $attemptid = $DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]);
+        $eventwhere = 'courseid = :courseid AND quizid = :cmid AND userid = :studentid';
+        $eventparams = [
+            'courseid' => $courseid,
+            'cmid' => $cmid,
+            'studentid' => $studentid,
+        ];
+        if (!empty($attemptid)) {
+            $eventwhere .= ' AND attemptid = :attemptid';
+            $eventparams['attemptid'] = $attemptid;
+        }
+
+        $eventrecords = $DB->get_records_select(
+            'quizaccess_proctoring_events',
+            $eventwhere,
+            $eventparams,
+            'timemodified DESC',
+            'id, eventtype, eventdetail, pagevisibility, currenturl, timemodified',
+            0,
+            200
+        );
+        $events = [];
+        foreach ($eventrecords as $event) {
+            $events[] = [
+                'timemodified' => date('Y/M/d H:i:s', $event->timemodified),
+                'eventtype' => quizaccess_proctoring_get_event_label($event->eventtype),
+                'eventdetail' => quizaccess_proctoring_format_event_detail($event->eventdetail),
+                'pagevisibility' => $event->pagevisibility,
+                'currenturl' => $event->currenturl,
+            ];
+        }
+
         $analyzeparam = ['studentid' => $studentid, 'cmid' => $cmid, 'courseid' => $courseid, 'reportid' => $reportid];
         $analyzeurl = new moodle_url('/mod/quiz/accessrule/proctoring/analyzeimage.php', $analyzeparam);
         $analyzeurl = preg_replace('/&amp;/', '&', $analyzeurl);
@@ -466,6 +549,8 @@ if (
             'email' => $info->email,
             'fcmethod' => quizaccess_proctoring_is_facematch_method_enabled($fcmethod),
             'analyzeurl' => $analyzeurl,
+            'events' => $events,
+            'hasevents' => !empty($events),
         ];
         echo $OUTPUT->render_from_template('quizaccess_proctoring/studentreport', $templatecontext);
     }

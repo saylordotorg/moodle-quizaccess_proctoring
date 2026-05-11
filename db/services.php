@@ -51,4 +51,15 @@ $functions = [
         'capabilities' => 'quizaccess/proctoring:sendcamshot',
         'services'     => [MOODLE_OFFICIAL_MOBILE_SERVICE],
     ],
+
+    // Log suspicious browser activity during a proctored quiz attempt.
+    'quizaccess_proctoring_log_event' => [
+        'classname'    => 'quizaccess_proctoring_external',
+        'methodname'   => 'log_event',
+        'description'  => 'Log tab, focus, clipboard, and shortcut activity during a proctored quiz attempt.',
+        'type'         => 'write',
+        'ajax'         => true,
+        'capabilities' => 'quizaccess/proctoring:sendcamshot',
+        'services'     => [MOODLE_OFFICIAL_MOBILE_SERVICE],
+    ],
 ];

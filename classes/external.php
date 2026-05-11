@@ -217,6 +217,134 @@ class quizaccess_proctoring_external extends external_api {
     }
 
     /**
+     * Defines parameters for suspicious browser activity logging.
+     *
+     * @return external_function_parameters
+     */
+    public static function log_event_parameters() {
+        return new external_function_parameters(
+            [
+                'courseid' => new external_value(PARAM_INT, 'course id'),
+                'quizid' => new external_value(PARAM_INT, 'course module id'),
+                'attemptid' => new external_value(PARAM_INT, 'quiz attempt id', VALUE_DEFAULT, 0),
+                'reportid' => new external_value(PARAM_INT, 'initial proctoring log id', VALUE_DEFAULT, 0),
+                'eventtype' => new external_value(PARAM_ALPHANUMEXT, 'event type'),
+                'eventdetail' => new external_value(PARAM_RAW, 'JSON event details', VALUE_DEFAULT, ''),
+                'pagevisibility' => new external_value(PARAM_ALPHANUMEXT, 'document visibility state', VALUE_DEFAULT, ''),
+                'currenturl' => new external_value(PARAM_RAW, 'page URL', VALUE_DEFAULT, ''),
+            ]
+        );
+    }
+
+    /**
+     * Logs browser activity that may indicate quiz proctoring risk.
+     *
+     * @param int $courseid Course ID.
+     * @param int $quizid Course module ID.
+     * @param int $attemptid Quiz attempt ID.
+     * @param int $reportid Initial proctoring log ID.
+     * @param string $eventtype Event type.
+     * @param string $eventdetail Event detail JSON.
+     * @param string $pagevisibility Document visibility state.
+     * @param string $currenturl Page URL when the event was observed.
+     * @return array Event result.
+     * @throws dml_exception
+     * @throws invalid_parameter_exception
+     * @throws moodle_exception
+     */
+    public static function log_event(
+        $courseid,
+        $quizid,
+        $attemptid = 0,
+        $reportid = 0,
+        $eventtype = '',
+        $eventdetail = '',
+        $pagevisibility = '',
+        $currenturl = ''
+    ) {
+        global $DB, $USER;
+
+        self::validate_parameters(
+            self::log_event_parameters(),
+            [
+                'courseid' => $courseid,
+                'quizid' => $quizid,
+                'attemptid' => $attemptid,
+                'reportid' => $reportid,
+                'eventtype' => $eventtype,
+                'eventdetail' => $eventdetail,
+                'pagevisibility' => $pagevisibility,
+                'currenturl' => $currenturl,
+            ]
+        );
+
+        $cm = get_coursemodule_from_id('quiz', $quizid, $courseid, false, MUST_EXIST);
+        $context = context_module::instance($cm->id, MUST_EXIST);
+        self::validate_context($context);
+
+        if (
+            !is_enrolled(context_course::instance($courseid), $USER->id, 'mod/quiz:attempt') &&
+            !has_capability('mod/quiz:grade', $context)
+        ) {
+            throw new moodle_exception(
+                'accessdenied', 'quizaccess_proctoring', '', null,
+                get_string('notenrolled', 'quizaccess_proctoring')
+            );
+        }
+
+        $allowedevents = [
+            'tab_hidden',
+            'tab_visible',
+            'focus_lost',
+            'focus_returned',
+            'clipboard_copy',
+            'clipboard_cut',
+            'clipboard_paste',
+            'contextmenu',
+            'shortcut',
+            'possible_ai_tool',
+            'page_exit',
+        ];
+
+        if (!in_array($eventtype, $allowedevents, true)) {
+            $eventtype = 'shortcut';
+        }
+
+        $record = new stdClass();
+        $record->courseid = $courseid;
+        $record->quizid = $cm->id;
+        $record->userid = $USER->id;
+        $record->attemptid = max(0, (int)$attemptid);
+        $record->reportid = max(0, (int)$reportid);
+        $record->eventtype = substr($eventtype, 0, 40);
+        $record->eventdetail = substr($eventdetail, 0, 2000);
+        $record->pagevisibility = substr($pagevisibility, 0, 20);
+        $record->currenturl = substr($currenturl, 0, 1000);
+        $record->timemodified = time();
+
+        $eventid = $DB->insert_record('quizaccess_proctoring_events', $record, true);
+
+        return [
+            'eventid' => $eventid,
+            'warnings' => [],
+        ];
+    }
+
+    /**
+     * Return structure for suspicious browser activity logging.
+     *
+     * @return external_single_structure
+     */
+    public static function log_event_returns() {
+        return new external_single_structure(
+            [
+                'eventid' => new external_value(PARAM_INT, 'event id'),
+                'warnings' => new external_warnings(),
+            ]
+        );
+    }
+
+    /**
      * Runs an immediate face match for a stored webcam capture when continuous checks are enabled.
      *
      * @param int $reportid The quizaccess_proctoring_logs record ID.

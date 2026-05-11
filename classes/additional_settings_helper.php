@@ -380,6 +380,7 @@ class additional_settings_helper {
                 $filename = end($patharray);
 
                 $DB->delete_records('quizaccess_proctoring_fm_warnings', ['reportid' => $id]);
+                $DB->delete_records('quizaccess_proctoring_events', ['reportid' => $id]);
                 $DB->delete_records('quizaccess_proctoring_logs', ['id' => $id]);
 
                 $select = "component = :component AND filearea = :filearea AND filename = :filename";

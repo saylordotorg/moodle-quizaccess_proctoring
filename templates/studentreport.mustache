@@ -118,4 +118,28 @@
     </div>
 </div>
 
+{{#hasevents}}
+<h3 class="mt-4">{{#str}}suspiciousactivity, quizaccess_proctoring{{/str}}</h3>
+<table class="generaltable generalbox reporttable" cellpadding="0" cellspacing="0" id="proctoring-event-table">
+    <thead>
+        <tr>
+            <th>{{#str}}dateverified, quizaccess_proctoring{{/str}}</th>
+            <th>{{#str}}eventtype, quizaccess_proctoring{{/str}}</th>
+            <th>{{#str}}eventdetails, quizaccess_proctoring{{/str}}</th>
+            <th>{{#str}}pagevisibility, quizaccess_proctoring{{/str}}</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{#events}}
+        <tr>
+            <td>{{timemodified}}</td>
+            <td>{{eventtype}}</td>
+            <td>{{eventdetail}}</td>
+            <td>{{pagevisibility}}</td>
+        </tr>
+        {{/events}}
+    </tbody>
+</table>
+{{/hasevents}}
+
 </div>

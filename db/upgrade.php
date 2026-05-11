@@ -238,5 +238,30 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051104, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051105) {
+        $table = new xmldb_table('quizaccess_proctoring_events');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, true, true, null, null);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, true, false, 0, null);
+        $table->add_field('quizid', XMLDB_TYPE_INTEGER, '10', null, true, false, 0, null);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, true, false, 0, null);
+        $table->add_field('attemptid', XMLDB_TYPE_INTEGER, '10', null, true, false, 0, null);
+        $table->add_field('reportid', XMLDB_TYPE_INTEGER, '10', null, true, false, 0, null);
+        $table->add_field('eventtype', XMLDB_TYPE_CHAR, '40', null, true, false, '', null);
+        $table->add_field('eventdetail', XMLDB_TYPE_TEXT, null, null, false, false, null, null);
+        $table->add_field('pagevisibility', XMLDB_TYPE_CHAR, '20', null, true, false, '', null);
+        $table->add_field('currenturl', XMLDB_TYPE_TEXT, null, null, false, false, null, null);
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, true, false, 0, null);
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('coursequizuser', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'quizid', 'userid']);
+        $table->add_index('attemptid', XMLDB_INDEX_NOTUNIQUE, ['attemptid']);
+        $table->add_index('reportid', XMLDB_INDEX_NOTUNIQUE, ['reportid']);
+
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026051105, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

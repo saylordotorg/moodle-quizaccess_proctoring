@@ -433,6 +433,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->camshotdelay = $camshotdelay;
             $record->image_width = $imagewidth;
             $record->quizurl = $quizurl->out();
+            $record->monitorbrowseractivity = (int)(get_config('quizaccess_proctoring', 'monitorbrowseractivity') ?? 1);
 
             // Configure face model URL and include JS.
             $fcmethod = get_config('quizaccess_proctoring', 'fcmethod');

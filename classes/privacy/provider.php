@@ -67,6 +67,25 @@ class provider implements
             'privacy:metadata:quizaccess_proctoring_logs'
         );
 
+        $quizaccessproctoringevents = [
+            'courseid' => 'privacy:metadata:courseid',
+            'quizid' => 'privacy:metadata:quizid',
+            'userid' => 'privacy:metadata:userid',
+            'attemptid' => 'privacy:metadata:status',
+            'reportid' => 'privacy:metadata:reportid',
+            'eventtype' => 'privacy:metadata:eventtype',
+            'eventdetail' => 'privacy:metadata:eventdetail',
+            'pagevisibility' => 'privacy:metadata:pagevisibility',
+            'currenturl' => 'privacy:metadata:currenturl',
+            'timemodified' => 'timemodified',
+        ];
+
+        $collection->add_database_table(
+            'quizaccess_proctoring_events',
+            $quizaccessproctoringevents,
+            'privacy:metadata:quizaccess_proctoring_events'
+        );
+
         $collection->add_subsystem_link(
             'core_files',
             [],
@@ -93,6 +112,12 @@ class provider implements
               GROUP BY c.id";
         $contextlist = new contextlist();
         $contextlist->add_from_sql($sql, $params);
+        $sql = "SELECT DISTINCT c.id
+                  FROM {quizaccess_proctoring_events} qpe
+                  JOIN {context} c ON c.instanceid = qpe.quizid AND c.contextlevel = :context
+                 WHERE qpe.userid = :userid
+              GROUP BY c.id";
+        $contextlist->add_from_sql($sql, $params);
         $fileparams = ['component' => 'quizaccess_proctoring', 'userid' => $userid];
 
         $sqlfile = "SELECT DISTINCT contextid as id
@@ -117,6 +142,11 @@ class provider implements
                   JOIN {course_modules} cm ON cm.id = qpl.quizid
                  WHERE cm.id = ?";
         $params = [$context->instanceid];
+        $userlist->add_from_sql('userid', $sql, $params);
+
+        $sql = "SELECT DISTINCT qpe.userid AS userid
+                  FROM {quizaccess_proctoring_events} qpe
+                 WHERE qpe.quizid = ?";
         $userlist->add_from_sql('userid', $sql, $params);
 
         $fileparams = ['component' => 'quizaccess_proctoring', 'contextid' => $context->id];
@@ -186,6 +216,42 @@ class provider implements
                     }
 
                 }
+
+                $eventfields = 'id, courseid, quizid, userid, attemptid, reportid, eventtype, eventdetail, ' .
+                    'pagevisibility, currenturl, timemodified';
+                $events = $DB->get_records_select(
+                    'quizaccess_proctoring_events',
+                    $select,
+                    $params,
+                    '',
+                    $eventfields
+                );
+
+                $index = 0;
+                foreach ($events as $event) {
+                    $index++;
+                    $subcontext = [
+                        get_string('quizaccess_proctoring', 'quizaccess_proctoring'),
+                        'proctoring_events',
+                        $index,
+                    ];
+
+                    $data = (object)[
+                        'id' => $event->id,
+                        'courseid' => $event->courseid,
+                        'quizid' => $event->quizid,
+                        'userid' => $event->userid,
+                        'attemptid' => $event->attemptid,
+                        'reportid' => $event->reportid,
+                        'eventtype' => $event->eventtype,
+                        'eventdetail' => $event->eventdetail,
+                        'pagevisibility' => $event->pagevisibility,
+                        'currenturl' => $event->currenturl,
+                        'timemodified' => transform::datetime($event->timemodified),
+                    ];
+
+                    writer::with_context($context)->export_data($subcontext, $data);
+                }
             }
         }
     }
@@ -206,6 +272,7 @@ class provider implements
 
             $params['quizid'] = $quizid;
             $DB->set_field_select('quizaccess_proctoring_logs', 'userid', 0, "quizid = :quizid", $params);
+            $DB->set_field_select('quizaccess_proctoring_events', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
         }
 
         // Delete all of the webcam images for this user.
@@ -233,6 +300,7 @@ class provider implements
 
         // Anonymize quizaccess_proctoring_logs entries.
         $DB->set_field_select('quizaccess_proctoring_logs', 'userid', 0, "userid {$insql}", $inparams);
+        $DB->set_field_select('quizaccess_proctoring_events', 'userid', 0, "userid {$insql}", $inparams);
 
         // Delete users' webcam images using Moodle File API.
         $fs = get_file_storage();
@@ -277,6 +345,7 @@ class provider implements
 
         $params['userid'] = $contextlist->get_user()->id;
         $DB->set_field_select('quizaccess_proctoring_logs', 'userid', 0, "userid = :userid", $params);
+        $DB->set_field_select('quizaccess_proctoring_events', 'userid', 0, "userid = :userid", $params);
         foreach ($contextlist as $context) {
             // Delete user file (webcam images).
             $userfiles = $DB->get_records('files', $params);

@@ -98,6 +98,173 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
             }
         };
 
+        const initSuspiciousActivityMonitoring = function(props) {
+            let lastLogged = {};
+            let hiddenStarted = 0;
+            const throttleMs = 5000;
+            const aiPattern = /(gemini|chatgpt|openai|copilot|claude|perplexity|bard|ask\s+gemini|ask\s+ai)/i;
+
+            const getSelectedTextLength = function() {
+                try {
+                    const selection = window.getSelection();
+                    return selection ? selection.toString().length : 0;
+                } catch (error) {
+                    return 0;
+                }
+            };
+
+            const getShortcutName = function(event) {
+                const parts = [];
+                if (event.ctrlKey) {
+                    parts.push('Ctrl');
+                }
+                if (event.metaKey) {
+                    parts.push('Meta');
+                }
+                if (event.altKey) {
+                    parts.push('Alt');
+                }
+                if (event.shiftKey) {
+                    parts.push('Shift');
+                }
+                parts.push((event.key || '').toUpperCase());
+                return parts.join('+');
+            };
+
+            const logEvent = function(eventType, detail) {
+                const now = Date.now();
+                const detailText = JSON.stringify(detail || {});
+                const throttleKey = eventType + ':' + detailText.substring(0, 120);
+
+                if (lastLogged[throttleKey] && now - lastLogged[throttleKey] < throttleMs) {
+                    return;
+                }
+                lastLogged[throttleKey] = now;
+
+                Ajax.call([{
+                    methodname: 'quizaccess_proctoring_log_event',
+                    args: {
+                        courseid: parseInt(props.courseid, 10) || 0,
+                        quizid: parseInt(props.quizid, 10) || 0,
+                        attemptid: parseInt(props.status, 10) || 0,
+                        reportid: parseInt(props.id, 10) || 0,
+                        eventtype: eventType,
+                        eventdetail: detailText,
+                        pagevisibility: document.visibilityState || '',
+                        currenturl: window.location.href
+                    }
+                }])[0].fail(function() {
+                    // Do not interrupt the quiz attempt if activity logging is unavailable.
+                });
+            };
+
+            document.addEventListener('visibilitychange', function() {
+                if (document.visibilityState === 'hidden') {
+                    hiddenStarted = Date.now();
+                    logEvent('tab_hidden', {
+                        reason: 'document_hidden',
+                        note: 'Quiz tab was hidden. This can indicate tab switching or opening another browser surface.'
+                    });
+                } else if (document.visibilityState === 'visible') {
+                    logEvent('tab_visible', {
+                        reason: 'document_visible',
+                        hiddenms: hiddenStarted ? Date.now() - hiddenStarted : 0
+                    });
+                    hiddenStarted = 0;
+                }
+            }, true);
+
+            window.addEventListener('blur', function() {
+                logEvent('focus_lost', {
+                    reason: 'window_blur',
+                    note: 'Browser focus left the quiz. This can include another tab, another window, or a browser AI panel.'
+                });
+            }, true);
+
+            window.addEventListener('focus', function() {
+                logEvent('focus_returned', {
+                    reason: 'window_focus'
+                });
+            }, true);
+
+            document.addEventListener('copy', function() {
+                logEvent('clipboard_copy', {
+                    selectionlength: getSelectedTextLength()
+                });
+            }, true);
+
+            document.addEventListener('cut', function() {
+                logEvent('clipboard_cut', {
+                    selectionlength: getSelectedTextLength()
+                });
+            }, true);
+
+            document.addEventListener('paste', function(event) {
+                let pastedLength = 0;
+                try {
+                    const clipboard = event.clipboardData || window.clipboardData;
+                    pastedLength = clipboard ? clipboard.getData('text').length : 0;
+                } catch (error) {
+                    pastedLength = 0;
+                }
+
+                logEvent('clipboard_paste', {
+                    pastedlength: pastedLength
+                });
+            }, true);
+
+            document.addEventListener('contextmenu', function() {
+                logEvent('contextmenu', {
+                    reason: 'right_click'
+                });
+            }, true);
+
+            document.addEventListener('keydown', function(event) {
+                const key = (event.key || '').toLowerCase();
+                const shortcut = getShortcutName(event);
+                const ctrlOrMeta = event.ctrlKey || event.metaKey;
+                const monitored = event.key === 'F12' ||
+                    (event.altKey && key === 'tab') ||
+                    (ctrlOrMeta && ['c', 'x', 'v', 'a', 'l', 't', 'n', 'w', 'r'].includes(key)) ||
+                    (ctrlOrMeta && event.shiftKey && ['i', 'j', 'c'].includes(key));
+
+                if (monitored) {
+                    logEvent('shortcut', {
+                        shortcut: shortcut
+                    });
+                }
+            }, true);
+
+            document.addEventListener('click', function(event) {
+                const target = event.target && event.target.closest
+                    ? event.target.closest('a, button, [role="button"], [aria-label], [title]')
+                    : null;
+
+                if (!target) {
+                    return;
+                }
+
+                const label = [
+                    target.innerText || '',
+                    target.getAttribute('aria-label') || '',
+                    target.getAttribute('title') || '',
+                    target.getAttribute('href') || ''
+                ].join(' ').trim();
+
+                if (aiPattern.test(label)) {
+                    logEvent('possible_ai_tool', {
+                        label: label.substring(0, 200)
+                    });
+                }
+            }, true);
+
+            window.addEventListener('pagehide', function() {
+                logEvent('page_exit', {
+                    reason: 'pagehide'
+                });
+            }, true);
+        };
+
         return {
             async setup(props, modelurl) {
                 const strings = await loadStrings();
@@ -114,6 +281,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 if (document.getElementById("page-mod-quiz-review") !== null &&
                     document.getElementById("page-mod-quiz-review").innerHTML.length) {
                     return false;
+                }
+
+                if (parseInt(props.monitorbrowseractivity, 10) === 1) {
+                    initSuspiciousActivityMonitoring(props);
                 }
 
                 const width = props.image_width;

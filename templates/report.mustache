@@ -88,6 +88,7 @@
             <th>{{#str}}email,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}dateverified,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}identity_mismatch_label,quizaccess_proctoring{{/str}}</th>
+            <th>{{#str}}suspiciousactivity,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}actions,quizaccess_proctoring{{/str}}</th>
         </tr>
     </thead>
@@ -104,6 +105,9 @@
              {{^warningicon}}
                 ⚠️ {{#str}}foundtext,quizaccess_proctoring{{/str}}        
             {{/warningicon}}
+        </td>
+        <td>
+            {{#eventwarning}}⚠️ {{/eventwarning}}{{eventcount}}
         </td>
         <td>
             {{{actionmenu}}}
