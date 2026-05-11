@@ -233,5 +233,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051103, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051104) {
+        // No schema changes. Loosens self-registration quality thresholds to avoid false rejects.
+        upgrade_plugin_savepoint(true, 2026051104, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

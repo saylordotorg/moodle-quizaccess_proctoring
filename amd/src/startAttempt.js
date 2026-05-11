@@ -95,31 +95,52 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
             };
         };
 
+        const getMinFaceRatio = function(canvas, box) {
+            return Math.min(box.width, box.height) / Math.min(canvas.width, canvas.height);
+        };
+
+        const getFaceAreaRatio = function(canvas, box) {
+            return (box.width * box.height) / (canvas.width * canvas.height);
+        };
+
+        const isCandidateFace = function(canvas, detection) {
+            return detection.score >= 0.45 && getMinFaceRatio(canvas, detection.box) >= 0.08;
+        };
+
+        const isLikelyPersonFace = function(canvas, detection) {
+            return detection.score >= 0.65 && getMinFaceRatio(canvas, detection.box) >= 0.16;
+        };
+
         const hasClearFace = function(canvas, detection) {
             const box = detection.box;
-            const minFaceRatio = Math.min(box.width, box.height) / Math.min(canvas.width, canvas.height);
+            const minFaceRatio = getMinFaceRatio(canvas, box);
             const centerOffsetX = Math.abs((box.x + (box.width / 2)) - (canvas.width / 2)) / canvas.width;
             const centerOffsetY = Math.abs((box.y + (box.height / 2)) - (canvas.height / 2)) / canvas.height;
             const quality = getImageQuality(canvas, box);
 
-            return detection.score >= 0.7 &&
-                minFaceRatio >= 0.12 &&
-                centerOffsetX <= 0.35 &&
-                centerOffsetY <= 0.35 &&
-                box.x >= 2 &&
-                box.y >= 2 &&
-                (box.x + box.width) <= (canvas.width - 2) &&
-                (box.y + box.height) <= (canvas.height - 2) &&
-                quality.brightness >= 35 &&
-                quality.brightness <= 225 &&
-                quality.contrast >= 10 &&
-                quality.sharpness >= 3;
+            return detection.score >= 0.45 &&
+                minFaceRatio >= 0.08 &&
+                centerOffsetX <= 0.45 &&
+                centerOffsetY <= 0.45 &&
+                box.x >= -5 &&
+                box.y >= -5 &&
+                (box.x + box.width) <= (canvas.width + 5) &&
+                (box.y + box.height) <= (canvas.height + 5) &&
+                quality.brightness >= 25 &&
+                quality.brightness <= 235 &&
+                quality.contrast >= 5 &&
+                quality.sharpness >= 1;
         };
 
         const detectface = async(input, canvas, croppedImage) => {
             // eslint-disable-next-line no-undef
             const output = await faceapi.detectAllFaces(input);
-            if (output.length !== 1 || !hasClearFace(canvas, output[0])) {
+            const candidates = output.filter((detection) => isCandidateFace(canvas, detection))
+                .sort((first, second) => getFaceAreaRatio(canvas, second.box) - getFaceAreaRatio(canvas, first.box));
+            const likelypeople = candidates.filter((detection) => isLikelyPersonFace(canvas, detection));
+            const detection = likelypeople[0] || candidates[0];
+
+            if (!detection || likelypeople.length > 1 || !hasClearFace(canvas, detection)) {
                 return {
                     faceFound: 0,
                     faceImage: '',
@@ -127,7 +148,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 };
             }
 
-            const faceImage = await extractFaceFromBox(input, output[0].box);
+            const faceImage = await extractFaceFromBox(input, detection.box);
             if (faceImage) {
                 croppedImage.setAttribute('src', faceImage);
                 return {

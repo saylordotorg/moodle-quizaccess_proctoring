@@ -624,7 +624,7 @@ class quizaccess_proctoring_external extends external_api {
 
         $width = imagesx($image);
         $height = imagesy($image);
-        if ($width < 80 || $height < 80) {
+        if ($width < 50 || $height < 50) {
             imagedestroy($image);
             return false;
         }
@@ -632,10 +632,10 @@ class quizaccess_proctoring_external extends external_api {
         $quality = self::get_image_quality($image, $width, $height);
         imagedestroy($image);
 
-        return $quality['brightness'] >= 35 &&
-            $quality['brightness'] <= 225 &&
-            $quality['contrast'] >= 8 &&
-            $quality['sharpness'] >= 2;
+        return $quality['brightness'] >= 25 &&
+            $quality['brightness'] <= 235 &&
+            $quality['contrast'] >= 5 &&
+            $quality['sharpness'] >= 1;
     }
 
     /**
