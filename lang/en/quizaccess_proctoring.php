@@ -73,6 +73,7 @@ $string['facematch'] = 'Face match successful. The student identity is verified.
 $string['facematched'] = 'Face matched.';
 $string['facematchs'] = 'All images have been successfully analyzed. Please review them to verify the face match.';
 $string['faceregistered'] = 'Face registered. You can now start the quiz.';
+$string['facequalityfailed'] = 'Make sure your face is centered, well lit, and in focus, then try again.';
 $string['facenotfound'] = 'Face not found in the uploaded image.';
 $string['facenotfoundoncam'] = 'Face not found. Try changing your camera to a better lighting. Thanks.';
 $string['facenotmatched'] = 'Face not matched.';

@@ -382,10 +382,18 @@ class quizaccess_proctoring_external extends external_api {
         $warnings = [];
 
         if (!$DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $USER->id])) {
-            if (empty($webcampicture) || ((int)$facefound !== 1 && empty($faceimage))) {
+            if (empty($webcampicture) || (int)$facefound !== 1 || empty($faceimage)) {
                 $result = [];
                 $result['screenshotid'] = 0;
                 $result['status'] = 'facenotfound';
+                $result['warnings'] = $warnings;
+                return $result;
+            }
+
+            if (!self::reference_image_is_clear($webcampicture, $faceimage)) {
+                $result = [];
+                $result['screenshotid'] = 0;
+                $result['status'] = 'faceunclear';
                 $result['warnings'] = $warnings;
                 return $result;
             }
@@ -594,6 +602,91 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         return $parentid;
+    }
+
+    /**
+     * Applies a server-side quality floor before saving a self-registered reference image.
+     *
+     * @param string $webcampicture Full webcam image as a base64 data URI.
+     * @param string $faceimage Cropped face image as a base64 data URI.
+     * @return bool True when the image is good enough to use as a future reference.
+     */
+    private static function reference_image_is_clear(string $webcampicture, string $faceimage): bool {
+        if (!function_exists('imagecreatefromstring')) {
+            return true;
+        }
+
+        $imagedata = !empty($faceimage) ? $faceimage : $webcampicture;
+        $image = @imagecreatefromstring(self::decode_base64_image_data($imagedata));
+        if (!$image) {
+            return false;
+        }
+
+        $width = imagesx($image);
+        $height = imagesy($image);
+        if ($width < 80 || $height < 80) {
+            imagedestroy($image);
+            return false;
+        }
+
+        $quality = self::get_image_quality($image, $width, $height);
+        imagedestroy($image);
+
+        return $quality['brightness'] >= 35 &&
+            $quality['brightness'] <= 225 &&
+            $quality['contrast'] >= 8 &&
+            $quality['sharpness'] >= 2;
+    }
+
+    /**
+     * Estimates brightness, contrast, and edge sharpness for an image resource.
+     *
+     * @param resource|\GdImage $image Image resource.
+     * @param int $width Image width.
+     * @param int $height Image height.
+     * @return array Image quality measurements.
+     */
+    private static function get_image_quality($image, int $width, int $height): array {
+        $step = max(1, (int)floor(sqrt(($width * $height) / 2500)));
+        $count = 0;
+        $sum = 0;
+        $sumsq = 0;
+        $edgedelta = 0;
+        $edgecount = 0;
+        $previousrow = [];
+
+        for ($y = 0; $y < $height; $y += $step) {
+            $row = [];
+            $column = 0;
+            for ($x = 0; $x < $width; $x += $step) {
+                $rgb = imagecolorsforindex($image, imagecolorat($image, $x, $y));
+                $luminance = (0.2126 * $rgb['red']) + (0.7152 * $rgb['green']) + (0.0722 * $rgb['blue']);
+                $row[$column] = $luminance;
+                $sum += $luminance;
+                $sumsq += $luminance * $luminance;
+                $count++;
+
+                if ($column > 0) {
+                    $edgedelta += abs($luminance - $row[$column - 1]);
+                    $edgecount++;
+                }
+                if (array_key_exists($column, $previousrow)) {
+                    $edgedelta += abs($luminance - $previousrow[$column]);
+                    $edgecount++;
+                }
+                $column++;
+            }
+            $previousrow = $row;
+        }
+
+        $brightness = $count > 0 ? $sum / $count : 0;
+        $variance = $count > 0 ? max(0, ($sumsq / $count) - ($brightness * $brightness)) : 0;
+
+        return [
+            'brightness' => $brightness,
+            'contrast' => sqrt($variance),
+            'sharpness' => $edgecount > 0 ? $edgedelta / $edgecount : 0,
+        ];
     }
 
     /**

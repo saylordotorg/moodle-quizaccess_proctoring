@@ -228,5 +228,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051102, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051103) {
+        // No schema changes. Adds quality checks before saving a self-registered reference image.
+        upgrade_plugin_savepoint(true, 2026051103, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

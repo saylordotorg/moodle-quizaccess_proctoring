@@ -57,6 +57,7 @@ $string['facefound'] = 'Se encontró un rostro en la imagen subida.';
 $string['facematch'] = 'Coincidencia facial correcta. La identidad del estudiante ha sido verificada.';
 $string['facematched'] = 'Rostro coincidente.';
 $string['facematchs'] = 'Todas las imágenes se han analizado correctamente. Revíselas para verificar la coincidencia facial.';
+$string['facequalityfailed'] = 'Asegúrese de que su rostro esté centrado, bien iluminado y enfocado, e inténtelo de nuevo.';
 $string['facenotfound'] = 'No se encontró ningún rostro en la imagen subida.';
 $string['facenotfoundoncam'] = 'No se encontró ningún rostro. Intente cambiar la cámara o mejorar la iluminación. Gracias.';
 $string['facenotmatched'] = 'El rostro no coincide.';
