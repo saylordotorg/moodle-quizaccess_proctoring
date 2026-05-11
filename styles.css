@@ -536,6 +536,26 @@ body.proctoring-lb-disable-scrolling {
     letter-spacing: 0;
 }
 
+.proctoring-screen-monitor {
+    max-width: 390px;
+    padding: 18px;
+}
+
+.proctoring-screen-monitor h3 {
+    font-size: 20px;
+    margin-bottom: 10px;
+}
+
+.proctoring-screen-monitor p {
+    margin-bottom: 14px;
+}
+
+.proctoring-screen-monitor-status {
+    font-weight: 600;
+    margin-bottom: 14px;
+    min-height: 24px;
+}
+
 .proctoring-event-screenshot {
     width: 120px;
     max-width: 100%;

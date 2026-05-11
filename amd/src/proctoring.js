@@ -1,8 +1,8 @@
 // @SuppressWarnings("javascript:S4144");
 let isCameraAllowed = false;
 
-define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
-    function($, Ajax, Notification, Str) {
+define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proctoring/screenMonitorClient'],
+    function($, Ajax, Notification, Str, ScreenMonitorClient) {
         const loadStrings = async function() {
             const stringkeys = [
                 {key: 'facenotfoundoncam', component: 'quizaccess_proctoring'},
@@ -21,6 +21,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 {key: 'screensharestopped', component: 'quizaccess_proctoring'},
                 {key: 'screenmarkerlabel', component: 'quizaccess_proctoring'},
                 {key: 'screenmarkerwrongmonitor', component: 'quizaccess_proctoring'},
+                {key: 'screenmonitor:windowopened', component: 'quizaccess_proctoring'},
+                {key: 'screenmonitor:popupblocked', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -41,6 +43,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                     screensharestopped: strings[13],
                     screenmarkerlabel: strings[14],
                     screenmarkerwrongmonitor: strings[15],
+                    screenmonitorwindowopened: strings[16],
+                    screenmonitorpopupblocked: strings[17],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -152,6 +156,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
             let screenCanvas = null;
             let screenReady = false;
             let markerCheckTimer = null;
+            let screenMonitorClient = null;
+            let latestDesktopFrame = '';
             const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
 
             const initScreenMarker = function() {
@@ -179,7 +185,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
             };
 
             const captureDesktopFrame = function(eventType) {
-                if (!captureDesktop || !desktopCaptureEvents.includes(eventType) || !screenReady || !screenVideo) {
+                if (!captureDesktop || !desktopCaptureEvents.includes(eventType) || !screenReady) {
+                    return '';
+                }
+
+                if (screenMonitorClient) {
+                    return screenMonitorClient.getLatestScreenshot() || latestDesktopFrame;
+                }
+
+                if (!screenVideo) {
                     return '';
                 }
 
@@ -378,6 +392,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                     event.preventDefault();
                 }
 
+                if (screenMonitorClient) {
+                    screenMonitorClient.open();
+                    setScreenShareStatus(strings.screenmonitorwindowopened, 'info');
+                    return;
+                }
+
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
                     setScreenShareStatus(strings.screensharenotsupported, 'danger');
                     return;
@@ -461,6 +481,45 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 );
 
                 $('#proctoring-screen-share-button').on('click', requestScreenShare);
+
+                if (props.screenmonitorurl && !screenMonitorClient) {
+                    screenMonitorClient = ScreenMonitorClient.create(props, {
+                        onReady: function() {
+                            screenReady = true;
+                            setScreenShareStatus(strings.screenshareaccepted, 'success');
+                            hideScreenShareGate();
+                        },
+                        onUnavailable: function() {
+                            if (screenReady) {
+                                screenReady = false;
+                                logEvent('screen_share_stopped', {
+                                    reason: 'persistent_monitor_unavailable'
+                                });
+                                setScreenShareStatus(strings.screensharestopped, 'danger');
+                            }
+                            showScreenShareGate();
+                        },
+                        onWrongScreen: function() {
+                            screenReady = false;
+                            logEvent('screen_marker_missing', {
+                                reason: 'persistent_monitor_marker_missing',
+                                note: 'The persistent screen monitor did not see the Moodle quiz screen marker.'
+                            });
+                            setScreenShareStatus(strings.screenmarkerwrongmonitor, 'danger');
+                            showScreenShareGate();
+                        },
+                        onScreenshot: function(message) {
+                            latestDesktopFrame = message.image || '';
+                        },
+                        onOpenBlocked: function() {
+                            setScreenShareStatus(strings.screenmonitorpopupblocked, 'danger');
+                        },
+                        onOpened: function() {
+                            setScreenShareStatus(strings.screenmonitorwindowopened, 'info');
+                        }
+                    });
+                    screenMonitorClient.start();
+                }
             };
 
             const getSelectedTextLength = function() {

@@ -277,6 +277,15 @@ $string['screensharenotsupported'] = 'This browser does not support screen shari
 $string['screensharestopped'] = 'Screen sharing stopped. Share your entire screen again to continue.';
 $string['screenmarkerlabel'] = 'Screen check';
 $string['screenmarkerwrongmonitor'] = 'The shared screen does not show this quiz page. Move the quiz window to the shared monitor or share the monitor containing the quiz.';
+$string['screenmonitor:instructions'] = 'Keep this window open while you take the quiz. It holds the screen share so Moodle does not ask again on every quiz page.';
+$string['screenmonitor:popupblocked'] = 'The screen monitor window was blocked. Allow pop-ups for this site and try again.';
+$string['screenmonitor:ready'] = 'Screen share is active. Return to the quiz and keep this window open.';
+$string['screenmonitor:share'] = 'Share entire screen';
+$string['screenmonitor:stopped'] = 'Screen sharing stopped. Share your entire screen again.';
+$string['screenmonitor:title'] = 'Saylor proctoring screen monitor';
+$string['screenmonitor:unsupported'] = 'This browser does not support screen sharing. Use a supported browser such as Chrome or Edge.';
+$string['screenmonitor:windowopened'] = 'A screen monitor window opened. Share the entire screen there, then return to the quiz.';
+$string['screenmonitor:wrongmonitor'] = 'The shared screen does not show the quiz screen marker. Share the monitor containing the quiz.';
 
 $string['settingscontroll:deleteall'] = 'Delete all record that captured during the exams';
 $string['settingscontroll:deleteallcourseimage'] = 'Delete all images and records of students that were captured during the exams for <b>this course</b>.';

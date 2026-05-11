@@ -184,6 +184,11 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
         // Prepare data for the JavaScript module.
         $examurl = new moodle_url('/mod/quiz/startattempt.php');
+        $screenmonitorkey = 'cm' . (int)$coursedata['cmid'] . 'user' . (int)$USER->id;
+        $screenmonitorurl = new moodle_url('/mod/quiz/accessrule/proctoring/screenmonitor.php', [
+            'cmid' => (int)$coursedata['cmid'],
+            'key' => $screenmonitorkey,
+        ]);
         $record = [
             'id' => 0,
             'courseid' => (int)$coursedata['courseid'],
@@ -195,6 +200,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             'registerface' => $registerface ? 1 : 0,
             'faceidcheck' => $faceidcheck === '1' ? 1 : 0,
             'requireentirescreen' => $requireentirescreen,
+            'screenmonitorurl' => $screenmonitorurl->out(false),
+            'screenmonitorchannel' => 'quizaccess_proctoring_screen_' . $screenmonitorkey,
+            'screenmonitorstatuskey' => 'quizaccess_proctoring_screen_status_' . $screenmonitorkey,
+            'screenmonitorwindowname' => 'quizaccess_proctoring_screen_' . $screenmonitorkey,
         ];
 
         // Include Face API JS library if required.
@@ -510,6 +519,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->monitorbrowseractivity = (int)(get_config('quizaccess_proctoring', 'monitorbrowseractivity') ?? 1);
             $record->blockclipboard = (int)(get_config('quizaccess_proctoring', 'blockclipboard') ?? 1);
             $record->captureviolationdesktop = (int)(get_config('quizaccess_proctoring', 'captureviolationdesktop') ?? 1);
+            $screenmonitorkey = 'cm' . (int)$cmid . 'user' . (int)$USER->id;
+            $screenmonitorurl = new moodle_url('/mod/quiz/accessrule/proctoring/screenmonitor.php', [
+                'cmid' => (int)$cmid,
+                'key' => $screenmonitorkey,
+            ]);
+            $record->screenmonitorurl = $screenmonitorurl->out(false);
+            $record->screenmonitorchannel = 'quizaccess_proctoring_screen_' . $screenmonitorkey;
+            $record->screenmonitorstatuskey = 'quizaccess_proctoring_screen_status_' . $screenmonitorkey;
+            $record->screenmonitorwindowname = 'quizaccess_proctoring_screen_' . $screenmonitorkey;
 
             // Configure face model URL and include JS.
             $fcmethod = get_config('quizaccess_proctoring', 'fcmethod');

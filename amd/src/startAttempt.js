@@ -1,5 +1,5 @@
-define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
-    function($, Ajax, Notification, Str) {
+define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proctoring/screenMonitorClient'],
+    function($, Ajax, Notification, Str, ScreenMonitorClient) {
         const loadStrings = async function() {
             const stringkeys = [
                 {key: 'facematched', component: 'quizaccess_proctoring'},
@@ -17,6 +17,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 {key: 'screensharestopped', component: 'quizaccess_proctoring'},
                 {key: 'screenmarkerlabel', component: 'quizaccess_proctoring'},
                 {key: 'screenmarkerwrongmonitor', component: 'quizaccess_proctoring'},
+                {key: 'screenmonitor:windowopened', component: 'quizaccess_proctoring'},
+                {key: 'screenmonitor:popupblocked', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -36,6 +38,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                     screensharestopped: strings[12],
                     screenmarkerlabel: strings[13],
                     screenmarkerwrongmonitor: strings[14],
+                    screenmonitorwindowopened: strings[15],
+                    screenmonitorpopupblocked: strings[16],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -195,6 +199,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
                 let screenStream = null;
                 let screenVideo = null;
                 let screenCanvas = null;
+                let screenMonitorClient = null;
                 const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
 
                 const escapeHtml = function(text) {
@@ -376,9 +381,46 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str'],
 
                 initScreenMarker();
 
+                if (screenRequired && props.screenmonitorurl) {
+                    screenMonitorClient = ScreenMonitorClient.create(props, {
+                        onReady: function() {
+                            screenReady = true;
+                            setScreenConfirmed(true);
+                            setScreenResult(strings.screenshareaccepted, true);
+                            updatePreflightGate();
+                        },
+                        onUnavailable: function() {
+                            if (screenReady) {
+                                setScreenResult(strings.screensharestopped, false);
+                            }
+                            screenReady = false;
+                            setScreenConfirmed(false);
+                            updatePreflightGate();
+                        },
+                        onWrongScreen: function() {
+                            screenReady = false;
+                            setScreenConfirmed(false);
+                            setScreenResult(strings.screenmarkerwrongmonitor, false);
+                            updatePreflightGate();
+                        },
+                        onOpenBlocked: function() {
+                            setScreenResult(strings.screenmonitorpopupblocked, false);
+                        },
+                        onOpened: function() {
+                            setScreenResult(strings.screenmonitorwindowopened, true);
+                        }
+                    });
+                    screenMonitorClient.start();
+                }
+
                 $('#fcvalidate').append('<img id="validate-cropimg" style="display: none;" src="" alt=""/>');
                 $("#screensharevalidate").click(async function(event) {
                     event.preventDefault();
+
+                    if (screenMonitorClient) {
+                        screenMonitorClient.open();
+                        return;
+                    }
 
                     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
                         setScreenResult(strings.screensharenotsupported, false);

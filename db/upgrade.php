@@ -318,5 +318,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051110, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051111) {
+        // No schema changes. Adds the persistent screen monitor window.
+        upgrade_plugin_savepoint(true, 2026051111, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

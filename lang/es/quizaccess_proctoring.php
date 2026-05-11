@@ -241,6 +241,15 @@ $string['screensharenotsupported'] = 'Este navegador no admite compartir pantall
 $string['screensharestopped'] = 'El uso compartido de pantalla se detuvo. Comparta toda la pantalla nuevamente para continuar.';
 $string['screenmarkerlabel'] = 'Verificación de pantalla';
 $string['screenmarkerwrongmonitor'] = 'La pantalla compartida no muestra esta página del cuestionario. Mueva la ventana del cuestionario al monitor compartido o comparta el monitor que contiene el cuestionario.';
+$string['screenmonitor:instructions'] = 'Mantenga esta ventana abierta mientras realiza el cuestionario. Mantiene el uso compartido de pantalla para que Moodle no vuelva a solicitarlo en cada página.';
+$string['screenmonitor:popupblocked'] = 'La ventana del monitor de pantalla fue bloqueada. Permita ventanas emergentes para este sitio e inténtelo de nuevo.';
+$string['screenmonitor:ready'] = 'El uso compartido de pantalla está activo. Vuelva al cuestionario y mantenga esta ventana abierta.';
+$string['screenmonitor:share'] = 'Compartir pantalla completa';
+$string['screenmonitor:stopped'] = 'El uso compartido de pantalla se detuvo. Comparta la pantalla completa nuevamente.';
+$string['screenmonitor:title'] = 'Monitor de pantalla de Saylor proctoring';
+$string['screenmonitor:unsupported'] = 'Este navegador no admite compartir pantalla. Use un navegador compatible como Chrome o Edge.';
+$string['screenmonitor:windowopened'] = 'Se abrió una ventana de monitor de pantalla. Comparta la pantalla completa allí y luego vuelva al cuestionario.';
+$string['screenmonitor:wrongmonitor'] = 'La pantalla compartida no muestra el marcador de pantalla del cuestionario. Comparta el monitor que contiene el cuestionario.';
 
 $string['settingscontroll:deleteall'] = 'Eliminar todos los registros capturados durante los exámenes';
 $string['settingscontroll:deleteallcourseimage'] = 'Eliminar todas las imágenes y registros de los estudiantes capturados durante los exámenes de <b>este curso</b>.';
