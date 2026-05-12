@@ -429,6 +429,32 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $mform->setDefault('requireentirescreen', -1);
         $mform->addHelpButton('requireentirescreen', 'requireentirescreen', 'quizaccess_proctoring');
         $mform->hideIf('requireentirescreen', 'proctoringrequired', 'eq', 0);
+
+        $mform->addElement(
+            'select',
+            'riskreviewmode',
+            get_string('riskreviewmode', 'quizaccess_proctoring'),
+            [
+                -1 => get_string('riskreviewmode_inherit', 'quizaccess_proctoring'),
+                1 => get_string('riskreviewmode_enabled', 'quizaccess_proctoring'),
+                0 => get_string('riskreviewmode_disabled', 'quizaccess_proctoring'),
+            ]
+        );
+        $mform->setDefault('riskreviewmode', -1);
+        $mform->addHelpButton('riskreviewmode', 'riskreviewmode', 'quizaccess_proctoring');
+        $mform->hideIf('riskreviewmode', 'proctoringrequired', 'eq', 0);
+
+        $mform->addElement(
+            'text',
+            'riskreviewthreshold',
+            get_string('riskreviewthreshold', 'quizaccess_proctoring'),
+            ['size' => 4]
+        );
+        $mform->setType('riskreviewthreshold', PARAM_INT);
+        $mform->setDefault('riskreviewthreshold', -1);
+        $mform->addRule('riskreviewthreshold', null, 'numeric', null, 'client');
+        $mform->addHelpButton('riskreviewthreshold', 'riskreviewthreshold', 'quizaccess_proctoring');
+        $mform->hideIf('riskreviewthreshold', 'proctoringrequired', 'eq', 0);
     }
 
     /**
@@ -446,10 +472,17 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             // Remove any existing proctoring settings if not required.
             $DB->delete_records('quizaccess_proctoring', ['quizid' => $quiz->id]);
         } else {
+            $riskreviewthreshold = isset($quiz->riskreviewthreshold) ? (int)$quiz->riskreviewthreshold : -1;
+            if ($riskreviewthreshold !== -1) {
+                $riskreviewthreshold = max(1, min(100, $riskreviewthreshold));
+            }
+
             $record = (object)[
                 'quizid' => $quiz->id,
                 'proctoringrequired' => 1,
                 'requireentirescreen' => isset($quiz->requireentirescreen) ? (int)$quiz->requireentirescreen : -1,
+                'riskreviewmode' => isset($quiz->riskreviewmode) ? (int)$quiz->riskreviewmode : -1,
+                'riskreviewthreshold' => $riskreviewthreshold,
             ];
 
             // Add or update the proctoring settings for this quiz.
@@ -485,7 +518,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      */
     public static function get_settings_sql($quizid) {
         return [
-            'proctoring.proctoringrequired, proctoring.requireentirescreen', // Fields to select.
+            'proctoring.proctoringrequired, proctoring.requireentirescreen, ' .
+                'proctoring.riskreviewmode, proctoring.riskreviewthreshold', // Fields to select.
             'LEFT JOIN {quizaccess_proctoring} proctoring ON proctoring.quizid = quiz.id', // Join clause.
             [], // No additional parameters.
         ];

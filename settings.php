@@ -78,7 +78,7 @@ if ($hassiteconfig) {
         $choices
     ));
 
-    // Custom AI API settings.
+    // Saylor AI API settings.
     $settings->add(new admin_setting_configtext('quizaccess_proctoring/custom_ai_endpoint',
         get_string('setting:custom_ai_endpoint', 'quizaccess_proctoring'),
         get_string('setting:custom_ai_endpoint_desc', 'quizaccess_proctoring'), '', PARAM_URL));
@@ -116,6 +116,14 @@ if ($hassiteconfig) {
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/requireentirescreen',
         get_string('setting:requireentirescreen', 'quizaccess_proctoring'),
         get_string('setting:requireentirescreen_desc', 'quizaccess_proctoring'), 1));
+
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/riskreviewenabled',
+        get_string('setting:riskreviewenabled', 'quizaccess_proctoring'),
+        get_string('setting:riskreviewenabled_desc', 'quizaccess_proctoring'), 0));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/riskreviewthreshold',
+        get_string('setting:riskreviewthreshold', 'quizaccess_proctoring'),
+        get_string('setting:riskreviewthreshold_desc', 'quizaccess_proctoring'), 80, PARAM_INT));
 
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/honorstatementrequired',
         get_string('setting:honorstatementrequired', 'quizaccess_proctoring'),

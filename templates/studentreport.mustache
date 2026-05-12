@@ -57,9 +57,20 @@
     <div>
         <div class="proctoring-risk-title">{{#str}}riskscore:attemptscore, quizaccess_proctoring{{/str}}</div>
         <div class="proctoring-risk-score">{{score}}/100</div>
+        {{#thresholdlabel}}
+            <div class="proctoring-risk-threshold">{{thresholdlabel}}</div>
+        {{/thresholdlabel}}
     </div>
     <div class="proctoring-risk-level">{{level}}</div>
 </div>
+{{#holdstatus}}
+<div class="proctoring-risk-hold-banner {{#holdactive}}proctoring-risk-hold-active{{/holdactive}}">
+    <strong>{{holdstatus}}</strong>
+    {{#canreleasehold}}
+        <a class="btn btn-primary btn-sm ml-2" href="{{releaseurl}}">{{#str}}riskreview:releasebutton, quizaccess_proctoring{{/str}}</a>
+    {{/canreleasehold}}
+</div>
+{{/holdstatus}}
 <div class="proctoring-risk-factor-container">
     <table class="proctoring-risk-factor-table">
         <thead>

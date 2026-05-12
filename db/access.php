@@ -74,4 +74,15 @@ $capabilities = [
             'manager' => CAP_ALLOW, // Managers can analyze images.
         ],
     ],
+
+    // This capability allows editing teachers and managers to release high-risk grade holds after review.
+    'quizaccess/proctoring:reviewriskholds' => [
+        'riskbitmask' => RISK_PERSONAL,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_MODULE,
+        'archetypes' => [
+            'editingteacher' => CAP_ALLOW,
+            'manager' => CAP_ALLOW,
+        ],
+    ],
 ];

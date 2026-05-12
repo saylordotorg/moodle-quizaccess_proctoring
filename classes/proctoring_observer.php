@@ -17,8 +17,7 @@
 /**
  * Observer for the quizaccess_proctoring plugin.
  *
- * This class listens for events related to quiz attempts, such as starting or submitting a quiz attempt.
- * It also handles specific actions related to proctoring events like taking a screenshot and updating logs.
+ * This class listens for Moodle quiz events related to proctored quiz attempts.
  *
  * @package    quizaccess_proctoring
  * @copyright  2024 Saylor Academy
@@ -28,65 +27,112 @@
 namespace quizaccess_proctoring;
 
 /**
- * quizaccess_proctoring_observer class.
+ * proctoring_observer class.
  *
- * This class defines the observer methods that handle specific quiz events like attempt start and attempt submission.
- * It also handles proctoring actions such as taking screenshots and updating related logs.
+ * This class defines observer methods that handle quiz submission risk review logic.
  *
  * @package    quizaccess_proctoring
  * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class quizaccess_proctoring_observer {
+class proctoring_observer {
     /**
      * Handle the event when a quiz attempt is started.
      *
-     * This method listens to the quiz attempt start event and updates the proctoring event data.
+     * This method is retained for compatibility with older event mappings.
      *
      * @param \mod_quiz\event\attempt_started $event The event object representing the quiz attempt start.
      * @return void
      */
     public static function handle_quiz_attempt_started(\mod_quiz\event\attempt_started $event) {
-        self::update_event_data($event);
     }
 
     /**
      * Handle the event when a quiz attempt is submitted.
      *
-     * This method listens to the quiz attempt submission event and updates the proctoring event data.
+     * This method calculates the proctoring risk score and applies a grade hold when configured.
      *
-     * @param \mod_quiz\event\quiz_attempt_submitted $event The event object representing the quiz attempt submission.
+     * @param \mod_quiz\event\attempt_submitted $event The event object representing the quiz attempt submission.
      * @return void
      */
-    public static function handle_quiz_attempt_submitted(\mod_quiz\event\quiz_attempt_submitted $event) {
-        self::update_event_data($event);
+    public static function handle_quiz_attempt_submitted(\mod_quiz\event\attempt_submitted $event) {
+        global $CFG, $DB;
+
+        try {
+            require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+
+            $attemptid = (int)$event->objectid;
+            if ($attemptid <= 0) {
+                return;
+            }
+
+            $attempt = $DB->get_record('quiz_attempts', ['id' => $attemptid]);
+            if (!$attempt || empty($attempt->userid) || empty($attempt->quiz)) {
+                return;
+            }
+
+            $quiz = $DB->get_record('quiz', ['id' => $attempt->quiz]);
+            if (!$quiz) {
+                return;
+            }
+
+            $cm = get_coursemodule_from_instance('quiz', $quiz->id, $quiz->course);
+            if (!$cm) {
+                return;
+            }
+
+            $proctoring = $DB->get_record('quizaccess_proctoring', ['quizid' => $cm->id]);
+            if (!$proctoring || empty($proctoring->proctoringrequired)) {
+                return;
+            }
+
+            $settings = \quizaccess_proctoring_get_effective_risk_review_settings((int)$cm->id);
+            if (empty($settings['enabled'])) {
+                return;
+            }
+
+            $reports = $DB->get_records(
+                'quizaccess_proctoring_logs',
+                [
+                    'courseid' => $quiz->course,
+                    'quizid' => $cm->id,
+                    'userid' => $attempt->userid,
+                    'status' => $attemptid,
+                    'deletionprogress' => 0,
+                ],
+                'id ASC',
+                '*',
+                0,
+                1
+            );
+            if (!$reports) {
+                return;
+            }
+
+            $report = reset($reports);
+            $risk = \quizaccess_proctoring_calculate_attempt_risk(
+                (int)$quiz->course,
+                (int)$cm->id,
+                (int)$attempt->userid,
+                (int)$report->id
+            );
+
+            if ((int)$risk['score'] < (int)$settings['threshold']) {
+                return;
+            }
+
+            \quizaccess_proctoring_apply_risk_hold(
+                (int)$quiz->course,
+                (int)$cm->id,
+                (int)$attempt->userid,
+                $attemptid,
+                (int)$report->id,
+                (int)$risk['score'],
+                (int)$settings['threshold']
+            );
+        } catch (\Throwable $e) {
+            debugging('Unable to apply Saylor Proctored Quiz risk hold: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
     }
 
-    /**
-     * Take a screenshot during the proctoring process.
-     *
-     * This method listens to the screenshot event and updates the corresponding record in the proctoring logs.
-     *
-     * @param \quizaccess_proctoring\take_screensho $event The event object representing a screenshot action.
-     * @return void
-     */
-    public static function take_screenshot(\quizaccess_proctoring\take_screensho $event) {
-        global $DB;
-        $record = $event->get_record_snapshot('quizaccess_proctoring_logs', $event->objectid);
-        $DB->update_record('quizaccess_proctoring_logs', $record);
-    }
-
-    /**
-     * Update logs of proctoring events.
-     *
-     * This method updates the proctoring event data in the logs table.
-     *
-     * @param \mod_quiz\event\attempt_started|\mod_quiz\event\quiz_attempt_submitted
-     * $event The event object representing a quiz event.
-     * @return void
-     */
-    private static function update_event_data($event) {
-        global $DB;
-        $DB->update_record('quizaccess_proctoring_logs', $event);
-    }
 }

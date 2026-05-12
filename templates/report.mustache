@@ -112,6 +112,9 @@
         </td>
         <td>
             <span class="{{riskbadgeclass}}">{{riskscore}}/100 {{risklevel}}</span>
+            {{#riskholdstatus}}
+                <div class="proctoring-risk-hold-status {{#riskholdactive}}proctoring-risk-hold-active{{/riskholdactive}}">{{riskholdstatus}}</div>
+            {{/riskholdstatus}}
         </td>
         <td>
             {{{actionmenu}}}

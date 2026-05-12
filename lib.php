@@ -160,13 +160,539 @@ function quizaccess_proctoring_update_match_result($rowid, $matchresult, $awsfla
 }
 
 /**
+ * Determines whether an event detail JSON contains a specific shortcut.
+ *
+ * @param string $eventdetail JSON event detail.
+ * @param string $shortcut Shortcut text to match.
+ * @return bool True when the shortcut matches.
+ */
+function quizaccess_proctoring_event_has_shortcut(string $eventdetail, string $shortcut): bool {
+    $decoded = json_decode($eventdetail, true);
+    if (!is_array($decoded) || empty($decoded['shortcut'])) {
+        return false;
+    }
+
+    return strtoupper((string)$decoded['shortcut']) === strtoupper($shortcut);
+}
+
+/**
+ * Count attempt events for one or more event types.
+ *
+ * @param string $eventwhere Base event WHERE clause.
+ * @param array $eventparams Base event query params.
+ * @param array $eventtypes Event types to count.
+ * @param bool $requirescreenshot True to only count events with a desktop screenshot.
+ * @return int Number of matching events.
+ */
+function quizaccess_proctoring_count_risk_events(
+    string $eventwhere,
+    array $eventparams,
+    array $eventtypes,
+    bool $requirescreenshot = false
+): int {
+    global $DB;
+
+    if (empty($eventtypes)) {
+        return 0;
+    }
+
+    [$insql, $inparams] = $DB->get_in_or_equal($eventtypes, SQL_PARAMS_NAMED, 'riskevent');
+    $where = $eventwhere . " AND eventtype {$insql}";
+    if ($requirescreenshot) {
+        $where .= " AND COALESCE(screenshoturl, '') <> ''";
+    }
+
+    return $DB->count_records_select('quizaccess_proctoring_events', $where, array_merge($eventparams, $inparams));
+}
+
+/**
+ * Count shortcut events matching the requested shortcut.
+ *
+ * @param string $eventwhere Base event WHERE clause.
+ * @param array $eventparams Base event query params.
+ * @param string $shortcut Shortcut to match.
+ * @return int Number of matching shortcut events.
+ */
+function quizaccess_proctoring_count_risk_shortcuts(string $eventwhere, array $eventparams, string $shortcut): int {
+    global $DB;
+
+    $shortcutrecords = $DB->get_records_select(
+        'quizaccess_proctoring_events',
+        $eventwhere . ' AND eventtype = :riskshortcuttype',
+        $eventparams + ['riskshortcuttype' => 'shortcut'],
+        '',
+        'id, eventdetail'
+    );
+
+    $count = 0;
+    foreach ($shortcutrecords as $shortcutrecord) {
+        if (quizaccess_proctoring_event_has_shortcut($shortcutrecord->eventdetail, $shortcut)) {
+            $count++;
+        }
+    }
+
+    return $count;
+}
+
+/**
+ * Build one risk factor for the risk score details table.
+ *
+ * @param string $label Factor label.
+ * @param int $count Evidence count.
+ * @param int $pointsperevent Points for each event.
+ * @param int $maxpoints Maximum points this factor can add.
+ * @return array Factor data.
+ */
+function quizaccess_proctoring_build_risk_factor(
+    string $label,
+    int $count,
+    int $pointsperevent,
+    int $maxpoints
+): array {
+    $points = min($maxpoints, max(0, $count) * $pointsperevent);
+
+    return [
+        'label' => $label,
+        'count' => $count,
+        'points' => $points,
+        'haspoints' => $points > 0,
+    ];
+}
+
+/**
+ * Get risk-level presentation details for a score.
+ *
+ * @param int $score Score from 0 to 100.
+ * @return array Risk-level template data.
+ */
+function quizaccess_proctoring_get_risk_level(int $score): array {
+    if ($score >= 80) {
+        return [
+            'label' => get_string('riskscore:critical', 'quizaccess_proctoring'),
+            'class' => 'proctoring-risk-critical',
+        ];
+    }
+    if ($score >= 50) {
+        return [
+            'label' => get_string('riskscore:high', 'quizaccess_proctoring'),
+            'class' => 'proctoring-risk-high',
+        ];
+    }
+    if ($score >= 20) {
+        return [
+            'label' => get_string('riskscore:moderate', 'quizaccess_proctoring'),
+            'class' => 'proctoring-risk-moderate',
+        ];
+    }
+
+    return [
+        'label' => get_string('riskscore:low', 'quizaccess_proctoring'),
+        'class' => 'proctoring-risk-low',
+    ];
+}
+
+/**
+ * Calculate a proctoring risk score for one quiz attempt.
+ *
+ * @param int $courseid Course id.
+ * @param int $cmid Quiz course-module id.
+ * @param int $studentid Student id.
+ * @param int $reportid A quizaccess_proctoring_logs id for the attempt.
+ * @return array Risk score template data.
+ */
+function quizaccess_proctoring_calculate_attempt_risk(int $courseid, int $cmid, int $studentid, int $reportid): array {
+    global $DB;
+
+    $attemptid = (int)$DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]);
+    $threshold = max(1, (int)quizaccess_proctoring_get_proctoring_settings('threshold'));
+
+    $eventwhere = 'courseid = :riskcourseid AND quizid = :riskcmid AND userid = :riskstudentid';
+    $eventparams = [
+        'riskcourseid' => $courseid,
+        'riskcmid' => $cmid,
+        'riskstudentid' => $studentid,
+    ];
+    if ($attemptid > 0) {
+        $eventwhere .= ' AND attemptid = :riskattemptid';
+        $eventparams['riskattemptid'] = $attemptid;
+    }
+
+    $logwhere = 'courseid = :risklogcourseid AND quizid = :risklogcmid AND userid = :risklogstudentid
+        AND deletionprogress = :riskdeletionprogress';
+    $logparams = [
+        'risklogcourseid' => $courseid,
+        'risklogcmid' => $cmid,
+        'risklogstudentid' => $studentid,
+        'riskdeletionprogress' => 0,
+    ];
+    if ($attemptid > 0) {
+        $logwhere .= ' AND status = :risklogattemptid';
+        $logparams['risklogattemptid'] = $attemptid;
+    } else if ($reportid > 0) {
+        $logwhere .= ' AND id = :risklogreportid';
+        $logparams['risklogreportid'] = $reportid;
+    }
+
+    $faceimagewhere = 'l.courseid = :riskfacecourseid AND l.quizid = :riskfacecmid
+        AND l.userid = :riskfacestudentid AND l.deletionprogress = :riskfacedeletionprogress';
+    $faceimageparams = [
+        'riskfacecourseid' => $courseid,
+        'riskfacecmid' => $cmid,
+        'riskfacestudentid' => $studentid,
+        'riskfacedeletionprogress' => 0,
+        'riskfacefound' => '1',
+    ];
+    if ($attemptid > 0) {
+        $faceimagewhere .= ' AND l.status = :riskfaceattemptid';
+        $faceimageparams['riskfaceattemptid'] = $attemptid;
+    } else if ($reportid > 0) {
+        $faceimagewhere .= ' AND l.id = :riskfacereportid';
+        $faceimageparams['riskfacereportid'] = $reportid;
+    }
+
+    $webcamcount = $DB->count_records_select(
+        'quizaccess_proctoring_logs',
+        $logwhere . " AND COALESCE(webcampicture, '') <> ''",
+        $logparams
+    );
+
+    $facemismatchcount = $DB->count_records_select(
+        'quizaccess_proctoring_logs',
+        $logwhere . ' AND awsflag = :riskawschecked AND awsscore < :riskthreshold',
+        $logparams + [
+            'riskawschecked' => 2,
+            'riskthreshold' => $threshold,
+        ]
+    );
+    $facefailedcount = $DB->count_records_select(
+        'quizaccess_proctoring_logs',
+        $logwhere . ' AND awsflag = :riskawsfailed',
+        $logparams + ['riskawsfailed' => 3]
+    );
+
+    $nofaceimagecount = $DB->count_records_sql(
+        "SELECT COUNT(1)
+           FROM {quizaccess_proctoring_face_images} fi
+           JOIN {quizaccess_proctoring_logs} l ON l.id = fi.parentid
+          WHERE {$faceimagewhere}
+            AND fi.facefound <> :riskfacefound",
+        $faceimageparams
+    );
+
+    $tabactivitycount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['focus_lost', 'tab_hidden', 'page_exit']
+    );
+    $clipboardcount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['clipboard_copy', 'clipboard_cut', 'clipboard_paste', 'contextmenu']
+    );
+    $screenissuecount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['screen_marker_missing', 'screen_share_stopped']
+    );
+    $aitoolcount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['possible_ai_tool']
+    );
+    $aitoolscreenshotcount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['possible_ai_tool'],
+        true
+    );
+    $f12count = quizaccess_proctoring_count_risk_shortcuts($eventwhere, $eventparams, 'F12');
+    $multiplefacescount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['multiple_faces_detected']
+    );
+    $audioactivitycount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['audio_detected']
+    );
+    $nofaceeventcount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['face_missing', 'no_face_detected']
+    );
+
+    $factors = [
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:facemismatch', 'quizaccess_proctoring'),
+            $facemismatchcount,
+            35,
+            35
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:multiplefaces', 'quizaccess_proctoring'),
+            $multiplefacescount,
+            30,
+            30
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:noface', 'quizaccess_proctoring'),
+            max($nofaceimagecount, $facefailedcount) + $nofaceeventcount,
+            8,
+            24
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:screenshare', 'quizaccess_proctoring'),
+            $screenissuecount,
+            18,
+            36
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:aitool', 'quizaccess_proctoring'),
+            $aitoolcount,
+            20,
+            30
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:aitoolscreenshot', 'quizaccess_proctoring'),
+            $aitoolscreenshotcount,
+            15,
+            30
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:clipboard', 'quizaccess_proctoring'),
+            $clipboardcount,
+            8,
+            24
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:tabactivity', 'quizaccess_proctoring'),
+            $tabactivitycount,
+            5,
+            20
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:f12', 'quizaccess_proctoring'),
+            $f12count,
+            15,
+            15
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:audio', 'quizaccess_proctoring'),
+            $audioactivitycount,
+            6,
+            18
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:webcammissing', 'quizaccess_proctoring'),
+            $webcamcount > 0 ? 0 : 1,
+            15,
+            15
+        ),
+    ];
+
+    $score = 0;
+    foreach ($factors as $factor) {
+        $score += (int)$factor['points'];
+    }
+    $score = min(100, $score);
+    $level = quizaccess_proctoring_get_risk_level($score);
+
+    return [
+        'score' => $score,
+        'level' => $level['label'],
+        'badgeclass' => 'proctoring-risk-badge ' . $level['class'],
+        'cardclass' => 'proctoring-risk-card ' . $level['class'],
+        'factors' => $factors,
+        'attemptid' => $attemptid,
+    ];
+}
+
+/**
+ * Get effective risk review settings for a course-module quiz.
+ *
+ * @param int $cmid Quiz course-module id.
+ * @return array Effective settings.
+ */
+function quizaccess_proctoring_get_effective_risk_review_settings(int $cmid): array {
+    global $DB;
+
+    $siteenabled = (int)get_config('quizaccess_proctoring', 'riskreviewenabled');
+    $sitethreshold = (int)get_config('quizaccess_proctoring', 'riskreviewthreshold');
+    if ($sitethreshold <= 0) {
+        $sitethreshold = 80;
+    }
+    $sitethreshold = max(1, min(100, $sitethreshold));
+    $quizsetting = $DB->get_record('quizaccess_proctoring', ['quizid' => $cmid]);
+    $mode = isset($quizsetting->riskreviewmode) ? (int)$quizsetting->riskreviewmode : -1;
+    $threshold = isset($quizsetting->riskreviewthreshold) && (int)$quizsetting->riskreviewthreshold > 0
+        ? max(1, min(100, (int)$quizsetting->riskreviewthreshold))
+        : $sitethreshold;
+
+    return [
+        'enabled' => $mode === -1 ? $siteenabled === 1 : $mode === 1,
+        'threshold' => $threshold,
+        'mode' => $mode,
+    ];
+}
+
+/**
+ * Get the active or latest risk hold for an attempt.
+ *
+ * @param int $courseid Course id.
+ * @param int $cmid Quiz course-module id.
+ * @param int $userid User id.
+ * @param int $attemptid Quiz attempt id.
+ * @param int $reportid Proctoring report id.
+ * @param bool $activeonly True to only return active holds.
+ * @return stdClass|false Hold record or false.
+ */
+function quizaccess_proctoring_get_risk_hold(
+    int $courseid,
+    int $cmid,
+    int $userid,
+    int $attemptid = 0,
+    int $reportid = 0,
+    bool $activeonly = false
+) {
+    global $DB;
+
+    $where = 'courseid = :courseid AND quizid = :cmid AND userid = :userid';
+    $params = [
+        'courseid' => $courseid,
+        'cmid' => $cmid,
+        'userid' => $userid,
+    ];
+    if ($attemptid > 0) {
+        $where .= ' AND attemptid = :attemptid';
+        $params['attemptid'] = $attemptid;
+    } else if ($reportid > 0) {
+        $where .= ' AND reportid = :reportid';
+        $params['reportid'] = $reportid;
+    }
+    if ($activeonly) {
+        $where .= ' AND status = :status';
+        $params['status'] = 0;
+    }
+
+    $records = $DB->get_records_select('quizaccess_proctoring_risk_holds', $where, $params, 'status ASC, id DESC', '*', 0, 1);
+    return $records ? reset($records) : false;
+}
+
+/**
+ * Apply a proctoring review hold and suppress the quiz gradebook grade while active.
+ *
+ * @param int $courseid Course id.
+ * @param int $cmid Quiz course-module id.
+ * @param int $userid User id.
+ * @param int $attemptid Quiz attempt id.
+ * @param int $reportid Proctoring report id.
+ * @param int $riskscore Risk score.
+ * @param int $threshold Configured threshold.
+ * @return int Hold id.
+ */
+function quizaccess_proctoring_apply_risk_hold(
+    int $courseid,
+    int $cmid,
+    int $userid,
+    int $attemptid,
+    int $reportid,
+    int $riskscore,
+    int $threshold
+): int {
+    global $CFG, $DB, $USER;
+
+    require_once($CFG->dirroot . '/mod/quiz/lib.php');
+
+    $cm = get_coursemodule_from_id('quiz', $cmid, $courseid, false, MUST_EXIST);
+    $quiz = $DB->get_record('quiz', ['id' => $cm->instance], '*', MUST_EXIST);
+    $quiz->cmidnumber = $cm->idnumber;
+    $quiz->visible = $cm->visible;
+
+    quiz_update_grades($quiz, $userid, false);
+    $quizgrade = $DB->get_record('quiz_grades', ['quiz' => $quiz->id, 'userid' => $userid]);
+    $now = time();
+
+    $hold = quizaccess_proctoring_get_risk_hold($courseid, $cmid, $userid, $attemptid, $reportid, true);
+    if ($hold) {
+        $hold->riskscore = $riskscore;
+        $hold->threshold = $threshold;
+        $hold->timemodified = $now;
+        $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
+        $holdid = (int)$hold->id;
+    } else {
+        $hold = (object)[
+            'courseid' => $courseid,
+            'quizid' => $cmid,
+            'quizinstance' => $quiz->id,
+            'userid' => $userid,
+            'attemptid' => $attemptid,
+            'reportid' => $reportid,
+            'riskscore' => $riskscore,
+            'threshold' => $threshold,
+            'originalgrade' => $quizgrade ? $quizgrade->grade : null,
+            'status' => 0,
+            'reviewerid' => 0,
+            'timecreated' => $now,
+            'timemodified' => $now,
+            'timereviewed' => 0,
+        ];
+        $holdid = $DB->insert_record('quizaccess_proctoring_risk_holds', $hold, true);
+    }
+
+    $grade = (object)[
+        'userid' => $userid,
+        'rawgrade' => 0,
+        'feedback' => get_string('riskreview:gradefeedback', 'quizaccess_proctoring', $riskscore),
+        'feedbackformat' => FORMAT_PLAIN,
+        'usermodified' => !empty($USER->id) ? $USER->id : 0,
+        'dategraded' => $now,
+    ];
+    quiz_grade_item_update($quiz, $grade);
+
+    return $holdid;
+}
+
+/**
+ * Release a risk hold and restore the quiz gradebook grade from Moodle quiz data.
+ *
+ * @param int $holdid Hold id.
+ * @param int $reviewerid Reviewer user id.
+ * @return bool True when released.
+ */
+function quizaccess_proctoring_release_risk_hold(int $holdid, int $reviewerid): bool {
+    global $CFG, $DB;
+
+    $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
+    if ((int)$hold->status !== 0) {
+        return true;
+    }
+
+    require_once($CFG->dirroot . '/mod/quiz/lib.php');
+    $cm = get_coursemodule_from_id('quiz', $hold->quizid, $hold->courseid, false, MUST_EXIST);
+    $quiz = $DB->get_record('quiz', ['id' => $hold->quizinstance], '*', MUST_EXIST);
+    $quiz->cmidnumber = $cm->idnumber;
+    $quiz->visible = $cm->visible;
+
+    quiz_update_grades($quiz, $hold->userid, false);
+
+    $hold->status = 1;
+    $hold->reviewerid = $reviewerid;
+    $hold->timereviewed = time();
+    $hold->timemodified = $hold->timereviewed;
+    $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
+
+    return true;
+}
+
+/**
  * Execute face recognition task.
  *
  * This function fetches up to 5 tasks from the `quizaccess_proctoring_facematch_task` table, processes each task
  * by performing a face recognition operation, and deletes the processed tasks. The face matching is done using the
  * method specified in the `fcmethod` setting.
  *
- * The function calls the configured custom AI API for face matching. After processing, the task is removed from the table.
+ * The function calls the configured Saylor AI API for face matching. After processing, the task is removed from the table.
  *
  * @return bool Returns false if no records are found to process, otherwise performs the task and deletes processed records.
  */
@@ -495,10 +1021,10 @@ function quizaccess_proctoring_is_facematch_method_enabled(?string $method = nul
 }
 
 /**
- * Checks whether the custom AI endpoint is the selected face match method.
+ * Checks whether the Saylor AI endpoint is the selected face match method.
  *
  * @param string|null $method Face match method, or null to read plugin config.
- * @return bool True when the custom AI endpoint is selected.
+ * @return bool True when the Saylor AI endpoint is selected.
  */
 function quizaccess_proctoring_is_custom_ai_method(?string $method = null): bool {
     $method = $method ?? quizaccess_proctoring_get_proctoring_settings('fcmethod');
@@ -813,7 +1339,7 @@ function quizaccess_proctoring_extracted(
 }
 
 /**
- * Returns face match similarity from the custom AI endpoint.
+ * Returns face match similarity from the Saylor AI endpoint.
  *
  * @param string $referenceimageurl The URL of the saved reference image.
  * @param string $targetimageurl The URL of the current webcam image.
@@ -832,7 +1358,7 @@ function quizaccess_proctoring_check_similarity_customapi(
     $apikey = quizaccess_proctoring_get_proctoring_settings('custom_api_key');
 
     if (empty($endpoint) || empty($apikey)) {
-        mtrace('Error: Missing custom AI endpoint URL or API key.');
+        mtrace('Error: Missing Saylor AI endpoint URL or API key.');
         return false;
     }
 
@@ -840,7 +1366,7 @@ function quizaccess_proctoring_check_similarity_customapi(
     $targetimage = @file_get_contents($targetimageurl);
 
     if ($referenceimage === false || $targetimage === false) {
-        mtrace('Error: Unable to load images for the custom AI endpoint.');
+        mtrace('Error: Unable to load images for the Saylor AI endpoint.');
         return false;
     }
 
@@ -850,7 +1376,7 @@ function quizaccess_proctoring_check_similarity_customapi(
     ]);
 
     if ($payload === false) {
-        mtrace('Error: Unable to encode custom AI request payload.');
+        mtrace('Error: Unable to encode Saylor AI request payload.');
         return false;
     }
 
