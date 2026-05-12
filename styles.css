@@ -533,6 +533,7 @@ body.proctoring-lb-disable-scrolling {
 .proctoring-preflight-items {
     display: grid;
     gap: 0.5rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .proctoring-preflight-item {
@@ -545,6 +546,12 @@ body.proctoring-lb-disable-scrolling {
     gap: 0.75rem;
     justify-content: space-between;
     padding: 0.65rem 0.8rem;
+}
+
+.proctoring-preflight-item.is-current {
+    border-color: #0d6efd;
+    border-left-color: #0d6efd;
+    box-shadow: 0 0 0 0.12rem rgba(13, 110, 253, 0.16);
 }
 
 .proctoring-preflight-item.is-complete {
@@ -592,6 +599,78 @@ body.proctoring-lb-disable-scrolling {
     width: 100%;
 }
 
+.proctoring-preflight-steps {
+    margin: 0.75rem 0 1rem;
+}
+
+.proctoring-preflight-step {
+    display: none;
+    border: 1px solid #d9e1e7;
+    border-radius: 0.35rem;
+    background: #ffffff;
+    padding: 1rem;
+}
+
+.proctoring-preflight-step.is-active {
+    display: block;
+}
+
+.proctoring-preflight-step-heading {
+    margin-bottom: 0.85rem;
+}
+
+.proctoring-preflight-step-title {
+    color: #111827;
+    font-size: 1.1rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.proctoring-preflight-step-description {
+    color: #4b5563;
+    font-size: 0.92rem;
+    line-height: 1.35;
+    margin-top: 0.2rem;
+}
+
+.proctoring-preflight-ready {
+    display: none;
+    font-weight: 700;
+    margin-bottom: 0;
+}
+
+.proctoring-honor-statement {
+    border-left: 0.3rem solid #0d6efd;
+    background: #f8fafc;
+    padding: 0.85rem 1rem;
+}
+
+.proctoring-honor-statement-text p:last-child {
+    margin-bottom: 0;
+}
+
+#form_activate.proctoring-preflight-actionbar {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    display: block;
+    margin: 1rem -1rem -1rem;
+    padding: 0.85rem 1rem;
+    border-top: 1px solid #d9e1e7;
+    background: #ffffff;
+    box-shadow: 0 -8px 20px rgba(15, 23, 42, 0.08);
+}
+
+#form_activate.proctoring-preflight-actionbar #id_submitbutton {
+    width: 100%;
+    min-height: 2.5rem;
+    white-space: normal;
+}
+
+#form_activate.proctoring-preflight-actionbar #id_submitbutton:disabled {
+    cursor: not-allowed;
+}
+
 .quiz-check-form #fitem_id_proctoringcaptcha,
 .quiz-check-form #fitem_id_proctoringcaptchaunavailable {
     margin-bottom: 0;
@@ -620,6 +699,10 @@ body.proctoring-lb-disable-scrolling {
 }
 
 @media (max-width: 576px) {
+    .proctoring-preflight-items {
+        grid-template-columns: 1fr;
+    }
+
     .proctoring-preflight-item {
         align-items: flex-start;
         flex-direction: column;

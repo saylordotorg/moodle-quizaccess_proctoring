@@ -200,6 +200,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }
 
                 const submitButton = $("#id_submitbutton");
+                const actionBar = $("#form_activate");
                 const faceRequired = parseInt(props.faceidcheck, 10) === 1;
                 const screenRequired = parseInt(props.requireentirescreen, 10) === 1;
                 const honorRequired = parseInt(props.honorrequired || 0, 10) === 1;
@@ -378,14 +379,60 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                 };
 
+                const getCurrentPreflightStep = function() {
+                    if (honorRequired && !honorReady) {
+                        return 'honor';
+                    }
+                    if (captchaRequired && !captchaReady) {
+                        return 'captcha';
+                    }
+                    if (faceRequired && !faceReady) {
+                        return 'face';
+                    }
+                    if (screenRequired && !screenReady) {
+                        return 'screen';
+                    }
+
+                    return 'ready';
+                };
+
+                const updateGuidedPreflight = function(ready) {
+                    const currentStep = getCurrentPreflightStep();
+                    document.querySelectorAll('.proctoring-preflight-step').forEach(function(step) {
+                        const stepName = step.getAttribute('data-preflight-step');
+                        step.classList.toggle('is-active', !ready && stepName === currentStep);
+                        step.classList.toggle('is-complete', ready || (
+                            stepName === 'honor' && honorReady ||
+                            stepName === 'captcha' && captchaReady ||
+                            stepName === 'face' && faceReady ||
+                            stepName === 'screen' && screenReady
+                        ));
+                    });
+
+                    document.querySelectorAll('.proctoring-preflight-item').forEach(function(item) {
+                        item.classList.toggle('is-current', !ready && item.id === 'proctoring-check-' + currentStep);
+                    });
+
+                    const readyNode = document.getElementById('proctoring-preflight-ready');
+                    if (readyNode) {
+                        readyNode.style.display = ready ? 'block' : 'none';
+                    }
+
+                    if (!ready && currentStep === 'captcha') {
+                        renderTurnstileWidgets();
+                    }
+                };
+
                 const updatePreflightGate = function() {
                     const ready = honorReady && captchaReady && faceReady && screenReady;
-                    $("#form_activate").css("visibility", "visible");
+                    actionBar.addClass('proctoring-preflight-actionbar');
+                    actionBar.css("visibility", "visible");
                     submitButton.show();
                     submitButton.prop('disabled', !ready);
                     submitButton.attr('aria-disabled', ready ? 'false' : 'true');
                     submitButton.toggleClass('disabled', !ready);
                     setSubmitButtonLabel(ready ? submitButtonDefaultLabel : (strings.preflightsubmitlocked || 'Complete precheck first'));
+                    updateGuidedPreflight(ready);
                 };
 
                 const setScreenResult = function(message, success) {
@@ -396,7 +443,6 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 syncHonorRequirement();
                 syncCaptchaRequirement();
-                renderTurnstileWidgets();
                 if (faceRequired) {
                     setRequirementStatus('face', 'pending');
                 }

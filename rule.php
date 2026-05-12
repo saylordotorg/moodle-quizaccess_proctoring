@@ -471,6 +471,21 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         );
     }
 
+    /**
+     * Build a heading for one guided preflight step.
+     *
+     * @param string $title The step title.
+     * @param string $description The short step description.
+     * @return string Step heading HTML.
+     */
+    private static function make_preflight_step_heading($title, $description) {
+        return html_writer::div(
+            html_writer::div($title, 'proctoring-preflight-step-title') .
+            html_writer::div($description, 'proctoring-preflight-step-description'),
+            'proctoring-preflight-step-heading'
+        );
+    }
+
 
     /**
      * Generate the modal content for the webcam proctoring interface.
@@ -592,20 +607,37 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             ? (new moodle_url("/user/pix.php/{$USER->id}/f1.jpg"))->out(false)
             : '';
 
+        $mform->addElement('html', "<div class='proctoring-preflight-steps'>");
+
         if ($honorrequired) {
-            $statement = html_writer::tag('h3',
-                    get_string('honorstatement:heading', 'quizaccess_proctoring')) .
-                html_writer::div(
-                    format_text(self::get_honor_statement(), FORMAT_PLAIN, ['para' => true]),
-                    'proctoring-honor-statement-text'
-                );
+            $statement = html_writer::div(
+                format_text(self::get_honor_statement(), FORMAT_PLAIN, ['para' => true]),
+                'proctoring-honor-statement-text'
+            );
+            $mform->addElement(
+                'html',
+                "<section id='proctoring-step-honor' class='proctoring-preflight-step' data-preflight-step='honor'>" .
+                self::make_preflight_step_heading(
+                    get_string('preflightstep:honor:title', 'quizaccess_proctoring'),
+                    get_string('preflightstep:honor:desc', 'quizaccess_proctoring')
+                )
+            );
             $mform->addElement('html', html_writer::div($statement, 'proctoring-honor-statement mb-3'));
             $mform->addElement('checkbox', 'proctoring', '', self::get_honor_agreement_label());
             $mform->addRule('proctoring', get_string('youmustagree', 'quizaccess_proctoring'), 'required', null, 'client');
+            $mform->addElement('html', '</section>');
         }
 
         if ($captcharequired) {
-            $mform->addElement('html', "<div class='proctoring-security-check alert alert-info'>");
+            $mform->addElement(
+                'html',
+                "<section id='proctoring-step-captcha' class='proctoring-preflight-step' data-preflight-step='captcha'>" .
+                self::make_preflight_step_heading(
+                    get_string('preflightstep:captcha:title', 'quizaccess_proctoring'),
+                    get_string('preflightstep:captcha:desc', 'quizaccess_proctoring')
+                ) .
+                "<div class='proctoring-security-check alert alert-info'>"
+            );
             if (self::captcha_configured()) {
                 if (self::captcha_provider() === 'turnstile') {
                     $mform->addElement(
@@ -626,13 +658,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                     self::captcha_not_configured_message()
                 );
             }
-            $mform->addElement('html', '</div>');
+            $mform->addElement('html', '</div></section>');
         }
-
-        // Render modal content.
-        $modalcontent = $this->make_modal_content($quizform, $faceidcheck);
-        // Add modal content and action buttons to the form.
-        $mform->addElement('html', $modalcontent);
 
         // Hidden form inputs.
         $hiddenvalue = sprintf(
@@ -649,6 +676,24 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         // Prepare action buttons if face validation is enabled.
         $actionbtns = '';
         if ($faceidcheck === '1') {
+            $mform->addElement(
+                'html',
+                "<section id='proctoring-step-face' class='proctoring-preflight-step' data-preflight-step='face'>" .
+                self::make_preflight_step_heading(
+                    $registerface
+                        ? get_string('preflightstep:registerface:title', 'quizaccess_proctoring')
+                        : get_string('preflightstep:face:title', 'quizaccess_proctoring'),
+                    $registerface
+                        ? get_string('preflightstep:registerface:desc', 'quizaccess_proctoring')
+                        : get_string('preflightstep:face:desc', 'quizaccess_proctoring')
+                )
+            );
+            // Render modal content.
+            $modalcontent = $this->make_modal_content($quizform, $faceidcheck);
+            // Add modal content and action buttons to the form.
+            $mform->addElement('html', $modalcontent);
+            $mform->addElement('html', $hiddenvalue);
+
             $facevalidationlabel = $registerface
                 ? get_string('modal:faceregistration', 'quizaccess_proctoring')
                 : get_string('modal:facevalidation', 'quizaccess_proctoring');
@@ -670,17 +715,26 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
         if (!empty($actionbtns)) {
             $mform->addElement('html', "<div class='container'><div class='row'><div class='col'>{$actionbtns}</div></div></div>");
+            $mform->addElement('html', '</section>');
+        } else {
+            $mform->addElement('html', $hiddenvalue);
         }
 
         if ($requireentirescreen === 1) {
             $screensharebtn = sprintf(
-                "<div class='container'><div class='row'><div class='col'>
+                "<section id='proctoring-step-screen' class='proctoring-preflight-step' data-preflight-step='screen'>
+                %s
+                <div class='container'><div class='row'><div class='col'>
                     %s&nbsp;<span id='screen_share_result'>%s</span>
                     <button id='screensharevalidate' class='btn btn-secondary mt-3' style='display: flex;
                                                 justify-content: center; align-items: center;'>
                         %s
                     </button>
-                </div></div></div>",
+                </div></div></div></section>",
+                self::make_preflight_step_heading(
+                    get_string('preflightstep:screen:title', 'quizaccess_proctoring'),
+                    get_string('preflightstep:screen:desc', 'quizaccess_proctoring')
+                ),
                 get_string('modal:screenshare', 'quizaccess_proctoring'),
                 get_string('modal:pending', 'quizaccess_proctoring'),
                 get_string('modal:shareentirescreen', 'quizaccess_proctoring')
@@ -688,8 +742,17 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $mform->addElement('html', $screensharebtn);
         }
 
-        // Add hidden inputs and proctoring checkbox.
-        $mform->addElement('html', $hiddenvalue);
+        $mform->addElement(
+            'html',
+            html_writer::div(
+                get_string('preflightstep:ready', 'quizaccess_proctoring'),
+                'proctoring-preflight-ready alert alert-success',
+                ['id' => 'proctoring-preflight-ready']
+            )
+        );
+        $mform->addElement('html', '</div>');
+
+        // Add hidden inputs.
         $mform->addElement('hidden', 'entirescreenconfirmed', 0);
         $mform->setType('entirescreenconfirmed', PARAM_INT);
 
