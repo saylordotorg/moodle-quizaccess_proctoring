@@ -277,6 +277,92 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     setRequirementStatus('captcha', captchaReady ? 'complete' : 'pending');
                 };
 
+                const loadTurnstileApi = function() {
+                    if (window.turnstile && typeof window.turnstile.render === 'function') {
+                        return Promise.resolve();
+                    }
+
+                    if (window.quizaccessProctoringTurnstileLoad) {
+                        return window.quizaccessProctoringTurnstileLoad;
+                    }
+
+                    window.quizaccessProctoringTurnstileLoad = new Promise(function(resolve, reject) {
+                        const existingScript = document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]');
+                        if (existingScript) {
+                            existingScript.addEventListener('load', resolve, {once: true});
+                            existingScript.addEventListener('error', reject, {once: true});
+                            window.setTimeout(function() {
+                                if (window.turnstile && typeof window.turnstile.render === 'function') {
+                                    resolve();
+                                }
+                            }, 0);
+                            window.setTimeout(function() {
+                                if (!(window.turnstile && typeof window.turnstile.render === 'function')) {
+                                    reject(new Error('Turnstile failed to load.'));
+                                }
+                            }, 5000);
+                            return;
+                        }
+
+                        const script = document.createElement('script');
+                        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+                        script.async = true;
+                        script.defer = true;
+                        script.addEventListener('load', resolve, {once: true});
+                        script.addEventListener('error', reject, {once: true});
+                        document.head.appendChild(script);
+                    });
+
+                    return window.quizaccessProctoringTurnstileLoad;
+                };
+
+                const renderTurnstileWidgets = async function() {
+                    const widgets = document.querySelectorAll('.cf-turnstile');
+                    if (!captchaRequired || widgets.length === 0) {
+                        return;
+                    }
+
+                    try {
+                        await loadTurnstileApi();
+                        widgets.forEach(function(widget) {
+                            if (widget.getAttribute('data-proctoring-rendered') === '1' || widget.querySelector('iframe')) {
+                                widget.setAttribute('data-proctoring-rendered', '1');
+                                return;
+                            }
+
+                            const sitekey = widget.getAttribute('data-sitekey');
+                            if (!sitekey || !window.turnstile || typeof window.turnstile.render !== 'function') {
+                                setRequirementStatus('captcha', 'action');
+                                return;
+                            }
+
+                            window.turnstile.render(widget, {
+                                sitekey: sitekey,
+                                theme: widget.getAttribute('data-theme') || 'auto',
+                                size: widget.getAttribute('data-size') || 'normal',
+                                callback: function() {
+                                    syncCaptchaRequirement();
+                                    updatePreflightGate();
+                                },
+                                'expired-callback': function() {
+                                    syncCaptchaRequirement();
+                                    updatePreflightGate();
+                                },
+                                'error-callback': function() {
+                                    captchaReady = false;
+                                    setRequirementStatus('captcha', 'action');
+                                    updatePreflightGate();
+                                }
+                            });
+                            widget.setAttribute('data-proctoring-rendered', '1');
+                        });
+                    } catch (error) {
+                        captchaReady = false;
+                        setRequirementStatus('captcha', 'action');
+                        updatePreflightGate();
+                    }
+                };
+
                 const setScreenConfirmed = function(confirmed) {
                     const input = document.getElementById('id_entirescreenconfirmed');
                     if (input) {
@@ -310,6 +396,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 syncHonorRequirement();
                 syncCaptchaRequirement();
+                renderTurnstileWidgets();
                 if (faceRequired) {
                     setRequirementStatus('face', 'pending');
                 }

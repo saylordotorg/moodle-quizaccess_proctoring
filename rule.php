@@ -305,14 +305,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $sitekey = trim((string)get_config('quizaccess_proctoring', 'turnstilesitekey'));
 
         return html_writer::div('', 'cf-turnstile', [
-                'data-sitekey' => $sitekey,
-                'data-theme' => 'auto',
-            ]) .
-            html_writer::tag('script', '', [
-                'src' => 'https://challenges.cloudflare.com/turnstile/v0/api.js',
-                'async' => 'async',
-                'defer' => 'defer',
-            ]);
+            'data-sitekey' => $sitekey,
+            'data-theme' => 'auto',
+            'data-size' => 'normal',
+        ]);
     }
 
     /**

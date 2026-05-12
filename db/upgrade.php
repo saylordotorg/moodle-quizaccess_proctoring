@@ -489,5 +489,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051129, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051130) {
+        // No schema changes. Renders Turnstile explicitly in the start-attempt modal.
+        upgrade_plugin_savepoint(true, 2026051130, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
