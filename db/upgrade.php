@@ -494,5 +494,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051130, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051131) {
+        // No schema changes. Preserves profile image aspect ratio in circular report thumbnails.
+        upgrade_plugin_savepoint(true, 2026051131, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
