@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'quizaccess_proctoring';
-$plugin->release = '1.6.14';
-$plugin->version = 2026051113;
+$plugin->release = '1.6.15';
+$plugin->version = 2026051114;
 $plugin->requires = 2023100900;
 $plugin->maturity = MATURITY_STABLE;

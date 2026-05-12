@@ -342,5 +342,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051113, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051114) {
+        // No schema changes. Refreshes the Saylor AI endpoint setting label.
+        upgrade_plugin_savepoint(true, 2026051114, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

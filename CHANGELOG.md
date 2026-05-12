@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.6.15
+- Renamed the Custom AI endpoint URL setting label to Saylor AI endpoint URL.
+
 # v1.6.14
 - Removed the retired third-party face matching service settings and runtime integration.
 - Kept Custom AI API as the only external face matching method.
