@@ -25,6 +25,7 @@
 // This file must be included within the Moodle framework.
 defined('MOODLE_INTERNAL') || die();
 require_once(__DIR__ . '/classes/link_generator.php');
+require_once(__DIR__ . '/lib.php');
 
 // Check if the Moodle version is 4.2 or higher, which introduced updates to the access rule base class.
 if (class_exists('\mod_quiz\local\access_rule_base')) {
@@ -160,6 +161,43 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
 
         return (string)$label;
+    }
+
+    /**
+     * Check whether the current user can bypass student-only retake lockouts.
+     *
+     * @return bool True when the current user can review risk holds for this quiz.
+     */
+    private function can_bypass_cheating_lockout(): bool {
+        global $USER;
+
+        if (empty($USER->id) || empty($this->quiz->cmid)) {
+            return false;
+        }
+
+        $context = context_module::instance((int)$this->quiz->cmid);
+        return has_capability('quizaccess/proctoring:reviewriskholds', $context, $USER->id);
+    }
+
+    /**
+     * Get the currently active confirmed-violation lockout for the current user.
+     *
+     * @return array|false Lockout details or false.
+     */
+    private function get_current_user_cheating_lockout() {
+        global $USER;
+
+        if (empty($USER->id) || empty($this->quiz->course) || empty($this->quiz->cmid) ||
+                $this->can_bypass_cheating_lockout()) {
+            return false;
+        }
+
+        return quizaccess_proctoring_get_active_cheating_lockout(
+            (int)$this->quiz->course,
+            (int)$this->quiz->cmid,
+            (int)$USER->id,
+            (int)$this->timenow
+        );
     }
 
 
@@ -393,6 +431,26 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
 
         return new self($quizobj, $timenow);
+    }
+
+    /**
+     * Prevent new attempts while a confirmed proctoring violation lockout is active.
+     *
+     * @param int $numprevattempts Number of previous attempts.
+     * @param stdClass|null $lastattempt The last attempt.
+     * @return string|false Message when blocked, otherwise false.
+     */
+    public function prevent_new_attempt($numprevattempts, $lastattempt) {
+        $lockout = $this->get_current_user_cheating_lockout();
+        if (!$lockout) {
+            return false;
+        }
+
+        return get_string(
+            'riskreview:lockoutmessage',
+            'quizaccess_proctoring',
+            userdate((int)$lockout['until'])
+        );
     }
 
     /**

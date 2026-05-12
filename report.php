@@ -221,13 +221,36 @@ if ($riskaction === 'release' && $holdid > 0) {
         throw new moodle_exception('invalidrequest', 'error');
     }
 
-    quizaccess_proctoring_release_risk_hold($holdid, $USER->id);
+    if (!quizaccess_proctoring_release_risk_hold($holdid, $USER->id)) {
+        throw new moodle_exception('invalidrequest', 'error');
+    }
     redirect(new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
         'courseid' => $courseid,
         'cmid' => $cmid,
         'studentid' => $studentid ?: $hold->userid,
         'reportid' => $reportid ?: $hold->reportid,
     ]), get_string('riskreview:releasednotice', 'quizaccess_proctoring'), null, \core\output\notification::NOTIFY_SUCCESS);
+}
+
+if ($riskaction === 'confirm' && $holdid > 0) {
+    require_sesskey();
+    require_capability('quizaccess/proctoring:reviewriskholds', $context);
+
+    $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
+    if ((int)$hold->courseid !== (int)$courseid || (int)$hold->quizid !== (int)$cmid) {
+        throw new moodle_exception('invalidrequest', 'error');
+    }
+
+    if (!quizaccess_proctoring_confirm_risk_hold($holdid, $USER->id)) {
+        throw new moodle_exception('invalidrequest', 'error');
+    }
+
+    redirect(new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
+        'courseid' => $courseid,
+        'cmid' => $cmid,
+        'studentid' => $studentid ?: $hold->userid,
+        'reportid' => $reportid ?: $hold->reportid,
+    ]), get_string('riskreview:confirmednotice', 'quizaccess_proctoring'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
 echo $OUTPUT->header();
@@ -418,10 +441,8 @@ if (
                 (int)$info->reportid
             );
             if ($hold) {
-                $row['riskholdstatus'] = (int)$hold->status === 0
-                    ? get_string('riskreview:active', 'quizaccess_proctoring')
-                    : get_string('riskreview:released', 'quizaccess_proctoring');
-                $row['riskholdactive'] = (int)$hold->status === 0;
+                $row['riskholdstatus'] = quizaccess_proctoring_get_risk_hold_status_label($hold);
+                $row['riskholdactive'] = (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
             }
 
             $actionmenu = new action_menu();
@@ -582,12 +603,24 @@ if (
             (int)$reportid
         );
         if ($hold) {
-            $riskscore['holdstatus'] = (int)$hold->status === 0
-                ? get_string('riskreview:active', 'quizaccess_proctoring')
-                : get_string('riskreview:released', 'quizaccess_proctoring');
-            $riskscore['holdactive'] = (int)$hold->status === 0;
+            $riskscore['holdstatus'] = quizaccess_proctoring_get_risk_hold_status_label($hold);
+            $riskscore['holdactive'] = (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
             $riskscore['thresholdlabel'] = get_string('riskreview:thresholdlabel', 'quizaccess_proctoring', $hold->threshold);
-            if ((int)$hold->status === 0 && has_capability('quizaccess/proctoring:reviewriskholds', $context, $USER->id)) {
+            $lockout = quizaccess_proctoring_get_active_cheating_lockout(
+                (int)$courseid,
+                (int)$cmid,
+                (int)$studentid,
+                time()
+            );
+            if ($lockout) {
+                $riskscore['lockoutuntil'] = get_string(
+                    'riskreview:lockoutuntil',
+                    'quizaccess_proctoring',
+                    userdate((int)$lockout['until'])
+                );
+            }
+            if ((int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE &&
+                    has_capability('quizaccess/proctoring:reviewriskholds', $context, $USER->id)) {
                 $riskscore['canreleasehold'] = true;
                 $riskscore['releaseurl'] = (new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
                     'courseid' => $courseid,
@@ -595,6 +628,16 @@ if (
                     'studentid' => $studentid,
                     'reportid' => $reportid,
                     'riskaction' => 'release',
+                    'holdid' => $hold->id,
+                    'sesskey' => sesskey(),
+                ]))->out(false);
+                $riskscore['canconfirmhold'] = true;
+                $riskscore['confirmurl'] = (new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
+                    'courseid' => $courseid,
+                    'cmid' => $cmid,
+                    'studentid' => $studentid,
+                    'reportid' => $reportid,
+                    'riskaction' => 'confirm',
                     'holdid' => $hold->id,
                     'sesskey' => sesskey(),
                 ]))->out(false);

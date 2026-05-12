@@ -26,6 +26,13 @@
 defined('MOODLE_INTERNAL') || die();
 require_once($CFG->libdir . '/filelib.php'); // Required for Moodle's cURL class.
 
+defined('QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE') ||
+    define('QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE', 0);
+defined('QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED') ||
+    define('QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED', 1);
+defined('QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED') ||
+    define('QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED', 2);
+
 $token = "";
 
 /**
@@ -580,6 +587,95 @@ function quizaccess_proctoring_get_risk_hold(
 }
 
 /**
+ * Get a display label for a risk hold status.
+ *
+ * @param stdClass $hold Hold record.
+ * @return string Localized status label.
+ */
+function quizaccess_proctoring_get_risk_hold_status_label(stdClass $hold): string {
+    switch ((int)$hold->status) {
+        case QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED:
+            return get_string('riskreview:confirmed', 'quizaccess_proctoring');
+        case QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED:
+            return get_string('riskreview:released', 'quizaccess_proctoring');
+        case QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE:
+        default:
+            return get_string('riskreview:active', 'quizaccess_proctoring');
+    }
+}
+
+/**
+ * Get the configured confirmed-violation lockout length in days.
+ *
+ * @return int Number of days to block retakes. Zero means disabled.
+ */
+function quizaccess_proctoring_get_cheating_lockout_days(): int {
+    if ((int)get_config('quizaccess_proctoring', 'cheatinglockoutenabled') !== 1) {
+        return 0;
+    }
+
+    $days = (int)get_config('quizaccess_proctoring', 'cheatinglockoutdays');
+    return max(0, $days);
+}
+
+/**
+ * Get the active confirmed-violation retake lockout for a student and quiz.
+ *
+ * @param int $courseid Course id.
+ * @param int $cmid Quiz course-module id.
+ * @param int $userid User id.
+ * @param int $now Current timestamp.
+ * @return array|false Lockout details, or false when no lockout applies.
+ */
+function quizaccess_proctoring_get_active_cheating_lockout(
+    int $courseid,
+    int $cmid,
+    int $userid,
+    int $now = 0
+) {
+    global $DB;
+
+    $days = quizaccess_proctoring_get_cheating_lockout_days();
+    if ($days <= 0) {
+        return false;
+    }
+
+    $now = $now > 0 ? $now : time();
+    $cutoff = $now - ($days * DAYSECS);
+    $records = $DB->get_records_select(
+        'quizaccess_proctoring_risk_holds',
+        'courseid = :courseid AND quizid = :cmid AND userid = :userid
+            AND status = :status AND timereviewed >= :cutoff',
+        [
+            'courseid' => $courseid,
+            'cmid' => $cmid,
+            'userid' => $userid,
+            'status' => QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED,
+            'cutoff' => $cutoff,
+        ],
+        'timereviewed DESC, id DESC',
+        '*',
+        0,
+        1
+    );
+    if (!$records) {
+        return false;
+    }
+
+    $hold = reset($records);
+    $until = (int)$hold->timereviewed + ($days * DAYSECS);
+    if ($until <= $now) {
+        return false;
+    }
+
+    return [
+        'hold' => $hold,
+        'days' => $days,
+        'until' => $until,
+    ];
+}
+
+/**
  * Apply a proctoring review hold and suppress the quiz gradebook grade while active.
  *
  * @param int $courseid Course id.
@@ -631,7 +727,7 @@ function quizaccess_proctoring_apply_risk_hold(
             'riskscore' => $riskscore,
             'threshold' => $threshold,
             'originalgrade' => $quizgrade ? $quizgrade->grade : null,
-            'status' => 0,
+            'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
             'reviewerid' => 0,
             'timecreated' => $now,
             'timemodified' => $now,
@@ -664,8 +760,8 @@ function quizaccess_proctoring_release_risk_hold(int $holdid, int $reviewerid): 
     global $CFG, $DB;
 
     $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
-    if ((int)$hold->status !== 0) {
-        return true;
+    if ((int)$hold->status !== QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
+        return (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED;
     }
 
     require_once($CFG->dirroot . '/mod/quiz/lib.php');
@@ -676,10 +772,54 @@ function quizaccess_proctoring_release_risk_hold(int $holdid, int $reviewerid): 
 
     quiz_update_grades($quiz, $hold->userid, false);
 
-    $hold->status = 1;
+    $hold->status = QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED;
     $hold->reviewerid = $reviewerid;
     $hold->timereviewed = time();
     $hold->timemodified = $hold->timereviewed;
+    $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
+
+    return true;
+}
+
+/**
+ * Confirm a proctoring violation and keep the quiz grade held at zero.
+ *
+ * @param int $holdid Hold id.
+ * @param int $reviewerid Reviewer user id.
+ * @return bool True when confirmed or already confirmed.
+ */
+function quizaccess_proctoring_confirm_risk_hold(int $holdid, int $reviewerid): bool {
+    global $CFG, $DB;
+
+    $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
+    if ((int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED) {
+        return true;
+    }
+    if ((int)$hold->status !== QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
+        return false;
+    }
+
+    require_once($CFG->dirroot . '/mod/quiz/lib.php');
+    $cm = get_coursemodule_from_id('quiz', $hold->quizid, $hold->courseid, false, MUST_EXIST);
+    $quiz = $DB->get_record('quiz', ['id' => $hold->quizinstance], '*', MUST_EXIST);
+    $quiz->cmidnumber = $cm->idnumber;
+    $quiz->visible = $cm->visible;
+
+    $now = time();
+    $grade = (object)[
+        'userid' => $hold->userid,
+        'rawgrade' => 0,
+        'feedback' => get_string('riskreview:confirmedgradefeedback', 'quizaccess_proctoring', $hold->riskscore),
+        'feedbackformat' => FORMAT_PLAIN,
+        'usermodified' => $reviewerid,
+        'dategraded' => $now,
+    ];
+    quiz_grade_item_update($quiz, $grade);
+
+    $hold->status = QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED;
+    $hold->reviewerid = $reviewerid;
+    $hold->timereviewed = $now;
+    $hold->timemodified = $now;
     $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
 
     return true;

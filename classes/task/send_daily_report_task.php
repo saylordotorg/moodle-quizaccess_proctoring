@@ -306,7 +306,7 @@ class send_daily_report_task extends scheduled_task {
             (int)$attempt->attemptid,
             (int)$attempt->reportid
         );
-        $activehold = $hold && (int)$hold->status === 0;
+        $activehold = $hold && (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
         $eventcount = $DB->count_records('quizaccess_proctoring_events', [
             'courseid' => (int)$attempt->courseid,
             'quizid' => (int)$attempt->cmid,
@@ -338,9 +338,9 @@ class send_daily_report_task extends scheduled_task {
             'threshold' => (int)$settings['threshold'],
             'highrisk' => (int)$risk['score'] >= (int)$settings['threshold'],
             'activehold' => $activehold,
-            'holdstatus' => $activehold
-                ? get_string('riskreview:active', 'quizaccess_proctoring')
-                : ($hold ? get_string('riskreview:released', 'quizaccess_proctoring') : get_string('dailyreport:nohold', 'quizaccess_proctoring')),
+            'holdstatus' => $hold
+                ? quizaccess_proctoring_get_risk_hold_status_label($hold)
+                : get_string('dailyreport:nohold', 'quizaccess_proctoring'),
             'eventcount' => $eventcount,
             'capturecount' => $capturecount,
             'lastactivity' => (int)$attempt->lastactivity,

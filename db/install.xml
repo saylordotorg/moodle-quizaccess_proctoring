@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026051120"
+<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026051122"
        COMMENT="XMLDB file for Moodle mod/quiz/accessrule/proctoring"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:noNamespaceSchemaLocation="../../../../../lib/xmldb/xmldb.xsd"
@@ -151,7 +151,7 @@
                 <FIELD NAME="originalgrade" TYPE="number" LENGTH="10" DECIMALS="5" NOTNULL="false"
                        SEQUENCE="false" COMMENT="Quiz grade before the hold was applied" PREVIOUS="threshold" NEXT="status"/>
                 <FIELD NAME="status" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
-                       SEQUENCE="false" COMMENT="0 active, 1 released" PREVIOUS="originalgrade" NEXT="reviewerid"/>
+                       SEQUENCE="false" COMMENT="0 active, 1 released, 2 confirmed violation" PREVIOUS="originalgrade" NEXT="reviewerid"/>
                 <FIELD NAME="reviewerid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
                        SEQUENCE="false" COMMENT="Reviewer user id" PREVIOUS="status" NEXT="timecreated"/>
                 <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" DEFAULT="0"

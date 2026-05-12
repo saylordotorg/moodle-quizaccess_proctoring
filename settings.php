@@ -125,6 +125,14 @@ if ($hassiteconfig) {
         get_string('setting:riskreviewthreshold', 'quizaccess_proctoring'),
         get_string('setting:riskreviewthreshold_desc', 'quizaccess_proctoring'), 80, PARAM_INT));
 
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/cheatinglockoutenabled',
+        get_string('setting:cheatinglockoutenabled', 'quizaccess_proctoring'),
+        get_string('setting:cheatinglockoutenabled_desc', 'quizaccess_proctoring'), 0));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/cheatinglockoutdays',
+        get_string('setting:cheatinglockoutdays', 'quizaccess_proctoring'),
+        get_string('setting:cheatinglockoutdays_desc', 'quizaccess_proctoring'), 7, PARAM_INT));
+
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/dailyreportenabled',
         get_string('setting:dailyreportenabled', 'quizaccess_proctoring'),
         get_string('setting:dailyreportenabled_desc', 'quizaccess_proctoring'), 0));

@@ -69,6 +69,12 @@
     {{#canreleasehold}}
         <a class="btn btn-primary btn-sm ml-2" href="{{releaseurl}}">{{#str}}riskreview:releasebutton, quizaccess_proctoring{{/str}}</a>
     {{/canreleasehold}}
+    {{#canconfirmhold}}
+        <a class="btn btn-danger btn-sm ml-2" href="{{confirmurl}}">{{#str}}riskreview:confirmbutton, quizaccess_proctoring{{/str}}</a>
+    {{/canconfirmhold}}
+    {{#lockoutuntil}}
+        <div class="mt-2">{{lockoutuntil}}</div>
+    {{/lockoutuntil}}
 </div>
 {{/holdstatus}}
 <div class="proctoring-risk-factor-container">
