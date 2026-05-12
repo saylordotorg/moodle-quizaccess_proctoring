@@ -101,6 +101,10 @@ if ($hassiteconfig) {
         get_string('setting:continuousfacecheckevery', 'quizaccess_proctoring'),
         get_string('setting:continuousfacecheckevery_desc', 'quizaccess_proctoring'), 1, PARAM_INT));
 
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/blurquizwithoutface',
+        get_string('setting:blurquizwithoutface', 'quizaccess_proctoring'),
+        get_string('setting:blurquizwithoutface_desc', 'quizaccess_proctoring'), 0));
+
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/monitorbrowseractivity',
         get_string('setting:monitorbrowseractivity', 'quizaccess_proctoring'),
         get_string('setting:monitorbrowseractivity_desc', 'quizaccess_proctoring'), 1));

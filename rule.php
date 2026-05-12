@@ -959,6 +959,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->monitorbrowseractivity = (int)(get_config('quizaccess_proctoring', 'monitorbrowseractivity') ?? 1);
             $record->blockclipboard = (int)(get_config('quizaccess_proctoring', 'blockclipboard') ?? 1);
             $record->captureviolationdesktop = $this->should_capture_violation_desktop() ? 1 : 0;
+            $record->blurquizwithoutface = (int)(get_config('quizaccess_proctoring', 'blurquizwithoutface') ?? 0);
             $screenmonitorkey = 'cm' . (int)$cmid . 'user' . (int)$USER->id;
             $screenmonitorurl = new moodle_url('/mod/quiz/accessrule/proctoring/screenmonitor.php', [
                 'cmid' => (int)$cmid,
@@ -973,7 +974,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
             // Configure face model URL and include JS.
             $fcmethod = get_config('quizaccess_proctoring', 'fcmethod');
-            $modelurl = $fcmethod === 'customapi'
+            $modelurl = ($fcmethod === 'customapi' || !empty($record->blurquizwithoutface))
                 ? $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/thirdpartylibs/models'
                 : null;
 

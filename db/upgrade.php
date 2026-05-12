@@ -474,5 +474,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051126, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051127) {
+        // No schema changes. Adds optional quiz blurring when the webcam face is not visible.
+        upgrade_plugin_savepoint(true, 2026051127, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

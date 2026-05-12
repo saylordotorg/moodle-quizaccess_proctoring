@@ -558,6 +558,38 @@ body.proctoring-lb-disable-scrolling {
     cursor: default;
 }
 
+.proctoring-face-blur-notice {
+    position: fixed;
+    top: 96px;
+    left: 50%;
+    z-index: 10003;
+    display: none;
+    max-width: min(520px, calc(100vw - 32px));
+    padding: 12px 16px;
+    border: 1px solid #a23c3c;
+    background: #fff7f7;
+    color: #7a1f1f;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+    font-weight: 700;
+    text-align: center;
+    transform: translateX(-50%);
+}
+
+body.proctoring-face-blur-active #region-main {
+    filter: blur(8px);
+    pointer-events: none;
+    user-select: none;
+}
+
+body.proctoring-face-blur-active .proctoring-face-blur-notice,
+body.proctoring-face-blur-active #proctoring-desktop-status-panel,
+body.proctoring-face-blur-active .proctoring-fixed-webcam-box,
+body.proctoring-face-blur-active .proctoring-screen-verification-marker,
+body.proctoring-face-blur-active .proctoring-screen-share-gate {
+    filter: none;
+    pointer-events: auto;
+}
+
 @media (max-width: 768px) {
     .proctoring-fixed-webcam-box #video {
         width: 130px;

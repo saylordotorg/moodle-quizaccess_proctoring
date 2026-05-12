@@ -23,6 +23,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'screenmarkerwrongmonitor', component: 'quizaccess_proctoring'},
                 {key: 'screenmonitor:windowopened', component: 'quizaccess_proctoring'},
                 {key: 'screenmonitor:popupblocked', component: 'quizaccess_proctoring'},
+                {key: 'faceblurmessage', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -45,6 +46,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     screenmarkerwrongmonitor: strings[15],
                     screenmonitorwindowopened: strings[16],
                     screenmonitorpopupblocked: strings[17],
+                    faceblurmessage: strings[18],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -782,9 +784,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
         return {
             async setup(props, modelurl) {
                 const strings = await loadStrings();
+                let faceModelReady = false;
                 if (modelurl !== null) {
-                    // eslint-disable-next-line no-undef
-                    await faceapi.nets.ssdMobilenetv1.loadFromUri(modelurl);
+                    try {
+                        // eslint-disable-next-line no-undef
+                        await faceapi.nets.ssdMobilenetv1.loadFromUri(modelurl);
+                        faceModelReady = true;
+                    } catch (error) {
+                        Notification.exception(error);
+                    }
                 }
                 takepicturedelay = props.camshotdelay;
                 // Skip for summary page.
@@ -824,6 +832,77 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const video = document.getElementById('video');
                 const canvas = document.getElementById('canvas');
                 const photo = document.getElementById('photo');
+                const blurWhenNoFace = parseInt(props.blurquizwithoutface || 0, 10) === 1;
+                let faceBlurTimer = null;
+                let faceBlurChecking = false;
+                let facePresentCount = 0;
+                let faceMissingCount = 0;
+
+                const setQuizBlurredForFace = (blurred) => {
+                    document.body.classList.toggle('proctoring-face-blur-active', blurred);
+                    const notice = document.getElementById('proctoring-face-blur-notice');
+                    if (notice) {
+                        notice.style.display = blurred ? 'block' : 'none';
+                    }
+                };
+
+                const initFaceVisibilityBlur = () => {
+                    if (!blurWhenNoFace || !faceModelReady || !video || faceBlurTimer) {
+                        return;
+                    }
+
+                    if (!document.getElementById('proctoring-face-blur-notice')) {
+                        $('body').append(
+                            `<div id="proctoring-face-blur-notice" class="proctoring-face-blur-notice" role="alert">` +
+                                strings.faceblurmessage +
+                            '</div>'
+                        );
+                    }
+
+                    setQuizBlurredForFace(true);
+
+                    const checkFaceVisibility = async() => {
+                        if (faceBlurChecking) {
+                            return;
+                        }
+
+                        if (!video.videoWidth || !video.videoHeight) {
+                            setQuizBlurredForFace(true);
+                            return;
+                        }
+
+                        faceBlurChecking = true;
+                        try {
+                            // eslint-disable-next-line no-undef
+                            const detections = await faceapi.detectAllFaces(video);
+                            const faceVisible = detections.some((detection) => detection.score >= 0.45);
+                            if (faceVisible) {
+                                facePresentCount++;
+                                faceMissingCount = 0;
+                                if (facePresentCount >= 1) {
+                                    setQuizBlurredForFace(false);
+                                }
+                            } else {
+                                faceMissingCount++;
+                                facePresentCount = 0;
+                                if (faceMissingCount >= 2) {
+                                    setQuizBlurredForFace(true);
+                                }
+                            }
+                        } catch (error) {
+                            faceMissingCount++;
+                            facePresentCount = 0;
+                            if (faceMissingCount >= 2) {
+                                setQuizBlurredForFace(true);
+                            }
+                        } finally {
+                            faceBlurChecking = false;
+                        }
+                    };
+
+                    faceBlurTimer = window.setInterval(checkFaceVisibility, 1500);
+                    checkFaceVisibility();
+                };
 
                 const makeElementDraggable = (element) => {
                 let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
@@ -880,19 +959,19 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         props.webcampicture = data;
 
                         let croppedImage = $('#cropimg');
-                        if (modelurl !== null) {
+                        if (faceModelReady) {
                             await detectface(photo, croppedImage);
                         }
                         let faceFound;
                         let faceImage;
                         if (croppedImage.src) {
-                            if (modelurl !== null) {
+                            if (faceModelReady) {
                                 removeNotifications();
                             }
                             faceFound = 1;
                             faceImage = croppedImage.src;
                         } else {
-                            if (modelurl !== null) {
+                            if (faceModelReady) {
                                 showNotification(strings.facenotfoundoncam, 'error');
                             }
                             faceFound = 0;
@@ -936,6 +1015,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         video.srcObject = stream;
                         video.play();
                         isCameraAllowed = true;
+                        initFaceVisibilityBlur();
                     })
                     .catch(function() {
                         hideButtons();
