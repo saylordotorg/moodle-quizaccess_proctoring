@@ -19,6 +19,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'screenmarkerwrongmonitor', component: 'quizaccess_proctoring'},
                 {key: 'screenmonitor:windowopened', component: 'quizaccess_proctoring'},
                 {key: 'screenmonitor:popupblocked', component: 'quizaccess_proctoring'},
+                {key: 'preflight:complete', component: 'quizaccess_proctoring'},
+                {key: 'preflight:actionneeded', component: 'quizaccess_proctoring'},
+                {key: 'modal:pending', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -40,6 +43,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     screenmarkerwrongmonitor: strings[14],
                     screenmonitorwindowopened: strings[15],
                     screenmonitorpopupblocked: strings[16],
+                    preflightcomplete: strings[17],
+                    preflightactionneeded: strings[18],
+                    preflightpending: strings[19],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -194,8 +200,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const submitButton = $("#id_submitbutton");
                 const faceRequired = parseInt(props.faceidcheck, 10) === 1;
                 const screenRequired = parseInt(props.requireentirescreen, 10) === 1;
+                const honorRequired = parseInt(props.honorrequired || 0, 10) === 1;
+                const captchaRequired = parseInt(props.captcharequired || 0, 10) === 1;
                 let faceReady = !faceRequired;
                 let screenReady = !screenRequired;
+                let honorReady = !honorRequired;
+                let captchaReady = !captchaRequired;
                 let screenStream = null;
                 let screenVideo = null;
                 let screenCanvas = null;
@@ -211,6 +221,59 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         .replace(/'/g, '&#39;');
                 };
 
+                const setRequirementStatus = function(key, state, message) {
+                    const item = document.getElementById('proctoring-check-' + key);
+                    const status = document.getElementById('proctoring-check-' + key + '-status');
+                    if (!item || !status) {
+                        return;
+                    }
+
+                    item.classList.remove('is-pending', 'is-complete', 'is-action');
+                    status.classList.remove('is-pending', 'is-complete', 'is-action');
+                    item.classList.add('is-' + state);
+                    status.classList.add('is-' + state);
+                    status.textContent = message || (
+                        state === 'complete'
+                            ? strings.preflightcomplete
+                            : state === 'action'
+                                ? strings.preflightactionneeded
+                                : strings.preflightpending
+                    );
+                };
+
+                const syncHonorRequirement = function() {
+                    if (!honorRequired) {
+                        return;
+                    }
+
+                    const checkbox = document.querySelector('input[name="proctoring"]');
+                    honorReady = !!(checkbox && checkbox.checked);
+                    setRequirementStatus('honor', honorReady ? 'complete' : 'pending');
+                };
+
+                const getCaptchaToken = function() {
+                    const turnstile = document.querySelector('input[name="cf-turnstile-response"]');
+                    const recaptcha = document.querySelector('textarea[name="g-recaptcha-response"], input[name="g-recaptcha-response"]');
+
+                    if (turnstile && turnstile.value) {
+                        return turnstile.value;
+                    }
+                    if (recaptcha && recaptcha.value) {
+                        return recaptcha.value;
+                    }
+
+                    return '';
+                };
+
+                const syncCaptchaRequirement = function() {
+                    if (!captchaRequired) {
+                        return;
+                    }
+
+                    captchaReady = getCaptchaToken().length > 0;
+                    setRequirementStatus('captcha', captchaReady ? 'complete' : 'pending');
+                };
+
                 const setScreenConfirmed = function(confirmed) {
                     const input = document.getElementById('id_entirescreenconfirmed');
                     if (input) {
@@ -219,7 +282,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 };
 
                 const updatePreflightGate = function() {
-                    if (faceReady && screenReady) {
+                    if (honorReady && captchaReady && faceReady && screenReady) {
                         $("#form_activate").css("visibility", "visible");
                         submitButton.show();
                     } else {
@@ -234,8 +297,35 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     );
                 };
 
-                if (faceRequired || screenRequired) {
+                syncHonorRequirement();
+                syncCaptchaRequirement();
+                if (faceRequired) {
+                    setRequirementStatus('face', 'pending');
+                }
+                if (screenRequired) {
+                    setRequirementStatus('screen', 'pending');
+                }
+
+                if (honorRequired || captchaRequired || faceRequired || screenRequired) {
                     updatePreflightGate();
+                }
+
+                const honorCheckbox = document.querySelector('input[name="proctoring"]');
+                if (honorCheckbox) {
+                    honorCheckbox.addEventListener('change', function() {
+                        syncHonorRequirement();
+                        updatePreflightGate();
+                    });
+                }
+
+                if (captchaRequired) {
+                    window.setInterval(function() {
+                        const previousReady = captchaReady;
+                        syncCaptchaRequirement();
+                        if (previousReady !== captchaReady) {
+                            updatePreflightGate();
+                        }
+                    }, 500);
                 }
 
                 const initScreenMarker = function() {
@@ -387,6 +477,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             screenReady = true;
                             setScreenConfirmed(true);
                             setScreenResult(strings.screenshareaccepted, true);
+                            setRequirementStatus('screen', 'complete');
                             updatePreflightGate();
                         },
                         onUnavailable: function() {
@@ -395,19 +486,23 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             }
                             screenReady = false;
                             setScreenConfirmed(false);
+                            setRequirementStatus('screen', 'action');
                             updatePreflightGate();
                         },
                         onWrongScreen: function() {
                             screenReady = false;
                             setScreenConfirmed(false);
                             setScreenResult(strings.screenmarkerwrongmonitor, false);
+                            setRequirementStatus('screen', 'action');
                             updatePreflightGate();
                         },
                         onOpenBlocked: function() {
                             setScreenResult(strings.screenmonitorpopupblocked, false);
+                            setRequirementStatus('screen', 'action');
                         },
                         onOpened: function() {
                             setScreenResult(strings.screenmonitorwindowopened, true);
+                            setRequirementStatus('screen', 'pending');
                         }
                     });
                     screenMonitorClient.start();
@@ -416,6 +511,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 $('#fcvalidate').append('<img id="validate-cropimg" style="display: none;" src="" alt=""/>');
                 $("#screensharevalidate").click(async function(event) {
                     event.preventDefault();
+                    setRequirementStatus('screen', 'pending');
 
                     if (screenMonitorClient) {
                         screenMonitorClient.open();
@@ -424,6 +520,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
                         setScreenResult(strings.screensharenotsupported, false);
+                        setRequirementStatus('screen', 'action');
                         screenReady = false;
                         setScreenConfirmed(false);
                         updatePreflightGate();
@@ -441,6 +538,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         });
                     } catch (error) {
                         setScreenResult(strings.screensharedenied, false);
+                        setRequirementStatus('screen', 'action');
                         screenReady = false;
                         setScreenConfirmed(false);
                         updatePreflightGate();
@@ -452,6 +550,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     if (!videoTrack || settings.displaySurface !== 'monitor') {
                         stopScreenStream();
                         setScreenResult(strings.entirescreenrequired, false);
+                        setRequirementStatus('screen', 'action');
                         screenReady = false;
                         setScreenConfirmed(false);
                         updatePreflightGate();
@@ -469,6 +568,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     } catch (error) {
                         stopScreenStream();
                         setScreenResult(strings.screensharedenied, false);
+                        setRequirementStatus('screen', 'action');
                         screenReady = false;
                         setScreenConfirmed(false);
                         updatePreflightGate();
@@ -478,6 +578,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     if (!await waitForScreenFrame() || !sharedScreenContainsMarker()) {
                         stopScreenStream();
                         setScreenResult(strings.screenmarkerwrongmonitor, false);
+                        setRequirementStatus('screen', 'action');
                         screenReady = false;
                         setScreenConfirmed(false);
                         updatePreflightGate();
@@ -486,12 +587,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                     videoTrack.addEventListener('ended', function() {
                         setScreenResult(strings.screensharestopped, false);
+                        setRequirementStatus('screen', 'action');
                         screenReady = false;
                         setScreenConfirmed(false);
                         updatePreflightGate();
                     });
 
                     setScreenResult(strings.screenshareaccepted, true);
+                    setRequirementStatus('screen', 'complete');
                     screenReady = true;
                     setScreenConfirmed(true);
                     updatePreflightGate();
@@ -500,6 +603,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 $("#fcvalidate").click(async function(event) {
 
                     event.preventDefault();
+                    setRequirementStatus('face', 'pending');
                     const photo = document.getElementById('photo');
                     const canvas = document.getElementById('canvas');
                     const video = document.getElementById('video');
@@ -525,6 +629,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         if (!detection.qualityPassed) {
                             $("#video").css("border", "10px solid red");
                             $("#face_validation_result").html(`<span style="color: red">${strings.facequalityfailed}</span>`);
+                            setRequirementStatus('face', 'action');
                             return;
                         }
                         faceFound = detection.faceFound;
@@ -555,28 +660,35 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 $("#face_validation_result").html(`<span style="color: green">${strings.facematched}</span>`);
                                 document.getElementById("fcvalidate").style.display = "none";
                                 faceReady = true;
+                                setRequirementStatus('face', 'complete');
                                 updatePreflightGate();
                             } else if (status === 'registered') {
                                 $("#video").css("border", "10px solid green");
                                 $("#face_validation_result").html(`<span style="color: green">${strings.faceregistered}</span>`);
                                 document.getElementById("fcvalidate").style.display = "none";
                                 faceReady = true;
+                                setRequirementStatus('face', 'complete');
                                 updatePreflightGate();
                             } else if (status === 'photonotuploaded') {
                                 $("#video").css("border", "10px solid red");
                                 $("#face_validation_result").html(`<span style="color: red">${strings.photonotuploaded}</span>`);
+                                setRequirementStatus('face', 'action');
                             } else if (status === 'invalidApi') {
                                 $("#video").css("border", "10px solid red");
                                 $("#face_validation_result").html(`<span style="color: red">${strings.invalidapi}</span>`);
+                                setRequirementStatus('face', 'action');
                             } else if (status === 'facenotfound') {
                                 $("#video").css("border", "10px solid red");
                                 $("#face_validation_result").html(`<span style="color: red">${strings.facenotfoundoncam}</span>`);
+                                setRequirementStatus('face', 'action');
                             } else if (status === 'faceunclear') {
                                 $("#video").css("border", "10px solid red");
                                 $("#face_validation_result").html(`<span style="color: red">${strings.facequalityfailed}</span>`);
+                                setRequirementStatus('face', 'action');
                             } else {
                                 $("#video").css("border", "10px solid red");
                                 $("#face_validation_result").html(`<span style="color: red">${strings.facenotmatched}</span>`);
+                                setRequirementStatus('face', 'action');
                             }
                         } else {
                             document.getElementById('loading_spinner').style.display = 'none';

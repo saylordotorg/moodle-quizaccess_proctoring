@@ -479,5 +479,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051127, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051128) {
+        // No schema changes. Improves the start-attempt preflight requirement checklist.
+        upgrade_plugin_savepoint(true, 2026051128, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

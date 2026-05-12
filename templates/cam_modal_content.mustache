@@ -21,23 +21,14 @@
     }
 }}
 
-<div class="container">
-    <!-- Header Section -->
-    <div class="row">
-        <div class="col font-weight-bold">
-            {{#header}}
-                * {{{header}}}
-            {{/header}}
-        </div>
-    </div>
-
-    <!-- Proctoring Statement Section -->
-    <div class="row">
-        <div class="col font-weight-bold">
-            {{#proctoringstatement}}
-                {{{proctoringstatement}}}
-            {{/proctoringstatement}}
-        </div>
+<div class="container-fluid px-0 proctoring-webcam-setup">
+    <div class="alert alert-info proctoring-webcam-requirement" role="alert">
+        {{#header}}
+            <div class="proctoring-webcam-requirement-title">{{{header}}}</div>
+        {{/header}}
+        {{#proctoringstatement}}
+            <div class="proctoring-webcam-requirement-text">{{{proctoringstatement}}}</div>
+        {{/proctoringstatement}}
     </div>
 
     <!-- Video and Canvas Section -->

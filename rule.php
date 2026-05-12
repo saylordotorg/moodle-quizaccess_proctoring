@@ -407,6 +407,74 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         );
     }
 
+    /**
+     * Build the visible checklist shown in the quiz start preflight popup.
+     *
+     * @param bool $honorrequired Whether the integrity statement is required.
+     * @param bool $captcharequired Whether a CAPTCHA/security check is required.
+     * @param string|int $faceidcheck Whether face recognition is required.
+     * @param bool $registerface Whether the first face capture will register the user.
+     * @param int $requireentirescreen Whether entire screen sharing is required.
+     * @return string Checklist HTML.
+     * @throws coding_exception
+     */
+    private static function make_preflight_requirements_panel(
+        $honorrequired,
+        $captcharequired,
+        $faceidcheck,
+        $registerface,
+        $requireentirescreen
+    ) {
+        $requirements = [];
+
+        if ($honorrequired) {
+            $requirements['honor'] = get_string('preflight:honesty', 'quizaccess_proctoring');
+        }
+        if ($captcharequired) {
+            $requirements['captcha'] = get_string('preflight:securitycheck', 'quizaccess_proctoring');
+        }
+        if ((string)$faceidcheck === '1') {
+            $requirements['face'] = $registerface
+                ? get_string('preflight:registerface', 'quizaccess_proctoring')
+                : get_string('preflight:facerecognition', 'quizaccess_proctoring');
+        }
+        if ((int)$requireentirescreen === 1) {
+            $requirements['screen'] = get_string('preflight:screenshare', 'quizaccess_proctoring');
+        }
+
+        if (empty($requirements)) {
+            return '';
+        }
+
+        $items = '';
+        foreach ($requirements as $key => $label) {
+            $status = html_writer::span(
+                get_string('modal:pending', 'quizaccess_proctoring'),
+                'proctoring-preflight-status is-pending',
+                ['id' => 'proctoring-check-' . $key . '-status']
+            );
+            $items .= html_writer::div(
+                html_writer::span($label, 'proctoring-preflight-label') . $status,
+                'proctoring-preflight-item is-pending',
+                ['id' => 'proctoring-check-' . $key]
+            );
+        }
+
+        return html_writer::div(
+            html_writer::div(
+                get_string('preflight:requirementsheading', 'quizaccess_proctoring'),
+                'proctoring-preflight-heading'
+            ) .
+            html_writer::div(
+                get_string('preflight:requirementsintro', 'quizaccess_proctoring'),
+                'proctoring-preflight-intro'
+            ) .
+            html_writer::div($items, 'proctoring-preflight-items'),
+            'proctoring-preflight-panel alert alert-light border mb-3',
+            ['role' => 'status']
+        );
+    }
+
 
     /**
      * Generate the modal content for the webcam proctoring interface.
@@ -471,6 +539,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $hasreferenceimage = $DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $USER->id]);
         $registerface = ($faceidcheck === '1' && !$hasreferenceimage);
         $requireentirescreen = $this->requires_entire_screen() ? 1 : 0;
+        $honorrequired = self::honor_statement_required();
+        $captcharequired = $this->should_require_captcha($attemptid);
 
         // Prepare data for the JavaScript module.
         $examurl = new moodle_url('/mod/quiz/startattempt.php');
@@ -491,6 +561,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             'registerface' => $registerface ? 1 : 0,
             'faceidcheck' => $faceidcheck === '1' ? 1 : 0,
             'requireentirescreen' => $requireentirescreen,
+            'honorrequired' => $honorrequired ? 1 : 0,
+            'captcharequired' => $captcharequired ? 1 : 0,
             'screenmonitorurl' => $usepersistentmonitor ? $screenmonitorurl->out(false) : '',
             'screenmonitorchannel' => $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '',
             'screenmonitorstatuskey' => $usepersistentmonitor ? 'quizaccess_proctoring_screen_status_' . $screenmonitorkey : '',
@@ -508,13 +580,23 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
         // Add HTML wrapper for the form.
         $mform->addElement('html', "<div class='quiz-check-form'>");
+        $mform->addElement(
+            'html',
+            self::make_preflight_requirements_panel(
+                $honorrequired,
+                $captcharequired,
+                $faceidcheck,
+                $registerface,
+                $requireentirescreen
+            )
+        );
 
         // Prepare user profile image URL.
         $profileimageurl = $USER->picture
             ? (new moodle_url("/user/pix.php/{$USER->id}/f1.jpg"))->out(false)
             : '';
 
-        if (self::honor_statement_required()) {
+        if ($honorrequired) {
             $statement = html_writer::tag('h3',
                     get_string('honorstatement:heading', 'quizaccess_proctoring')) .
                 html_writer::div(
@@ -526,7 +608,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $mform->addRule('proctoring', get_string('youmustagree', 'quizaccess_proctoring'), 'required', null, 'client');
         }
 
-        if ($this->should_require_captcha($attemptid)) {
+        if ($captcharequired) {
+            $mform->addElement('html', "<div class='proctoring-security-check alert alert-info'>");
             if (self::captcha_configured()) {
                 if (self::captcha_provider() === 'turnstile') {
                     $mform->addElement(
@@ -547,6 +630,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                     self::captcha_not_configured_message()
                 );
             }
+            $mform->addElement('html', '</div>');
         }
 
         // Render modal content.
