@@ -76,4 +76,16 @@ $tasks = [
         'dayofweek' => '*',
         'enabled'   => 1, // Task is enabled by default.
     ],
+
+    // This task sends a daily proctoring risk report when enabled in plugin settings.
+    [
+        'classname' => 'quizaccess_proctoring\task\send_daily_report_task',
+        'blocking'  => 0,
+        'minute'    => '5',
+        'hour'      => '7',
+        'day'       => '*',
+        'month'     => '*',
+        'dayofweek' => '*',
+        'disabled'  => 0,
+    ],
 ];

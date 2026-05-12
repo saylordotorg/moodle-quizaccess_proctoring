@@ -125,6 +125,22 @@ if ($hassiteconfig) {
         get_string('setting:riskreviewthreshold', 'quizaccess_proctoring'),
         get_string('setting:riskreviewthreshold_desc', 'quizaccess_proctoring'), 80, PARAM_INT));
 
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/dailyreportenabled',
+        get_string('setting:dailyreportenabled', 'quizaccess_proctoring'),
+        get_string('setting:dailyreportenabled_desc', 'quizaccess_proctoring'), 0));
+
+    $settings->add(new admin_setting_configtextarea('quizaccess_proctoring/dailyreportemails',
+        get_string('setting:dailyreportemails', 'quizaccess_proctoring'),
+        get_string('setting:dailyreportemails_desc', 'quizaccess_proctoring'), '', PARAM_TEXT));
+
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/dailyreportincludeall',
+        get_string('setting:dailyreportincludeall', 'quizaccess_proctoring'),
+        get_string('setting:dailyreportincludeall_desc', 'quizaccess_proctoring'), 0));
+
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/dailyreportsendempty',
+        get_string('setting:dailyreportsendempty', 'quizaccess_proctoring'),
+        get_string('setting:dailyreportsendempty_desc', 'quizaccess_proctoring'), 0));
+
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/honorstatementrequired',
         get_string('setting:honorstatementrequired', 'quizaccess_proctoring'),
         get_string('setting:honorstatementrequired_desc', 'quizaccess_proctoring'), 1));

@@ -430,5 +430,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051120, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051121) {
+        // No schema changes. Adds the daily proctoring email report scheduled task and settings.
+        upgrade_plugin_savepoint(true, 2026051121, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
