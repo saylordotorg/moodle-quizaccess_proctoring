@@ -35,6 +35,15 @@ define([], function() {
         return isFresh(status) && status.ready === true && status.marker === true && status.stopped !== true;
     };
 
+    const isMobileClient = function() {
+        const userAgent = navigator.userAgent || '';
+        const mobileAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+        const mobileViewport = window.matchMedia &&
+            window.matchMedia('(max-width: 768px), (pointer: coarse) and (max-width: 1024px)').matches;
+
+        return mobileAgent || mobileViewport;
+    };
+
     return {
         create: function(props, callbacks) {
             callbacks = callbacks || {};
@@ -49,6 +58,7 @@ define([], function() {
             let screenshotTimer = null;
             let latestScreenshot = '';
             let lastWrongScreenLogged = 0;
+            const mobileClient = isMobileClient();
 
             const postMessage = function(message) {
                 if (!channel) {
@@ -103,6 +113,13 @@ define([], function() {
             };
 
             const open = function() {
+                if (mobileClient) {
+                    if (callbacks.onUnavailable) {
+                        callbacks.onUnavailable();
+                    }
+                    return null;
+                }
+
                 if (!monitorUrl) {
                     if (callbacks.onOpenBlocked) {
                         callbacks.onOpenBlocked();
@@ -174,6 +191,10 @@ define([], function() {
 
             return {
                 start: function() {
+                    if (mobileClient) {
+                        return;
+                    }
+
                     readAndHandleStoredStatus();
                     requestStatus();
 

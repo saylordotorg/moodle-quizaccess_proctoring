@@ -464,5 +464,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051124, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051125) {
+        // No schema changes. Adds a collapsible screen monitor popup and suppresses it on mobile/tablet.
+        upgrade_plugin_savepoint(true, 2026051125, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

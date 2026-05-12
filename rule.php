@@ -479,6 +479,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             'cmid' => (int)$coursedata['cmid'],
             'key' => $screenmonitorkey,
         ]);
+        $usepersistentmonitor = !self::is_mobile_or_tablet();
         $record = [
             'id' => 0,
             'courseid' => (int)$coursedata['courseid'],
@@ -490,10 +491,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             'registerface' => $registerface ? 1 : 0,
             'faceidcheck' => $faceidcheck === '1' ? 1 : 0,
             'requireentirescreen' => $requireentirescreen,
-            'screenmonitorurl' => $screenmonitorurl->out(false),
-            'screenmonitorchannel' => 'quizaccess_proctoring_screen_' . $screenmonitorkey,
-            'screenmonitorstatuskey' => 'quizaccess_proctoring_screen_status_' . $screenmonitorkey,
-            'screenmonitorwindowname' => 'quizaccess_proctoring_screen_' . $screenmonitorkey,
+            'screenmonitorurl' => $usepersistentmonitor ? $screenmonitorurl->out(false) : '',
+            'screenmonitorchannel' => $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '',
+            'screenmonitorstatuskey' => $usepersistentmonitor ? 'quizaccess_proctoring_screen_status_' . $screenmonitorkey : '',
+            'screenmonitorwindowname' => $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '',
         ];
 
         // Include Face API JS library if required.
@@ -963,10 +964,12 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 'cmid' => (int)$cmid,
                 'key' => $screenmonitorkey,
             ]);
-            $record->screenmonitorurl = $screenmonitorurl->out(false);
-            $record->screenmonitorchannel = 'quizaccess_proctoring_screen_' . $screenmonitorkey;
-            $record->screenmonitorstatuskey = 'quizaccess_proctoring_screen_status_' . $screenmonitorkey;
-            $record->screenmonitorwindowname = 'quizaccess_proctoring_screen_' . $screenmonitorkey;
+            $usepersistentmonitor = !self::is_mobile_or_tablet();
+            $record->screenmonitorurl = $usepersistentmonitor ? $screenmonitorurl->out(false) : '';
+            $record->screenmonitorchannel = $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '';
+            $record->screenmonitorstatuskey = $usepersistentmonitor ?
+                'quizaccess_proctoring_screen_status_' . $screenmonitorkey : '';
+            $record->screenmonitorwindowname = $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '';
 
             // Configure face model URL and include JS.
             $fcmethod = get_config('quizaccess_proctoring', 'fcmethod');
