@@ -119,6 +119,57 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * Determine whether the site default requires CAPTCHA before starting a quiz attempt.
+     *
+     * @return bool True if the site default requires CAPTCHA.
+     */
+    private static function site_requires_captcha() {
+        $setting = get_config('quizaccess_proctoring', 'captchabeforeattemptenabled');
+
+        if ($setting === false || $setting === null || $setting === '') {
+            return false;
+        }
+
+        return (int)$setting === 1;
+    }
+
+    /**
+     * Determine whether this quiz requires CAPTCHA before starting a new attempt.
+     *
+     * @return bool True if CAPTCHA is required.
+     */
+    private function requires_captcha() {
+        $quizsetting = $this->quiz->captchamode ?? -1;
+
+        if ($quizsetting === null || (int)$quizsetting === -1) {
+            return self::site_requires_captcha();
+        }
+
+        return (int)$quizsetting === 1;
+    }
+
+    /**
+     * Determine whether Moodle's global reCAPTCHA keys are configured.
+     *
+     * @return bool True when both public and private keys are present.
+     */
+    private static function captcha_configured() {
+        global $CFG;
+
+        return !empty($CFG->recaptchapublickey) && !empty($CFG->recaptchaprivatekey);
+    }
+
+    /**
+     * Determine whether CAPTCHA should be required for this preflight submission.
+     *
+     * @param int|null $attemptid Current attempt id, if one already exists.
+     * @return bool True when starting a new attempt requires CAPTCHA.
+     */
+    private function should_require_captcha($attemptid) {
+        return empty($attemptid) && $this->requires_captcha();
+    }
+
+    /**
      * Determine whether students must accept the pre-quiz integrity statement.
      *
      * @return bool True if the integrity statement checkbox is required.
@@ -318,6 +369,20 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $mform->addRule('proctoring', get_string('youmustagree', 'quizaccess_proctoring'), 'required', null, 'client');
         }
 
+        if ($this->should_require_captcha($attemptid)) {
+            if (self::captcha_configured()) {
+                $mform->addElement('recaptcha', 'proctoringcaptcha', get_string('captcha:heading', 'quizaccess_proctoring'));
+                $mform->addHelpButton('proctoringcaptcha', 'recaptcha', 'auth');
+            } else {
+                $mform->addElement(
+                    'static',
+                    'proctoringcaptchaunavailable',
+                    get_string('captcha:heading', 'quizaccess_proctoring'),
+                    get_string('captcha:notconfigured', 'quizaccess_proctoring')
+                );
+            }
+        }
+
         // Render modal content.
         $modalcontent = $this->make_modal_content($quizform, $faceidcheck);
         // Add modal content and action buttons to the form.
@@ -396,6 +461,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @return array Updated errors array.
      */
     public function validate_preflight_check($data, $files, $errors, $attemptid) {
+        global $CFG;
+
         // Extend validation from the parent class.
         if (method_exists(get_parent_class($this), 'validate_preflight_check')) {
             $errors = parent::validate_preflight_check($data, $files, $errors, $attemptid);
@@ -410,6 +477,32 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $errorkey = self::honor_statement_required() ? 'proctoring' : 'entirescreenconfirmed';
             if (empty($errors[$errorkey])) {
                 $errors[$errorkey] = get_string('entirescreenrequired', 'quizaccess_proctoring');
+            }
+        }
+
+        if ($this->should_require_captcha($attemptid)) {
+            if (!self::captcha_configured()) {
+                $errors['proctoringcaptchaunavailable'] = get_string('captcha:notconfigured', 'quizaccess_proctoring');
+            } else {
+                $response = isset($data['g-recaptcha-response'])
+                    ? (string)$data['g-recaptcha-response']
+                    : optional_param('g-recaptcha-response', '', PARAM_RAW);
+                if (trim($response) === '') {
+                    $errors['proctoringcaptcha'] = get_string('missingrecaptchachallengefield');
+                } else {
+                    require_once($CFG->libdir . '/recaptchalib_v2.php');
+                    $result = recaptcha_check_response(
+                        RECAPTCHA_VERIFY_URL,
+                        $CFG->recaptchaprivatekey,
+                        getremoteaddr(),
+                        $response
+                    );
+                    if (empty($result['isvalid'])) {
+                        $errors['proctoringcaptcha'] = !empty($result['error'])
+                            ? $result['error']
+                            : get_string('incorrectpleasetryagain', 'auth');
+                    }
+                }
             }
         }
 
@@ -490,6 +583,20 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
         $mform->addElement(
             'select',
+            'captchamode',
+            get_string('captchamode', 'quizaccess_proctoring'),
+            [
+                -1 => get_string('captchamode_inherit', 'quizaccess_proctoring'),
+                1 => get_string('captchamode_enabled', 'quizaccess_proctoring'),
+                0 => get_string('captchamode_disabled', 'quizaccess_proctoring'),
+            ]
+        );
+        $mform->setDefault('captchamode', -1);
+        $mform->addHelpButton('captchamode', 'captchamode', 'quizaccess_proctoring');
+        $mform->hideIf('captchamode', 'proctoringrequired', 'eq', 0);
+
+        $mform->addElement(
+            'select',
             'riskreviewmode',
             get_string('riskreviewmode', 'quizaccess_proctoring'),
             [
@@ -539,6 +646,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 'quizid' => $quiz->id,
                 'proctoringrequired' => 1,
                 'requireentirescreen' => isset($quiz->requireentirescreen) ? (int)$quiz->requireentirescreen : -1,
+                'captchamode' => isset($quiz->captchamode) ? (int)$quiz->captchamode : -1,
                 'riskreviewmode' => isset($quiz->riskreviewmode) ? (int)$quiz->riskreviewmode : -1,
                 'riskreviewthreshold' => $riskreviewthreshold,
             ];
@@ -577,7 +685,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     public static function get_settings_sql($quizid) {
         return [
             'proctoring.proctoringrequired, proctoring.requireentirescreen, ' .
-                'proctoring.riskreviewmode, proctoring.riskreviewthreshold', // Fields to select.
+                'proctoring.captchamode, proctoring.riskreviewmode, ' .
+                'proctoring.riskreviewthreshold', // Fields to select.
             'LEFT JOIN {quizaccess_proctoring} proctoring ON proctoring.quizid = quiz.id', // Join clause.
             [], // No additional parameters.
         ];

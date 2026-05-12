@@ -117,6 +117,10 @@ if ($hassiteconfig) {
         get_string('setting:requireentirescreen', 'quizaccess_proctoring'),
         get_string('setting:requireentirescreen_desc', 'quizaccess_proctoring'), 1));
 
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/captchabeforeattemptenabled',
+        get_string('setting:captchabeforeattemptenabled', 'quizaccess_proctoring'),
+        get_string('setting:captchabeforeattemptenabled_desc', 'quizaccess_proctoring'), 0));
+
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/riskreviewenabled',
         get_string('setting:riskreviewenabled', 'quizaccess_proctoring'),
         get_string('setting:riskreviewenabled_desc', 'quizaccess_proctoring'), 0));
