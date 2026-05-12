@@ -557,5 +557,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051136, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051137) {
+        // No schema changes. Reorganizes Saylor Proctored Quiz admin settings.
+        upgrade_plugin_savepoint(true, 2026051137, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
