@@ -88,4 +88,16 @@ $tasks = [
         'dayofweek' => '*',
         'disabled'  => 0,
     ],
+
+    // This task processes optional AI image reviews for high-risk attempts.
+    [
+        'classname' => 'quizaccess_proctoring\task\execute_ai_review_task',
+        'blocking'  => 0,
+        'minute'    => '*/5',
+        'hour'      => '*',
+        'day'       => '*',
+        'month'     => '*',
+        'dayofweek' => '*',
+        'disabled'  => 0,
+    ],
 ];

@@ -86,8 +86,10 @@ class proctoring_observer {
                 return;
             }
 
-            $settings = \quizaccess_proctoring_get_effective_risk_review_settings((int)$cm->id);
-            if (empty($settings['enabled'])) {
+            $risksettings = \quizaccess_proctoring_get_effective_risk_review_settings((int)$cm->id);
+            $aireviewsettings = \quizaccess_proctoring_get_ai_review_settings();
+            $aireviewenabled = \quizaccess_proctoring_ai_review_configured($aireviewsettings);
+            if (empty($risksettings['enabled']) && !$aireviewenabled) {
                 return;
             }
 
@@ -117,21 +119,33 @@ class proctoring_observer {
                 (int)$report->id
             );
 
-            if ((int)$risk['score'] < (int)$settings['threshold']) {
-                return;
+            $holdid = 0;
+            if (!empty($risksettings['enabled']) && (int)$risk['score'] >= (int)$risksettings['threshold']) {
+                $holdid = \quizaccess_proctoring_apply_risk_hold(
+                    (int)$quiz->course,
+                    (int)$cm->id,
+                    (int)$attempt->userid,
+                    $attemptid,
+                    (int)$report->id,
+                    (int)$risk['score'],
+                    (int)$risksettings['threshold']
+                );
             }
 
-            \quizaccess_proctoring_apply_risk_hold(
-                (int)$quiz->course,
-                (int)$cm->id,
-                (int)$attempt->userid,
-                $attemptid,
-                (int)$report->id,
-                (int)$risk['score'],
-                (int)$settings['threshold']
-            );
+            if ($aireviewenabled && (int)$risk['score'] >= (int)$aireviewsettings['triggerthreshold']) {
+                \quizaccess_proctoring_queue_ai_review(
+                    (int)$quiz->course,
+                    (int)$cm->id,
+                    (int)$attempt->userid,
+                    $attemptid,
+                    (int)$report->id,
+                    $holdid,
+                    (int)$risk['score'],
+                    (int)$aireviewsettings['triggerthreshold']
+                );
+            }
         } catch (\Throwable $e) {
-            debugging('Unable to apply Saylor Proctored Quiz risk hold: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            debugging('Unable to process Saylor Proctored Quiz submission risk review: ' . $e->getMessage(), DEBUG_DEVELOPER);
         }
     }
 

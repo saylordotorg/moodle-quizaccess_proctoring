@@ -100,6 +100,7 @@ class delete_images_task extends scheduled_task {
 
                     // Delete the log records from quizaccess_proctoring_logs.
                     $DB->delete_records_list('quizaccess_proctoring_events', 'reportid', $ids);
+                    $DB->delete_records_list('quizaccess_proctoring_ai_reviews', 'reportid', $ids);
                     $DB->delete_records_select('quizaccess_proctoring_logs', "id $insql", $params);
                     mtrace("Deleted " . count($ids) . " records from quizaccess_proctoring_logs and associated files.");
                 }

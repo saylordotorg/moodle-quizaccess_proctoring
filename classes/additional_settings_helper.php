@@ -398,6 +398,7 @@ class additional_settings_helper {
                     }
                 }
                 $DB->delete_records('quizaccess_proctoring_events', ['reportid' => $id]);
+                $DB->delete_records('quizaccess_proctoring_ai_reviews', ['reportid' => $id]);
                 $DB->delete_records('quizaccess_proctoring_logs', ['id' => $id]);
 
                 $select = "component = :component AND filearea = :filearea AND filename = :filename";

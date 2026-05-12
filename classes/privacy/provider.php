@@ -109,6 +109,39 @@ class provider implements
             'privacy:metadata:quizaccess_proctoring_risk_holds'
         );
 
+        $quizaccessproctoringaireviews = [
+            'courseid' => 'privacy:metadata:courseid',
+            'quizid' => 'privacy:metadata:quizid',
+            'userid' => 'privacy:metadata:userid',
+            'attemptid' => 'privacy:metadata:attemptid',
+            'reportid' => 'privacy:metadata:reportid',
+            'holdid' => 'privacy:metadata:holdid',
+            'riskscore' => 'privacy:metadata:riskscore',
+            'reviewscore' => 'privacy:metadata:aireviewscore',
+            'decision' => 'privacy:metadata:aireviewdecision',
+            'summary' => 'privacy:metadata:aireviewsummary',
+            'evidence' => 'privacy:metadata:aireviewevidence',
+            'status' => 'privacy:metadata:status',
+            'timecreated' => 'privacy:metadata:timecreated',
+            'timemodified' => 'timemodified',
+            'timereviewed' => 'privacy:metadata:timereviewed',
+        ];
+
+        $collection->add_database_table(
+            'quizaccess_proctoring_ai_reviews',
+            $quizaccessproctoringaireviews,
+            'privacy:metadata:quizaccess_proctoring_ai_reviews'
+        );
+
+        $collection->add_external_location_link(
+            'openai',
+            [
+                'images' => 'privacy:metadata:openai:images',
+                'prompt' => 'privacy:metadata:openai:prompt',
+            ],
+            'privacy:metadata:openai'
+        );
+
         $collection->add_subsystem_link(
             'core_files',
             [],
@@ -145,6 +178,12 @@ class provider implements
                   FROM {quizaccess_proctoring_risk_holds} qprh
                   JOIN {context} c ON c.instanceid = qprh.quizid AND c.contextlevel = :context
                  WHERE qprh.userid = :userid OR qprh.reviewerid = :userid
+              GROUP BY c.id";
+        $contextlist->add_from_sql($sql, $params);
+        $sql = "SELECT DISTINCT c.id
+                  FROM {quizaccess_proctoring_ai_reviews} qpar
+                  JOIN {context} c ON c.instanceid = qpar.quizid AND c.contextlevel = :context
+                 WHERE qpar.userid = :userid
               GROUP BY c.id";
         $contextlist->add_from_sql($sql, $params);
         $fileparams = ['component' => 'quizaccess_proctoring', 'userid' => $userid];
@@ -186,6 +225,11 @@ class provider implements
         $sql = "SELECT DISTINCT qprh.reviewerid AS userid
                   FROM {quizaccess_proctoring_risk_holds} qprh
                  WHERE qprh.quizid = ? AND qprh.reviewerid <> 0";
+        $userlist->add_from_sql('userid', $sql, $params);
+
+        $sql = "SELECT DISTINCT qpar.userid AS userid
+                  FROM {quizaccess_proctoring_ai_reviews} qpar
+                 WHERE qpar.quizid = ?";
         $userlist->add_from_sql('userid', $sql, $params);
 
         $fileparams = ['component' => 'quizaccess_proctoring', 'contextid' => $context->id];
@@ -338,6 +382,52 @@ class provider implements
 
                     writer::with_context($context)->export_data($subcontext, $data);
                 }
+
+                $aireviewfields = 'id, courseid, quizid, userid, attemptid, reportid, holdid, riskscore, ' .
+                    'triggerthreshold, provider, model, reviewscore, decision, status, summary, evidence, ' .
+                    'errormessage, timecreated, timemodified, timereviewed';
+                $aireviews = $DB->get_records_select(
+                    'quizaccess_proctoring_ai_reviews',
+                    $select,
+                    $params,
+                    '',
+                    $aireviewfields
+                );
+
+                $index = 0;
+                foreach ($aireviews as $aireview) {
+                    $index++;
+                    $subcontext = [
+                        get_string('quizaccess_proctoring', 'quizaccess_proctoring'),
+                        'proctoring_ai_reviews',
+                        $index,
+                    ];
+
+                    $data = (object)[
+                        'id' => $aireview->id,
+                        'courseid' => $aireview->courseid,
+                        'quizid' => $aireview->quizid,
+                        'userid' => $aireview->userid,
+                        'attemptid' => $aireview->attemptid,
+                        'reportid' => $aireview->reportid,
+                        'holdid' => $aireview->holdid,
+                        'riskscore' => $aireview->riskscore,
+                        'triggerthreshold' => $aireview->triggerthreshold,
+                        'provider' => $aireview->provider,
+                        'model' => $aireview->model,
+                        'reviewscore' => $aireview->reviewscore,
+                        'decision' => $aireview->decision,
+                        'status' => $aireview->status,
+                        'summary' => $aireview->summary,
+                        'evidence' => $aireview->evidence,
+                        'errormessage' => $aireview->errormessage,
+                        'timecreated' => transform::datetime($aireview->timecreated),
+                        'timemodified' => transform::datetime($aireview->timemodified),
+                        'timereviewed' => transform::datetime($aireview->timereviewed),
+                    ];
+
+                    writer::with_context($context)->export_data($subcontext, $data);
+                }
             }
         }
     }
@@ -359,6 +449,7 @@ class provider implements
             $DB->set_field_select('quizaccess_proctoring_events', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
             $DB->set_field_select('quizaccess_proctoring_risk_holds', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
             $DB->set_field_select('quizaccess_proctoring_risk_holds', 'reviewerid', 0, "quizid = :cmid", ['cmid' => $cmid]);
+            $DB->set_field_select('quizaccess_proctoring_ai_reviews', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
         }
 
         // Delete all of the webcam images for this user.
@@ -390,6 +481,7 @@ class provider implements
         $DB->set_field_select('quizaccess_proctoring_events', 'userid', 0, "userid {$insql}", $inparams);
         $DB->set_field_select('quizaccess_proctoring_risk_holds', 'userid', 0, "userid {$insql}", $inparams);
         $DB->set_field_select('quizaccess_proctoring_risk_holds', 'reviewerid', 0, "reviewerid {$insql}", $inparams);
+        $DB->set_field_select('quizaccess_proctoring_ai_reviews', 'userid', 0, "userid {$insql}", $inparams);
 
         // Delete users' webcam images using Moodle File API.
         $fs = get_file_storage();
@@ -439,6 +531,7 @@ class provider implements
         $DB->set_field_select('quizaccess_proctoring_events', 'userid', 0, "userid = :userid", $params);
         $DB->set_field_select('quizaccess_proctoring_risk_holds', 'userid', 0, "userid = :userid", $params);
         $DB->set_field_select('quizaccess_proctoring_risk_holds', 'reviewerid', 0, "reviewerid = :userid", $params);
+        $DB->set_field_select('quizaccess_proctoring_ai_reviews', 'userid', 0, "userid = :userid", $params);
         foreach ($contextlist as $context) {
             // Delete user files.
             $userfiles = $DB->get_records('files', $params);

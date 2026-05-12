@@ -32,6 +32,14 @@ defined('QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED') ||
     define('QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED', 1);
 defined('QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED') ||
     define('QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED', 2);
+defined('QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED') ||
+    define('QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED', 0);
+defined('QUIZACCESS_PROCTORING_AI_REVIEW_PROCESSING') ||
+    define('QUIZACCESS_PROCTORING_AI_REVIEW_PROCESSING', 1);
+defined('QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE') ||
+    define('QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE', 2);
+defined('QUIZACCESS_PROCTORING_AI_REVIEW_FAILED') ||
+    define('QUIZACCESS_PROCTORING_AI_REVIEW_FAILED', 3);
 
 $token = "";
 
@@ -544,6 +552,211 @@ function quizaccess_proctoring_get_effective_risk_review_settings(int $cmid): ar
 }
 
 /**
+ * Get configured AI image review settings.
+ *
+ * @return array Normalized AI review settings.
+ */
+function quizaccess_proctoring_get_ai_review_settings(): array {
+    $provider = (string)get_config('quizaccess_proctoring', 'aireviewprovider');
+    if (!in_array($provider, ['openai'], true)) {
+        $provider = 'none';
+    }
+
+    $triggerthreshold = (int)get_config('quizaccess_proctoring', 'aireviewtriggerthreshold');
+    if ($triggerthreshold <= 0) {
+        $triggerthreshold = 80;
+    }
+    $decisionthreshold = (int)get_config('quizaccess_proctoring', 'aireviewdecisionthreshold');
+    if ($decisionthreshold <= 0) {
+        $decisionthreshold = 80;
+    }
+    $maximages = (int)get_config('quizaccess_proctoring', 'aireviewmaximages');
+    if ($maximages <= 0) {
+        $maximages = 6;
+    }
+
+    return [
+        'enabled' => (int)get_config('quizaccess_proctoring', 'aireviewenabled') === 1,
+        'provider' => $provider,
+        'openaiapikey' => (string)get_config('quizaccess_proctoring', 'aireviewopenaiapikey'),
+        'openaimodel' => trim((string)get_config('quizaccess_proctoring', 'aireviewopenaimodel')) ?: 'gpt-4.1-mini',
+        'triggerthreshold' => max(1, min(100, $triggerthreshold)),
+        'decisionthreshold' => max(1, min(100, $decisionthreshold)),
+        'maximages' => max(1, min(12, $maximages)),
+    ];
+}
+
+/**
+ * Determine whether AI review has enough configuration to run.
+ *
+ * @param array|null $settings Optional normalized settings.
+ * @return bool True when AI image review can run.
+ */
+function quizaccess_proctoring_ai_review_configured(?array $settings = null): bool {
+    $settings = $settings ?? quizaccess_proctoring_get_ai_review_settings();
+
+    if (empty($settings['enabled']) || $settings['provider'] !== 'openai') {
+        return false;
+    }
+
+    return !empty($settings['openaiapikey']) && !empty($settings['openaimodel']);
+}
+
+/**
+ * Get the latest AI review record for an attempt or report.
+ *
+ * @param int $courseid Course id.
+ * @param int $cmid Quiz course-module id.
+ * @param int $userid User id.
+ * @param int $attemptid Quiz attempt id.
+ * @param int $reportid Proctoring report id.
+ * @return stdClass|false AI review record or false.
+ */
+function quizaccess_proctoring_get_ai_review(
+    int $courseid,
+    int $cmid,
+    int $userid,
+    int $attemptid = 0,
+    int $reportid = 0
+) {
+    global $DB;
+
+    $where = 'courseid = :courseid AND quizid = :cmid AND userid = :userid';
+    $params = [
+        'courseid' => $courseid,
+        'cmid' => $cmid,
+        'userid' => $userid,
+    ];
+    if ($attemptid > 0) {
+        $where .= ' AND attemptid = :attemptid';
+        $params['attemptid'] = $attemptid;
+    } else if ($reportid > 0) {
+        $where .= ' AND reportid = :reportid';
+        $params['reportid'] = $reportid;
+    }
+
+    $records = $DB->get_records_select(
+        'quizaccess_proctoring_ai_reviews',
+        $where,
+        $params,
+        'id DESC',
+        '*',
+        0,
+        1
+    );
+
+    return $records ? reset($records) : false;
+}
+
+/**
+ * Queue an AI image review for a high-risk attempt.
+ *
+ * @param int $courseid Course id.
+ * @param int $cmid Quiz course-module id.
+ * @param int $userid User id.
+ * @param int $attemptid Quiz attempt id.
+ * @param int $reportid Proctoring report id.
+ * @param int $holdid Risk hold id, or zero if no hold was applied.
+ * @param int $riskscore Risk score that triggered review.
+ * @param int $triggerthreshold AI review trigger threshold.
+ * @return int AI review id, or zero when not queued.
+ */
+function quizaccess_proctoring_queue_ai_review(
+    int $courseid,
+    int $cmid,
+    int $userid,
+    int $attemptid,
+    int $reportid,
+    int $holdid,
+    int $riskscore,
+    int $triggerthreshold
+): int {
+    global $DB;
+
+    $settings = quizaccess_proctoring_get_ai_review_settings();
+    if (!quizaccess_proctoring_ai_review_configured($settings) || $riskscore < $settings['triggerthreshold']) {
+        return 0;
+    }
+
+    $existing = quizaccess_proctoring_get_ai_review($courseid, $cmid, $userid, $attemptid, $reportid);
+    if ($existing) {
+        $existing->holdid = $holdid > 0 ? $holdid : (int)$existing->holdid;
+        $existing->riskscore = $riskscore;
+        $existing->triggerthreshold = $triggerthreshold;
+        $existing->provider = $settings['provider'];
+        $existing->model = $settings['openaimodel'];
+        $existing->timemodified = time();
+        if ((int)$existing->status === QUIZACCESS_PROCTORING_AI_REVIEW_FAILED) {
+            $existing->status = QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED;
+            $existing->errormessage = '';
+        }
+        $DB->update_record('quizaccess_proctoring_ai_reviews', $existing);
+        return (int)$existing->id;
+    }
+
+    $now = time();
+    $review = (object)[
+        'courseid' => $courseid,
+        'quizid' => $cmid,
+        'userid' => $userid,
+        'attemptid' => $attemptid,
+        'reportid' => $reportid,
+        'holdid' => $holdid,
+        'riskscore' => $riskscore,
+        'triggerthreshold' => $triggerthreshold,
+        'provider' => $settings['provider'],
+        'model' => $settings['openaimodel'],
+        'reviewscore' => 0,
+        'decision' => '',
+        'status' => QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED,
+        'summary' => '',
+        'evidence' => '',
+        'rawresponse' => '',
+        'errormessage' => '',
+        'timecreated' => $now,
+        'timemodified' => $now,
+        'timereviewed' => 0,
+    ];
+
+    return (int)$DB->insert_record('quizaccess_proctoring_ai_reviews', $review, true);
+}
+
+/**
+ * Get an AI review status label.
+ *
+ * @param int $status Review status.
+ * @return string Status label.
+ */
+function quizaccess_proctoring_get_ai_review_status_label(int $status): string {
+    switch ($status) {
+        case QUIZACCESS_PROCTORING_AI_REVIEW_PROCESSING:
+            return get_string('aireview:statusprocessing', 'quizaccess_proctoring');
+        case QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE:
+            return get_string('aireview:statuscomplete', 'quizaccess_proctoring');
+        case QUIZACCESS_PROCTORING_AI_REVIEW_FAILED:
+            return get_string('aireview:statusfailed', 'quizaccess_proctoring');
+        case QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED:
+        default:
+            return get_string('aireview:statusqueued', 'quizaccess_proctoring');
+    }
+}
+
+/**
+ * Get an AI review decision label.
+ *
+ * @param string $decision Stored decision key.
+ * @return string Decision label.
+ */
+function quizaccess_proctoring_get_ai_review_decision_label(string $decision): string {
+    $key = 'aireview:decision:' . $decision;
+    if (get_string_manager()->string_exists($key, 'quizaccess_proctoring')) {
+        return get_string($key, 'quizaccess_proctoring');
+    }
+
+    return ucfirst(str_replace('_', ' ', $decision));
+}
+
+/**
  * Get the active or latest risk hold for an attempt.
  *
  * @param int $courseid Course id.
@@ -823,6 +1036,423 @@ function quizaccess_proctoring_confirm_risk_hold(int $holdid, int $reviewerid): 
     $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
 
     return true;
+}
+
+/**
+ * Execute queued AI image review tasks.
+ *
+ * @param int $limit Maximum reviews to process.
+ * @return void
+ */
+function quizaccess_proctoring_execute_ai_review_task(int $limit = 3): void {
+    global $DB;
+
+    $settings = quizaccess_proctoring_get_ai_review_settings();
+    if (!quizaccess_proctoring_ai_review_configured($settings)) {
+        mtrace('Saylor Proctored Quiz AI image review is disabled or missing OpenAI settings.');
+        return;
+    }
+
+    $reviews = $DB->get_records(
+        'quizaccess_proctoring_ai_reviews',
+        ['status' => QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED],
+        'timecreated ASC',
+        '*',
+        0,
+        max(1, $limit)
+    );
+
+    if (!$reviews) {
+        mtrace('No Saylor Proctored Quiz AI image reviews queued.');
+        return;
+    }
+
+    foreach ($reviews as $review) {
+        quizaccess_proctoring_process_ai_review($review, $settings);
+    }
+}
+
+/**
+ * Process one AI image review record.
+ *
+ * @param stdClass $review AI review row.
+ * @param array $settings Normalized AI review settings.
+ * @return void
+ */
+function quizaccess_proctoring_process_ai_review(stdClass $review, array $settings): void {
+    global $DB;
+
+    $now = time();
+    $review->status = QUIZACCESS_PROCTORING_AI_REVIEW_PROCESSING;
+    $review->timemodified = $now;
+    $DB->update_record('quizaccess_proctoring_ai_reviews', $review);
+
+    try {
+        $images = quizaccess_proctoring_collect_ai_review_images($review, (int)$settings['maximages']);
+        if (empty($images)) {
+            throw new moodle_exception('aireview:noimages', 'quizaccess_proctoring');
+        }
+
+        $result = quizaccess_proctoring_call_openai_image_review($review, $images, $settings);
+        if (empty($result)) {
+            throw new moodle_exception('aireview:openaiempty', 'quizaccess_proctoring');
+        }
+
+        $review->reviewscore = max(0, min(100, (int)($result['review_score'] ?? 0)));
+        $review->decision = substr((string)($result['decision'] ?? 'inconclusive'), 0, 40);
+        $review->summary = substr((string)($result['summary'] ?? ''), 0, 4000);
+        $review->evidence = json_encode(array_slice((array)($result['evidence'] ?? []), 0, 8));
+        $review->rawresponse = json_encode($result);
+        $review->errormessage = '';
+        $review->status = QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE;
+        $review->timereviewed = time();
+        $review->timemodified = $review->timereviewed;
+        $DB->update_record('quizaccess_proctoring_ai_reviews', $review);
+
+        mtrace('Completed AI image review id ' . $review->id . ' with score ' . $review->reviewscore . '.');
+    } catch (Throwable $e) {
+        $review->status = QUIZACCESS_PROCTORING_AI_REVIEW_FAILED;
+        $review->errormessage = substr($e->getMessage(), 0, 2000);
+        $review->timemodified = time();
+        $DB->update_record('quizaccess_proctoring_ai_reviews', $review);
+        mtrace('AI image review failed for id ' . $review->id . ': ' . $e->getMessage());
+    }
+}
+
+/**
+ * Collect representative screenshots and webcam captures for AI review.
+ *
+ * @param stdClass $review AI review row.
+ * @param int $maximages Maximum image count.
+ * @return array Image data rows.
+ */
+function quizaccess_proctoring_collect_ai_review_images(stdClass $review, int $maximages): array {
+    global $DB;
+
+    $maximages = max(1, min(12, $maximages));
+    $images = [];
+    $attemptid = (int)$review->attemptid;
+
+    $eventwhere = "courseid = :courseid AND quizid = :quizid AND userid = :userid
+        AND COALESCE(screenshoturl, '') <> ''";
+    $eventparams = [
+        'courseid' => (int)$review->courseid,
+        'quizid' => (int)$review->quizid,
+        'userid' => (int)$review->userid,
+    ];
+    if ($attemptid > 0) {
+        $eventwhere .= ' AND attemptid = :attemptid';
+        $eventparams['attemptid'] = $attemptid;
+    } else if ((int)$review->reportid > 0) {
+        $eventwhere .= ' AND reportid = :reportid';
+        $eventparams['reportid'] = (int)$review->reportid;
+    }
+
+    $events = $DB->get_records_select(
+        'quizaccess_proctoring_events',
+        $eventwhere,
+        $eventparams,
+        "CASE WHEN eventtype = 'possible_ai_tool' THEN 0 ELSE 1 END, timemodified DESC",
+        'id, eventtype, screenshoturl, timemodified',
+        0,
+        $maximages
+    );
+
+    foreach ($events as $event) {
+        $dataurl = quizaccess_proctoring_url_to_data_url((string)$event->screenshoturl);
+        if (!$dataurl) {
+            continue;
+        }
+        $images[] = [
+            'label' => get_string('aireview:imageevent', 'quizaccess_proctoring', (object)[
+                'eventtype' => quizaccess_proctoring_get_readable_ai_event_type((string)$event->eventtype),
+                'time' => userdate((int)$event->timemodified),
+            ]),
+            'dataurl' => $dataurl,
+        ];
+        if (count($images) >= $maximages) {
+            return $images;
+        }
+    }
+
+    $remaining = $maximages - count($images);
+    if ($remaining <= 0) {
+        return $images;
+    }
+
+    $logwhere = "courseid = :courseid AND quizid = :quizid AND userid = :userid
+        AND deletionprogress = :deletionprogress AND COALESCE(webcampicture, '') <> ''";
+    $logparams = [
+        'courseid' => (int)$review->courseid,
+        'quizid' => (int)$review->quizid,
+        'userid' => (int)$review->userid,
+        'deletionprogress' => 0,
+    ];
+    if ($attemptid > 0) {
+        $logwhere .= ' AND status = :attemptid';
+        $logparams['attemptid'] = $attemptid;
+    } else if ((int)$review->reportid > 0) {
+        $logwhere .= ' AND id = :reportid';
+        $logparams['reportid'] = (int)$review->reportid;
+    }
+
+    $logs = $DB->get_records_select(
+        'quizaccess_proctoring_logs',
+        $logwhere,
+        $logparams,
+        'timemodified ASC',
+        'id, webcampicture, awsscore, awsflag, timemodified',
+        0,
+        max($remaining * 3, $remaining)
+    );
+    $logs = quizaccess_proctoring_sample_records(array_values($logs), $remaining);
+
+    foreach ($logs as $log) {
+        $dataurl = quizaccess_proctoring_url_to_data_url((string)$log->webcampicture);
+        if (!$dataurl) {
+            continue;
+        }
+        $images[] = [
+            'label' => get_string('aireview:imagewebcam', 'quizaccess_proctoring', (object)[
+                'time' => userdate((int)$log->timemodified),
+                'score' => (int)$log->awsscore,
+            ]),
+            'dataurl' => $dataurl,
+        ];
+        if (count($images) >= $maximages) {
+            break;
+        }
+    }
+
+    return $images;
+}
+
+/**
+ * Return first, middle, and last records when a set is larger than the limit.
+ *
+ * @param array $records Ordered records.
+ * @param int $limit Maximum records.
+ * @return array Sampled records.
+ */
+function quizaccess_proctoring_sample_records(array $records, int $limit): array {
+    $count = count($records);
+    if ($count <= $limit) {
+        return $records;
+    }
+
+    $sampled = [];
+    for ($i = 0; $i < $limit; $i++) {
+        $index = (int)round($i * (($count - 1) / max(1, $limit - 1)));
+        $sampled[$index] = $records[$index];
+    }
+
+    return array_values($sampled);
+}
+
+/**
+ * Convert an image URL into a data URL suitable for OpenAI image input.
+ *
+ * @param string $url Image URL.
+ * @return string|null Data URL, or null when the image cannot be loaded.
+ */
+function quizaccess_proctoring_url_to_data_url(string $url): ?string {
+    if (trim($url) === '') {
+        return null;
+    }
+    if (strpos($url, 'data:image/') === 0) {
+        return $url;
+    }
+
+    $imagebytes = @file_get_contents($url);
+    if ($imagebytes === false || $imagebytes === '') {
+        return null;
+    }
+
+    $info = @getimagesizefromstring($imagebytes);
+    $mime = $info['mime'] ?? 'image/jpeg';
+    if (strpos($mime, 'image/') !== 0) {
+        $mime = 'image/jpeg';
+    }
+
+    return 'data:' . $mime . ';base64,' . base64_encode($imagebytes);
+}
+
+/**
+ * Get a readable event type for the AI prompt.
+ *
+ * @param string $eventtype Event type.
+ * @return string Human-readable event type.
+ */
+function quizaccess_proctoring_get_readable_ai_event_type(string $eventtype): string {
+    $key = 'eventtype:' . $eventtype;
+    if (get_string_manager()->string_exists($key, 'quizaccess_proctoring')) {
+        return get_string($key, 'quizaccess_proctoring');
+    }
+
+    return ucfirst(str_replace('_', ' ', $eventtype));
+}
+
+/**
+ * Call OpenAI Responses API for proctoring image review.
+ *
+ * @param stdClass $review AI review row.
+ * @param array $images Image data rows.
+ * @param array $settings Normalized AI review settings.
+ * @return array|null Parsed structured result.
+ */
+function quizaccess_proctoring_call_openai_image_review(stdClass $review, array $images, array $settings): ?array {
+    $content = [[
+        'type' => 'input_text',
+        'text' => quizaccess_proctoring_build_ai_review_prompt($review, count($images), $settings),
+    ]];
+    foreach ($images as $index => $image) {
+        $content[] = [
+            'type' => 'input_text',
+            'text' => 'Image ' . ($index + 1) . ': ' . $image['label'],
+        ];
+        $content[] = [
+            'type' => 'input_image',
+            'image_url' => $image['dataurl'],
+            'detail' => 'low',
+        ];
+    }
+
+    $payload = [
+        'model' => $settings['openaimodel'],
+        'input' => [[
+            'role' => 'user',
+            'content' => $content,
+        ]],
+        'text' => [
+            'format' => [
+                'type' => 'json_schema',
+                'name' => 'saylor_proctoring_ai_review',
+                'strict' => true,
+                'schema' => [
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'properties' => [
+                        'review_score' => [
+                            'type' => 'integer',
+                        ],
+                        'decision' => [
+                            'type' => 'string',
+                            'enum' => ['no_visual_evidence', 'inconclusive', 'highly_suspicious'],
+                        ],
+                        'cheating_likely' => [
+                            'type' => 'boolean',
+                        ],
+                        'summary' => [
+                            'type' => 'string',
+                        ],
+                        'evidence' => [
+                            'type' => 'array',
+                            'items' => ['type' => 'string'],
+                        ],
+                        'recommended_action' => [
+                            'type' => 'string',
+                            'enum' => ['release', 'manual_review', 'escalate'],
+                        ],
+                    ],
+                    'required' => [
+                        'review_score',
+                        'decision',
+                        'cheating_likely',
+                        'summary',
+                        'evidence',
+                        'recommended_action',
+                    ],
+                ],
+            ],
+        ],
+        'max_output_tokens' => 700,
+    ];
+
+    $curl = new curl();
+    $options = [
+        'CURLOPT_TIMEOUT' => 45,
+        'CURLOPT_HTTPHEADER' => [
+            'Authorization: Bearer ' . $settings['openaiapikey'],
+            'Content-Type: application/json',
+        ],
+    ];
+    $response = $curl->post('https://api.openai.com/v1/responses', json_encode($payload), $options);
+
+    if ($curl->get_errno()) {
+        throw new moodle_exception(
+            'aireview:openaierror',
+            'quizaccess_proctoring',
+            '',
+            'cURL error ' . $curl->get_errno()
+        );
+    }
+
+    $decoded = json_decode($response, true);
+    if (!is_array($decoded)) {
+        throw new moodle_exception('aireview:openaiinvalidjson', 'quizaccess_proctoring');
+    }
+    if (!empty($decoded['error']['message'])) {
+        throw new moodle_exception('aireview:openaierror', 'quizaccess_proctoring', '', $decoded['error']['message']);
+    }
+
+    $outputtext = quizaccess_proctoring_extract_openai_output_text($decoded);
+    $result = json_decode($outputtext, true);
+    if (!is_array($result)) {
+        throw new moodle_exception('aireview:openaiinvalidjson', 'quizaccess_proctoring');
+    }
+
+    return $result;
+}
+
+/**
+ * Build the prompt used for AI image review.
+ *
+ * @param stdClass $review AI review row.
+ * @param int $imagecount Number of images sent.
+ * @param array $settings Normalized AI review settings.
+ * @return string Prompt.
+ */
+function quizaccess_proctoring_build_ai_review_prompt(stdClass $review, int $imagecount, array $settings): string {
+    return "You are reviewing proctoring evidence for an online quiz attempt. "
+        . "Use only visible evidence in the provided images and the metadata below. "
+        . "Do not identify the student or infer intent from protected traits. "
+        . "Do not mark cheating likely unless there is clear visual evidence such as another person helping, "
+        . "an AI/chat/search answer panel, unauthorized notes, a phone used for answers, or the quiz being outside "
+        . "the shared screen controls. If evidence is incomplete, choose inconclusive. "
+        . "Return a cautious review score from 0 to 100 where 80+ means strong visual evidence that needs escalation. "
+        . "This is advisory for a human reviewer, not an automatic misconduct finding.\n\n"
+        . "Risk score: " . (int)$review->riskscore . "/100\n"
+        . "AI trigger threshold: " . (int)$review->triggerthreshold . "/100\n"
+        . "AI decision threshold: " . (int)$settings['decisionthreshold'] . "/100\n"
+        . "Images provided: " . $imagecount;
+}
+
+/**
+ * Extract output text from a Responses API payload.
+ *
+ * @param array $response Decoded Responses API payload.
+ * @return string Output text.
+ */
+function quizaccess_proctoring_extract_openai_output_text(array $response): string {
+    if (!empty($response['output_text']) && is_string($response['output_text'])) {
+        return $response['output_text'];
+    }
+    if (empty($response['output']) || !is_array($response['output'])) {
+        return '';
+    }
+
+    foreach ($response['output'] as $item) {
+        if (empty($item['content']) || !is_array($item['content'])) {
+            continue;
+        }
+        foreach ($item['content'] as $content) {
+            if (isset($content['text']) && is_string($content['text'])) {
+                return $content['text'];
+            }
+        }
+    }
+
+    return '';
 }
 
 /**

@@ -456,6 +456,72 @@ body.proctoring-lb-disable-scrolling {
     width: 7rem;
 }
 
+.proctoring-ai-review-card {
+    max-width: 1120px;
+    margin: 0 auto 2rem;
+    border: 1px solid #d9e1e7;
+    border-left: 0.4rem solid #6b7280;
+    border-radius: 0.25rem;
+    background: #ffffff;
+    padding: 1rem 1.25rem;
+}
+
+.proctoring-ai-review-flagged {
+    border-left-color: #b42318;
+    background: #fff8f7;
+}
+
+.proctoring-ai-review-header,
+.proctoring-ai-review-decision {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: space-between;
+}
+
+.proctoring-ai-review-title {
+    color: #111827;
+    font-size: 1.05rem;
+    font-weight: 800;
+}
+
+.proctoring-ai-review-meta,
+.proctoring-ai-review-disclaimer {
+    color: #4b5563;
+    font-size: 0.86rem;
+}
+
+.proctoring-ai-review-score {
+    border-radius: 0.25rem;
+    background: #eef2f6;
+    color: #111827;
+    font-size: 1.25rem;
+    font-weight: 800;
+    padding: 0.35rem 0.65rem;
+}
+
+.proctoring-ai-review-decision {
+    border-top: 1px solid #e5e7eb;
+    margin-top: 0.85rem;
+    padding-top: 0.85rem;
+}
+
+.proctoring-ai-review-summary {
+    margin: 0.85rem 0;
+}
+
+.proctoring-ai-review-evidence {
+    margin: 0.85rem 0;
+    padding-left: 1.25rem;
+}
+
+.proctoring-ai-review-disclaimer {
+    border-top: 1px solid #e5e7eb;
+    margin-top: 0.85rem;
+    padding-top: 0.85rem;
+}
+
 
 /* student report mustache style  */
 

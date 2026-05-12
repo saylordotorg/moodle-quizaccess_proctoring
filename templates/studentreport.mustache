@@ -99,6 +99,56 @@
 </div>
 {{/riskscore}}
 
+{{#aireview}}
+<h3 class="mt-4">{{#str}}aireview:title, quizaccess_proctoring{{/str}}</h3>
+<div class="proctoring-ai-review-card {{#isflagged}}proctoring-ai-review-flagged{{/isflagged}}">
+    <div class="proctoring-ai-review-header">
+        <div>
+            <div class="proctoring-ai-review-title">{{statuslabel}}</div>
+            <div class="proctoring-ai-review-meta">{{provider}} {{model}}</div>
+        </div>
+        {{#iscomplete}}
+            <div class="proctoring-ai-review-score">{{reviewscore}}/100</div>
+        {{/iscomplete}}
+    </div>
+    {{#iscomplete}}
+        <div class="proctoring-ai-review-decision">
+            <strong>{{decisionlabel}}</strong>
+            <span>{{thresholdlabel}}</span>
+        </div>
+        {{#isflagged}}
+            <div class="alert alert-warning mt-3 mb-0">{{#str}}aireview:flaggednotice, quizaccess_proctoring{{/str}}</div>
+        {{/isflagged}}
+        {{#summary}}
+            <p class="proctoring-ai-review-summary">{{summary}}</p>
+        {{/summary}}
+        {{#hasevidence}}
+            <ul class="proctoring-ai-review-evidence">
+                {{#evidenceitems}}
+                    <li>{{text}}</li>
+                {{/evidenceitems}}
+            </ul>
+        {{/hasevidence}}
+        {{#timereviewed}}
+            <div class="proctoring-ai-review-meta">{{#str}}aireview:reviewedat, quizaccess_proctoring{{/str}} {{timereviewed}}</div>
+        {{/timereviewed}}
+    {{/iscomplete}}
+    {{#isqueued}}
+        <p class="mb-0">{{#str}}aireview:queuednotice, quizaccess_proctoring{{/str}}</p>
+    {{/isqueued}}
+    {{#isprocessing}}
+        <p class="mb-0">{{#str}}aireview:processingnotice, quizaccess_proctoring{{/str}}</p>
+    {{/isprocessing}}
+    {{#isfailed}}
+        <div class="alert alert-danger mb-0">
+            <strong>{{#str}}aireview:failednotice, quizaccess_proctoring{{/str}}</strong>
+            {{#errormessage}}<div>{{errormessage}}</div>{{/errormessage}}
+        </div>
+    {{/isfailed}}
+    <div class="proctoring-ai-review-disclaimer">{{#str}}aireview:disclaimer, quizaccess_proctoring{{/str}}</div>
+</div>
+{{/aireview}}
+
 <h3 class="mt-4">{{#str}}reportoverview, quizaccess_proctoring{{/str}}</h3>
 <div class="proctoring-overview-container">
     <table class="proctoring-overview-table">

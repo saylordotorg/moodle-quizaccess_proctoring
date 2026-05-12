@@ -156,6 +156,43 @@ if ($hassiteconfig) {
         get_string('setting:riskreviewthreshold', 'quizaccess_proctoring'),
         get_string('setting:riskreviewthreshold_desc', 'quizaccess_proctoring'), 80, PARAM_INT));
 
+    $settings->add(new admin_setting_heading(
+        'quizaccess_proctoring_aireviewheading',
+        get_string('setting:aireviewheading', 'quizaccess_proctoring'),
+        get_string('setting:aireviewheading_desc', 'quizaccess_proctoring')
+    ));
+
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/aireviewenabled',
+        get_string('setting:aireviewenabled', 'quizaccess_proctoring'),
+        get_string('setting:aireviewenabled_desc', 'quizaccess_proctoring'), 0));
+
+    $settings->add(new admin_setting_configselect('quizaccess_proctoring/aireviewprovider',
+        get_string('setting:aireviewprovider', 'quizaccess_proctoring'),
+        get_string('setting:aireviewprovider_desc', 'quizaccess_proctoring'), 'none', [
+            'none' => get_string('none', 'quizaccess_proctoring'),
+            'openai' => get_string('setting:aireviewprovider_openai', 'quizaccess_proctoring'),
+        ]));
+
+    $settings->add(new admin_setting_configpasswordunmask('quizaccess_proctoring/aireviewopenaiapikey',
+        get_string('setting:aireviewopenaiapikey', 'quizaccess_proctoring'),
+        get_string('setting:aireviewopenaiapikey_desc', 'quizaccess_proctoring'), '', PARAM_TEXT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/aireviewopenaimodel',
+        get_string('setting:aireviewopenaimodel', 'quizaccess_proctoring'),
+        get_string('setting:aireviewopenaimodel_desc', 'quizaccess_proctoring'), 'gpt-4.1-mini', PARAM_TEXT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/aireviewtriggerthreshold',
+        get_string('setting:aireviewtriggerthreshold', 'quizaccess_proctoring'),
+        get_string('setting:aireviewtriggerthreshold_desc', 'quizaccess_proctoring'), 80, PARAM_INT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/aireviewdecisionthreshold',
+        get_string('setting:aireviewdecisionthreshold', 'quizaccess_proctoring'),
+        get_string('setting:aireviewdecisionthreshold_desc', 'quizaccess_proctoring'), 80, PARAM_INT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/aireviewmaximages',
+        get_string('setting:aireviewmaximages', 'quizaccess_proctoring'),
+        get_string('setting:aireviewmaximages_desc', 'quizaccess_proctoring'), 6, PARAM_INT));
+
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/cheatinglockoutenabled',
         get_string('setting:cheatinglockoutenabled', 'quizaccess_proctoring'),
         get_string('setting:cheatinglockoutenabled_desc', 'quizaccess_proctoring'), 0));

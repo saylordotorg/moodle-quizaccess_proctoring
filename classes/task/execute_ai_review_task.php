@@ -14,18 +14,36 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+namespace quizaccess_proctoring\task;
+
+defined('MOODLE_INTERNAL') || die();
+
 /**
- * Version information for the quizaccess_proctoring plugin.
+ * Processes queued AI image reviews for high-risk proctored attempts.
  *
  * @package    quizaccess_proctoring
  * @copyright  2024 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+class execute_ai_review_task extends \core\task\scheduled_task {
+    /**
+     * Return task name.
+     *
+     * @return string Task name.
+     */
+    public function get_name() {
+        return get_string('task:execute_ai_review', 'quizaccess_proctoring');
+    }
 
-defined('MOODLE_INTERNAL') || die();
+    /**
+     * Execute queued AI image reviews.
+     *
+     * @return void
+     */
+    public function execute() {
+        global $CFG;
 
-$plugin->component = 'quizaccess_proctoring';
-$plugin->release = '1.6.35';
-$plugin->version = 2026051134;
-$plugin->requires = 2023100900;
-$plugin->maturity = MATURITY_STABLE;
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+        quizaccess_proctoring_execute_ai_review_task();
+    }
+}
