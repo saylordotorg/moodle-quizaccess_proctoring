@@ -552,5 +552,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051135, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051136) {
+        // No schema changes. Adds configurable proctoring image retention cleanup.
+        upgrade_plugin_savepoint(true, 2026051136, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

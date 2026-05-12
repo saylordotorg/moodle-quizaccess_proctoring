@@ -49,8 +49,10 @@ class delete_images_task extends scheduled_task {
         global $DB;
 
         try {
+            $this->queue_expired_attempt_images();
+
             // Select 10 random rows from proctoring logs where deletionprogress = 1.
-            $sql = "SELECT id, webcampicture
+            $sql = "SELECT id, webcampicture, status
             FROM {quizaccess_proctoring_logs}
             WHERE deletionprogress = :deletionprogress
             LIMIT 10";
@@ -60,6 +62,7 @@ class delete_images_task extends scheduled_task {
             if (!empty($records)) {
                 $fs = get_file_storage();
                 $ids = [];
+                $attemptids = [];
                 foreach ($records as $record) {
 
                     $this->delete_file($fs, $record->webcampicture, 'quizaccess_proctoring', 'picture');
@@ -82,10 +85,14 @@ class delete_images_task extends scheduled_task {
                      $DB->delete_records('quizaccess_proctoring_face_images',
                          ['parentid' => $record->id, 'parent_type' => 'camshot_image']);
                     $ids[] = $record->id;
+                    if ((int)$record->status > 0) {
+                        $attemptids[] = (int)$record->status;
+                    }
                 }
                 // Delete associated face images from the database after processing all records.
                 if (!empty($ids)) {
                     list($insql, $params) = $DB->get_in_or_equal($ids);
+                    $attemptids = array_values(array_unique($attemptids));
 
                     $events = $DB->get_records_select(
                         'quizaccess_proctoring_events',
@@ -94,6 +101,19 @@ class delete_images_task extends scheduled_task {
                         '',
                         'id, screenshoturl'
                     );
+                    if (!empty($attemptids)) {
+                        list($attemptsql, $attemptparams) = $DB->get_in_or_equal($attemptids);
+                        $attemptevents = $DB->get_records_select(
+                            'quizaccess_proctoring_events',
+                            "attemptid $attemptsql",
+                            $attemptparams,
+                            '',
+                            'id, screenshoturl'
+                        );
+                        foreach ($attemptevents as $event) {
+                            $events[$event->id] = $event;
+                        }
+                    }
                     foreach ($events as $event) {
                         $this->delete_file($fs, $event->screenshoturl, 'quizaccess_proctoring', 'violation_screenshot');
                     }
@@ -101,6 +121,12 @@ class delete_images_task extends scheduled_task {
                     // Delete the log records from quizaccess_proctoring_logs.
                     $DB->delete_records_list('quizaccess_proctoring_events', 'reportid', $ids);
                     $DB->delete_records_list('quizaccess_proctoring_ai_reviews', 'reportid', $ids);
+                    $DB->delete_records_list('quizaccess_proctoring_fm_warnings', 'reportid', $ids);
+                    $DB->delete_records_list('quizaccess_proctoring_facematch_task', 'reportid', $ids);
+                    if (!empty($attemptids)) {
+                        $DB->delete_records_list('quizaccess_proctoring_events', 'attemptid', $attemptids);
+                        $DB->delete_records_list('quizaccess_proctoring_ai_reviews', 'attemptid', $attemptids);
+                    }
                     $DB->delete_records_select('quizaccess_proctoring_logs', "id $insql", $params);
                     mtrace("Deleted " . count($ids) . " records from quizaccess_proctoring_logs and associated files.");
                 }
@@ -110,6 +136,48 @@ class delete_images_task extends scheduled_task {
         } catch (Exception $e) {
             mtrace("An error occurred while deleting images: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Marks images from finished quiz attempts for deletion after the configured retention window.
+     *
+     * @return void
+     */
+    private function queue_expired_attempt_images(): void {
+        global $DB;
+
+        $retentiondays = (int)get_config('quizaccess_proctoring', 'imageretentiondays');
+        if ($retentiondays <= 0) {
+            return;
+        }
+
+        $cutoff = time() - ($retentiondays * DAYSECS);
+        $sql = "SELECT l.id
+                  FROM {quizaccess_proctoring_logs} l
+                  JOIN {quiz_attempts} qa ON qa.id = l.status AND qa.userid = l.userid
+             LEFT JOIN {quizaccess_proctoring_risk_holds} rh
+                    ON rh.quizid = l.quizid
+                   AND rh.userid = l.userid
+                   AND rh.status = :activehold
+                   AND (rh.attemptid = qa.id OR rh.reportid = l.id)
+                 WHERE l.deletionprogress = 0
+                   AND qa.timefinish > 0
+                   AND qa.timefinish <= :cutoff
+                   AND rh.id IS NULL
+              ORDER BY qa.timefinish ASC, l.id ASC";
+
+        $records = $DB->get_records_sql($sql, [
+            'activehold' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+            'cutoff' => $cutoff,
+        ], 0, 250);
+        if (empty($records)) {
+            return;
+        }
+
+        $ids = array_keys($records);
+        list($insql, $params) = $DB->get_in_or_equal($ids);
+        $DB->set_field_select('quizaccess_proctoring_logs', 'deletionprogress', 1, "id $insql", $params);
+        mtrace('Queued ' . count($ids) . ' expired proctoring image record(s) for deletion.');
     }
 
     /**
@@ -125,10 +193,14 @@ class delete_images_task extends scheduled_task {
         if (!empty($fileurl)) {
             // Extract the relative path from the file URL.
             $fileinfo = parse_url($fileurl, PHP_URL_PATH);
+            if (empty($fileinfo)) {
+                mtrace("Invalid file path: " . $fileurl);
+                return;
+            }
             $fileparts = explode('/', trim($fileinfo, '/'));
             $fileparts = array_reverse($fileparts);
             // Validate the path before attempting deletion.
-            if ($fileparts[3] === $component && $fileparts[2] === $filearea) {
+            if (count($fileparts) >= 5 && $fileparts[3] === $component && $fileparts[2] === $filearea) {
                 $contextid = $fileparts[4];
                 $itemid = $fileparts[1];
                 $filename = $fileparts[0];

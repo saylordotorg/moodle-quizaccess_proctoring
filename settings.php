@@ -66,6 +66,10 @@ if ($hassiteconfig) {
         get_string('setting:camshotwidth', 'quizaccess_proctoring'),
         get_string('setting:camshotwidth_desc', 'quizaccess_proctoring'), 230, PARAM_INT));
 
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/imageretentiondays',
+        get_string('setting:imageretentiondays', 'quizaccess_proctoring'),
+        get_string('setting:imageretentiondays_desc', 'quizaccess_proctoring'), 0, PARAM_INT));
+
     // Face recognition method choice.
     $choices = [
         'customapi' => get_string('setting:fc_method_customapi', 'quizaccess_proctoring'),
