@@ -117,9 +117,32 @@ if ($hassiteconfig) {
         get_string('setting:requireentirescreen', 'quizaccess_proctoring'),
         get_string('setting:requireentirescreen_desc', 'quizaccess_proctoring'), 1));
 
+    $settings->add(new admin_setting_configselect('quizaccess_proctoring/mobilescreensharemode',
+        get_string('setting:mobilescreensharemode', 'quizaccess_proctoring'),
+        get_string('setting:mobilescreensharemode_desc', 'quizaccess_proctoring'), 'bypass', [
+            'bypass' => get_string('setting:mobilescreensharemode_bypass', 'quizaccess_proctoring'),
+            'require' => get_string('setting:mobilescreensharemode_require', 'quizaccess_proctoring'),
+            'block' => get_string('setting:mobilescreensharemode_block', 'quizaccess_proctoring'),
+        ]));
+
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/captchabeforeattemptenabled',
         get_string('setting:captchabeforeattemptenabled', 'quizaccess_proctoring'),
         get_string('setting:captchabeforeattemptenabled_desc', 'quizaccess_proctoring'), 0));
+
+    $settings->add(new admin_setting_configselect('quizaccess_proctoring/captchaprovider',
+        get_string('setting:captchaprovider', 'quizaccess_proctoring'),
+        get_string('setting:captchaprovider_desc', 'quizaccess_proctoring'), 'turnstile', [
+            'turnstile' => get_string('setting:captchaprovider_turnstile', 'quizaccess_proctoring'),
+            'recaptcha' => get_string('setting:captchaprovider_recaptcha', 'quizaccess_proctoring'),
+        ]));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/turnstilesitekey',
+        get_string('setting:turnstilesitekey', 'quizaccess_proctoring'),
+        get_string('setting:turnstilesitekey_desc', 'quizaccess_proctoring'), '', PARAM_TEXT));
+
+    $settings->add(new admin_setting_configpasswordunmask('quizaccess_proctoring/turnstilesecretkey',
+        get_string('setting:turnstilesecretkey', 'quizaccess_proctoring'),
+        get_string('setting:turnstilesecretkey_desc', 'quizaccess_proctoring'), '', PARAM_TEXT));
 
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/riskreviewenabled',
         get_string('setting:riskreviewenabled', 'quizaccess_proctoring'),

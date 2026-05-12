@@ -45,6 +45,15 @@ if (class_exists('\mod_quiz\local\access_rule_base')) {
  * Extends the parent class to implement custom proctoring behavior.
  */
 class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
+    /** @var string Cloudflare Turnstile token verification endpoint. */
+    private const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+    /** @var string Skip desktop screen-share requirements on mobile/tablet browsers. */
+    private const MOBILE_SCREEN_SHARE_BYPASS = 'bypass';
+    /** @var string Try to enforce desktop screen-share requirements on mobile/tablet browsers. */
+    private const MOBILE_SCREEN_SHARE_REQUIRE = 'require';
+    /** @var string Block mobile/tablet browsers when desktop screen sharing is required. */
+    private const MOBILE_SCREEN_SHARE_BLOCK = 'block';
+
     /**
      * Determines whether a preflight check is required for the given attempt.
      *
@@ -104,11 +113,11 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
-     * Determine whether this quiz requires an entire screen share before quiz start.
+     * Determine whether this quiz is configured to require an entire screen share before quiz start.
      *
-     * @return bool True if the preflight form should require an entire screen share.
+     * @return bool True if this quiz/site configuration requires an entire screen share.
      */
-    private function requires_entire_screen() {
+    private function configured_requires_entire_screen() {
         $quizsetting = $this->quiz->requireentirescreen ?? -1;
 
         if ($quizsetting === null || (int)$quizsetting === -1) {
@@ -116,6 +125,101 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
 
         return (int)$quizsetting === 1;
+    }
+
+    /**
+     * Determine whether the site captures desktop screenshots on violations.
+     *
+     * @return bool True if desktop capture is enabled.
+     */
+    private static function site_captures_violation_desktop() {
+        $setting = get_config('quizaccess_proctoring', 'captureviolationdesktop');
+
+        if ($setting === false || $setting === null || $setting === '') {
+            return true;
+        }
+
+        return (int)$setting === 1;
+    }
+
+    /**
+     * Get the mobile/tablet desktop screen-share policy.
+     *
+     * @return string One of the MOBILE_SCREEN_SHARE_* constants.
+     */
+    private static function mobile_screen_share_mode() {
+        $mode = get_config('quizaccess_proctoring', 'mobilescreensharemode');
+
+        if (in_array($mode, [
+            self::MOBILE_SCREEN_SHARE_BYPASS,
+            self::MOBILE_SCREEN_SHARE_REQUIRE,
+            self::MOBILE_SCREEN_SHARE_BLOCK,
+        ], true)) {
+            return $mode;
+        }
+
+        return self::MOBILE_SCREEN_SHARE_BYPASS;
+    }
+
+    /**
+     * Determine whether the current request is from a mobile or tablet device.
+     *
+     * @return bool True for Moodle-detected mobile/tablet browsers.
+     */
+    private static function is_mobile_or_tablet() {
+        $devicetype = \core_useragent::get_device_type();
+
+        return in_array($devicetype, [
+            \core_useragent::DEVICETYPE_MOBILE,
+            \core_useragent::DEVICETYPE_TABLET,
+        ], true);
+    }
+
+    /**
+     * Determine whether mobile/tablet users should be blocked because screen sharing is required.
+     *
+     * @return bool True when the student should use a desktop/laptop browser.
+     */
+    private function mobile_screen_share_blocks_attempt() {
+        if (!self::is_mobile_or_tablet() || self::mobile_screen_share_mode() !== self::MOBILE_SCREEN_SHARE_BLOCK) {
+            return false;
+        }
+
+        return $this->configured_requires_entire_screen() || self::site_captures_violation_desktop();
+    }
+
+    /**
+     * Determine whether this request should require an entire screen share before quiz start.
+     *
+     * @return bool True if the preflight form should require an entire screen share.
+     */
+    private function requires_entire_screen() {
+        if (!$this->configured_requires_entire_screen()) {
+            return false;
+        }
+
+        if (self::is_mobile_or_tablet() && self::mobile_screen_share_mode() === self::MOBILE_SCREEN_SHARE_BYPASS) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Determine whether the attempt page should request desktop capture for browser violations.
+     *
+     * @return bool True when desktop capture should be requested during the attempt.
+     */
+    private function should_capture_violation_desktop() {
+        if (!self::site_captures_violation_desktop()) {
+            return false;
+        }
+
+        if (self::is_mobile_or_tablet() && self::mobile_screen_share_mode() === self::MOBILE_SCREEN_SHARE_BYPASS) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -149,14 +253,66 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
-     * Determine whether Moodle's global reCAPTCHA keys are configured.
+     * Get the configured CAPTCHA provider.
      *
-     * @return bool True when both public and private keys are present.
+     * @return string CAPTCHA provider key.
+     */
+    private static function captcha_provider() {
+        $provider = get_config('quizaccess_proctoring', 'captchaprovider');
+
+        if (in_array($provider, ['turnstile', 'recaptcha'], true)) {
+            return $provider;
+        }
+
+        return 'turnstile';
+    }
+
+    /**
+     * Determine whether the selected CAPTCHA provider keys are configured.
+     *
+     * @return bool True when the selected provider has required keys.
      */
     private static function captcha_configured() {
         global $CFG;
 
+        if (self::captcha_provider() === 'turnstile') {
+            return trim((string)get_config('quizaccess_proctoring', 'turnstilesitekey')) !== '' &&
+                trim((string)get_config('quizaccess_proctoring', 'turnstilesecretkey')) !== '';
+        }
+
         return !empty($CFG->recaptchapublickey) && !empty($CFG->recaptchaprivatekey);
+    }
+
+    /**
+     * Get the selected provider's missing-configuration message.
+     *
+     * @return string Localized message.
+     */
+    private static function captcha_not_configured_message() {
+        if (self::captcha_provider() === 'turnstile') {
+            return get_string('captcha:turnstilenotconfigured', 'quizaccess_proctoring');
+        }
+
+        return get_string('captcha:recaptchanotconfigured', 'quizaccess_proctoring');
+    }
+
+    /**
+     * Render the Cloudflare Turnstile widget.
+     *
+     * @return string Widget HTML.
+     */
+    private static function turnstile_widget_html() {
+        $sitekey = trim((string)get_config('quizaccess_proctoring', 'turnstilesitekey'));
+
+        return html_writer::div('', 'cf-turnstile', [
+                'data-sitekey' => $sitekey,
+                'data-theme' => 'auto',
+            ]) .
+            html_writer::tag('script', '', [
+                'src' => 'https://challenges.cloudflare.com/turnstile/v0/api.js',
+                'async' => 'async',
+                'defer' => 'defer',
+            ]);
     }
 
     /**
@@ -371,14 +527,23 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
         if ($this->should_require_captcha($attemptid)) {
             if (self::captcha_configured()) {
-                $mform->addElement('recaptcha', 'proctoringcaptcha', get_string('captcha:heading', 'quizaccess_proctoring'));
-                $mform->addHelpButton('proctoringcaptcha', 'recaptcha', 'auth');
+                if (self::captcha_provider() === 'turnstile') {
+                    $mform->addElement(
+                        'static',
+                        'proctoringcaptcha',
+                        get_string('captcha:heading', 'quizaccess_proctoring'),
+                        self::turnstile_widget_html()
+                    );
+                } else {
+                    $mform->addElement('recaptcha', 'proctoringcaptcha', get_string('captcha:heading', 'quizaccess_proctoring'));
+                    $mform->addHelpButton('proctoringcaptcha', 'recaptcha', 'auth');
+                }
             } else {
                 $mform->addElement(
                     'static',
                     'proctoringcaptchaunavailable',
                     get_string('captcha:heading', 'quizaccess_proctoring'),
-                    get_string('captcha:notconfigured', 'quizaccess_proctoring')
+                    self::captcha_not_configured_message()
                 );
             }
         }
@@ -482,7 +647,26 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
         if ($this->should_require_captcha($attemptid)) {
             if (!self::captcha_configured()) {
-                $errors['proctoringcaptchaunavailable'] = get_string('captcha:notconfigured', 'quizaccess_proctoring');
+                $errors['proctoringcaptchaunavailable'] = self::captcha_not_configured_message();
+            } else if (self::captcha_provider() === 'turnstile') {
+                $response = isset($data['cf-turnstile-response'])
+                    ? (string)$data['cf-turnstile-response']
+                    : optional_param('cf-turnstile-response', '', PARAM_RAW);
+                if (trim($response) === '') {
+                    $errors['proctoringcaptcha'] = get_string('captcha:missingchallenge', 'quizaccess_proctoring');
+                } else {
+                    require_once($CFG->libdir . '/filelib.php');
+                    $curl = new curl();
+                    $rawresponse = $curl->post(self::TURNSTILE_VERIFY_URL, [
+                        'secret' => trim((string)get_config('quizaccess_proctoring', 'turnstilesecretkey')),
+                        'response' => $response,
+                        'remoteip' => getremoteaddr(),
+                    ]);
+                    $result = json_decode($rawresponse);
+                    if (empty($result->success)) {
+                        $errors['proctoringcaptcha'] = get_string('captcha:verificationfailed', 'quizaccess_proctoring');
+                    }
+                }
             } else {
                 $response = isset($data['g-recaptcha-response'])
                     ? (string)$data['g-recaptcha-response']
@@ -535,15 +719,19 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      */
     public function prevent_new_attempt($numprevattempts, $lastattempt) {
         $lockout = $this->get_current_user_cheating_lockout();
-        if (!$lockout) {
-            return false;
+        if ($lockout) {
+            return get_string(
+                'riskreview:lockoutmessage',
+                'quizaccess_proctoring',
+                userdate((int)$lockout['until'])
+            );
         }
 
-        return get_string(
-            'riskreview:lockoutmessage',
-            'quizaccess_proctoring',
-            userdate((int)$lockout['until'])
-        );
+        if ($this->mobile_screen_share_blocks_attempt()) {
+            return get_string('mobilescreenshare:blocked', 'quizaccess_proctoring');
+        }
+
+        return false;
     }
 
     /**
@@ -769,7 +957,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->quizurl = $quizurl->out();
             $record->monitorbrowseractivity = (int)(get_config('quizaccess_proctoring', 'monitorbrowseractivity') ?? 1);
             $record->blockclipboard = (int)(get_config('quizaccess_proctoring', 'blockclipboard') ?? 1);
-            $record->captureviolationdesktop = (int)(get_config('quizaccess_proctoring', 'captureviolationdesktop') ?? 1);
+            $record->captureviolationdesktop = $this->should_capture_violation_desktop() ? 1 : 0;
             $screenmonitorkey = 'cm' . (int)$cmid . 'user' . (int)$USER->id;
             $screenmonitorurl = new moodle_url('/mod/quiz/accessrule/proctoring/screenmonitor.php', [
                 'cmid' => (int)$cmid,
