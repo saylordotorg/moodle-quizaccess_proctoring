@@ -547,5 +547,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051134, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051135) {
+        // No schema changes. Adds Claude and OpenAI-compatible AI image review providers.
+        upgrade_plugin_savepoint(true, 2026051135, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

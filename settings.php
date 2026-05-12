@@ -171,6 +171,8 @@ if ($hassiteconfig) {
         get_string('setting:aireviewprovider_desc', 'quizaccess_proctoring'), 'none', [
             'none' => get_string('none', 'quizaccess_proctoring'),
             'openai' => get_string('setting:aireviewprovider_openai', 'quizaccess_proctoring'),
+            'anthropic' => get_string('setting:aireviewprovider_anthropic', 'quizaccess_proctoring'),
+            'compatible' => get_string('setting:aireviewprovider_compatible', 'quizaccess_proctoring'),
         ]));
 
     $settings->add(new admin_setting_configpasswordunmask('quizaccess_proctoring/aireviewopenaiapikey',
@@ -180,6 +182,26 @@ if ($hassiteconfig) {
     $settings->add(new admin_setting_configtext('quizaccess_proctoring/aireviewopenaimodel',
         get_string('setting:aireviewopenaimodel', 'quizaccess_proctoring'),
         get_string('setting:aireviewopenaimodel_desc', 'quizaccess_proctoring'), 'gpt-4.1-mini', PARAM_TEXT));
+
+    $settings->add(new admin_setting_configpasswordunmask('quizaccess_proctoring/aireviewanthropicapikey',
+        get_string('setting:aireviewanthropicapikey', 'quizaccess_proctoring'),
+        get_string('setting:aireviewanthropicapikey_desc', 'quizaccess_proctoring'), '', PARAM_TEXT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/aireviewanthropicmodel',
+        get_string('setting:aireviewanthropicmodel', 'quizaccess_proctoring'),
+        get_string('setting:aireviewanthropicmodel_desc', 'quizaccess_proctoring'), 'claude-sonnet-4-5-20250929', PARAM_TEXT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/aireviewcompatibleendpoint',
+        get_string('setting:aireviewcompatibleendpoint', 'quizaccess_proctoring'),
+        get_string('setting:aireviewcompatibleendpoint_desc', 'quizaccess_proctoring'), '', PARAM_URL));
+
+    $settings->add(new admin_setting_configpasswordunmask('quizaccess_proctoring/aireviewcompatibleapikey',
+        get_string('setting:aireviewcompatibleapikey', 'quizaccess_proctoring'),
+        get_string('setting:aireviewcompatibleapikey_desc', 'quizaccess_proctoring'), '', PARAM_TEXT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/aireviewcompatiblemodel',
+        get_string('setting:aireviewcompatiblemodel', 'quizaccess_proctoring'),
+        get_string('setting:aireviewcompatiblemodel_desc', 'quizaccess_proctoring'), '', PARAM_TEXT));
 
     $settings->add(new admin_setting_configtext('quizaccess_proctoring/aireviewtriggerthreshold',
         get_string('setting:aireviewtriggerthreshold', 'quizaccess_proctoring'),

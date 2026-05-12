@@ -558,7 +558,7 @@ function quizaccess_proctoring_get_effective_risk_review_settings(int $cmid): ar
  */
 function quizaccess_proctoring_get_ai_review_settings(): array {
     $provider = (string)get_config('quizaccess_proctoring', 'aireviewprovider');
-    if (!in_array($provider, ['openai'], true)) {
+    if (!in_array($provider, ['openai', 'anthropic', 'compatible'], true)) {
         $provider = 'none';
     }
 
@@ -580,6 +580,12 @@ function quizaccess_proctoring_get_ai_review_settings(): array {
         'provider' => $provider,
         'openaiapikey' => (string)get_config('quizaccess_proctoring', 'aireviewopenaiapikey'),
         'openaimodel' => trim((string)get_config('quizaccess_proctoring', 'aireviewopenaimodel')) ?: 'gpt-4.1-mini',
+        'anthropicapikey' => (string)get_config('quizaccess_proctoring', 'aireviewanthropicapikey'),
+        'anthropicmodel' => trim((string)get_config('quizaccess_proctoring', 'aireviewanthropicmodel')) ?:
+            'claude-sonnet-4-5-20250929',
+        'compatibleendpoint' => trim((string)get_config('quizaccess_proctoring', 'aireviewcompatibleendpoint')),
+        'compatibleapikey' => (string)get_config('quizaccess_proctoring', 'aireviewcompatibleapikey'),
+        'compatiblemodel' => trim((string)get_config('quizaccess_proctoring', 'aireviewcompatiblemodel')),
         'triggerthreshold' => max(1, min(100, $triggerthreshold)),
         'decisionthreshold' => max(1, min(100, $decisionthreshold)),
         'maximages' => max(1, min(12, $maximages)),
@@ -595,11 +601,38 @@ function quizaccess_proctoring_get_ai_review_settings(): array {
 function quizaccess_proctoring_ai_review_configured(?array $settings = null): bool {
     $settings = $settings ?? quizaccess_proctoring_get_ai_review_settings();
 
-    if (empty($settings['enabled']) || $settings['provider'] !== 'openai') {
+    if (empty($settings['enabled'])) {
         return false;
     }
 
-    return !empty($settings['openaiapikey']) && !empty($settings['openaimodel']);
+    switch ($settings['provider']) {
+        case 'openai':
+            return !empty($settings['openaiapikey']) && !empty($settings['openaimodel']);
+        case 'anthropic':
+            return !empty($settings['anthropicapikey']) && !empty($settings['anthropicmodel']);
+        case 'compatible':
+            return !empty($settings['compatibleendpoint']) && !empty($settings['compatiblemodel']);
+        default:
+            return false;
+    }
+}
+
+/**
+ * Get the configured model name for the active AI review provider.
+ *
+ * @param array $settings Normalized AI review settings.
+ * @return string Active provider model.
+ */
+function quizaccess_proctoring_get_ai_review_model(array $settings): string {
+    switch ($settings['provider']) {
+        case 'anthropic':
+            return (string)$settings['anthropicmodel'];
+        case 'compatible':
+            return (string)$settings['compatiblemodel'];
+        case 'openai':
+        default:
+            return (string)$settings['openaimodel'];
+    }
 }
 
 /**
@@ -677,6 +710,7 @@ function quizaccess_proctoring_queue_ai_review(
     if (!quizaccess_proctoring_ai_review_configured($settings) || $riskscore < $settings['triggerthreshold']) {
         return 0;
     }
+    $model = quizaccess_proctoring_get_ai_review_model($settings);
 
     $existing = quizaccess_proctoring_get_ai_review($courseid, $cmid, $userid, $attemptid, $reportid);
     if ($existing) {
@@ -684,7 +718,7 @@ function quizaccess_proctoring_queue_ai_review(
         $existing->riskscore = $riskscore;
         $existing->triggerthreshold = $triggerthreshold;
         $existing->provider = $settings['provider'];
-        $existing->model = $settings['openaimodel'];
+        $existing->model = $model;
         $existing->timemodified = time();
         if ((int)$existing->status === QUIZACCESS_PROCTORING_AI_REVIEW_FAILED) {
             $existing->status = QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED;
@@ -705,7 +739,7 @@ function quizaccess_proctoring_queue_ai_review(
         'riskscore' => $riskscore,
         'triggerthreshold' => $triggerthreshold,
         'provider' => $settings['provider'],
-        'model' => $settings['openaimodel'],
+        'model' => $model,
         'reviewscore' => 0,
         'decision' => '',
         'status' => QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED,
@@ -1049,7 +1083,7 @@ function quizaccess_proctoring_execute_ai_review_task(int $limit = 3): void {
 
     $settings = quizaccess_proctoring_get_ai_review_settings();
     if (!quizaccess_proctoring_ai_review_configured($settings)) {
-        mtrace('Saylor Proctored Quiz AI image review is disabled or missing OpenAI settings.');
+        mtrace('Saylor Proctored Quiz AI image review is disabled or missing provider settings.');
         return;
     }
 
@@ -1093,9 +1127,20 @@ function quizaccess_proctoring_process_ai_review(stdClass $review, array $settin
             throw new moodle_exception('aireview:noimages', 'quizaccess_proctoring');
         }
 
-        $result = quizaccess_proctoring_call_openai_image_review($review, $images, $settings);
+        switch ($settings['provider']) {
+            case 'anthropic':
+                $result = quizaccess_proctoring_call_anthropic_image_review($review, $images, $settings);
+                break;
+            case 'compatible':
+                $result = quizaccess_proctoring_call_openai_compatible_image_review($review, $images, $settings);
+                break;
+            case 'openai':
+            default:
+                $result = quizaccess_proctoring_call_openai_image_review($review, $images, $settings);
+                break;
+        }
         if (empty($result)) {
-            throw new moodle_exception('aireview:openaiempty', 'quizaccess_proctoring');
+            throw new moodle_exception('aireview:providerempty', 'quizaccess_proctoring');
         }
 
         $review->reviewscore = max(0, min(100, (int)($result['review_score'] ?? 0)));
@@ -1293,6 +1338,93 @@ function quizaccess_proctoring_get_readable_ai_event_type(string $eventtype): st
 }
 
 /**
+ * Get the normalized JSON schema used by AI image review providers.
+ *
+ * @return array JSON schema array.
+ */
+function quizaccess_proctoring_ai_review_json_schema(): array {
+    return [
+        'type' => 'object',
+        'additionalProperties' => false,
+        'properties' => [
+            'review_score' => [
+                'type' => 'integer',
+            ],
+            'decision' => [
+                'type' => 'string',
+                'enum' => ['no_visual_evidence', 'inconclusive', 'highly_suspicious'],
+            ],
+            'cheating_likely' => [
+                'type' => 'boolean',
+            ],
+            'summary' => [
+                'type' => 'string',
+            ],
+            'evidence' => [
+                'type' => 'array',
+                'items' => ['type' => 'string'],
+            ],
+            'recommended_action' => [
+                'type' => 'string',
+                'enum' => ['release', 'manual_review', 'escalate'],
+            ],
+        ],
+        'required' => [
+            'review_score',
+            'decision',
+            'cheating_likely',
+            'summary',
+            'evidence',
+            'recommended_action',
+        ],
+    ];
+}
+
+/**
+ * Split a data URL into MIME type and base64 payload.
+ *
+ * @param string $dataurl Image data URL.
+ * @return array|null Data URL parts, or null when malformed.
+ */
+function quizaccess_proctoring_data_url_parts(string $dataurl): ?array {
+    if (!preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/', $dataurl, $matches)) {
+        return null;
+    }
+
+    return [
+        'mime' => $matches[1],
+        'data' => $matches[2],
+    ];
+}
+
+/**
+ * Extract the first JSON object from model text.
+ *
+ * @param string $text Model output.
+ * @return array|null Decoded JSON object.
+ */
+function quizaccess_proctoring_extract_json_object(string $text): ?array {
+    $text = trim($text);
+    if ($text === '') {
+        return null;
+    }
+
+    $decoded = json_decode($text, true);
+    if (is_array($decoded)) {
+        return $decoded;
+    }
+
+    $start = strpos($text, '{');
+    $end = strrpos($text, '}');
+    if ($start === false || $end === false || $end <= $start) {
+        return null;
+    }
+
+    $decoded = json_decode(substr($text, $start, $end - $start + 1), true);
+    return is_array($decoded) ? $decoded : null;
+}
+
+/**
  * Call OpenAI Responses API for proctoring image review.
  *
  * @param stdClass $review AI review row.
@@ -1328,41 +1460,7 @@ function quizaccess_proctoring_call_openai_image_review(stdClass $review, array 
                 'type' => 'json_schema',
                 'name' => 'saylor_proctoring_ai_review',
                 'strict' => true,
-                'schema' => [
-                    'type' => 'object',
-                    'additionalProperties' => false,
-                    'properties' => [
-                        'review_score' => [
-                            'type' => 'integer',
-                        ],
-                        'decision' => [
-                            'type' => 'string',
-                            'enum' => ['no_visual_evidence', 'inconclusive', 'highly_suspicious'],
-                        ],
-                        'cheating_likely' => [
-                            'type' => 'boolean',
-                        ],
-                        'summary' => [
-                            'type' => 'string',
-                        ],
-                        'evidence' => [
-                            'type' => 'array',
-                            'items' => ['type' => 'string'],
-                        ],
-                        'recommended_action' => [
-                            'type' => 'string',
-                            'enum' => ['release', 'manual_review', 'escalate'],
-                        ],
-                    ],
-                    'required' => [
-                        'review_score',
-                        'decision',
-                        'cheating_likely',
-                        'summary',
-                        'evidence',
-                        'recommended_action',
-                    ],
-                ],
+                'schema' => quizaccess_proctoring_ai_review_json_schema(),
             ],
         ],
         'max_output_tokens' => 700,
@@ -1405,6 +1503,204 @@ function quizaccess_proctoring_call_openai_image_review(stdClass $review, array 
 }
 
 /**
+ * Call Anthropic Claude Messages API for proctoring image review.
+ *
+ * @param stdClass $review AI review row.
+ * @param array $images Image data rows.
+ * @param array $settings Normalized AI review settings.
+ * @return array|null Parsed structured result.
+ */
+function quizaccess_proctoring_call_anthropic_image_review(stdClass $review, array $images, array $settings): ?array {
+    $content = [[
+        'type' => 'text',
+        'text' => quizaccess_proctoring_build_ai_review_prompt($review, count($images), $settings)
+            . "\n\nUse the record_proctoring_review tool exactly once with the advisory review result.",
+    ]];
+    $validimages = 0;
+    foreach ($images as $index => $image) {
+        $parts = quizaccess_proctoring_data_url_parts((string)$image['dataurl']);
+        if (!$parts) {
+            continue;
+        }
+        $validimages++;
+        $content[] = [
+            'type' => 'text',
+            'text' => 'Image ' . ($index + 1) . ': ' . $image['label'],
+        ];
+        $content[] = [
+            'type' => 'image',
+            'source' => [
+                'type' => 'base64',
+                'media_type' => $parts['mime'],
+                'data' => $parts['data'],
+            ],
+        ];
+    }
+    if ($validimages === 0) {
+        throw new moodle_exception('aireview:noimages', 'quizaccess_proctoring');
+    }
+
+    $payload = [
+        'model' => $settings['anthropicmodel'],
+        'max_tokens' => 700,
+        'tools' => [[
+            'name' => 'record_proctoring_review',
+            'description' => 'Record the advisory proctoring image review result.',
+            'input_schema' => quizaccess_proctoring_ai_review_json_schema(),
+        ]],
+        'tool_choice' => [
+            'type' => 'tool',
+            'name' => 'record_proctoring_review',
+        ],
+        'messages' => [[
+            'role' => 'user',
+            'content' => $content,
+        ]],
+    ];
+
+    $curl = new curl();
+    $options = [
+        'CURLOPT_TIMEOUT' => 45,
+        'CURLOPT_HTTPHEADER' => [
+            'x-api-key: ' . $settings['anthropicapikey'],
+            'anthropic-version: 2023-06-01',
+            'Content-Type: application/json',
+        ],
+    ];
+    $response = $curl->post('https://api.anthropic.com/v1/messages', json_encode($payload), $options);
+
+    if ($curl->get_errno()) {
+        throw new moodle_exception(
+            'aireview:anthropicerror',
+            'quizaccess_proctoring',
+            '',
+            'cURL error ' . $curl->get_errno()
+        );
+    }
+
+    $decoded = json_decode($response, true);
+    if (!is_array($decoded)) {
+        throw new moodle_exception('aireview:anthropicinvalidjson', 'quizaccess_proctoring');
+    }
+    if (!empty($decoded['error']['message'])) {
+        throw new moodle_exception('aireview:anthropicerror', 'quizaccess_proctoring', '', $decoded['error']['message']);
+    }
+
+    $text = '';
+    foreach ((array)($decoded['content'] ?? []) as $item) {
+        if (($item['type'] ?? '') === 'tool_use'
+            && ($item['name'] ?? '') === 'record_proctoring_review'
+            && is_array($item['input'] ?? null)) {
+            return $item['input'];
+        }
+        if (($item['type'] ?? '') === 'text' && isset($item['text']) && is_string($item['text'])) {
+            $text .= "\n" . $item['text'];
+        }
+    }
+
+    $result = quizaccess_proctoring_extract_json_object($text);
+    if (!is_array($result)) {
+        throw new moodle_exception('aireview:anthropicinvalidjson', 'quizaccess_proctoring');
+    }
+
+    return $result;
+}
+
+/**
+ * Call an OpenAI-compatible chat completions endpoint for proctoring image review.
+ *
+ * @param stdClass $review AI review row.
+ * @param array $images Image data rows.
+ * @param array $settings Normalized AI review settings.
+ * @return array|null Parsed structured result.
+ */
+function quizaccess_proctoring_call_openai_compatible_image_review(
+    stdClass $review,
+    array $images,
+    array $settings
+): ?array {
+    $schema = quizaccess_proctoring_ai_review_json_schema();
+    $content = [[
+        'type' => 'text',
+        'text' => quizaccess_proctoring_build_ai_review_prompt($review, count($images), $settings)
+            . "\n\nReturn only one JSON object that matches this schema:\n"
+            . json_encode($schema),
+    ]];
+    foreach ($images as $index => $image) {
+        $content[] = [
+            'type' => 'text',
+            'text' => 'Image ' . ($index + 1) . ': ' . $image['label'],
+        ];
+        $content[] = [
+            'type' => 'image_url',
+            'image_url' => [
+                'url' => $image['dataurl'],
+            ],
+        ];
+    }
+
+    $payload = [
+        'model' => $settings['compatiblemodel'],
+        'messages' => [[
+            'role' => 'user',
+            'content' => $content,
+        ]],
+        'max_tokens' => 700,
+        'stream' => false,
+    ];
+
+    $headers = ['Content-Type: application/json'];
+    if (!empty($settings['compatibleapikey'])) {
+        $headers[] = 'Authorization: Bearer ' . $settings['compatibleapikey'];
+    }
+
+    $curl = new curl();
+    $options = [
+        'CURLOPT_TIMEOUT' => 45,
+        'CURLOPT_HTTPHEADER' => $headers,
+    ];
+    $response = $curl->post($settings['compatibleendpoint'], json_encode($payload), $options);
+
+    if ($curl->get_errno()) {
+        throw new moodle_exception(
+            'aireview:compatibleerror',
+            'quizaccess_proctoring',
+            '',
+            'cURL error ' . $curl->get_errno()
+        );
+    }
+
+    $decoded = json_decode($response, true);
+    if (!is_array($decoded)) {
+        throw new moodle_exception('aireview:compatibleinvalidjson', 'quizaccess_proctoring');
+    }
+    if (!empty($decoded['error']['message'])) {
+        throw new moodle_exception('aireview:compatibleerror', 'quizaccess_proctoring', '', $decoded['error']['message']);
+    }
+
+    $message = $decoded['choices'][0]['message']['content'] ?? '';
+    if (is_array($message)) {
+        $parts = [];
+        foreach ($message as $part) {
+            if (isset($part['text']) && is_string($part['text'])) {
+                $parts[] = $part['text'];
+            }
+        }
+        $message = implode("\n", $parts);
+    }
+    if (!is_string($message)) {
+        $message = '';
+    }
+
+    $result = quizaccess_proctoring_extract_json_object($message);
+    if (!is_array($result)) {
+        throw new moodle_exception('aireview:compatibleinvalidjson', 'quizaccess_proctoring');
+    }
+
+    return $result;
+}
+
+/**
  * Build the prompt used for AI image review.
  *
  * @param stdClass $review AI review row.
@@ -1419,7 +1715,8 @@ function quizaccess_proctoring_build_ai_review_prompt(stdClass $review, int $ima
         . "Do not mark cheating likely unless there is clear visual evidence such as another person helping, "
         . "an AI/chat/search answer panel, unauthorized notes, a phone used for answers, or the quiz being outside "
         . "the shared screen controls. If evidence is incomplete, choose inconclusive. "
-        . "Return a cautious review score from 0 to 100 where 80+ means strong visual evidence that needs escalation. "
+        . "Return a cautious review score from 0 to 100 where "
+        . (int)$settings['decisionthreshold'] . "+ means strong visual evidence that needs escalation. "
         . "This is advisory for a human reviewer, not an automatic misconduct finding.\n\n"
         . "Risk score: " . (int)$review->riskscore . "/100\n"
         . "AI trigger threshold: " . (int)$review->triggerthreshold . "/100\n"

@@ -141,6 +141,22 @@ class provider implements
             ],
             'privacy:metadata:openai'
         );
+        $collection->add_external_location_link(
+            'anthropic',
+            [
+                'images' => 'privacy:metadata:anthropic:images',
+                'prompt' => 'privacy:metadata:anthropic:prompt',
+            ],
+            'privacy:metadata:anthropic'
+        );
+        $collection->add_external_location_link(
+            'compatibleai',
+            [
+                'images' => 'privacy:metadata:compatibleai:images',
+                'prompt' => 'privacy:metadata:compatibleai:prompt',
+            ],
+            'privacy:metadata:compatibleai'
+        );
 
         $collection->add_subsystem_link(
             'core_files',
