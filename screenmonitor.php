@@ -52,8 +52,6 @@ $config = [
         'stopped' => get_string('screenmonitor:stopped', 'quizaccess_proctoring'),
         'unsupported' => get_string('screenmonitor:unsupported', 'quizaccess_proctoring'),
         'wrongmonitor' => get_string('screenmonitor:wrongmonitor', 'quizaccess_proctoring'),
-        'minimize' => get_string('screenmonitor:minimize', 'quizaccess_proctoring'),
-        'restore' => get_string('screenmonitor:restore', 'quizaccess_proctoring'),
         'denied' => get_string('screensharedenied', 'quizaccess_proctoring'),
         'entirescreenrequired' => get_string('entirescreenrequired', 'quizaccess_proctoring'),
     ],
@@ -64,9 +62,6 @@ echo $OUTPUT->header();
 <div class="proctoring-screen-monitor">
     <div class="proctoring-screen-monitor-titlebar">
         <h3><?php echo s(get_string('screenmonitor:title', 'quizaccess_proctoring')); ?></h3>
-        <button id="proctoring-screen-monitor-minimize" class="btn btn-secondary btn-sm" type="button" aria-expanded="true">
-            <?php echo s(get_string('screenmonitor:minimize', 'quizaccess_proctoring')); ?>
-        </button>
     </div>
     <p class="proctoring-screen-monitor-instructions">
         <?php echo s(get_string('screenmonitor:instructions', 'quizaccess_proctoring')); ?>
@@ -95,8 +90,6 @@ $js = <<<JS
 
     const statusNode = document.getElementById('proctoring-screen-monitor-status');
     const shareButton = document.getElementById('proctoring-screen-monitor-share');
-    const monitorNode = document.querySelector('.proctoring-screen-monitor');
-    const minimizeButton = document.getElementById('proctoring-screen-monitor-minimize');
 
     const setStatus = function(message, type) {
         if (!statusNode) {
@@ -104,22 +97,6 @@ $js = <<<JS
         }
         statusNode.className = 'proctoring-screen-monitor-status text-' + type;
         statusNode.textContent = message;
-    };
-
-    const setMinimized = function(minimized) {
-        if (!monitorNode || !minimizeButton) {
-            return;
-        }
-
-        monitorNode.classList.toggle('is-minimized', minimized);
-        minimizeButton.textContent = minimized ? config.strings.restore : config.strings.minimize;
-        minimizeButton.setAttribute('aria-expanded', minimized ? 'false' : 'true');
-
-        try {
-            window.resizeTo(minimized ? 360 : 430, minimized ? 160 : 390);
-        } catch (error) {
-            // Some browsers block script-driven popup resizing. The collapsed layout still applies.
-        }
     };
 
     const tileKey = function(x, y) {
@@ -383,12 +360,6 @@ $js = <<<JS
 
     if (shareButton) {
         shareButton.addEventListener('click', startShare);
-    }
-
-    if (minimizeButton) {
-        minimizeButton.addEventListener('click', function() {
-            setMinimized(!monitorNode.classList.contains('is-minimized'));
-        });
     }
 
     window.addEventListener('beforeunload', clearStatus);

@@ -846,26 +846,6 @@ body.proctoring-face-blur-active .proctoring-screen-share-gate {
     min-height: 24px;
 }
 
-.proctoring-screen-monitor.is-minimized {
-    max-width: 320px;
-    padding: 12px;
-}
-
-.proctoring-screen-monitor.is-minimized h3,
-.proctoring-screen-monitor.is-minimized .proctoring-screen-monitor-instructions {
-    display: none;
-}
-
-.proctoring-screen-monitor.is-minimized .proctoring-screen-monitor-titlebar {
-    justify-content: flex-end;
-}
-
-.proctoring-screen-monitor.is-minimized .proctoring-screen-monitor-status {
-    margin: 8px 0 10px;
-    font-size: 13px;
-    line-height: 1.25;
-}
-
 .proctoring-event-screenshot {
     width: 120px;
     max-width: 100%;

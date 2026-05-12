@@ -499,5 +499,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051131, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051132) {
+        // No schema changes. Removes the minimize control from the screen monitor popup.
+        upgrade_plugin_savepoint(true, 2026051132, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
