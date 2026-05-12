@@ -367,5 +367,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051118, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051119) {
+        // No schema changes. Renames the custom face match method label to Saylor AI API.
+        upgrade_plugin_savepoint(true, 2026051119, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
