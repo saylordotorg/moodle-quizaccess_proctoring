@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.6.16
+- Renamed the displayed plugin name to Saylor Proctored Quiz.
+- Removed Proctoring Pro promotional copy and links from plugin settings and user image pages.
+
 # v1.6.15
 - Renamed the Custom AI endpoint URL setting label to Saylor AI endpoint URL.
 

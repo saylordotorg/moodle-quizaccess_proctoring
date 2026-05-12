@@ -258,9 +258,6 @@ foreach ($users as $user) {
     $table->add_data($row);
 }
 
-$proctoringpro = new moodle_url('/mod/quiz/accessrule/proctoring/proctoring_pro_promo.php');
-$proctoringprogif = $OUTPUT->image_url('proctoring_pro_users_list', 'quizaccess_proctoring');
-
 $templatecontext = (object)[
     'users' => array_values($users),
     'redirecturl' => new moodle_url('/mod/quiz/accessrule/proctoring/upload_image.php'),
@@ -270,8 +267,6 @@ $templatecontext = (object)[
     'btnclass' => "btn-primary",
     'inputname' => "search",
     'searchstring' => "Search user",
-    'proctoringpro' => $proctoringpro,
-    'proctoringprogif' => $proctoringprogif,
     'wwwroot' => $CFG->wwwroot,
     'direction' => ($direction == 'ASC') ? true : false,
     'pagination' => $page,
@@ -288,11 +283,7 @@ echo html_writer::tag('button', get_string('back', 'quizaccess_proctoring'), [
     'onclick' => $onclick,
 ]);
 echo $OUTPUT->box_start('generalbox boxaligncenter boxwidthwide');
-$proversionlink = html_writer::link(
-    'https://elearning23.com/moodle-proctoring-pro-details/',
-    get_string('pro_version_title_text', 'quizaccess_proctoring'),
-);
-echo html_writer::tag('p', get_string('users_list_info_description', 'quizaccess_proctoring') . ' ' . $proversionlink);
+echo html_writer::tag('p', get_string('users_list_info_description', 'quizaccess_proctoring'));
 echo $OUTPUT->box_end();
 
 echo $OUTPUT->render_from_template('quizaccess_proctoring/users_list', $templatecontext);

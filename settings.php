@@ -29,31 +29,11 @@ if ($hassiteconfig) {
     // Plugin description and name.
     $plugindescription = get_string('plugin_description', 'quizaccess_proctoring');
 
-    // Pro version description without "Flash Sale".
-    $proversiondescription = get_string('pro_version_description', 'quizaccess_proctoring');
-
-    // Pro version link using Moodle's default styling for links.
-    $proversionlink = html_writer::link(
-        'https://proctoringformoodle.com/',
-        get_string('pro_version_text', 'quizaccess_proctoring'),
-    );
-
-    // All products link.
-    $productslink = html_writer::link(
-        'https://elearning23.com/products/',
-        get_string('pro_version_products_text', 'quizaccess_proctoring'),
-    );
-
-    // Combine description and links in a single paragraph.
-    $proversioninfo = html_writer::tag('p',
-        $proversiondescription . ' ' . $proversionlink . ' | ' . $productslink,
-    );
-
-    // Add the plugin name, description, and Pro version description.
+    // Add the plugin name and description.
     $settings->add(new admin_setting_heading(
         'pluginnameheading',
         '',
-        $plugindescription . $proversioninfo
+        $plugindescription
     ));
 
 

@@ -191,14 +191,6 @@ if (has_capability('quizaccess/proctoring:deletecamshots', $context, $USER->id) 
         ]), 'Images deleted!', -11);
 }
 
-$proctoringprolink = new moodle_url(
-    '/mod/quiz/accessrule/proctoring/proctoring_pro_promo.php',
-    [
-        'cmid' => $cmid,
-        'courseid' => $courseid,
-    ]
-);
-
 echo $OUTPUT->header();
 
 $backbutton = new moodle_url('/mod/quiz/view.php', ['id' => $cmid]);
@@ -455,7 +447,6 @@ if (
     echo $OUTPUT->render($pagingbar);
     // Print image results.
     if ($studentid != null && $cmid != null && $courseid != null && $reportid != null) {
-        $featuresimageurl = $OUTPUT->image_url('proctoring_pro_report_overview', 'quizaccess_proctoring');
         $profileimageurl = quizaccess_proctoring_get_image_url($studentid);
         $redirecturl = new moodle_url('/mod/quiz/accessrule/proctoring/upload_image.php', ['id' => $studentid]);
 
@@ -540,8 +531,6 @@ if (
             $userimageurl = $OUTPUT->image_url('u/f2');
         }
         $templatecontext = (object)[
-            'featuresimageurl' => $featuresimageurl,
-            'proctoringprolink' => preg_replace('/&amp;/', '&', $proctoringprolink),
             'issiteadmin' => (is_siteadmin() && !$profileimageurl ? true : false),
             'redirecturl' => $redirecturl,
             'data' => $studentdata,
