@@ -117,6 +117,20 @@ if ($hassiteconfig) {
         get_string('setting:requireentirescreen', 'quizaccess_proctoring'),
         get_string('setting:requireentirescreen_desc', 'quizaccess_proctoring'), 1));
 
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/honorstatementrequired',
+        get_string('setting:honorstatementrequired', 'quizaccess_proctoring'),
+        get_string('setting:honorstatementrequired_desc', 'quizaccess_proctoring'), 1));
+
+    $settings->add(new admin_setting_configtextarea('quizaccess_proctoring/honorstatement',
+        get_string('setting:honorstatement', 'quizaccess_proctoring'),
+        get_string('setting:honorstatement_desc', 'quizaccess_proctoring'),
+        get_string('honorstatement:default', 'quizaccess_proctoring'), PARAM_TEXT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/honoragreementlabel',
+        get_string('setting:honoragreementlabel', 'quizaccess_proctoring'),
+        get_string('setting:honoragreementlabel_desc', 'quizaccess_proctoring'),
+        get_string('honorstatement:agreementdefault', 'quizaccess_proctoring'), PARAM_TEXT));
+
     $settings->add(new admin_setting_configtext('quizaccess_proctoring/rekognitioncostpercheck',
         get_string('setting:rekognitioncostpercheck', 'quizaccess_proctoring'),
         get_string('setting:rekognitioncostpercheck_desc', 'quizaccess_proctoring'), '0.001', PARAM_FLOAT));

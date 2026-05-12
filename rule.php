@@ -117,6 +117,51 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         return (int)$quizsetting === 1;
     }
 
+    /**
+     * Determine whether students must accept the pre-quiz integrity statement.
+     *
+     * @return bool True if the integrity statement checkbox is required.
+     */
+    private static function honor_statement_required() {
+        $setting = get_config('quizaccess_proctoring', 'honorstatementrequired');
+
+        if ($setting === false || $setting === null || $setting === '') {
+            return true;
+        }
+
+        return (int)$setting === 1;
+    }
+
+    /**
+     * Get the configured pre-quiz integrity statement.
+     *
+     * @return string The statement text shown before the quiz starts.
+     */
+    private static function get_honor_statement() {
+        $statement = get_config('quizaccess_proctoring', 'honorstatement');
+
+        if ($statement === false || trim((string)$statement) === '') {
+            return get_string('honorstatement:default', 'quizaccess_proctoring');
+        }
+
+        return (string)$statement;
+    }
+
+    /**
+     * Get the configured agreement checkbox label for the integrity statement.
+     *
+     * @return string The checkbox label.
+     */
+    private static function get_honor_agreement_label() {
+        $label = get_config('quizaccess_proctoring', 'honoragreementlabel');
+
+        if ($label === false || trim((string)$label) === '') {
+            return get_string('honorstatement:agreementdefault', 'quizaccess_proctoring');
+        }
+
+        return (string)$label;
+    }
+
 
     /**
      * Generate the modal content for the webcam proctoring interface.
@@ -223,6 +268,18 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             ? (new moodle_url("/user/pix.php/{$USER->id}/f1.jpg"))->out(false)
             : '';
 
+        if (self::honor_statement_required()) {
+            $statement = html_writer::tag('h3',
+                    get_string('honorstatement:heading', 'quizaccess_proctoring')) .
+                html_writer::div(
+                    format_text(self::get_honor_statement(), FORMAT_PLAIN, ['para' => true]),
+                    'proctoring-honor-statement-text'
+                );
+            $mform->addElement('html', html_writer::div($statement, 'proctoring-honor-statement mb-3'));
+            $mform->addElement('checkbox', 'proctoring', '', self::get_honor_agreement_label());
+            $mform->addRule('proctoring', get_string('youmustagree', 'quizaccess_proctoring'), 'required', null, 'client');
+        }
+
         // Render modal content.
         $modalcontent = $this->make_modal_content($quizform, $faceidcheck);
         // Add modal content and action buttons to the form.
@@ -286,19 +343,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $mform->addElement('html', $hiddenvalue);
         $mform->addElement('hidden', 'entirescreenconfirmed', 0);
         $mform->setType('entirescreenconfirmed', PARAM_INT);
-        if ($faceidcheck === '1' || $requireentirescreen === 1) {
-            $mform->addElement('html', '<div id="form_activate" style="visibility: hidden">');
-        }
-        $mform->addElement('checkbox', 'proctoring', '', get_string('proctoringlabel', 'quizaccess_proctoring'));
-        if ($faceidcheck === '1' || $requireentirescreen === 1) {
-            $mform->addElement('html', '</div>');
-        }
 
         // Close the form wrapper.
         $mform->addElement('html', '</div>');
-
-        // Add a validation rule for the proctoring checkbox.
-        $mform->addRule('proctoring', get_string('youmustagree', 'quizaccess_proctoring'), 'required', null, 'client');
     }
 
     /**
@@ -316,13 +363,16 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $errors = parent::validate_preflight_check($data, $files, $errors, $attemptid);
         }
 
-        // Ensure the proctoring checkbox is checked.
-        if (empty($data['proctoring'])) {
+        // Ensure the integrity statement checkbox is checked when the setting is enabled.
+        if (self::honor_statement_required() && empty($data['proctoring'])) {
             $errors['proctoring'] = get_string('youmustagree', 'quizaccess_proctoring');
         }
 
-        if (empty($errors['proctoring']) && $this->requires_entire_screen() && empty($data['entirescreenconfirmed'])) {
-            $errors['proctoring'] = get_string('entirescreenrequired', 'quizaccess_proctoring');
+        if ($this->requires_entire_screen() && empty($data['entirescreenconfirmed'])) {
+            $errorkey = self::honor_statement_required() ? 'proctoring' : 'entirescreenconfirmed';
+            if (empty($errors[$errorkey])) {
+                $errors[$errorkey] = get_string('entirescreenrequired', 'quizaccess_proctoring');
+            }
         }
 
         return $errors;
