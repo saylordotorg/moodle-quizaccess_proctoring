@@ -122,6 +122,35 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             }
         };
 
+        const getDesktopPanelSlot = function(slot) {
+            if (!window.matchMedia || !window.matchMedia('(min-width: 992px)').matches) {
+                return null;
+            }
+
+            const navBlock = document.getElementById('mod_quiz_navblock');
+            if (!navBlock || !navBlock.parentNode) {
+                return null;
+            }
+
+            let panel = document.getElementById('proctoring-desktop-status-panel');
+            if (!panel) {
+                panel = document.createElement('section');
+                panel.id = 'proctoring-desktop-status-panel';
+                panel.className = 'proctoring-desktop-status-panel';
+                panel.setAttribute('aria-label', 'Saylor proctoring status');
+                panel.innerHTML =
+                    '<div class="proctoring-desktop-status-panel-inner">' +
+                        '<div class="proctoring-desktop-status-slot proctoring-desktop-screen-slot"></div>' +
+                        '<div class="proctoring-desktop-status-slot proctoring-desktop-webcam-slot"></div>' +
+                    '</div>';
+                navBlock.parentNode.insertBefore(panel, navBlock.nextSibling);
+            } else if (panel.previousElementSibling !== navBlock) {
+                navBlock.parentNode.insertBefore(panel, navBlock.nextSibling);
+            }
+
+            return panel.querySelector('.proctoring-desktop-' + slot + '-slot');
+        };
+
         const initSuspiciousActivityMonitoring = function(props, strings) {
             let lastLogged = {};
             let hiddenStarted = 0;
@@ -170,23 +199,26 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return;
                 }
 
-                $('body').append(
+                const marker = $(
                     '<div id="proctoring-screen-verification-marker" ' +
-                        'class="proctoring-screen-verification-marker" aria-hidden="true" ' +
-                        'style="position:fixed;top:8px;right:8px;z-index:10002;width:220px;padding:8px;' +
-                        'border:3px solid #fff;background:#111;color:#fff;pointer-events:none;">' +
+                        'class="proctoring-screen-verification-marker" aria-hidden="true">' +
                         `<div class="proctoring-screen-marker-label">${strings.screenmarkerlabel}</div>` +
                         '<div class="proctoring-screen-marker-colors">' +
-                            '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-magenta" ' +
-                                'style="display:block;width:58px;height:24px;background:#ff00cc;"></span>' +
-                            '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-cyan" ' +
-                                'style="display:block;width:58px;height:24px;background:#00ffcc;"></span>' +
-                            '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-yellow" ' +
-                                'style="display:block;width:58px;height:24px;background:#ffe600;"></span>' +
+                            '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-magenta"></span>' +
+                            '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-cyan"></span>' +
+                            '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-yellow"></span>' +
                         '</div>' +
                         `<div class="proctoring-screen-marker-token">${markerToken}</div>` +
-                    '</div>'
+                        '</div>'
                 );
+
+                const screenSlot = getDesktopPanelSlot('screen');
+                if (screenSlot) {
+                    marker.addClass('is-docked');
+                    $(screenSlot).append(marker);
+                } else {
+                    $('body').append(marker);
+                }
             };
 
             const captureDesktopFrame = function(eventType) {
@@ -776,11 +808,18 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 let streaming = false;
                 let data = null;
 
-                $('body').append(`<div class="proctoring-fixed-webcam-box d-flex">`
+                const webcamBox = $(`<div class="proctoring-fixed-webcam-box d-flex">`
                     + `<video id="video">${strings.videonotavailable}</video>`
                     + '<img id="cropimg" src="" alt=""/><canvas id="canvas" style="display:none;"></canvas>'
                     + '<div class="output" style="display:none;">'
                     + '<img id="photo" alt="The picture will appear in this box."/></div></div>');
+                const webcamSlot = getDesktopPanelSlot('webcam');
+                if (webcamSlot) {
+                    webcamBox.addClass('is-docked');
+                    $(webcamSlot).append(webcamBox);
+                } else {
+                    $('body').append(webcamBox);
+                }
 
                 const video = document.getElementById('video');
                 const canvas = document.getElementById('canvas');
@@ -818,7 +857,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                     element.onmousedown = dragMouseDown;
                 };
-                makeElementDraggable(video);
+                if (video && !video.closest('.proctoring-fixed-webcam-box.is-docked')) {
+                    makeElementDraggable(video);
+                }
 
                 const clearphoto = () => {
                     const context = canvas.getContext('2d');

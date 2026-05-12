@@ -519,6 +519,45 @@ body.proctoring-lb-disable-scrolling {
     object-fit: cover;
 }
 
+.proctoring-desktop-status-panel {
+    position: sticky;
+    top: 76px;
+    z-index: 5;
+    margin-top: 12px;
+    margin-bottom: 12px;
+}
+
+.proctoring-desktop-status-panel-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.proctoring-desktop-status-slot:empty {
+    display: none;
+}
+
+.proctoring-desktop-status-slot {
+    display: flex;
+    justify-content: center;
+}
+
+.proctoring-fixed-webcam-box.is-docked {
+    justify-content: center;
+    width: 100%;
+}
+
+.proctoring-fixed-webcam-box.is-docked #video {
+    position: static;
+    z-index: auto;
+    width: min(190px, 100%);
+    height: auto;
+    aspect-ratio: 1;
+    border: 1px solid #d6dbe1;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+    cursor: default;
+}
+
 @media (max-width: 768px) {
     .proctoring-fixed-webcam-box #video {
         width: 130px;
@@ -577,6 +616,12 @@ body.proctoring-lb-disable-scrolling {
     color: #ffffff;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
     pointer-events: none;
+}
+
+.proctoring-screen-verification-marker.is-docked {
+    position: static;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .proctoring-screen-marker-label {

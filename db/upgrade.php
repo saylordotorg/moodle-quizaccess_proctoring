@@ -469,5 +469,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051125, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051126) {
+        // No schema changes. Moves desktop proctoring indicators into the quiz navigation panel.
+        upgrade_plugin_savepoint(true, 2026051126, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
