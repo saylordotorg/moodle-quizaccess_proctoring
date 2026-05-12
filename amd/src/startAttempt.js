@@ -22,6 +22,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'preflight:complete', component: 'quizaccess_proctoring'},
                 {key: 'preflight:actionneeded', component: 'quizaccess_proctoring'},
                 {key: 'modal:pending', component: 'quizaccess_proctoring'},
+                {key: 'preflight:submitlocked', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -46,6 +47,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     preflightcomplete: strings[17],
                     preflightactionneeded: strings[18],
                     preflightpending: strings[19],
+                    preflightsubmitlocked: strings[20],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -202,6 +204,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const screenRequired = parseInt(props.requireentirescreen, 10) === 1;
                 const honorRequired = parseInt(props.honorrequired || 0, 10) === 1;
                 const captchaRequired = parseInt(props.captcharequired || 0, 10) === 1;
+                const submitButtonDefaultLabel = submitButton.is('input') ? submitButton.val() : submitButton.text();
                 let faceReady = !faceRequired;
                 let screenReady = !screenRequired;
                 let honorReady = !honorRequired;
@@ -281,14 +284,22 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                 };
 
-                const updatePreflightGate = function() {
-                    if (honorReady && captchaReady && faceReady && screenReady) {
-                        $("#form_activate").css("visibility", "visible");
-                        submitButton.show();
+                const setSubmitButtonLabel = function(label) {
+                    if (submitButton.is('input')) {
+                        submitButton.val(label);
                     } else {
-                        $("#form_activate").css("visibility", "hidden");
-                        submitButton.hide();
+                        submitButton.text(label);
                     }
+                };
+
+                const updatePreflightGate = function() {
+                    const ready = honorReady && captchaReady && faceReady && screenReady;
+                    $("#form_activate").css("visibility", "visible");
+                    submitButton.show();
+                    submitButton.prop('disabled', !ready);
+                    submitButton.attr('aria-disabled', ready ? 'false' : 'true');
+                    submitButton.toggleClass('disabled', !ready);
+                    setSubmitButtonLabel(ready ? submitButtonDefaultLabel : (strings.preflightsubmitlocked || 'Complete precheck first'));
                 };
 
                 const setScreenResult = function(message, success) {
