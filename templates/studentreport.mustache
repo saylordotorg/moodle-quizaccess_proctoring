@@ -51,6 +51,26 @@
         </div>
 {{/issiteadmin}}
 
+<h3 class="mt-4">{{#str}}reportoverview, quizaccess_proctoring{{/str}}</h3>
+<div class="proctoring-overview-container">
+    <table class="proctoring-overview-table">
+        <thead>
+            <tr>
+                <th>{{#str}}reportoverview:overview, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}reportoverview:status, quizaccess_proctoring{{/str}}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#overviewrows}}
+            <tr>
+                <td>{{label}}</td>
+                <td><span class="{{statusclass}}">{{status}}</span></td>
+            </tr>
+            {{/overviewrows}}
+        </tbody>
+    </table>
+</div>
+
 <h3>{{#str}}picturesusedreport, quizaccess_proctoring{{/str}}</h3>
 
 

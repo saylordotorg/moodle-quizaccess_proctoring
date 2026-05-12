@@ -352,5 +352,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051115, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051116) {
+        // No schema changes. Adds the student report overview table.
+        upgrade_plugin_savepoint(true, 2026051116, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

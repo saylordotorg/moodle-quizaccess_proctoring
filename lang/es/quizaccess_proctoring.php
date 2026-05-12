@@ -152,6 +152,17 @@ $string['report_search_clear'] = 'Limpiar';
 $string['report_search_placeholder'] = 'Buscar por correo electrónico o nombre';
 $string['report_search_submit'] = 'Buscar';
 $string['reportpage'] = 'Resumen de supervisión del curso';
+$string['reportoverview'] = 'Resumen';
+$string['reportoverview:clipboardactivity'] = '¿Ocurrió copiar, cortar, pegar o clic derecho?';
+$string['reportoverview:f12pressed'] = '¿Se presionó la tecla F12?';
+$string['reportoverview:logfound'] = '{$a} registro encontrado';
+$string['reportoverview:nologfound'] = 'No se encontraron registros';
+$string['reportoverview:overview'] = 'Resumen';
+$string['reportoverview:possibleaitool'] = '¿Se hizo clic en una posible herramienta de IA?';
+$string['reportoverview:screenfocuslost'] = '¿Se perdió el foco de la pantalla?';
+$string['reportoverview:screenshareissue'] = '¿Se interrumpió la pantalla compartida o se compartió el monitor incorrecto?';
+$string['reportoverview:status'] = 'Estado';
+$string['reportoverview:webcamenabled'] = '¿La cámara web estuvo habilitada?';
 $string['setting:adminimagedescription'] = 'Estas imágenes se utilizarán como imágenes base para la verificación facial. Asegúrese de que cada imagen contenga un rostro claramente visible.';
 $string['setting:adminimagepage'] = 'Lista de usuarios de supervisión';
 

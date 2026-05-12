@@ -152,6 +152,17 @@ $string['report_search_clear'] = 'Limpar';
 $string['report_search_placeholder'] = 'Pesquisar por e-mail ou nome';
 $string['report_search_submit'] = 'Pesquisar';
 $string['reportpage'] = 'Resumo de Proctoring do Curso';
+$string['reportoverview'] = 'Visão geral';
+$string['reportoverview:clipboardactivity'] = 'Ocorreu copiar, cortar, colar ou clique direito?';
+$string['reportoverview:f12pressed'] = 'A tecla F12 foi pressionada?';
+$string['reportoverview:logfound'] = '{$a} registro encontrado';
+$string['reportoverview:nologfound'] = 'Nenhum registro encontrado';
+$string['reportoverview:overview'] = 'Visão geral';
+$string['reportoverview:possibleaitool'] = 'Uma possível ferramenta de IA foi clicada?';
+$string['reportoverview:screenfocuslost'] = 'O foco da tela foi perdido?';
+$string['reportoverview:screenshareissue'] = 'O compartilhamento de tela foi interrompido ou o monitor errado foi compartilhado?';
+$string['reportoverview:status'] = 'Status';
+$string['reportoverview:webcamenabled'] = 'A webcam estava habilitada?';
 $string['setting:adminimagedescription'] = 'Essas imagens serão usadas como imagens base para verificação facial. Certifique-se de que cada imagem contenha um rosto claramente visível.';
 $string['setting:adminimagepage'] = 'Lista de Usuários de Proctoring';
 

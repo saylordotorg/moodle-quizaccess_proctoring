@@ -177,6 +177,17 @@ $string['report_search_clear'] = 'Clear';
 $string['report_search_placeholder'] = 'Search by email or name';
 $string['report_search_submit'] = 'Search';
 $string['reportpage'] = 'Course Proctoring Summary';
+$string['reportoverview'] = 'Overview';
+$string['reportoverview:clipboardactivity'] = 'Did copy, cut, paste, or right-click occur?';
+$string['reportoverview:f12pressed'] = 'Was the F12 button pressed?';
+$string['reportoverview:logfound'] = '{$a} Log Found';
+$string['reportoverview:nologfound'] = 'No Log Found';
+$string['reportoverview:overview'] = 'Overview';
+$string['reportoverview:possibleaitool'] = 'Was a possible AI tool clicked?';
+$string['reportoverview:screenfocuslost'] = 'Was the screen focus lost?';
+$string['reportoverview:screenshareissue'] = 'Was the screen share interrupted or wrong monitor shared?';
+$string['reportoverview:status'] = 'Status';
+$string['reportoverview:webcamenabled'] = 'Was the webcam enabled?';
 $string['setting:adminimagedescription'] = 'These images will be used as base images for face verification. Please ensure each image contains a clearly visible face.';
 $string['setting:adminimagepage'] = 'Proctoring User List';
 
