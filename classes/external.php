@@ -310,6 +310,10 @@ class quizaccess_proctoring_external extends external_api {
             'page_exit',
             'screen_marker_missing',
             'screen_share_stopped',
+            'multiple_faces_detected',
+            'face_missing',
+            'no_face_detected',
+            'audio_detected',
         ];
 
         if (!in_array($eventtype, $allowedevents, true)) {

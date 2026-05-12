@@ -362,5 +362,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051117, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051118) {
+        // No schema changes. Adds per-attempt risk scoring to the proctoring report.
+        upgrade_plugin_savepoint(true, 2026051118, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

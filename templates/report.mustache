@@ -89,6 +89,7 @@
             <th>{{#str}}dateverified,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}identity_mismatch_label,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}suspiciousactivity,quizaccess_proctoring{{/str}}</th>
+            <th>{{#str}}riskscore,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}actions,quizaccess_proctoring{{/str}}</th>
         </tr>
     </thead>
@@ -108,6 +109,9 @@
         </td>
         <td>
             {{#eventwarning}}⚠️ {{/eventwarning}}{{eventcount}}
+        </td>
+        <td>
+            <span class="{{riskbadgeclass}}">{{riskscore}}/100 {{risklevel}}</span>
         </td>
         <td>
             {{{actionmenu}}}

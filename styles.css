@@ -333,6 +333,98 @@ body.proctoring-lb-disable-scrolling {
     color: #8a1020;
 }
 
+.proctoring-risk-badge {
+    display: inline-block;
+    min-width: 6.5rem;
+    border-radius: 0.25rem;
+    padding: 0.35rem 0.6rem;
+    font-weight: 700;
+    text-align: center;
+}
+
+.proctoring-risk-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 1120px;
+    margin: 1rem auto;
+    border-left: 0.4rem solid #6b7280;
+    border-radius: 0.25rem;
+    background: #f8fafc;
+    padding: 1rem 1.25rem;
+}
+
+.proctoring-risk-title {
+    color: #4b5563;
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.proctoring-risk-score {
+    color: #111827;
+    font-size: 2rem;
+    font-weight: 800;
+}
+
+.proctoring-risk-level {
+    font-size: 1.1rem;
+    font-weight: 800;
+}
+
+.proctoring-risk-low {
+    background: #e9f7ef;
+    border-color: #198754;
+    color: #14532d;
+}
+
+.proctoring-risk-moderate {
+    background: #fff6db;
+    border-color: #c47f00;
+    color: #7a4d00;
+}
+
+.proctoring-risk-high {
+    background: #fdebea;
+    border-color: #b42318;
+    color: #8a1020;
+}
+
+.proctoring-risk-critical {
+    background: #f3e8ff;
+    border-color: #7e22ce;
+    color: #581c87;
+}
+
+.proctoring-risk-factor-container {
+    max-width: 1120px;
+    margin: 0 auto 2rem;
+    overflow-x: auto;
+}
+
+.proctoring-risk-factor-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.proctoring-risk-factor-table th,
+.proctoring-risk-factor-table td {
+    border: 1px solid #d9e1e7;
+    padding: 0.65rem 0.8rem;
+    text-align: left;
+}
+
+.proctoring-risk-factor-table th {
+    background: #eef2f6;
+    color: #1f2933;
+}
+
+.proctoring-risk-factor-table td:nth-child(2),
+.proctoring-risk-factor-table td:nth-child(3) {
+    text-align: center;
+    width: 7rem;
+}
+
 
 /* student report mustache style  */
 

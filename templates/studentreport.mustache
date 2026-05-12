@@ -51,6 +51,37 @@
         </div>
 {{/issiteadmin}}
 
+{{#riskscore}}
+<h3 class="mt-4">{{#str}}riskscore, quizaccess_proctoring{{/str}}</h3>
+<div class="{{cardclass}}">
+    <div>
+        <div class="proctoring-risk-title">{{#str}}riskscore:attemptscore, quizaccess_proctoring{{/str}}</div>
+        <div class="proctoring-risk-score">{{score}}/100</div>
+    </div>
+    <div class="proctoring-risk-level">{{level}}</div>
+</div>
+<div class="proctoring-risk-factor-container">
+    <table class="proctoring-risk-factor-table">
+        <thead>
+            <tr>
+                <th>{{#str}}riskscore:factor, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}riskscore:count, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}riskscore:points, quizaccess_proctoring{{/str}}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#factors}}
+            <tr>
+                <td>{{label}}</td>
+                <td>{{count}}</td>
+                <td>{{points}}</td>
+            </tr>
+            {{/factors}}
+        </tbody>
+    </table>
+</div>
+{{/riskscore}}
+
 <h3 class="mt-4">{{#str}}reportoverview, quizaccess_proctoring{{/str}}</h3>
 <div class="proctoring-overview-container">
     <table class="proctoring-overview-table">

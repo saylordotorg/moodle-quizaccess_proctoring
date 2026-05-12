@@ -155,6 +155,339 @@ function quizaccess_proctoring_build_overview_row(string $label, int $count): ar
     ];
 }
 
+/**
+ * Count attempt events for one or more event types.
+ *
+ * @param string $eventwhere Base event WHERE clause.
+ * @param array $eventparams Base event query params.
+ * @param array $eventtypes Event types to count.
+ * @param bool $requirescreenshot True to only count events with a desktop screenshot.
+ * @return int Number of matching events.
+ */
+function quizaccess_proctoring_count_risk_events(
+    string $eventwhere,
+    array $eventparams,
+    array $eventtypes,
+    bool $requirescreenshot = false
+): int {
+    global $DB;
+
+    if (empty($eventtypes)) {
+        return 0;
+    }
+
+    [$insql, $inparams] = $DB->get_in_or_equal($eventtypes, SQL_PARAMS_NAMED, 'riskevent');
+    $where = $eventwhere . " AND eventtype {$insql}";
+    if ($requirescreenshot) {
+        $where .= " AND COALESCE(screenshoturl, '') <> ''";
+    }
+
+    return $DB->count_records_select('quizaccess_proctoring_events', $where, array_merge($eventparams, $inparams));
+}
+
+/**
+ * Count shortcut events matching the requested shortcut.
+ *
+ * @param string $eventwhere Base event WHERE clause.
+ * @param array $eventparams Base event query params.
+ * @param string $shortcut Shortcut to match.
+ * @return int Number of matching shortcut events.
+ */
+function quizaccess_proctoring_count_risk_shortcuts(string $eventwhere, array $eventparams, string $shortcut): int {
+    global $DB;
+
+    $shortcutrecords = $DB->get_records_select(
+        'quizaccess_proctoring_events',
+        $eventwhere . ' AND eventtype = :riskshortcuttype',
+        $eventparams + ['riskshortcuttype' => 'shortcut'],
+        '',
+        'id, eventdetail'
+    );
+
+    $count = 0;
+    foreach ($shortcutrecords as $shortcutrecord) {
+        if (quizaccess_proctoring_event_has_shortcut($shortcutrecord->eventdetail, $shortcut)) {
+            $count++;
+        }
+    }
+
+    return $count;
+}
+
+/**
+ * Build one risk factor for the risk score details table.
+ *
+ * @param string $label Factor label.
+ * @param int $count Evidence count.
+ * @param int $pointsperevent Points for each event.
+ * @param int $maxpoints Maximum points this factor can add.
+ * @return array Factor data.
+ */
+function quizaccess_proctoring_build_risk_factor(
+    string $label,
+    int $count,
+    int $pointsperevent,
+    int $maxpoints
+): array {
+    $points = min($maxpoints, max(0, $count) * $pointsperevent);
+
+    return [
+        'label' => $label,
+        'count' => $count,
+        'points' => $points,
+        'haspoints' => $points > 0,
+    ];
+}
+
+/**
+ * Get risk-level presentation details for a score.
+ *
+ * @param int $score Score from 0 to 100.
+ * @return array Risk-level template data.
+ */
+function quizaccess_proctoring_get_risk_level(int $score): array {
+    if ($score >= 80) {
+        return [
+            'label' => get_string('riskscore:critical', 'quizaccess_proctoring'),
+            'class' => 'proctoring-risk-critical',
+        ];
+    }
+    if ($score >= 50) {
+        return [
+            'label' => get_string('riskscore:high', 'quizaccess_proctoring'),
+            'class' => 'proctoring-risk-high',
+        ];
+    }
+    if ($score >= 20) {
+        return [
+            'label' => get_string('riskscore:moderate', 'quizaccess_proctoring'),
+            'class' => 'proctoring-risk-moderate',
+        ];
+    }
+
+    return [
+        'label' => get_string('riskscore:low', 'quizaccess_proctoring'),
+        'class' => 'proctoring-risk-low',
+    ];
+}
+
+/**
+ * Calculate a proctoring risk score for one quiz attempt.
+ *
+ * @param int $courseid Course id.
+ * @param int $cmid Quiz course-module id.
+ * @param int $studentid Student id.
+ * @param int $reportid A quizaccess_proctoring_logs id for the attempt.
+ * @return array Risk score template data.
+ */
+function quizaccess_proctoring_calculate_attempt_risk(int $courseid, int $cmid, int $studentid, int $reportid): array {
+    global $DB;
+
+    $attemptid = (int)$DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]);
+    $threshold = max(1, (int)quizaccess_proctoring_get_proctoring_settings('threshold'));
+
+    $eventwhere = 'courseid = :riskcourseid AND quizid = :riskcmid AND userid = :riskstudentid';
+    $eventparams = [
+        'riskcourseid' => $courseid,
+        'riskcmid' => $cmid,
+        'riskstudentid' => $studentid,
+    ];
+    if ($attemptid > 0) {
+        $eventwhere .= ' AND attemptid = :riskattemptid';
+        $eventparams['riskattemptid'] = $attemptid;
+    }
+
+    $logwhere = 'courseid = :risklogcourseid AND quizid = :risklogcmid AND userid = :risklogstudentid
+        AND deletionprogress = :riskdeletionprogress';
+    $logparams = [
+        'risklogcourseid' => $courseid,
+        'risklogcmid' => $cmid,
+        'risklogstudentid' => $studentid,
+        'riskdeletionprogress' => 0,
+    ];
+    if ($attemptid > 0) {
+        $logwhere .= ' AND status = :risklogattemptid';
+        $logparams['risklogattemptid'] = $attemptid;
+    } else if ($reportid > 0) {
+        $logwhere .= ' AND id = :risklogreportid';
+        $logparams['risklogreportid'] = $reportid;
+    }
+
+    $faceimagewhere = 'l.courseid = :riskfacecourseid AND l.quizid = :riskfacecmid
+        AND l.userid = :riskfacestudentid AND l.deletionprogress = :riskfacedeletionprogress';
+    $faceimageparams = [
+        'riskfacecourseid' => $courseid,
+        'riskfacecmid' => $cmid,
+        'riskfacestudentid' => $studentid,
+        'riskfacedeletionprogress' => 0,
+        'riskfacefound' => '1',
+    ];
+    if ($attemptid > 0) {
+        $faceimagewhere .= ' AND l.status = :riskfaceattemptid';
+        $faceimageparams['riskfaceattemptid'] = $attemptid;
+    } else if ($reportid > 0) {
+        $faceimagewhere .= ' AND l.id = :riskfacereportid';
+        $faceimageparams['riskfacereportid'] = $reportid;
+    }
+
+    $webcamcount = $DB->count_records_select(
+        'quizaccess_proctoring_logs',
+        $logwhere . " AND COALESCE(webcampicture, '') <> ''",
+        $logparams
+    );
+
+    $facemismatchcount = $DB->count_records_select(
+        'quizaccess_proctoring_logs',
+        $logwhere . ' AND awsflag = :riskawschecked AND awsscore < :riskthreshold',
+        $logparams + [
+            'riskawschecked' => 2,
+            'riskthreshold' => $threshold,
+        ]
+    );
+    $facefailedcount = $DB->count_records_select(
+        'quizaccess_proctoring_logs',
+        $logwhere . ' AND awsflag = :riskawsfailed',
+        $logparams + ['riskawsfailed' => 3]
+    );
+
+    $nofaceimagecount = $DB->count_records_sql(
+        "SELECT COUNT(1)
+           FROM {quizaccess_proctoring_face_images} fi
+           JOIN {quizaccess_proctoring_logs} l ON l.id = fi.parentid
+          WHERE {$faceimagewhere}
+            AND fi.facefound <> :riskfacefound",
+        $faceimageparams
+    );
+
+    $tabactivitycount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['focus_lost', 'tab_hidden', 'page_exit']
+    );
+    $clipboardcount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['clipboard_copy', 'clipboard_cut', 'clipboard_paste', 'contextmenu']
+    );
+    $screenissuecount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['screen_marker_missing', 'screen_share_stopped']
+    );
+    $aitoolcount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['possible_ai_tool']
+    );
+    $aitoolscreenshotcount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['possible_ai_tool'],
+        true
+    );
+    $f12count = quizaccess_proctoring_count_risk_shortcuts($eventwhere, $eventparams, 'F12');
+    $multiplefacescount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['multiple_faces_detected']
+    );
+    $audioactivitycount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['audio_detected']
+    );
+    $nofaceeventcount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['face_missing', 'no_face_detected']
+    );
+
+    $factors = [
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:facemismatch', 'quizaccess_proctoring'),
+            $facemismatchcount,
+            35,
+            35
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:multiplefaces', 'quizaccess_proctoring'),
+            $multiplefacescount,
+            30,
+            30
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:noface', 'quizaccess_proctoring'),
+            max($nofaceimagecount, $facefailedcount) + $nofaceeventcount,
+            8,
+            24
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:screenshare', 'quizaccess_proctoring'),
+            $screenissuecount,
+            18,
+            36
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:aitool', 'quizaccess_proctoring'),
+            $aitoolcount,
+            20,
+            30
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:aitoolscreenshot', 'quizaccess_proctoring'),
+            $aitoolscreenshotcount,
+            15,
+            30
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:clipboard', 'quizaccess_proctoring'),
+            $clipboardcount,
+            8,
+            24
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:tabactivity', 'quizaccess_proctoring'),
+            $tabactivitycount,
+            5,
+            20
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:f12', 'quizaccess_proctoring'),
+            $f12count,
+            15,
+            15
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:audio', 'quizaccess_proctoring'),
+            $audioactivitycount,
+            6,
+            18
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:webcammissing', 'quizaccess_proctoring'),
+            $webcamcount > 0 ? 0 : 1,
+            15,
+            15
+        ),
+    ];
+
+    $score = 0;
+    foreach ($factors as $factor) {
+        $score += (int)$factor['points'];
+    }
+    $score = min(100, $score);
+    $level = quizaccess_proctoring_get_risk_level($score);
+
+    return [
+        'score' => $score,
+        'level' => $level['label'],
+        'badgeclass' => 'proctoring-risk-badge ' . $level['class'],
+        'cardclass' => 'proctoring-risk-card ' . $level['class'],
+        'factors' => $factors,
+        'attemptid' => $attemptid,
+    ];
+}
+
 // Page setup.
 $PAGE->set_url($url);
 $PAGE->set_pagelayout('course');
@@ -397,6 +730,15 @@ if (
                 'userid' => $info->studentid,
             ]);
             $row['eventwarning'] = $row['eventcount'] > 0;
+            $risk = quizaccess_proctoring_calculate_attempt_risk(
+                (int)$courseid,
+                (int)$cmid,
+                (int)$info->studentid,
+                (int)$info->reportid
+            );
+            $row['riskscore'] = $risk['score'];
+            $row['risklevel'] = $risk['level'];
+            $row['riskbadgeclass'] = $risk['badgeclass'];
 
             $actionmenu = new action_menu();
             $actionmenu->set_kebab_trigger(get_string('actions'));
@@ -484,6 +826,7 @@ if (
     if ($studentid != null && $cmid != null && $courseid != null && $reportid != null) {
         $profileimageurl = quizaccess_proctoring_get_image_url($studentid);
         $redirecturl = new moodle_url('/mod/quiz/accessrule/proctoring/upload_image.php', ['id' => $studentid]);
+        $attemptid = (int)$DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]);
 
         $sql = "SELECT e.id AS reportid,
                e.userid AS studentid,
@@ -507,6 +850,13 @@ if (
             'studentid' => $studentid,
             'deletionprogress' => 0,
         ];
+        if ($attemptid > 0) {
+            $sql .= ' AND e.status = :attemptid';
+            $params['attemptid'] = $attemptid;
+        } else {
+            $sql .= ' AND e.id = :reportid';
+            $params['reportid'] = $reportid;
+        }
         $sqlexecuted = $DB->get_recordset_sql($sql, $params);
 
         $user = core_user::get_user($studentid);
@@ -524,7 +874,6 @@ if (
                 $row['lightbox_data'] = basename($info->webcampicture, '.png');
                 $studentdata[] = $row;
         }
-        $attemptid = $DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]);
         $eventwhere = 'courseid = :courseid AND quizid = :cmid AND userid = :studentid';
         $eventparams = [
             'courseid' => $courseid,
@@ -535,6 +884,12 @@ if (
             $eventwhere .= ' AND attemptid = :attemptid';
             $eventparams['attemptid'] = $attemptid;
         }
+        $riskscore = quizaccess_proctoring_calculate_attempt_risk(
+            (int)$courseid,
+            (int)$cmid,
+            (int)$studentid,
+            (int)$reportid
+        );
 
         $overviewcounts = [
             'focus' => $DB->count_records_select(
@@ -638,6 +993,7 @@ if (
             'email' => $info->email,
             'fcmethod' => quizaccess_proctoring_is_facematch_method_enabled($fcmethod),
             'analyzeurl' => $analyzeurl,
+            'riskscore' => $riskscore,
             'overviewrows' => $overviewrows,
             'events' => $events,
             'hasevents' => !empty($events),
