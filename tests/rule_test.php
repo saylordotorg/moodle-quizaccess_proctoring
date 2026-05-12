@@ -154,4 +154,53 @@ class rule_test extends advanced_testcase {
         $this->assertFalse($rule->time_left_display($attempt, 0));
     }
 
+    /**
+     * High-risk review holds should block retakes before a reviewer confirms the violation.
+     */
+    public function test_active_high_risk_hold_blocks_retake_lockout() {
+        global $DB;
+
+        $this->resetAfterTest();
+        set_config('cheatinglockoutenabled', '1', 'quizaccess_proctoring');
+        set_config('cheatinglockoutdays', '3', 'quizaccess_proctoring');
+
+        $now = time();
+        $hold = (object)[
+            'courseid' => 101,
+            'quizid' => 202,
+            'quizinstance' => 303,
+            'userid' => 404,
+            'attemptid' => 505,
+            'reportid' => 606,
+            'riskscore' => 95,
+            'threshold' => 80,
+            'originalgrade' => 5.00000,
+            'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+            'reviewerid' => 0,
+            'timecreated' => $now - HOURSECS,
+            'timemodified' => $now - HOURSECS,
+            'timereviewed' => 0,
+        ];
+        $hold->id = $DB->insert_record('quizaccess_proctoring_risk_holds', $hold);
+
+        $lockout = quizaccess_proctoring_get_active_cheating_lockout(101, 202, 404, $now);
+        $this->assertNotFalse($lockout);
+        $this->assertEquals($hold->id, $lockout['hold']->id);
+
+        $hold->status = QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED;
+        $hold->reviewerid = 1;
+        $hold->timereviewed = $now;
+        $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
+        $this->assertFalse(quizaccess_proctoring_get_active_cheating_lockout(101, 202, 404, $now));
+
+        unset($hold->id);
+        $hold->status = QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
+        $hold->reviewerid = 0;
+        $hold->timecreated = $now - (4 * DAYSECS);
+        $hold->timemodified = $hold->timecreated;
+        $hold->timereviewed = 0;
+        $DB->insert_record('quizaccess_proctoring_risk_holds', $hold);
+        $this->assertFalse(quizaccess_proctoring_get_active_cheating_lockout(101, 202, 404, $now));
+    }
+
 }

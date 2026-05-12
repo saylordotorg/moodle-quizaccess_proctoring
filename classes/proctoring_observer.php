@@ -89,7 +89,9 @@ class proctoring_observer {
             $risksettings = \quizaccess_proctoring_get_effective_risk_review_settings((int)$cm->id);
             $aireviewsettings = \quizaccess_proctoring_get_ai_review_settings();
             $aireviewenabled = \quizaccess_proctoring_ai_review_configured($aireviewsettings);
-            if (empty($risksettings['enabled']) && !$aireviewenabled) {
+            $risklockoutenabled = \quizaccess_proctoring_get_cheating_lockout_days() > 0 &&
+                (int)$risksettings['mode'] !== 0;
+            if (empty($risksettings['enabled']) && !$risklockoutenabled && !$aireviewenabled) {
                 return;
             }
 
@@ -120,7 +122,8 @@ class proctoring_observer {
             );
 
             $holdid = 0;
-            if (!empty($risksettings['enabled']) && (int)$risk['score'] >= (int)$risksettings['threshold']) {
+            if ((!empty($risksettings['enabled']) || $risklockoutenabled) &&
+                    (int)$risk['score'] >= (int)$risksettings['threshold']) {
                 $holdid = \quizaccess_proctoring_apply_risk_hold(
                     (int)$quiz->course,
                     (int)$cm->id,

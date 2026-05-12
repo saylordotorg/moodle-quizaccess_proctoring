@@ -562,5 +562,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051137, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051138) {
+        // No schema changes. Applies retake lockouts immediately after high-risk review holds.
+        upgrade_plugin_savepoint(true, 2026051138, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

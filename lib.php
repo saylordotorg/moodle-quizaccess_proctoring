@@ -852,7 +852,7 @@ function quizaccess_proctoring_get_risk_hold_status_label(stdClass $hold): strin
 }
 
 /**
- * Get the configured confirmed-violation lockout length in days.
+ * Get the configured high-risk attempt lockout length in days.
  *
  * @return int Number of days to block retakes. Zero means disabled.
  */
@@ -866,7 +866,12 @@ function quizaccess_proctoring_get_cheating_lockout_days(): int {
 }
 
 /**
- * Get the active confirmed-violation retake lockout for a student and quiz.
+ * Get the active high-risk retake lockout for a student and quiz.
+ *
+ * Pending high-risk holds block retakes immediately so students cannot use failed
+ * or throwaway attempts to test the proctoring system. Releasing a hold clears
+ * the lockout. Confirmed holds continue to block until the same high-risk window
+ * expires.
  *
  * @param int $courseid Course id.
  * @param int $cmid Quiz course-module id.
@@ -888,38 +893,41 @@ function quizaccess_proctoring_get_active_cheating_lockout(
     }
 
     $now = $now > 0 ? $now : time();
-    $cutoff = $now - ($days * DAYSECS);
     $records = $DB->get_records_select(
         'quizaccess_proctoring_risk_holds',
         'courseid = :courseid AND quizid = :cmid AND userid = :userid
-            AND status = :status AND timereviewed >= :cutoff',
+            AND (status = :activestatus OR status = :confirmedstatus)',
         [
             'courseid' => $courseid,
             'cmid' => $cmid,
             'userid' => $userid,
-            'status' => QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED,
-            'cutoff' => $cutoff,
+            'activestatus' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+            'confirmedstatus' => QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED,
         ],
-        'timereviewed DESC, id DESC',
-        '*',
-        0,
-        1
+        'timecreated DESC, id DESC'
     );
     if (!$records) {
         return false;
     }
 
-    $hold = reset($records);
-    $until = (int)$hold->timereviewed + ($days * DAYSECS);
-    if ($until <= $now) {
-        return false;
+    foreach ($records as $hold) {
+        $anchor = (int)$hold->timecreated > 0 ? (int)$hold->timecreated : (int)$hold->timereviewed;
+        if ($anchor <= 0) {
+            continue;
+        }
+        $until = $anchor + ($days * DAYSECS);
+        if ($until <= $now) {
+            continue;
+        }
+
+        return [
+            'hold' => $hold,
+            'days' => $days,
+            'until' => $until,
+        ];
     }
 
-    return [
-        'hold' => $hold,
-        'days' => $days,
-        'until' => $until,
-    ];
+    return false;
 }
 
 /**

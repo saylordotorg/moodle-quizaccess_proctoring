@@ -367,7 +367,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
-     * Check whether the current user can bypass student-only retake lockouts.
+     * Check whether the current user can bypass student-only high-risk retake lockouts.
      *
      * @return bool True when the current user can review risk holds for this quiz.
      */
@@ -383,7 +383,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
-     * Get the currently active confirmed-violation lockout for the current user.
+     * Get the currently active high-risk lockout for the current user.
      *
      * @return array|false Lockout details or false.
      */
@@ -855,7 +855,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
-     * Prevent new attempts while a confirmed proctoring violation lockout is active.
+     * Prevent new attempts while a high-risk proctoring lockout is active.
      *
      * @param int $numprevattempts Number of previous attempts.
      * @param stdClass|null $lastattempt The last attempt.
