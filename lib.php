@@ -637,6 +637,29 @@ function quizaccess_proctoring_get_risk_review_auto_release_days(): int {
 }
 
 /**
+ * Normalize an OpenAI-compatible endpoint to the chat completions route when only the service root is configured.
+ *
+ * @param string $endpoint Configured endpoint URL.
+ * @return string Endpoint URL to call.
+ */
+function quizaccess_proctoring_normalize_compatible_ai_endpoint(string $endpoint): string {
+    $endpoint = rtrim(trim($endpoint), '/');
+    if ($endpoint === '') {
+        return '';
+    }
+
+    $path = (string)(parse_url($endpoint, PHP_URL_PATH) ?: '');
+    if ($path === '' || $path === '/') {
+        return $endpoint . '/v1/chat/completions';
+    }
+    if (preg_match('#/v1$#', $path)) {
+        return $endpoint . '/chat/completions';
+    }
+
+    return $endpoint;
+}
+
+/**
  * Get configured AI image review settings.
  *
  * @return array Normalized AI review settings.
@@ -673,7 +696,9 @@ function quizaccess_proctoring_get_ai_review_settings(): array {
         'anthropicapikey' => (string)get_config('quizaccess_proctoring', 'aireviewanthropicapikey'),
         'anthropicmodel' => trim((string)get_config('quizaccess_proctoring', 'aireviewanthropicmodel')) ?:
             'claude-sonnet-4-5-20250929',
-        'compatibleendpoint' => trim((string)get_config('quizaccess_proctoring', 'aireviewcompatibleendpoint')),
+        'compatibleendpoint' => quizaccess_proctoring_normalize_compatible_ai_endpoint(
+            (string)get_config('quizaccess_proctoring', 'aireviewcompatibleendpoint')
+        ),
         'compatibleapikey' => (string)get_config('quizaccess_proctoring', 'aireviewcompatibleapikey'),
         'compatiblemodel' => trim((string)get_config('quizaccess_proctoring', 'aireviewcompatiblemodel')),
         'triggerthreshold' => max(1, min(100, $triggerthreshold)),
@@ -2156,6 +2181,14 @@ function quizaccess_proctoring_call_openai_compatible_image_review(
     }
     if (!empty($decoded['error']['message'])) {
         throw new moodle_exception('aireview:compatibleerror', 'quizaccess_proctoring', '', $decoded['error']['message']);
+    }
+    if (!empty($decoded['error']) && is_string($decoded['error'])) {
+        throw new moodle_exception('aireview:compatibleerror', 'quizaccess_proctoring', '', $decoded['error']);
+    }
+    // vLLM and some other OpenAI-compatible servers return errors at the top level
+    // as {"object":"error","message":"...","type":"...","code":...}.
+    if (($decoded['object'] ?? '') === 'error' && !empty($decoded['message'])) {
+        throw new moodle_exception('aireview:compatibleerror', 'quizaccess_proctoring', '', $decoded['message']);
     }
     $message = $decoded['choices'][0]['message']['content'] ?? '';
     if (is_array($message)) {
