@@ -619,5 +619,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051145, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051146) {
+        // No schema changes. Skips multi-monitor unavailable logging on mobile and tablet devices.
+        upgrade_plugin_savepoint(true, 2026051146, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

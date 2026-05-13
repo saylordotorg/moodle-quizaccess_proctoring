@@ -170,11 +170,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
-     * Get the configured browser multi-monitor detection mode.
+     * Get the effective browser multi-monitor detection mode.
      *
      * @return string One of the MULTI_MONITOR_* constants.
      */
     private static function multi_monitor_mode() {
+        if (self::is_mobile_or_tablet()) {
+            return self::MULTI_MONITOR_OFF;
+        }
+
         $mode = get_config('quizaccess_proctoring', 'multimonitormode');
 
         if (in_array($mode, [
