@@ -81,7 +81,7 @@ class proctoring_observer {
                 return;
             }
 
-            $proctoring = $DB->get_record('quizaccess_proctoring', ['quizid' => $cm->id]);
+            $proctoring = $DB->get_record('quizaccess_proctoring', ['quizid' => $quiz->id]);
             if (!$proctoring || empty($proctoring->proctoringrequired)) {
                 return;
             }

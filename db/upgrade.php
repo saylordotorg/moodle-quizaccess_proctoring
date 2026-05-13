@@ -701,5 +701,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051152, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051153) {
+        // No schema changes. Fixes submission risk review lookup for quiz-level proctoring settings.
+        upgrade_plugin_savepoint(true, 2026051153, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

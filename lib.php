@@ -597,7 +597,12 @@ function quizaccess_proctoring_get_effective_risk_review_settings(int $cmid): ar
         $sitethreshold = 80;
     }
     $sitethreshold = max(1, min(100, $sitethreshold));
-    $quizsetting = $DB->get_record('quizaccess_proctoring', ['quizid' => $cmid]);
+    $quizid = 0;
+    $cm = get_coursemodule_from_id('quiz', $cmid, 0, false, IGNORE_MISSING);
+    if ($cm) {
+        $quizid = (int)$cm->instance;
+    }
+    $quizsetting = $quizid > 0 ? $DB->get_record('quizaccess_proctoring', ['quizid' => $quizid]) : false;
     $mode = isset($quizsetting->riskreviewmode) ? (int)$quizsetting->riskreviewmode : -1;
     $threshold = isset($quizsetting->riskreviewthreshold) && (int)$quizsetting->riskreviewthreshold > 0
         ? max(1, min(100, (int)$quizsetting->riskreviewthreshold))
