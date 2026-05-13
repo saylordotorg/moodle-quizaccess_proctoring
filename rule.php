@@ -1103,6 +1103,14 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->blockclipboard = (int)(get_config('quizaccess_proctoring', 'blockclipboard') ?? 1);
             $record->captureviolationdesktop = $this->should_capture_violation_desktop() ? 1 : 0;
             $record->blurquizwithoutface = (int)(get_config('quizaccess_proctoring', 'blurquizwithoutface') ?? 0);
+            $faceblurminscore = (float)(get_config('quizaccess_proctoring', 'faceblurminscore') ?: 0.30);
+            $record->faceblurminscore = max(0.10, min(0.95, $faceblurminscore));
+            $faceblurmisses = (int)(get_config('quizaccess_proctoring', 'faceblurmisses') ?: 4);
+            $record->faceblurmisses = max(1, min(20, $faceblurmisses));
+            $faceblurhits = (int)(get_config('quizaccess_proctoring', 'faceblurhits') ?: 1);
+            $record->faceblurhits = max(1, min(10, $faceblurhits));
+            $faceblurinitialgrace = (int)(get_config('quizaccess_proctoring', 'faceblurinitialgrace') ?: 10);
+            $record->faceblurinitialgrace = max(0, min(60, $faceblurinitialgrace));
             $screenmonitorkey = 'cm' . (int)$cmid . 'user' . (int)$USER->id;
             $screenmonitorurl = new moodle_url('/mod/quiz/accessrule/proctoring/screenmonitor.php', [
                 'cmid' => (int)$cmid,

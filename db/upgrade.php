@@ -572,5 +572,28 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051139, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051140) {
+        // No schema changes. Adds configurable face-blur sensitivity settings.
+        upgrade_plugin_savepoint(true, 2026051140, 'quizaccess', 'proctoring');
+    }
+
+    if ($oldversion < 2026051141) {
+        // No schema changes. Ensures face-blur sensitivity settings have upgrade defaults.
+        if (get_config('quizaccess_proctoring', 'faceblurminscore') === false) {
+            set_config('faceblurminscore', 0.3, 'quizaccess_proctoring');
+        }
+        if (get_config('quizaccess_proctoring', 'faceblurmisses') === false) {
+            set_config('faceblurmisses', 4, 'quizaccess_proctoring');
+        }
+        if (get_config('quizaccess_proctoring', 'faceblurhits') === false) {
+            set_config('faceblurhits', 1, 'quizaccess_proctoring');
+        }
+        if (get_config('quizaccess_proctoring', 'faceblurinitialgrace') === false) {
+            set_config('faceblurinitialgrace', 10, 'quizaccess_proctoring');
+        }
+
+        upgrade_plugin_savepoint(true, 2026051141, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

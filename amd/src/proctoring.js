@@ -929,6 +929,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const canvas = document.getElementById('canvas');
                 const photo = document.getElementById('photo');
                 const blurWhenNoFace = parseInt(props.blurquizwithoutface || 0, 10) === 1;
+                const faceBlurMinScore = Math.min(0.95, Math.max(0.10, parseFloat(props.faceblurminscore || 0.30)));
+                const faceBlurMisses = Math.min(20, Math.max(1, parseInt(props.faceblurmisses || 4, 10)));
+                const faceBlurHits = Math.min(10, Math.max(1, parseInt(props.faceblurhits || 1, 10)));
+                const faceBlurInitialGraceMs = Math.min(
+                    60000,
+                    Math.max(0, parseInt(props.faceblurinitialgrace || 10, 10) * 1000)
+                );
                 let faceBlurTimer = null;
                 let faceBlurChecking = false;
                 let facePresentCount = 0;
@@ -955,15 +962,23 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         );
                     }
 
-                    setQuizBlurredForFace(true);
+                    const graceEndsAt = Date.now() + faceBlurInitialGraceMs;
+                    setQuizBlurredForFace(false);
 
                     const checkFaceVisibility = async() => {
                         if (faceBlurChecking) {
                             return;
                         }
 
+                        const graceActive = Date.now() < graceEndsAt;
                         if (!video.videoWidth || !video.videoHeight) {
-                            setQuizBlurredForFace(true);
+                            if (!graceActive) {
+                                faceMissingCount++;
+                                facePresentCount = 0;
+                                if (faceMissingCount >= faceBlurMisses) {
+                                    setQuizBlurredForFace(true);
+                                }
+                            }
                             return;
                         }
 
@@ -971,25 +986,27 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         try {
                             // eslint-disable-next-line no-undef
                             const detections = await faceapi.detectAllFaces(video);
-                            const faceVisible = detections.some((detection) => detection.score >= 0.45);
+                            const faceVisible = detections.some((detection) => detection.score >= faceBlurMinScore);
                             if (faceVisible) {
                                 facePresentCount++;
                                 faceMissingCount = 0;
-                                if (facePresentCount >= 1) {
+                                if (facePresentCount >= faceBlurHits) {
                                     setQuizBlurredForFace(false);
                                 }
-                            } else {
+                            } else if (!graceActive) {
                                 faceMissingCount++;
                                 facePresentCount = 0;
-                                if (faceMissingCount >= 2) {
+                                if (faceMissingCount >= faceBlurMisses) {
                                     setQuizBlurredForFace(true);
                                 }
                             }
                         } catch (error) {
-                            faceMissingCount++;
-                            facePresentCount = 0;
-                            if (faceMissingCount >= 2) {
-                                setQuizBlurredForFace(true);
+                            if (!graceActive) {
+                                faceMissingCount++;
+                                facePresentCount = 0;
+                                if (faceMissingCount >= faceBlurMisses) {
+                                    setQuizBlurredForFace(true);
+                                }
                             }
                         } finally {
                             faceBlurChecking = false;

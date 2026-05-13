@@ -177,6 +177,22 @@ if ($hassiteconfig) {
         get_string('setting:blurquizwithoutface', 'quizaccess_proctoring'),
         get_string('setting:blurquizwithoutface_desc', 'quizaccess_proctoring'), 0));
 
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/faceblurminscore',
+        get_string('setting:faceblurminscore', 'quizaccess_proctoring'),
+        get_string('setting:faceblurminscore_desc', 'quizaccess_proctoring'), 0.3, PARAM_FLOAT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/faceblurmisses',
+        get_string('setting:faceblurmisses', 'quizaccess_proctoring'),
+        get_string('setting:faceblurmisses_desc', 'quizaccess_proctoring'), 4, PARAM_INT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/faceblurhits',
+        get_string('setting:faceblurhits', 'quizaccess_proctoring'),
+        get_string('setting:faceblurhits_desc', 'quizaccess_proctoring'), 1, PARAM_INT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/faceblurinitialgrace',
+        get_string('setting:faceblurinitialgrace', 'quizaccess_proctoring'),
+        get_string('setting:faceblurinitialgrace_desc', 'quizaccess_proctoring'), 10, PARAM_INT));
+
     $settings->add(new admin_setting_heading(
         'quizaccess_proctoring_riskheading',
         get_string('setting:riskheading', 'quizaccess_proctoring'),
