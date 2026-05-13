@@ -1821,7 +1821,7 @@ function quizaccess_proctoring_image_bytes_to_ai_data_url(string $imagebytes): ?
         if ($source) {
             $sourcewidth = (int)$info[0];
             $sourceheight = (int)$info[1];
-            $maxdimension = 720;
+            $maxdimension = 1280;
             $scale = min(1, $maxdimension / max($sourcewidth, $sourceheight));
             $targetwidth = max(1, (int)round($sourcewidth * $scale));
             $targetheight = max(1, (int)round($sourceheight * $scale));
@@ -1842,7 +1842,7 @@ function quizaccess_proctoring_image_bytes_to_ai_data_url(string $imagebytes): ?
                     $sourceheight
                 );
                 ob_start();
-                imagejpeg($target, null, 68);
+                imagejpeg($target, null, 72);
                 $compressed = (string)ob_get_clean();
                 imagedestroy($target);
                 imagedestroy($source);
@@ -2300,11 +2300,15 @@ function quizaccess_proctoring_build_ai_review_prompt(stdClass $review, int $ima
 
         return "You are reviewing one desktop screenshot captured during an online quiz proctoring event. "
             . "Use only visible evidence in the screenshot and the event metadata below. "
+            . "Inspect the entire screenshot, including browser tabs, browser side panels, right-side assistant panels, "
+            . "floating browser AI surfaces, and any text outside the Moodle quiz area. "
             . "Do not identify the student or infer intent from protected traits. "
-            . "Do not mark cheating likely unless there is clear visual evidence such as an AI/chat/search answer panel "
-            . "including Gemini, Copilot, ChatGPT, Claude, or similar tools; another person helping; unauthorized notes; "
+            . "Mark cheating likely when a visible AI/chat/search assistant panel or tab, including Gemini, Ask Gemini, "
+            . "Copilot, ChatGPT, Claude, Perplexity, or similar tools, is open during the quiz and appears to show answers, "
+            . "explanations, or question-related help. Also mark cheating likely for another person helping; unauthorized notes; "
             . "a phone used for answers; or the quiz being outside the shared screen controls. "
-            . "If the screenshot only shows a focus-change event without clear unauthorized content, choose inconclusive. "
+            . "If a browser AI panel is visibly open but its text is unreadable, choose suspicious or inconclusive based on visible context. "
+            . "If the screenshot only shows a focus-change event without visible unauthorized content, choose inconclusive. "
             . "Return a cautious review score from 0 to 100 where "
             . (int)$settings['decisionthreshold'] . "+ means strong visual evidence that needs escalation. "
             . "This is advisory for a human reviewer, not an automatic misconduct finding.\n\n"

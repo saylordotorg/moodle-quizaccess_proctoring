@@ -721,5 +721,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051156, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051157) {
+        // No schema changes. Improves AI-panel detection prompt and desktop screenshot readability.
+        upgrade_plugin_savepoint(true, 2026051157, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
