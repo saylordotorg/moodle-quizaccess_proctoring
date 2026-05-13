@@ -596,10 +596,51 @@ body.proctoring-lb-disable-scrolling {
     padding-top: 0.85rem;
 }
 
+.proctoring-student-report {
+    max-width: 1180px;
+    margin: 0 auto;
+}
+
+.proctoring-report-tabs {
+    border-bottom: 1px solid #d9e1e7;
+    gap: 0.15rem;
+}
+
+.proctoring-report-tabs .nav-link {
+    color: #334155;
+    font-weight: 700;
+}
+
+.proctoring-report-tabs .nav-link.active {
+    color: #0f172a;
+}
+
+.proctoring-report-tab-content {
+    background: #ffffff;
+    border: 1px solid #d9e1e7;
+    border-top: 0;
+    padding: 1.25rem;
+}
+
+.proctoring-report-table-scroll {
+    overflow-x: auto;
+}
+
+.proctoring-report-tab-content h3:first-child {
+    margin-top: 0;
+}
+
+@media (max-width: 767.98px) {
+    .proctoring-report-tab-content {
+        padding: 0.85rem;
+    }
+}
+
 
 /* student report mustache style  */
 
-#proctoring-table-style {
+#proctoring-table-style,
+.proctoring-table-style {
     width: 100%;
     border-collapse: collapse;
 }

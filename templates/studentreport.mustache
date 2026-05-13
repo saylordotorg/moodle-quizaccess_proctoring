@@ -51,8 +51,26 @@
         </div>
 {{/issiteadmin}}
 
+<div class="proctoring-student-report">
+<ul class="nav nav-tabs proctoring-report-tabs mt-4" id="proctoring-report-tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <a class="nav-link active" id="proctoring-report-summary-tab" data-toggle="tab" data-bs-toggle="tab" href="#proctoring-report-summary" role="tab" aria-controls="proctoring-report-summary" aria-selected="true">{{#str}}reporttab:summary, quizaccess_proctoring{{/str}}</a>
+    </li>
+    <li class="nav-item" role="presentation">
+        <a class="nav-link" id="proctoring-report-captures-tab" data-toggle="tab" data-bs-toggle="tab" href="#proctoring-report-captures" role="tab" aria-controls="proctoring-report-captures" aria-selected="false">{{#str}}reporttab:captures, quizaccess_proctoring{{/str}}</a>
+    </li>
+    {{#hasevents}}
+    <li class="nav-item" role="presentation">
+        <a class="nav-link" id="proctoring-report-activity-tab" data-toggle="tab" data-bs-toggle="tab" href="#proctoring-report-activity" role="tab" aria-controls="proctoring-report-activity" aria-selected="false">{{#str}}reporttab:activity, quizaccess_proctoring{{/str}}</a>
+    </li>
+    {{/hasevents}}
+</ul>
+
+<div class="tab-content proctoring-report-tab-content" id="proctoring-report-tabs-content">
+<div class="tab-pane fade show active" id="proctoring-report-summary" role="tabpanel" aria-labelledby="proctoring-report-summary-tab">
+
 {{#riskscore}}
-<h3 class="mt-4">{{#str}}riskscore, quizaccess_proctoring{{/str}}</h3>
+<h3>{{#str}}riskscore, quizaccess_proctoring{{/str}}</h3>
 <div class="{{cardclass}}">
     <div>
         <div class="proctoring-risk-title">{{#str}}riskscore:attemptscore, quizaccess_proctoring{{/str}}</div>
@@ -169,6 +187,9 @@
     </table>
 </div>
 
+</div>
+
+<div class="tab-pane fade" id="proctoring-report-captures" role="tabpanel" aria-labelledby="proctoring-report-captures-tab">
 <h3>{{#str}}picturesusedreport, quizaccess_proctoring{{/str}}</h3>
 
 
@@ -179,7 +200,7 @@
     <div class="row no-gutters">
         <!-- Remove any additional margins or padding here -->
         <div class="col-lg-3 col-md-5 ">
-            <table class="generaltable generalbox reporttable" cellpadding="0" cellspacing="0" id="proctoring-table-style">
+            <table class="generaltable generalbox reporttable proctoring-table-style" cellpadding="0" cellspacing="0">
             <thead>
                 <tr>
                     <th class = "text-center">{{#str}}name, quizaccess_proctoring{{/str}}</th>
@@ -208,7 +229,7 @@
 
     
         <div class=" col-lg-9 col-md-7 ">
-            <table class="generaltable generalbox reporttable" cellpadding="0" cellspacing="0" id="proctoring-table-style">
+            <table class="generaltable generalbox reporttable proctoring-table-style" cellpadding="0" cellspacing="0">
             <thead>
                 <tr>
                     <th class = "text-center">{{#str}}dateverified, quizaccess_proctoring{{/str}}</th>
@@ -236,9 +257,12 @@
         </div>
     </div>
 </div>
+</div>
 
 {{#hasevents}}
-<h3 class="mt-4">{{#str}}suspiciousactivity, quizaccess_proctoring{{/str}}</h3>
+<div class="tab-pane fade" id="proctoring-report-activity" role="tabpanel" aria-labelledby="proctoring-report-activity-tab">
+<h3>{{#str}}suspiciousactivity, quizaccess_proctoring{{/str}}</h3>
+<div class="proctoring-report-table-scroll">
 <table class="generaltable generalbox reporttable" cellpadding="0" cellspacing="0" id="proctoring-event-table">
     <thead>
         <tr>
@@ -280,6 +304,9 @@
         {{/events}}
     </tbody>
 </table>
+</div>
+</div>
 {{/hasevents}}
 
+</div>
 </div>
