@@ -192,9 +192,79 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let screenCanvas = null;
             let screenReady = false;
             let markerCheckTimer = null;
+            let screenGateTimer = null;
             let screenMonitorClient = null;
             let latestDesktopFrame = '';
             const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
+
+            const positionScreenMarker = function(markerElement) {
+                if (!markerElement) {
+                    return;
+                }
+
+                const fallback = function() {
+                    markerElement.classList.remove('is-panel-aligned');
+                    markerElement.style.top = '8px';
+                    markerElement.style.right = '8px';
+                    markerElement.style.left = 'auto';
+                    markerElement.style.width = '220px';
+                };
+
+                if (!window.matchMedia || !window.matchMedia('(min-width: 992px)').matches) {
+                    fallback();
+                    return;
+                }
+
+                const navBlock = document.getElementById('mod_quiz_navblock');
+                if (!navBlock) {
+                    fallback();
+                    return;
+                }
+
+                const rect = navBlock.getBoundingClientRect();
+                const navStyle = window.getComputedStyle ? window.getComputedStyle(navBlock) : null;
+                const navHidden = navStyle && (navStyle.display === 'none' || navStyle.visibility === 'hidden');
+                if (navHidden || rect.width < 80 || rect.height < 40) {
+                    fallback();
+                    return;
+                }
+
+                const markerWidth = Math.min(220, Math.max(180, rect.width));
+                const markerHeight = markerElement.offsetHeight || 96;
+                const top = Math.min(
+                    Math.max(8, rect.bottom + 12),
+                    Math.max(8, window.innerHeight - markerHeight - 16)
+                );
+                const left = Math.min(
+                    Math.max(8, rect.left),
+                    Math.max(8, window.innerWidth - markerWidth - 8)
+                );
+
+                markerElement.classList.add('is-panel-aligned');
+                markerElement.style.top = top + 'px';
+                markerElement.style.left = left + 'px';
+                markerElement.style.right = 'auto';
+                markerElement.style.width = markerWidth + 'px';
+            };
+
+            const bindScreenMarkerPositioning = function(markerElement) {
+                if (!markerElement || markerElement.dataset.proctoringPositionBound === '1') {
+                    return;
+                }
+
+                markerElement.dataset.proctoringPositionBound = '1';
+                positionScreenMarker(markerElement);
+
+                window.addEventListener('resize', function() {
+                    positionScreenMarker(markerElement);
+                });
+                window.addEventListener('scroll', function() {
+                    positionScreenMarker(markerElement);
+                }, true);
+                window.setInterval(function() {
+                    positionScreenMarker(markerElement);
+                }, 1500);
+            };
 
             const initScreenMarker = function() {
                 if (!captureDesktop || document.getElementById('proctoring-screen-verification-marker')) {
@@ -214,13 +284,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         '</div>'
                 );
 
-                const screenSlot = getDesktopPanelSlot('screen');
-                if (screenSlot) {
-                    marker.addClass('is-docked');
-                    $(screenSlot).append(marker);
-                } else {
-                    $('body').append(marker);
-                }
+                // Keep the verification marker outside Moodle's collapsible quiz navigation.
+                // Otherwise page navigation can hide the marker and falsely fail the screen check.
+                $('body').append(marker);
+                bindScreenMarkerPositioning(marker[0]);
             };
 
             const captureDesktopFrame = function(eventType) {
@@ -375,6 +442,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             };
 
             const showScreenShareGate = function() {
+                if (screenGateTimer) {
+                    window.clearTimeout(screenGateTimer);
+                    screenGateTimer = null;
+                }
                 const gate = document.getElementById('proctoring-screen-share-gate');
                 if (gate) {
                     gate.style.display = 'flex';
@@ -382,10 +453,26 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             };
 
             const hideScreenShareGate = function() {
+                if (screenGateTimer) {
+                    window.clearTimeout(screenGateTimer);
+                    screenGateTimer = null;
+                }
                 const gate = document.getElementById('proctoring-screen-share-gate');
                 if (gate) {
                     gate.style.display = 'none';
                 }
+            };
+
+            const scheduleScreenShareGate = function(delay) {
+                if (screenGateTimer) {
+                    window.clearTimeout(screenGateTimer);
+                }
+                screenGateTimer = window.setTimeout(function() {
+                    screenGateTimer = null;
+                    if (!screenReady) {
+                        showScreenShareGate();
+                    }
+                }, delay || 2500);
             };
 
             const stopScreenStream = function() {
@@ -507,7 +594,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 initScreenMarker();
 
                 $('body').append(
-                    '<div id="proctoring-screen-share-gate" class="proctoring-screen-share-gate">' +
+                    '<div id="proctoring-screen-share-gate" class="proctoring-screen-share-gate"' +
+                        (props.screenmonitorurl ? ' style="display:none;"' : '') + '>' +
                         '<div class="proctoring-screen-share-panel">' +
                             `<h3>${strings.desktopcapturetitle}</h3>` +
                             `<p>${strings.desktopcaptureprompt}</p>` +
@@ -535,8 +623,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                     reason: 'persistent_monitor_unavailable'
                                 });
                                 setScreenShareStatus(strings.screensharestopped, 'danger');
+                                showScreenShareGate();
+                            } else {
+                                scheduleScreenShareGate(2500);
                             }
-                            showScreenShareGate();
                         },
                         onWrongScreen: function() {
                             screenReady = false;
@@ -558,6 +648,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         }
                     });
                     screenMonitorClient.start();
+                    if (screenMonitorClient.isReady()) {
+                        screenReady = true;
+                        hideScreenShareGate();
+                    } else {
+                        scheduleScreenShareGate(3000);
+                    }
                 }
             };
 

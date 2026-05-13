@@ -1,5 +1,5 @@
 define([], function() {
-    const statusStaleMs = 10000;
+    const statusStaleMs = 20000;
     const statusPollMs = 2000;
     const screenshotPollMs = 5000;
 

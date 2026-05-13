@@ -930,6 +930,11 @@ body.proctoring-face-blur-active .proctoring-screen-share-gate {
     box-sizing: border-box;
 }
 
+.proctoring-screen-verification-marker.is-panel-aligned {
+    position: fixed;
+    box-sizing: border-box;
+}
+
 .proctoring-screen-marker-label {
     font-size: 12px;
     font-weight: 700;

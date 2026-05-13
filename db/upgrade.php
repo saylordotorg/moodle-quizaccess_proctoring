@@ -567,5 +567,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051138, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051139) {
+        // No schema changes. Keeps the screen-share marker visible when quiz navigation collapses.
+        upgrade_plugin_savepoint(true, 2026051139, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

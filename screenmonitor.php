@@ -74,9 +74,9 @@ echo $OUTPUT->header();
 <?php
 $js = <<<JS
 (function(config) {
-    const markerGraceMs = 8000;
+    const markerGraceMs = 20000;
     const statusIntervalMs = 2000;
-    const markerMissingNotifyMs = 10000;
+    const markerMissingNotifyMs = 15000;
     let channel = null;
     let stream = null;
     let video = null;
