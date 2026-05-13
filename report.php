@@ -732,8 +732,29 @@ if (
             0,
             200
         );
+        $eventreviews = [];
+        if (!empty($eventrecords)) {
+            [$eventsql, $eventsqlparams] = $DB->get_in_or_equal(
+                array_keys($eventrecords),
+                SQL_PARAMS_NAMED,
+                'airevent'
+            );
+            $reviewrecords = $DB->get_records_select(
+                'quizaccess_proctoring_ai_reviews',
+                "eventid {$eventsql} AND reviewtype = :reviewtype",
+                $eventsqlparams + ['reviewtype' => 'event'],
+                'id DESC'
+            );
+            foreach ($reviewrecords as $reviewrecord) {
+                $eventid = (int)$reviewrecord->eventid;
+                if (!isset($eventreviews[$eventid])) {
+                    $eventreviews[$eventid] = quizaccess_proctoring_format_ai_review_for_template($reviewrecord);
+                }
+            }
+        }
         $events = [];
         foreach ($eventrecords as $event) {
+            $eventreview = $eventreviews[(int)$event->id] ?? null;
             $events[] = [
                 'timemodified' => date('Y/M/d H:i:s', $event->timemodified),
                 'eventtype' => quizaccess_proctoring_get_event_label($event->eventtype),
@@ -742,6 +763,8 @@ if (
                 'currenturl' => $event->currenturl,
                 'screenshoturl' => $event->screenshoturl,
                 'hasscreenshot' => !empty($event->screenshoturl),
+                'eventaireview' => $eventreview,
+                'haseventaireview' => !empty($eventreview),
             ];
         }
         $overviewrows = [

@@ -342,6 +342,7 @@ class quizaccess_proctoring_external extends external_api {
                 $record->id = $eventid;
                 $record->screenshoturl = self::save_event_screenshot($courseid, $cm->id, $eventid, $screenshot);
                 $DB->update_record('quizaccess_proctoring_events', $record);
+                quizaccess_proctoring_queue_event_ai_review($eventid);
             } catch (Throwable $e) {
                 // Keep the event log even if the optional desktop capture cannot be stored.
             }

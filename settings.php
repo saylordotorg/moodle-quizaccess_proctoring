@@ -243,6 +243,15 @@ if ($hassiteconfig) {
             'compatible' => get_string('setting:aireviewprovider_compatible', 'quizaccess_proctoring'),
         ]));
 
+    $settings->add(new admin_setting_configselect('quizaccess_proctoring/aireviewdesktopmode',
+        get_string('setting:aireviewdesktopmode', 'quizaccess_proctoring'),
+        get_string('setting:aireviewdesktopmode_desc', 'quizaccess_proctoring'), 'threshold', [
+            'off' => get_string('setting:aireviewdesktopmode_off', 'quizaccess_proctoring'),
+            'threshold' => get_string('setting:aireviewdesktopmode_threshold', 'quizaccess_proctoring'),
+            'aitool' => get_string('setting:aireviewdesktopmode_aitool', 'quizaccess_proctoring'),
+            'all' => get_string('setting:aireviewdesktopmode_all', 'quizaccess_proctoring'),
+        ]));
+
     $settings->add(new admin_setting_configpasswordunmask('quizaccess_proctoring/aireviewopenaiapikey',
         get_string('setting:aireviewopenaiapikey', 'quizaccess_proctoring'),
         get_string('setting:aireviewopenaiapikey_desc', 'quizaccess_proctoring'), '', PARAM_TEXT));

@@ -633,10 +633,15 @@ function quizaccess_proctoring_get_ai_review_settings(): array {
     if ($maximages <= 0) {
         $maximages = 6;
     }
+    $desktopmode = (string)get_config('quizaccess_proctoring', 'aireviewdesktopmode');
+    if (!in_array($desktopmode, ['off', 'threshold', 'aitool', 'all'], true)) {
+        $desktopmode = 'threshold';
+    }
 
     return [
         'enabled' => (int)get_config('quizaccess_proctoring', 'aireviewenabled') === 1,
         'provider' => $provider,
+        'desktopmode' => $desktopmode,
         'openaiapikey' => (string)get_config('quizaccess_proctoring', 'aireviewopenaiapikey'),
         'openaimodel' => trim((string)get_config('quizaccess_proctoring', 'aireviewopenaimodel')) ?: 'gpt-4.1-mini',
         'anthropicapikey' => (string)get_config('quizaccess_proctoring', 'aireviewanthropicapikey'),
@@ -754,6 +759,9 @@ function quizaccess_proctoring_get_ai_review(
         $where .= ' AND reportid = :reportid';
         $params['reportid'] = $reportid;
     }
+    $where .= ' AND eventid = :eventid AND reviewtype = :reviewtype';
+    $params['eventid'] = 0;
+    $params['reviewtype'] = 'attempt';
 
     $records = $DB->get_records_select(
         'quizaccess_proctoring_ai_reviews',
@@ -766,6 +774,59 @@ function quizaccess_proctoring_get_ai_review(
     );
 
     return $records ? reset($records) : false;
+}
+
+/**
+ * Get the latest AI review record for one suspicious activity event.
+ *
+ * @param int $eventid Proctoring event id.
+ * @return stdClass|false AI review record or false.
+ */
+function quizaccess_proctoring_get_ai_event_review(int $eventid) {
+    global $DB;
+
+    if ($eventid <= 0) {
+        return false;
+    }
+
+    $records = $DB->get_records(
+        'quizaccess_proctoring_ai_reviews',
+        ['eventid' => $eventid, 'reviewtype' => 'event'],
+        'id DESC',
+        '*',
+        0,
+        1
+    );
+
+    return $records ? reset($records) : false;
+}
+
+/**
+ * Determine whether a desktop event should be queued for immediate AI review.
+ *
+ * @param stdClass $event Proctoring event row.
+ * @param array $settings Normalized AI review settings.
+ * @return bool True when the event should be queued.
+ */
+function quizaccess_proctoring_should_queue_event_ai_review(stdClass $event, array $settings): bool {
+    if (empty($event->screenshoturl)) {
+        return false;
+    }
+
+    $mode = (string)($settings['desktopmode'] ?? 'threshold');
+    if ($mode === 'all') {
+        return true;
+    }
+    if ($mode !== 'aitool') {
+        return false;
+    }
+
+    return in_array((string)$event->eventtype, [
+        'possible_ai_tool',
+        'focus_lost',
+        'tab_hidden',
+        'page_exit',
+    ], true);
 }
 
 /**
@@ -822,9 +883,77 @@ function quizaccess_proctoring_queue_ai_review(
         'userid' => $userid,
         'attemptid' => $attemptid,
         'reportid' => $reportid,
+        'eventid' => 0,
+        'reviewtype' => 'attempt',
         'holdid' => $holdid,
         'riskscore' => $riskscore,
         'triggerthreshold' => $triggerthreshold,
+        'provider' => $settings['provider'],
+        'model' => $model,
+        'reviewscore' => 0,
+        'decision' => '',
+        'status' => QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED,
+        'summary' => '',
+        'evidence' => '',
+        'rawresponse' => '',
+        'errormessage' => '',
+        'timecreated' => $now,
+        'timemodified' => $now,
+        'timereviewed' => 0,
+    ];
+
+    return (int)$DB->insert_record('quizaccess_proctoring_ai_reviews', $review, true);
+}
+
+/**
+ * Queue an AI review for a single desktop violation screenshot.
+ *
+ * @param int $eventid Proctoring event id.
+ * @return int AI review id, or zero when not queued.
+ */
+function quizaccess_proctoring_queue_event_ai_review(int $eventid): int {
+    global $DB;
+
+    if ($eventid <= 0) {
+        return 0;
+    }
+
+    $settings = quizaccess_proctoring_get_ai_review_settings();
+    if (!quizaccess_proctoring_ai_review_configured($settings)) {
+        return 0;
+    }
+
+    $event = $DB->get_record('quizaccess_proctoring_events', ['id' => $eventid]);
+    if (!$event || !quizaccess_proctoring_should_queue_event_ai_review($event, $settings)) {
+        return 0;
+    }
+
+    $model = quizaccess_proctoring_get_ai_review_model($settings);
+    $existing = quizaccess_proctoring_get_ai_event_review($eventid);
+    if ($existing) {
+        $existing->provider = $settings['provider'];
+        $existing->model = $model;
+        $existing->timemodified = time();
+        if ((int)$existing->status === QUIZACCESS_PROCTORING_AI_REVIEW_FAILED) {
+            $existing->status = QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED;
+            $existing->errormessage = '';
+        }
+        $DB->update_record('quizaccess_proctoring_ai_reviews', $existing);
+        return (int)$existing->id;
+    }
+
+    $now = time();
+    $review = (object)[
+        'courseid' => (int)$event->courseid,
+        'quizid' => (int)$event->quizid,
+        'userid' => (int)$event->userid,
+        'attemptid' => (int)$event->attemptid,
+        'reportid' => (int)$event->reportid,
+        'eventid' => (int)$event->id,
+        'reviewtype' => 'event',
+        'holdid' => 0,
+        'riskscore' => 0,
+        'triggerthreshold' => (int)$settings['triggerthreshold'],
         'provider' => $settings['provider'],
         'model' => $model,
         'reviewscore' => 0,
@@ -909,9 +1038,16 @@ function quizaccess_proctoring_format_ai_review_for_template(stdClass $aireview,
     $decisionlabel = quizaccess_proctoring_get_ai_review_decision_label((string)$aireview->decision);
     $statuslabel = quizaccess_proctoring_get_ai_review_status_label((int)$aireview->status);
     $score = (int)$aireview->reviewscore;
+    $badgeclass = 'badge badge-info';
+    if ($iscomplete) {
+        $badgeclass = $isflagged ? 'badge badge-danger' : 'badge badge-success';
+    } else if ($isfailed) {
+        $badgeclass = 'badge badge-danger';
+    }
 
     return [
         'statuslabel' => $statuslabel,
+        'badgeclass' => $badgeclass,
         'provider' => strtoupper((string)$aireview->provider),
         'providerlabel' => quizaccess_proctoring_get_ai_review_provider_label((string)$aireview->provider),
         'model' => $aireview->model,
@@ -1280,7 +1416,7 @@ function quizaccess_proctoring_process_ai_review(stdClass $review, array $settin
     $DB->update_record('quizaccess_proctoring_ai_reviews', $review);
 
     try {
-        $images = quizaccess_proctoring_collect_ai_review_images($review, (int)$settings['maximages']);
+        $images = quizaccess_proctoring_collect_ai_review_images($review, (int)$settings['maximages'], $settings);
         if (empty($images)) {
             throw new moodle_exception('aireview:noimages', 'quizaccess_proctoring');
         }
@@ -1345,54 +1481,91 @@ function quizaccess_proctoring_call_ai_review_provider(
  *
  * @param stdClass $review AI review row.
  * @param int $maximages Maximum image count.
+ * @param array|null $settings Optional normalized AI review settings.
  * @return array Image data rows.
  */
-function quizaccess_proctoring_collect_ai_review_images(stdClass $review, int $maximages): array {
+function quizaccess_proctoring_collect_ai_review_images(
+    stdClass $review,
+    int $maximages,
+    ?array $settings = null
+): array {
     global $DB;
 
     $maximages = max(1, min(12, $maximages));
+    $settings = $settings ?? quizaccess_proctoring_get_ai_review_settings();
     $images = [];
     $attemptid = (int)$review->attemptid;
+    $eventid = (int)($review->eventid ?? 0);
 
-    $eventwhere = "courseid = :courseid AND quizid = :quizid AND userid = :userid
-        AND COALESCE(screenshoturl, '') <> ''";
-    $eventparams = [
-        'courseid' => (int)$review->courseid,
-        'quizid' => (int)$review->quizid,
-        'userid' => (int)$review->userid,
-    ];
-    if ($attemptid > 0) {
-        $eventwhere .= ' AND attemptid = :attemptid';
-        $eventparams['attemptid'] = $attemptid;
-    } else if ((int)$review->reportid > 0) {
-        $eventwhere .= ' AND reportid = :reportid';
-        $eventparams['reportid'] = (int)$review->reportid;
-    }
+    if ($eventid > 0 || (string)($review->reviewtype ?? '') === 'event') {
+        if ((string)($settings['desktopmode'] ?? 'threshold') === 'off') {
+            return [];
+        }
 
-    $events = $DB->get_records_select(
-        'quizaccess_proctoring_events',
-        $eventwhere,
-        $eventparams,
-        "CASE WHEN eventtype = 'possible_ai_tool' THEN 0 ELSE 1 END, timemodified DESC",
-        'id, eventtype, screenshoturl, timemodified',
-        0,
-        $maximages
-    );
+        $event = $DB->get_record(
+            'quizaccess_proctoring_events',
+            ['id' => $eventid],
+            'id, eventtype, screenshoturl, timemodified'
+        );
+        if (!$event || empty($event->screenshoturl)) {
+            return [];
+        }
 
-    foreach ($events as $event) {
         $dataurl = quizaccess_proctoring_url_to_data_url((string)$event->screenshoturl);
         if (!$dataurl) {
-            continue;
+            return [];
         }
-        $images[] = [
+
+        return [[
             'label' => get_string('aireview:imageevent', 'quizaccess_proctoring', (object)[
                 'eventtype' => quizaccess_proctoring_get_readable_ai_event_type((string)$event->eventtype),
                 'time' => userdate((int)$event->timemodified),
             ]),
             'dataurl' => $dataurl,
+        ]];
+    }
+
+    if ((string)($settings['desktopmode'] ?? 'threshold') !== 'off') {
+        $eventwhere = "courseid = :courseid AND quizid = :quizid AND userid = :userid
+            AND COALESCE(screenshoturl, '') <> ''";
+        $eventparams = [
+            'courseid' => (int)$review->courseid,
+            'quizid' => (int)$review->quizid,
+            'userid' => (int)$review->userid,
         ];
-        if (count($images) >= $maximages) {
-            return $images;
+        if ($attemptid > 0) {
+            $eventwhere .= ' AND attemptid = :attemptid';
+            $eventparams['attemptid'] = $attemptid;
+        } else if ((int)$review->reportid > 0) {
+            $eventwhere .= ' AND reportid = :reportid';
+            $eventparams['reportid'] = (int)$review->reportid;
+        }
+
+        $events = $DB->get_records_select(
+            'quizaccess_proctoring_events',
+            $eventwhere,
+            $eventparams,
+            "CASE WHEN eventtype = 'possible_ai_tool' THEN 0 ELSE 1 END, timemodified DESC",
+            'id, eventtype, screenshoturl, timemodified',
+            0,
+            $maximages
+        );
+
+        foreach ($events as $event) {
+            $dataurl = quizaccess_proctoring_url_to_data_url((string)$event->screenshoturl);
+            if (!$dataurl) {
+                continue;
+            }
+            $images[] = [
+                'label' => get_string('aireview:imageevent', 'quizaccess_proctoring', (object)[
+                    'eventtype' => quizaccess_proctoring_get_readable_ai_event_type((string)$event->eventtype),
+                    'time' => userdate((int)$event->timemodified),
+                ]),
+                'dataurl' => $dataurl,
+            ];
+            if (count($images) >= $maximages) {
+                return $images;
+            }
         }
     }
 
@@ -1514,6 +1687,31 @@ function quizaccess_proctoring_get_readable_ai_event_type(string $eventtype): st
     }
 
     return ucfirst(str_replace('_', ' ', $eventtype));
+}
+
+/**
+ * Return compact event details for an AI prompt.
+ *
+ * @param string $eventdetail JSON event details.
+ * @return string Readable detail string.
+ */
+function quizaccess_proctoring_format_ai_event_detail(string $eventdetail): string {
+    $decoded = json_decode($eventdetail, true);
+    if (!is_array($decoded)) {
+        return substr($eventdetail, 0, 500);
+    }
+
+    $parts = [];
+    foreach ($decoded as $key => $value) {
+        if (is_array($value) || is_object($value)) {
+            $value = json_encode($value);
+        } else if (is_bool($value)) {
+            $value = $value ? 'true' : 'false';
+        }
+        $parts[] = $key . ': ' . substr((string)$value, 0, 180);
+    }
+
+    return substr(implode('; ', $parts), 0, 700);
 }
 
 /**
@@ -1856,7 +2054,6 @@ function quizaccess_proctoring_call_openai_compatible_image_review(
     if (!empty($decoded['error']['message'])) {
         throw new moodle_exception('aireview:compatibleerror', 'quizaccess_proctoring', '', $decoded['error']['message']);
     }
-
     $message = $decoded['choices'][0]['message']['content'] ?? '';
     if (is_array($message)) {
         $parts = [];
@@ -1888,6 +2085,34 @@ function quizaccess_proctoring_call_openai_compatible_image_review(
  * @return string Prompt.
  */
 function quizaccess_proctoring_build_ai_review_prompt(stdClass $review, int $imagecount, array $settings): string {
+    global $DB;
+
+    $eventid = (int)($review->eventid ?? 0);
+    if ($eventid > 0 || (string)($review->reviewtype ?? '') === 'event') {
+        $event = $DB->get_record(
+            'quizaccess_proctoring_events',
+            ['id' => $eventid],
+            'id, eventtype, eventdetail, pagevisibility, currenturl, timemodified'
+        );
+        $eventtype = $event ? quizaccess_proctoring_get_readable_ai_event_type((string)$event->eventtype) : 'Desktop event';
+        $eventdetail = $event ? quizaccess_proctoring_format_ai_event_detail((string)$event->eventdetail) : '';
+
+        return "You are reviewing one desktop screenshot captured during an online quiz proctoring event. "
+            . "Use only visible evidence in the screenshot and the event metadata below. "
+            . "Do not identify the student or infer intent from protected traits. "
+            . "Do not mark cheating likely unless there is clear visual evidence such as an AI/chat/search answer panel "
+            . "including Gemini, Copilot, ChatGPT, Claude, or similar tools; another person helping; unauthorized notes; "
+            . "a phone used for answers; or the quiz being outside the shared screen controls. "
+            . "If the screenshot only shows a focus-change event without clear unauthorized content, choose inconclusive. "
+            . "Return a cautious review score from 0 to 100 where "
+            . (int)$settings['decisionthreshold'] . "+ means strong visual evidence that needs escalation. "
+            . "This is advisory for a human reviewer, not an automatic misconduct finding.\n\n"
+            . "Event type: " . $eventtype . "\n"
+            . "Event details: " . $eventdetail . "\n"
+            . "Page visibility: " . ($event ? (string)$event->pagevisibility : '') . "\n"
+            . "Images provided: " . $imagecount;
+    }
+
     return "You are reviewing proctoring evidence for an online quiz attempt. "
         . "Use only visible evidence in the provided images and the metadata below. "
         . "Do not identify the student or infer intent from protected traits. "

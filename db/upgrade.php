@@ -629,5 +629,53 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051147, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051148) {
+        $table = new xmldb_table('quizaccess_proctoring_ai_reviews');
+
+        $eventidfield = new xmldb_field(
+            'eventid',
+            XMLDB_TYPE_INTEGER,
+            '10',
+            null,
+            XMLDB_NOTNULL,
+            null,
+            '0',
+            'reportid'
+        );
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $eventidfield)) {
+            $dbman->add_field($table, $eventidfield);
+        }
+
+        $reviewtypefield = new xmldb_field(
+            'reviewtype',
+            XMLDB_TYPE_CHAR,
+            '20',
+            null,
+            XMLDB_NOTNULL,
+            null,
+            'attempt',
+            'eventid'
+        );
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $reviewtypefield)) {
+            $dbman->add_field($table, $reviewtypefield);
+        }
+
+        $eventidindex = new xmldb_index('eventid', XMLDB_INDEX_NOTUNIQUE, ['eventid']);
+        if ($dbman->table_exists($table) && !$dbman->index_exists($table, $eventidindex)) {
+            $dbman->add_index($table, $eventidindex);
+        }
+
+        $reviewtypeindex = new xmldb_index('reviewtype', XMLDB_INDEX_NOTUNIQUE, ['reviewtype']);
+        if ($dbman->table_exists($table) && !$dbman->index_exists($table, $reviewtypeindex)) {
+            $dbman->add_index($table, $reviewtypeindex);
+        }
+
+        if (get_config('quizaccess_proctoring', 'aireviewdesktopmode') === false) {
+            set_config('aireviewdesktopmode', 'threshold', 'quizaccess_proctoring');
+        }
+
+        upgrade_plugin_savepoint(true, 2026051148, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

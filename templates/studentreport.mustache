@@ -247,6 +247,7 @@
             <th>{{#str}}eventdetails, quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}pagevisibility, quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}desktopcapture, quizaccess_proctoring{{/str}}</th>
+            <th>{{#str}}aireview:shorttitle, quizaccess_proctoring{{/str}}</th>
         </tr>
     </thead>
     <tbody>
@@ -263,6 +264,17 @@
                     </a>
                 {{/hasscreenshot}}
                 {{^hasscreenshot}}-{{/hasscreenshot}}
+            </td>
+            <td>
+                {{#eventaireview}}
+                    <span class="{{badgeclass}}">{{compactlabel}}</span>
+                    {{#summary}}<div class="small mt-1">{{summary}}</div>{{/summary}}
+                    {{#haserror}}<div class="small text-danger mt-1">{{errormessage}}</div>{{/haserror}}
+                {{/eventaireview}}
+                {{^eventaireview}}
+                    {{#hasscreenshot}}<span class="text-muted">{{#str}}aireview:notqueued, quizaccess_proctoring{{/str}}</span>{{/hasscreenshot}}
+                    {{^hasscreenshot}}-{{/hasscreenshot}}
+                {{/eventaireview}}
             </td>
         </tr>
         {{/events}}

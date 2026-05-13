@@ -115,6 +115,8 @@ class provider implements
             'userid' => 'privacy:metadata:userid',
             'attemptid' => 'privacy:metadata:attemptid',
             'reportid' => 'privacy:metadata:reportid',
+            'eventid' => 'privacy:metadata:airevieweventid',
+            'reviewtype' => 'privacy:metadata:aireviewreviewtype',
             'holdid' => 'privacy:metadata:holdid',
             'riskscore' => 'privacy:metadata:riskscore',
             'reviewscore' => 'privacy:metadata:aireviewscore',
@@ -399,7 +401,7 @@ class provider implements
                     writer::with_context($context)->export_data($subcontext, $data);
                 }
 
-                $aireviewfields = 'id, courseid, quizid, userid, attemptid, reportid, holdid, riskscore, ' .
+                $aireviewfields = 'id, courseid, quizid, userid, attemptid, reportid, eventid, reviewtype, holdid, riskscore, ' .
                     'triggerthreshold, provider, model, reviewscore, decision, status, summary, evidence, ' .
                     'errormessage, timecreated, timemodified, timereviewed';
                 $aireviews = $DB->get_records_select(
@@ -426,6 +428,8 @@ class provider implements
                         'userid' => $aireview->userid,
                         'attemptid' => $aireview->attemptid,
                         'reportid' => $aireview->reportid,
+                        'eventid' => $aireview->eventid,
+                        'reviewtype' => $aireview->reviewtype,
                         'holdid' => $aireview->holdid,
                         'riskscore' => $aireview->riskscore,
                         'triggerthreshold' => $aireview->triggerthreshold,
