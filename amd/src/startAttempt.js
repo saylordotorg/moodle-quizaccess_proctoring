@@ -259,6 +259,24 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     );
                 };
 
+                const getCameraCaptureSize = function(video) {
+                    const configuredWidth = Math.max(240, parseInt(props.imagewidth, 10) || 480);
+                    const sourceWidth = video && video.videoWidth ? video.videoWidth : 0;
+                    const sourceHeight = video && video.videoHeight ? video.videoHeight : 0;
+
+                    if (!sourceWidth || !sourceHeight) {
+                        return {
+                            width: configuredWidth,
+                            height: Math.round(configuredWidth / (4 / 3)),
+                        };
+                    }
+
+                    return {
+                        width: configuredWidth,
+                        height: Math.max(1, Math.round(configuredWidth * (sourceHeight / sourceWidth))),
+                    };
+                };
+
                 const logPreflightEvent = function(eventType, detail) {
                     Ajax.call([{
                         methodname: 'quizaccess_proctoring_log_event',
@@ -920,9 +938,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     const canvas = document.getElementById('canvas');
                     const video = document.getElementById('video');
                     const context = canvas.getContext('2d');
-                    canvas.width = props.imagewidth;
+                    const captureSize = getCameraCaptureSize(video);
 
-                    canvas.height = canvas.width / (4 / 3);
+                    canvas.width = captureSize.width;
+                    canvas.height = captureSize.height;
                     context.drawImage(video, 0, 0, canvas.width, canvas.height);
                     var data = canvas.toDataURL('image/png');
                     photo.setAttribute('src', data);

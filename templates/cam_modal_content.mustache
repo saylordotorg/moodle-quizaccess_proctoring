@@ -34,18 +34,18 @@
     <!-- Video and Canvas Section -->
     <div class="row">
         <div class="col">
-            <div class="container-fluid">
-                <div class="row justify-content-center align-items-center">
-                    <div class="col-12 bg-light border rounded p-3">
-                        <video 
-                            id="video" 
-                            class="img-fluid bg-dark proctoring-video-modal">
-                            {{#videonotavailable}}
-                                {{{videonotavailable}}}
-                            {{/videonotavailable}}
-                        </video>
-                    </div>
-                </div>
+            <div class="proctoring-webcam-video-shell">
+                <video
+                    id="video"
+                    class="img-fluid bg-dark proctoring-video-modal"
+                    autoplay
+                    muted
+                    playsinline
+                    webkit-playsinline>
+                    {{#videonotavailable}}
+                        {{{videonotavailable}}}
+                    {{/videonotavailable}}
+                </video>
             </div>
             <canvas id="canvas" class="d-none"></canvas>
             <img 

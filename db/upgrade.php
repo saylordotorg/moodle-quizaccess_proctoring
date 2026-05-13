@@ -614,5 +614,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051144, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051145) {
+        // No schema changes. Improves mobile start-attempt precheck layout and portrait face capture.
+        upgrade_plugin_savepoint(true, 2026051145, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

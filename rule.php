@@ -1103,6 +1103,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $record = (object)[
             'allowcamerawarning' => get_string('warning:cameraallowwarning', 'quizaccess_proctoring'),
             'cameraallow' => get_string('info:cameraallow', 'quizaccess_proctoring'),
+            'image_width' => (int)get_config('quizaccess_proctoring', 'autoreconfigureimagewidth') ?: 480,
         ];
 
         // Initialize JS for proctoring with the required data.

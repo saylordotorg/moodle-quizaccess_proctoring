@@ -99,6 +99,27 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
         let firstcalldelay = 3000; // 3 seconds after the page load.
         let takepicturedelay = 30000; // 30 seconds.
 
+        const getUserCameraConstraints = function() {
+            return {
+                video: {
+                    facingMode: 'user',
+                    width: {ideal: 960},
+                    height: {ideal: 1280},
+                    aspectRatio: {ideal: 0.75},
+                },
+                audio: false,
+            };
+        };
+
+        const requestUserCamera = function() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                return Promise.reject(new Error('getUserMedia unavailable'));
+            }
+
+            return navigator.mediaDevices.getUserMedia(getUserCameraConstraints())
+                .catch(() => navigator.mediaDevices.getUserMedia({video: true, audio: false}));
+        };
+
         // Function to draw image from the box data.
         const extractFaceFromBox = async(imageRef, box, croppedImage) => {
             const regionsToExtract = [
@@ -980,13 +1001,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     initSuspiciousActivityMonitoring(props, strings);
                 }
 
-                const width = props.image_width;
+                const width = Math.max(240, parseInt(props.image_width, 10) || 480);
                 let height = 0; // This will be computed based on the input stream.
                 let streaming = false;
                 let data = null;
 
                 const webcamBox = $(`<div class="proctoring-fixed-webcam-box d-flex">`
-                    + `<video id="video">${strings.videonotavailable}</video>`
+                    + '<video id="video" autoplay muted playsinline webkit-playsinline>'
+                    + `${strings.videonotavailable}</video>`
                     + '<img id="cropimg" src="" alt=""/><canvas id="canvas" style="display:none;"></canvas>'
                     + '<div class="output" style="display:none;">'
                     + '<img id="photo" alt="The picture will appear in this box."/></div></div>');
@@ -1195,7 +1217,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                 };
 
-                navigator.mediaDevices.getUserMedia({video: true, audio: false})
+                requestUserCamera()
                     // eslint-disable-next-line promise/always-return
                     .then(function(stream) {
                         video.srcObject = stream;
@@ -1244,7 +1266,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 let canvas = null;
                 let photo = null;
                 let data = null;
-                const width = props.image_width;
+                const width = Math.max(240, parseInt(props.image_width, 10) || 480);
 
                 /**
                  * Startup
@@ -1255,7 +1277,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     photo = document.getElementById('photo');
 
                     if (video) {
-                        navigator.mediaDevices.getUserMedia({video: true, audio: false})
+                        requestUserCamera()
                             // eslint-disable-next-line promise/always-return
                             .then(function(stream) {
                                 video.srcObject = stream;
