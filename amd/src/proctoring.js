@@ -24,6 +24,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'screenmonitor:windowopened', component: 'quizaccess_proctoring'},
                 {key: 'screenmonitor:popupblocked', component: 'quizaccess_proctoring'},
                 {key: 'faceblurmessage', component: 'quizaccess_proctoring'},
+                {key: 'attemptwarning:multiplemonitors', component: 'quizaccess_proctoring'},
+                {key: 'attemptwarning:quiznotinview', component: 'quizaccess_proctoring'},
+                {key: 'attemptwarning:screensharestopped', component: 'quizaccess_proctoring'},
+                {key: 'attemptwarning:title', component: 'quizaccess_proctoring'},
+                {key: 'attemptwarning:wrongscreen', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -47,6 +52,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     screenmonitorwindowopened: strings[16],
                     screenmonitorpopupblocked: strings[17],
                     faceblurmessage: strings[18],
+                    attemptwarningmultiplemonitors: strings[19],
+                    attemptwarningquiznotinview: strings[20],
+                    attemptwarningscreensharestopped: strings[21],
+                    attemptwarningtitle: strings[22],
+                    attemptwarningwrongscreen: strings[23],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -88,7 +98,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const alertElements = document.getElementsByClassName('alert');
                 if (alertElements.length > 0) {
                     Array.from(alertElements).forEach(alertDiv => {
-                        alertDiv.style.display = 'none';
+                        if (!alertDiv.classList.contains('proctoring-attempt-warning')) {
+                            alertDiv.style.display = 'none';
+                        }
                     });
                 }
             } catch (error) {
@@ -224,7 +236,84 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let screenMonitorClient = null;
             let latestDesktopFrame = '';
             let multiMonitorLastState = '';
+            let focusLostSince = 0;
+            const activeAttemptWarnings = {};
+            const attemptWarningTimers = {};
             const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
+
+            const ensureAttemptWarning = function() {
+                let warning = document.getElementById('proctoring-attempt-warning');
+                if (warning) {
+                    return warning;
+                }
+
+                warning = document.createElement('div');
+                warning.id = 'proctoring-attempt-warning';
+                warning.className = 'alert alert-warning proctoring-attempt-warning';
+                warning.setAttribute('role', 'alert');
+                warning.style.display = 'none';
+
+                const main = document.getElementById('region-main') ||
+                    document.querySelector('[role="main"]') ||
+                    document.getElementById('page-content') ||
+                    document.body;
+                main.insertBefore(warning, main.firstChild);
+
+                return warning;
+            };
+
+            const renderAttemptWarnings = function() {
+                const warning = ensureAttemptWarning();
+                const warningItems = Object.values(activeAttemptWarnings);
+
+                if (!warningItems.length) {
+                    warning.style.display = 'none';
+                    warning.innerHTML = '';
+                    return;
+                }
+
+                const highestType = warningItems.some((item) => item.type === 'danger') ? 'danger' : 'warning';
+                warning.className = 'alert alert-' + highestType + ' proctoring-attempt-warning';
+                warning.innerHTML = '<strong>' + strings.attemptwarningtitle + '</strong>' +
+                    '<ul class="proctoring-attempt-warning-list mb-0">' +
+                    warningItems.map((item) => '<li>' + item.message + '</li>').join('') +
+                    '</ul>';
+                warning.style.display = 'block';
+            };
+
+            const setAttemptWarning = function(key, message, type, timeoutMs) {
+                if (!message) {
+                    return;
+                }
+
+                if (attemptWarningTimers[key]) {
+                    window.clearTimeout(attemptWarningTimers[key]);
+                    attemptWarningTimers[key] = null;
+                }
+
+                activeAttemptWarnings[key] = {
+                    message: message,
+                    type: type || 'warning'
+                };
+                renderAttemptWarnings();
+
+                if (timeoutMs) {
+                    attemptWarningTimers[key] = window.setTimeout(function() {
+                        delete activeAttemptWarnings[key];
+                        attemptWarningTimers[key] = null;
+                        renderAttemptWarnings();
+                    }, timeoutMs);
+                }
+            };
+
+            const clearAttemptWarning = function(key) {
+                if (attemptWarningTimers[key]) {
+                    window.clearTimeout(attemptWarningTimers[key]);
+                    attemptWarningTimers[key] = null;
+                }
+                delete activeAttemptWarnings[key];
+                renderAttemptWarnings();
+            };
 
             const positionScreenMarker = function(markerElement) {
                 if (!markerElement) {
@@ -523,6 +612,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 });
                 stopScreenStream();
                 setScreenShareStatus(strings.screenmarkerwrongmonitor, 'danger');
+                setAttemptWarning('wrongscreen', strings.attemptwarningwrongscreen, 'danger');
                 showScreenShareGate();
             };
 
@@ -604,6 +694,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 videoTrack.addEventListener('ended', function() {
                     screenReady = false;
                     setScreenShareStatus(strings.screensharestopped, 'danger');
+                    clearAttemptWarning('wrongscreen');
+                    setAttemptWarning('screenshare', strings.attemptwarningscreensharestopped, 'danger');
                     showScreenShareGate();
                     logEvent('screen_share_stopped', {
                         reason: 'screen_share_ended'
@@ -611,6 +703,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 });
 
                 setScreenShareStatus(strings.screenshareaccepted, 'success');
+                clearAttemptWarning('wrongscreen');
+                clearAttemptWarning('screenshare');
                 hideScreenShareGate();
                 startMarkerChecks();
             };
@@ -643,6 +737,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         onReady: function() {
                             screenReady = true;
                             setScreenShareStatus(strings.screenshareaccepted, 'success');
+                            clearAttemptWarning('wrongscreen');
+                            clearAttemptWarning('screenshare');
                             hideScreenShareGate();
                         },
                         onUnavailable: function() {
@@ -652,6 +748,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                     reason: 'persistent_monitor_unavailable'
                                 });
                                 setScreenShareStatus(strings.screensharestopped, 'danger');
+                                clearAttemptWarning('wrongscreen');
+                                setAttemptWarning('screenshare', strings.attemptwarningscreensharestopped, 'danger');
                                 showScreenShareGate();
                             } else {
                                 scheduleScreenShareGate(2500);
@@ -664,6 +762,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 note: 'The persistent screen monitor did not see the Moodle quiz screen marker.'
                             });
                             setScreenShareStatus(strings.screenmarkerwrongmonitor, 'danger');
+                            setAttemptWarning('wrongscreen', strings.attemptwarningwrongscreen, 'danger');
                             showScreenShareGate();
                         },
                         onScreenshot: function(message) {
@@ -810,8 +909,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 if (!status.supported) {
                     logEvent('monitor_detection_unavailable', status);
+                    clearAttemptWarning('multiplemonitors');
                 } else if (status.multiple) {
                     logEvent('multiple_monitors_detected', status);
+                    if (multiMonitorMode === 'warn' || multiMonitorMode === 'block') {
+                        setAttemptWarning('multiplemonitors', strings.attemptwarningmultiplemonitors, 'warning');
+                    }
+                } else {
+                    clearAttemptWarning('multiplemonitors');
                 }
             };
 
@@ -840,6 +945,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }, true);
 
                 window.addEventListener('blur', function() {
+                    focusLostSince = Date.now();
                     logEvent('focus_lost', {
                         reason: 'window_blur',
                         note: 'Browser focus left the quiz. This can include another tab, another window, or a browser AI panel.'
@@ -847,9 +953,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }, true);
 
                 window.addEventListener('focus', function() {
+                    if (focusLostSince) {
+                        setAttemptWarning('quiznotinview', strings.attemptwarningquiznotinview, 'warning', 12000);
+                    }
                     logEvent('focus_returned', {
                         reason: 'window_focus'
                     });
+                    focusLostSince = 0;
                 }, true);
             }
 

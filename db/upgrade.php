@@ -681,5 +681,9 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051149, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051150) {
+        upgrade_plugin_savepoint(true, 2026051150, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
