@@ -260,6 +260,31 @@ body.proctoring-lb-disable-scrolling {
         max-height: 80vh; /* Restrict max height to ensure visibility */
     }
 }
+
+@media (min-width: 992px) {
+    .moodle-dialogue-base .moodle-dialogue.mod_quiz_preflight_popup {
+        left: 50% !important;
+        width: calc(100vw - 64px) !important;
+        max-width: 1040px;
+        transform: translateX(-50%);
+    }
+
+    .moodle-dialogue-base .moodle-dialogue.mod_quiz_preflight_popup .moodle-dialogue-wrap {
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100vh - 48px);
+    }
+
+    .moodle-dialogue-base .moodle-dialogue.mod_quiz_preflight_popup .moodle-dialogue-bd {
+        max-height: calc(100vh - 128px);
+        overflow-y: auto;
+    }
+
+    .moodle-dialogue-base .moodle-dialogue.mod_quiz_preflight_popup .proctoring-video-modal {
+        max-height: 320px;
+        object-fit: contain;
+    }
+}
 /* user image is not uploaded warning  */
 .proctoring-custom-warning-message {
     font-size: 1.1em;

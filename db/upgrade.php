@@ -595,5 +595,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051141, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051142) {
+        // No schema changes. Widens the desktop start-attempt precheck popup.
+        upgrade_plugin_savepoint(true, 2026051142, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
