@@ -1785,7 +1785,12 @@ function quizaccess_proctoring_url_to_data_url(string $url): ?string {
         return null;
     }
     if (strpos($url, 'data:image/') === 0) {
-        return $url;
+        $parts = quizaccess_proctoring_data_url_parts($url);
+        if (!$parts) {
+            return null;
+        }
+        $imagebytes = base64_decode($parts['data'], true);
+        return $imagebytes ? quizaccess_proctoring_image_bytes_to_ai_data_url($imagebytes) : null;
     }
 
     $imagebytes = @file_get_contents($url);
@@ -1793,10 +1798,59 @@ function quizaccess_proctoring_url_to_data_url(string $url): ?string {
         return null;
     }
 
+    return quizaccess_proctoring_image_bytes_to_ai_data_url($imagebytes);
+}
+
+/**
+ * Compress image bytes into a moderate-size JPEG data URL for AI review payloads.
+ *
+ * @param string $imagebytes Raw image bytes.
+ * @return string|null Data URL, or null when the image cannot be processed.
+ */
+function quizaccess_proctoring_image_bytes_to_ai_data_url(string $imagebytes): ?string {
     $info = @getimagesizefromstring($imagebytes);
     $mime = $info['mime'] ?? 'image/jpeg';
     if (strpos($mime, 'image/') !== 0) {
         $mime = 'image/jpeg';
+    }
+
+    if (function_exists('imagecreatefromstring') && function_exists('imagejpeg') && !empty($info[0]) && !empty($info[1])) {
+        $source = @imagecreatefromstring($imagebytes);
+        if ($source) {
+            $sourcewidth = (int)$info[0];
+            $sourceheight = (int)$info[1];
+            $maxdimension = 720;
+            $scale = min(1, $maxdimension / max($sourcewidth, $sourceheight));
+            $targetwidth = max(1, (int)round($sourcewidth * $scale));
+            $targetheight = max(1, (int)round($sourceheight * $scale));
+            $target = imagecreatetruecolor($targetwidth, $targetheight);
+            if ($target) {
+                $white = imagecolorallocate($target, 255, 255, 255);
+                imagefilledrectangle($target, 0, 0, $targetwidth, $targetheight, $white);
+                imagecopyresampled(
+                    $target,
+                    $source,
+                    0,
+                    0,
+                    0,
+                    0,
+                    $targetwidth,
+                    $targetheight,
+                    $sourcewidth,
+                    $sourceheight
+                );
+                ob_start();
+                imagejpeg($target, null, 68);
+                $compressed = (string)ob_get_clean();
+                imagedestroy($target);
+                imagedestroy($source);
+                if ($compressed !== '') {
+                    return 'data:image/jpeg;base64,' . base64_encode($compressed);
+                }
+            } else {
+                imagedestroy($source);
+            }
+        }
     }
 
     return 'data:' . $mime . ';base64,' . base64_encode($imagebytes);
@@ -2172,6 +2226,15 @@ function quizaccess_proctoring_call_openai_compatible_image_review(
             'quizaccess_proctoring',
             '',
             'cURL error ' . $curl->get_errno()
+        );
+    }
+    $httpcode = (int)($curl->get_info()['http_code'] ?? 0);
+    if ($httpcode >= 400) {
+        throw new moodle_exception(
+            'aireview:compatibleerror',
+            'quizaccess_proctoring',
+            '',
+            'HTTP ' . $httpcode
         );
     }
 

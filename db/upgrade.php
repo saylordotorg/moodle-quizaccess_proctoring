@@ -711,5 +711,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051154, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051155) {
+        // No schema changes. Compresses images sent to AI review providers.
+        upgrade_plugin_savepoint(true, 2026051155, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
