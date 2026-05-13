@@ -314,6 +314,7 @@ $string['proctoring:viewreport'] = 'Proctoring visualizar relatório';
 $string['proctoring_report'] = 'Relatório de proctoring';
 $string['proctoringheader'] = '<strong>Para continuar com esta tentativa de questionário, você deve abrir sua webcam, e algumas de suas imagens serão capturadas aleatoriamente durante o questionário.</strong>';
 $string['proctoringlabel'] = 'Concordo com o processo de validação.';
+$string['proctoringsection'] = 'Proctoring';
 $string['proctoringrequired'] = 'Validação de identidade por webcam';
 $string['proctoringrequired_help'] = 'Habilitar proctoring requer que os alunos sejam monitorados usando webcam e gravação de tela durante a tentativa do questionário.';
 $string['proctoringrequiredoption'] = 'Habilitar captura de webcam por Proctoring';

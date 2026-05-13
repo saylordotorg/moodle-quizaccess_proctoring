@@ -696,5 +696,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051151, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051152) {
+        // No schema changes. Groups quiz-level proctoring controls under their own form section.
+        upgrade_plugin_savepoint(true, 2026051152, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

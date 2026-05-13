@@ -314,6 +314,7 @@ $string['proctoring:viewreport'] = 'Ver informe de supervisión';
 $string['proctoring_report'] = 'Informe de supervisión';
 $string['proctoringheader'] = '<strong>Para continuar con este intento de cuestionario debe abrir su cámara web, y se tomarán algunas de sus fotos aleatoriamente durante el cuestionario.</strong>';
 $string['proctoringlabel'] = 'Acepto el proceso de validación.';
+$string['proctoringsection'] = 'Supervisión';
 $string['proctoringrequired'] = 'Validación de identidad por cámara web';
 $string['proctoringrequired_help'] = 'Al habilitar la supervisión, se requiere que los estudiantes sean monitoreados mediante la cámara web y la grabación de pantalla durante el intento del cuestionario.';
 $string['proctoringrequiredoption'] = 'Habilitar captura de cámara web mediante Proctoring';

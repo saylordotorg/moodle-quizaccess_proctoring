@@ -332,6 +332,7 @@ $string['proctoring:viewreport'] = 'Proctoring view report';
 $string['proctoring_report'] = 'Proctoring report';
 $string['proctoringheader'] = '<strong>To continue with this quiz attempt you must open your webcam, and it will take some of your pictures randomly during the quiz.</strong>';
 $string['proctoringlabel'] = 'I agree with the validation process.';
+$string['proctoringsection'] = 'Proctoring';
 $string['proctoringrequired'] = 'Webcam identity validation';
 $string['proctoringrequired_help'] = 'Enabling proctoring requires students to be monitored using webcam and screen recording during the quiz attempt.';
 $string['proctoringrequiredoption'] = 'Enable webcam capture by Proctoring';
