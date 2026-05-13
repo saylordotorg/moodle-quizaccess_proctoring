@@ -100,4 +100,16 @@ $tasks = [
         'dayofweek' => '*',
         'disabled'  => 0,
     ],
+
+    // This task releases active high-risk holds after the configured Student Affairs review window.
+    [
+        'classname' => 'quizaccess_proctoring\task\release_expired_risk_holds_task',
+        'blocking'  => 0,
+        'minute'    => '17',
+        'hour'      => '*',
+        'day'       => '*',
+        'month'     => '*',
+        'dayofweek' => '*',
+        'disabled'  => 0,
+    ],
 ];

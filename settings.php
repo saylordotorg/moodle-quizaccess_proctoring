@@ -216,6 +216,14 @@ if ($hassiteconfig) {
         get_string('setting:riskreviewthreshold', 'quizaccess_proctoring'),
         get_string('setting:riskreviewthreshold_desc', 'quizaccess_proctoring'), 80, PARAM_INT));
 
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/studentholdnoticeenabled',
+        get_string('setting:studentholdnoticeenabled', 'quizaccess_proctoring'),
+        get_string('setting:studentholdnoticeenabled_desc', 'quizaccess_proctoring'), 1));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/riskreviewautoreleasedays',
+        get_string('setting:riskreviewautoreleasedays', 'quizaccess_proctoring'),
+        get_string('setting:riskreviewautoreleasedays_desc', 'quizaccess_proctoring'), 7, PARAM_INT));
+
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/cheatinglockoutenabled',
         get_string('setting:cheatinglockoutenabled', 'quizaccess_proctoring'),
         get_string('setting:cheatinglockoutenabled_desc', 'quizaccess_proctoring'), 0));

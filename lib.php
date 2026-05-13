@@ -611,6 +611,27 @@ function quizaccess_proctoring_get_effective_risk_review_settings(int $cmid): ar
 }
 
 /**
+ * Determine whether students should see high-risk hold notices after submission.
+ *
+ * @return bool True when student notices are enabled.
+ */
+function quizaccess_proctoring_student_hold_notice_enabled(): bool {
+    $enabled = get_config('quizaccess_proctoring', 'studentholdnoticeenabled');
+    return $enabled === false ? true : (int)$enabled === 1;
+}
+
+/**
+ * Get the configured Student Affairs review window.
+ *
+ * @return int Review window in days. Zero disables automatic release.
+ */
+function quizaccess_proctoring_get_risk_review_auto_release_days(): int {
+    $configured = get_config('quizaccess_proctoring', 'riskreviewautoreleasedays');
+    $days = $configured === false ? 7 : (int)$configured;
+    return max(0, min(365, $days));
+}
+
+/**
  * Get configured AI image review settings.
  *
  * @return array Normalized AI review settings.
@@ -1138,6 +1159,44 @@ function quizaccess_proctoring_get_risk_hold_status_label(stdClass $hold): strin
 }
 
 /**
+ * Build the student-facing notice for an active high-risk review hold.
+ *
+ * @param stdClass $hold Active risk hold.
+ * @return string Rendered Bootstrap alert HTML.
+ */
+function quizaccess_proctoring_get_student_risk_hold_notice_html(stdClass $hold): string {
+    $days = quizaccess_proctoring_get_risk_review_auto_release_days();
+    $deadline = '';
+    if ($days > 0) {
+        $deadline = (int)$hold->timecreated + ($days * DAYSECS);
+    }
+
+    $message = get_string('riskreview:studentnoticebody', 'quizaccess_proctoring', (object)[
+        'score' => (int)$hold->riskscore,
+        'threshold' => (int)$hold->threshold,
+        'days' => $days,
+    ]);
+    if ($deadline) {
+        $message .= ' ' . get_string('riskreview:studentnoticereviewwindow', 'quizaccess_proctoring', $days);
+        $message .= ' ' . get_string('riskreview:studentnoticedeadline', 'quizaccess_proctoring', userdate($deadline));
+    } else {
+        $message .= ' ' . get_string('riskreview:studentnoticenorelease', 'quizaccess_proctoring');
+    }
+
+    $title = html_writer::tag(
+        'strong',
+        s(get_string('riskreview:studentnoticetitle', 'quizaccess_proctoring')),
+        ['class' => 'd-block mb-1']
+    );
+
+    return html_writer::tag(
+        'div',
+        $title . html_writer::tag('div', s($message)),
+        ['class' => 'alert alert-warning quizaccess-proctoring-risk-hold-notice', 'role' => 'alert']
+    );
+}
+
+/**
  * Get the configured high-risk attempt lockout length in days.
  *
  * @return int Number of days to block retakes. Zero means disabled.
@@ -1320,6 +1379,45 @@ function quizaccess_proctoring_release_risk_hold(int $holdid, int $reviewerid): 
     $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
 
     return true;
+}
+
+/**
+ * Automatically release active risk holds whose review window has expired.
+ *
+ * @param int $limit Maximum holds to release in one task run.
+ * @return int Number of holds released.
+ */
+function quizaccess_proctoring_auto_release_expired_risk_holds(int $limit = 100): int {
+    global $DB;
+
+    $days = quizaccess_proctoring_get_risk_review_auto_release_days();
+    if ($days <= 0) {
+        return 0;
+    }
+
+    $limit = max(1, min(500, $limit));
+    $cutoff = time() - ($days * DAYSECS);
+    $holds = $DB->get_records_select(
+        'quizaccess_proctoring_risk_holds',
+        'status = :status AND timecreated > 0 AND timecreated <= :cutoff',
+        [
+            'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+            'cutoff' => $cutoff,
+        ],
+        'timecreated ASC, id ASC',
+        '*',
+        0,
+        $limit
+    );
+
+    $released = 0;
+    foreach ($holds as $hold) {
+        if (quizaccess_proctoring_release_risk_hold((int)$hold->id, 0)) {
+            $released++;
+        }
+    }
+
+    return $released;
 }
 
 /**

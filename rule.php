@@ -1142,6 +1142,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $page->set_popup_notification_allowed(false);
         $page->set_heading($page->title);
 
+        if ($cmid && $attempt && $this->maybe_show_finished_attempt_risk_hold_notice((int)$cmid, (int)$attempt)) {
+            return;
+        }
+
         if ($cmid) {
             // Fetch the course module record for the quiz.
             $contextquiz = $DB->get_record('course_modules', ['id' => $cmid]);
@@ -1208,6 +1212,58 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             // Initialise the proctoring setup with JavaScript.
             $page->requires->js_call_amd('quizaccess_proctoring/proctoring', 'setup', [$record, $modelurl]);
         }
+    }
+
+    /**
+     * Show the post-submit risk hold notice and avoid starting live proctoring on finished attempts.
+     *
+     * @param int $cmid Quiz course module id.
+     * @param int $attemptid Quiz attempt id.
+     * @return bool True when the attempt is already finished.
+     */
+    private function maybe_show_finished_attempt_risk_hold_notice(int $cmid, int $attemptid): bool {
+        global $COURSE, $DB, $USER;
+
+        $attempt = $DB->get_record('quiz_attempts', ['id' => $attemptid], 'id, userid, state');
+        if (!$attempt || (int)$attempt->userid !== (int)$USER->id || (string)$attempt->state !== 'finished') {
+            return false;
+        }
+
+        if (!quizaccess_proctoring_student_hold_notice_enabled()) {
+            return true;
+        }
+
+        $reports = $DB->get_records(
+            'quizaccess_proctoring_logs',
+            [
+                'courseid' => (int)$COURSE->id,
+                'quizid' => $cmid,
+                'userid' => (int)$USER->id,
+                'status' => $attemptid,
+                'deletionprogress' => 0,
+            ],
+            'id ASC',
+            'id',
+            0,
+            1
+        );
+        $report = $reports ? reset($reports) : false;
+        $hold = quizaccess_proctoring_get_risk_hold(
+            (int)$COURSE->id,
+            $cmid,
+            (int)$USER->id,
+            $attemptid,
+            $report ? (int)$report->id : 0,
+            true
+        );
+        if ($hold) {
+            \core\notification::add(
+                quizaccess_proctoring_get_student_risk_hold_notice_html($hold),
+                \core\output\notification::NOTIFY_WARNING
+            );
+        }
+
+        return true;
     }
 
     /**

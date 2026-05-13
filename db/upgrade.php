@@ -685,5 +685,16 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051150, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051151) {
+        if (get_config('quizaccess_proctoring', 'studentholdnoticeenabled') === false) {
+            set_config('studentholdnoticeenabled', 1, 'quizaccess_proctoring');
+        }
+        if (get_config('quizaccess_proctoring', 'riskreviewautoreleasedays') === false) {
+            set_config('riskreviewautoreleasedays', 7, 'quizaccess_proctoring');
+        }
+
+        upgrade_plugin_savepoint(true, 2026051151, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
