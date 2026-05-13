@@ -716,5 +716,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051155, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051156) {
+        // No schema changes. Queues AI review for focus-loss desktop screenshots in threshold mode.
+        upgrade_plugin_savepoint(true, 2026051156, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

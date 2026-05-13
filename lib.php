@@ -864,20 +864,22 @@ function quizaccess_proctoring_should_queue_event_ai_review(stdClass $event, arr
         return false;
     }
 
-    $mode = (string)($settings['desktopmode'] ?? 'threshold');
-    if ($mode === 'all') {
-        return true;
-    }
-    if ($mode !== 'aitool') {
-        return false;
-    }
-
-    return in_array((string)$event->eventtype, [
+    $eventtype = (string)$event->eventtype;
+    $aitoolrelevantevents = [
         'possible_ai_tool',
         'focus_lost',
         'tab_hidden',
         'page_exit',
-    ], true);
+    ];
+    $mode = (string)($settings['desktopmode'] ?? 'threshold');
+    if ($mode === 'all') {
+        return true;
+    }
+    if ($mode === 'aitool' || $mode === 'threshold') {
+        return in_array($eventtype, $aitoolrelevantevents, true);
+    }
+
+    return false;
 }
 
 /**
