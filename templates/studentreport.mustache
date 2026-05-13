@@ -211,7 +211,9 @@
             <table class="generaltable generalbox reporttable" cellpadding="0" cellspacing="0" id="proctoring-table-style">
             <thead>
                 <tr>
+                    <th class = "text-center">{{#str}}dateverified, quizaccess_proctoring{{/str}}</th>
                     <th class = "text-center" >{{#str}}webcampicture, quizaccess_proctoring{{/str}}</th>
+                    <th class = "text-center">{{#str}}facematchstatus, quizaccess_proctoring{{/str}}</th>
                 </tr>
             </thead>
             <tbody id = "proctoring-table-body"  >
@@ -226,6 +228,7 @@
                             </a>
                         {{/image_url}}
                     </td>
+                    <td class="text-center align-middle"><span class="{{face_match_status_class}}">{{face_match_status}}</span></td>
                 </tr>
                 {{/data}}
             </tbody>

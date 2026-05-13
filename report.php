@@ -586,10 +586,20 @@ if (
                 $row = [];
                 $row['firstname'] = $info->firstname;
                 $row['lastname'] = $info->lastname;
+                $row['name'] = userdate((int)$info->timemodified);
                 $row['image_url'] = $info->webcampicture;
-                $row['border_color'] = $info->awsflag == 2 && $info->awsscore > $thresholdvalue ? 'green' :
+                $row['border_color'] = $info->awsflag == 2 && $info->awsscore >= $thresholdvalue ? 'green' :
                                         ($info->awsflag == 2 && $info->awsscore < $thresholdvalue ? 'red' :
                                         ($info->awsflag == 3 && $info->awsscore < $thresholdvalue ? 'yellow' : 'none'));
+                $row['face_match_status'] = quizaccess_proctoring_get_face_match_status_label(
+                    (int)$info->awsflag,
+                    (int)$info->awsscore
+                );
+                $row['face_match_status_class'] = quizaccess_proctoring_get_face_match_status_class(
+                    (int)$info->awsflag,
+                    (int)$info->awsscore,
+                    $thresholdvalue
+                );
                 $row['img_id'] = 'reportid-' . $info->reportid;
                 $row['lightbox_data'] = basename($info->webcampicture, '.png');
                 $studentdata[] = $row;

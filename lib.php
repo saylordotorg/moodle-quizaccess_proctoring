@@ -175,6 +175,54 @@ function quizaccess_proctoring_update_match_result($rowid, $matchresult, $awsfla
 }
 
 /**
+ * Get a human-readable face match status for a proctoring log row.
+ *
+ * @param int $awsflag Face match processing flag.
+ * @param int $awsscore Stored face match score.
+ * @return string Localized status label.
+ */
+function quizaccess_proctoring_get_face_match_status_label(int $awsflag, int $awsscore): string {
+    switch ($awsflag) {
+        case 2:
+            return get_string('facematchstatus:score', 'quizaccess_proctoring', max(0, min(100, $awsscore)));
+        case 3:
+            return get_string('facematchstatus:noface', 'quizaccess_proctoring');
+        case 101:
+            return get_string('facematchstatus:apierror', 'quizaccess_proctoring');
+        case 1:
+            return get_string('facematchstatus:processing', 'quizaccess_proctoring');
+        case 0:
+        default:
+            return get_string('facematchstatus:notchecked', 'quizaccess_proctoring');
+    }
+}
+
+/**
+ * Get a Bootstrap badge class for a proctoring log face match status.
+ *
+ * @param int $awsflag Face match processing flag.
+ * @param int $awsscore Stored face match score.
+ * @param int $threshold Configured match threshold.
+ * @return string Badge CSS classes.
+ */
+function quizaccess_proctoring_get_face_match_status_class(int $awsflag, int $awsscore, int $threshold): string {
+    if ($awsflag === 2) {
+        return $awsscore >= $threshold ? 'badge badge-success' : 'badge badge-danger';
+    }
+    if ($awsflag === 3) {
+        return 'badge badge-warning';
+    }
+    if ($awsflag === 101) {
+        return 'badge badge-danger';
+    }
+    if ($awsflag === 1) {
+        return 'badge badge-info';
+    }
+
+    return 'badge badge-secondary';
+}
+
+/**
  * Determines whether an event detail JSON contains a specific shortcut.
  *
  * @param string $eventdetail JSON event detail.
@@ -1388,7 +1436,10 @@ function quizaccess_proctoring_collect_ai_review_images(stdClass $review, int $m
         $images[] = [
             'label' => get_string('aireview:imagewebcam', 'quizaccess_proctoring', (object)[
                 'time' => userdate((int)$log->timemodified),
-                'score' => (int)$log->awsscore,
+                'facematchstatus' => quizaccess_proctoring_get_face_match_status_label(
+                    (int)$log->awsflag,
+                    (int)$log->awsscore
+                ),
             ]),
             'dataurl' => $dataurl,
         ];

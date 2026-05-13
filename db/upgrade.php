@@ -624,5 +624,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051146, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051147) {
+        // No schema changes. Clarifies face match status labels in reports and AI review inputs.
+        upgrade_plugin_savepoint(true, 2026051147, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
