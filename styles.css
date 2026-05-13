@@ -526,6 +526,25 @@ body.proctoring-lb-disable-scrolling {
     padding: 0.35rem 0.65rem;
 }
 
+.proctoring-ai-review-list-status {
+    display: inline-block;
+    border-radius: 0.25rem;
+    background: #eef2f6;
+    color: #1f2933;
+    font-weight: 700;
+    padding: 0.28rem 0.5rem;
+}
+
+.proctoring-ai-review-list-flagged {
+    background: #fdebea;
+    color: #8a1020;
+}
+
+.proctoring-ai-review-list-failed {
+    background: #fff3cd;
+    color: #7a4d00;
+}
+
 .proctoring-ai-review-decision {
     border-top: 1px solid #e5e7eb;
     margin-top: 0.85rem;

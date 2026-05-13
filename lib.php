@@ -605,7 +605,20 @@ function quizaccess_proctoring_ai_review_configured(?array $settings = null): bo
         return false;
     }
 
-    switch ($settings['provider']) {
+    return quizaccess_proctoring_ai_review_provider_configured((string)$settings['provider'], $settings);
+}
+
+/**
+ * Determine whether a specific AI review provider has enough configuration to run.
+ *
+ * @param string $provider Provider key.
+ * @param array|null $settings Optional normalized settings.
+ * @return bool True when the provider can be called.
+ */
+function quizaccess_proctoring_ai_review_provider_configured(string $provider, ?array $settings = null): bool {
+    $settings = $settings ?? quizaccess_proctoring_get_ai_review_settings();
+
+    switch ($provider) {
         case 'openai':
             return !empty($settings['openaiapikey']) && !empty($settings['openaimodel']);
         case 'anthropic':
@@ -615,6 +628,21 @@ function quizaccess_proctoring_ai_review_configured(?array $settings = null): bo
         default:
             return false;
     }
+}
+
+/**
+ * Get a readable AI review provider label.
+ *
+ * @param string $provider Provider key.
+ * @return string Provider label.
+ */
+function quizaccess_proctoring_get_ai_review_provider_label(string $provider): string {
+    $key = 'setting:aireviewprovider_' . $provider;
+    if (get_string_manager()->string_exists($key, 'quizaccess_proctoring')) {
+        return get_string($key, 'quizaccess_proctoring');
+    }
+
+    return strtoupper($provider);
 }
 
 /**
@@ -788,6 +816,69 @@ function quizaccess_proctoring_get_ai_review_decision_label(string $decision): s
     }
 
     return ucfirst(str_replace('_', ' ', $decision));
+}
+
+/**
+ * Format an AI review record for report templates.
+ *
+ * @param stdClass $aireview AI review row.
+ * @param array|null $settings Optional normalized settings.
+ * @return array Template data.
+ */
+function quizaccess_proctoring_format_ai_review_for_template(stdClass $aireview, ?array $settings = null): array {
+    $settings = $settings ?? quizaccess_proctoring_get_ai_review_settings();
+    $evidence = json_decode((string)$aireview->evidence, true);
+    if (!is_array($evidence)) {
+        $evidence = [];
+    }
+
+    $evidenceitems = [];
+    foreach ($evidence as $item) {
+        if (trim((string)$item) !== '') {
+            $evidenceitems[] = ['text' => (string)$item];
+        }
+    }
+
+    $iscomplete = (int)$aireview->status === QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE;
+    $isfailed = (int)$aireview->status === QUIZACCESS_PROCTORING_AI_REVIEW_FAILED;
+    $isqueued = (int)$aireview->status === QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED;
+    $isprocessing = (int)$aireview->status === QUIZACCESS_PROCTORING_AI_REVIEW_PROCESSING;
+    $decisionthreshold = (int)($settings['decisionthreshold'] ?? 80);
+    $isflagged = $iscomplete &&
+        (int)$aireview->reviewscore >= $decisionthreshold &&
+        (string)$aireview->decision === 'highly_suspicious';
+    $decisionlabel = quizaccess_proctoring_get_ai_review_decision_label((string)$aireview->decision);
+    $statuslabel = quizaccess_proctoring_get_ai_review_status_label((int)$aireview->status);
+    $score = (int)$aireview->reviewscore;
+
+    return [
+        'statuslabel' => $statuslabel,
+        'provider' => strtoupper((string)$aireview->provider),
+        'providerlabel' => quizaccess_proctoring_get_ai_review_provider_label((string)$aireview->provider),
+        'model' => $aireview->model,
+        'reviewscore' => $score,
+        'reviewscorelabel' => $iscomplete ? get_string('aireview:scorelabel', 'quizaccess_proctoring', $score) : '',
+        'decisionlabel' => $decisionlabel,
+        'summary' => $aireview->summary,
+        'evidenceitems' => $evidenceitems,
+        'hasevidence' => !empty($evidenceitems),
+        'errormessage' => $aireview->errormessage,
+        'haserror' => trim((string)$aireview->errormessage) !== '',
+        'iscomplete' => $iscomplete,
+        'isfailed' => $isfailed,
+        'isqueued' => $isqueued,
+        'isprocessing' => $isprocessing,
+        'isflagged' => $isflagged,
+        'thresholdlabel' => get_string(
+            'aireview:thresholdlabel',
+            'quizaccess_proctoring',
+            $decisionthreshold
+        ),
+        'timereviewed' => !empty($aireview->timereviewed) ? userdate((int)$aireview->timereviewed) : '',
+        'compactlabel' => $iscomplete
+            ? $score . '/100 ' . $decisionlabel
+            : $statuslabel,
+    ];
 }
 
 /**
@@ -1135,18 +1226,7 @@ function quizaccess_proctoring_process_ai_review(stdClass $review, array $settin
             throw new moodle_exception('aireview:noimages', 'quizaccess_proctoring');
         }
 
-        switch ($settings['provider']) {
-            case 'anthropic':
-                $result = quizaccess_proctoring_call_anthropic_image_review($review, $images, $settings);
-                break;
-            case 'compatible':
-                $result = quizaccess_proctoring_call_openai_compatible_image_review($review, $images, $settings);
-                break;
-            case 'openai':
-            default:
-                $result = quizaccess_proctoring_call_openai_image_review($review, $images, $settings);
-                break;
-        }
+        $result = quizaccess_proctoring_call_ai_review_provider((string)$settings['provider'], $review, $images, $settings);
         if (empty($result)) {
             throw new moodle_exception('aireview:providerempty', 'quizaccess_proctoring');
         }
@@ -1169,6 +1249,35 @@ function quizaccess_proctoring_process_ai_review(stdClass $review, array $settin
         $review->timemodified = time();
         $DB->update_record('quizaccess_proctoring_ai_reviews', $review);
         mtrace('AI image review failed for id ' . $review->id . ': ' . $e->getMessage());
+    }
+}
+
+/**
+ * Call one configured AI review provider.
+ *
+ * @param string $provider Provider key.
+ * @param stdClass $review AI review row-like object.
+ * @param array $images Image data rows.
+ * @param array $settings Normalized AI review settings.
+ * @return array|null Parsed structured result.
+ */
+function quizaccess_proctoring_call_ai_review_provider(
+    string $provider,
+    stdClass $review,
+    array $images,
+    array $settings
+): ?array {
+    $settings['provider'] = $provider;
+
+    switch ($provider) {
+        case 'anthropic':
+            return quizaccess_proctoring_call_anthropic_image_review($review, $images, $settings);
+        case 'compatible':
+            return quizaccess_proctoring_call_openai_compatible_image_review($review, $images, $settings);
+        case 'openai':
+            return quizaccess_proctoring_call_openai_image_review($review, $images, $settings);
+        default:
+            throw new moodle_exception('aireview:providerempty', 'quizaccess_proctoring');
     }
 }
 

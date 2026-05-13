@@ -325,6 +325,13 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
 
+    $ADMIN->add('modsettingsquizcat', new admin_externalpage(
+        'quizaccess_proctoring_ai_diagnostics',
+        get_string('aireviewdiagnostics', 'quizaccess_proctoring'),
+        new moodle_url('/mod/quiz/accessrule/proctoring/ai_review_diagnostics.php'),
+        'moodle/site:config'
+    ));
+
     $pageurl = new moodle_url('/mod/quiz/accessrule/proctoring/trigger_delete.php', ['sesskey' => sesskey()]);
     $deletealllinktext = get_string('settingscontroll:deletealllinktext', 'quizaccess_proctoring');
 

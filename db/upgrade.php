@@ -600,5 +600,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051142, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051143) {
+        // No schema changes. Adds AI review diagnostics and report-list status.
+        upgrade_plugin_savepoint(true, 2026051143, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

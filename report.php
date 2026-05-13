@@ -449,6 +449,16 @@ if (
                 $row['riskholdstatus'] = quizaccess_proctoring_get_risk_hold_status_label($hold);
                 $row['riskholdactive'] = (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
             }
+            $aireview = quizaccess_proctoring_get_ai_review(
+                (int)$courseid,
+                (int)$cmid,
+                (int)$info->studentid,
+                (int)$risk['attemptid'],
+                (int)$info->reportid
+            );
+            if ($aireview) {
+                $row['aireview'] = quizaccess_proctoring_format_ai_review_for_template($aireview);
+            }
 
             $actionmenu = new action_menu();
             $actionmenu->set_kebab_trigger(get_string('actions'));
@@ -658,44 +668,7 @@ if (
             (int)$reportid
         );
         if ($aireview) {
-            $aireviewsettings = quizaccess_proctoring_get_ai_review_settings();
-            $evidence = json_decode((string)$aireview->evidence, true);
-            if (!is_array($evidence)) {
-                $evidence = [];
-            }
-            $evidenceitems = [];
-            foreach ($evidence as $item) {
-                if (trim((string)$item) !== '') {
-                    $evidenceitems[] = ['text' => (string)$item];
-                }
-            }
-            $iscomplete = (int)$aireview->status === QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE;
-            $isfailed = (int)$aireview->status === QUIZACCESS_PROCTORING_AI_REVIEW_FAILED;
-            $isflagged = $iscomplete &&
-                (int)$aireview->reviewscore >= (int)$aireviewsettings['decisionthreshold'] &&
-                (string)$aireview->decision === 'highly_suspicious';
-            $aireviewdata = [
-                'statuslabel' => quizaccess_proctoring_get_ai_review_status_label((int)$aireview->status),
-                'provider' => strtoupper((string)$aireview->provider),
-                'model' => $aireview->model,
-                'reviewscore' => (int)$aireview->reviewscore,
-                'decisionlabel' => quizaccess_proctoring_get_ai_review_decision_label((string)$aireview->decision),
-                'summary' => $aireview->summary,
-                'evidenceitems' => $evidenceitems,
-                'hasevidence' => !empty($evidenceitems),
-                'errormessage' => $aireview->errormessage,
-                'iscomplete' => $iscomplete,
-                'isfailed' => $isfailed,
-                'isqueued' => (int)$aireview->status === QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED,
-                'isprocessing' => (int)$aireview->status === QUIZACCESS_PROCTORING_AI_REVIEW_PROCESSING,
-                'isflagged' => $isflagged,
-                'thresholdlabel' => get_string(
-                    'aireview:thresholdlabel',
-                    'quizaccess_proctoring',
-                    (int)$aireviewsettings['decisionthreshold']
-                ),
-                'timereviewed' => !empty($aireview->timereviewed) ? userdate((int)$aireview->timereviewed) : '',
-            ];
+            $aireviewdata = quizaccess_proctoring_format_ai_review_for_template($aireview);
         }
 
         $overviewcounts = [

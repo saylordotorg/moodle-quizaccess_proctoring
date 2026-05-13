@@ -90,6 +90,7 @@
             <th>{{#str}}identity_mismatch_label,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}suspiciousactivity,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}riskscore,quizaccess_proctoring{{/str}}</th>
+            <th>{{#str}}aireview:shorttitle,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}actions,quizaccess_proctoring{{/str}}</th>
         </tr>
     </thead>
@@ -115,6 +116,17 @@
             {{#riskholdstatus}}
                 <div class="proctoring-risk-hold-status {{#riskholdactive}}proctoring-risk-hold-active{{/riskholdactive}}">{{riskholdstatus}}</div>
             {{/riskholdstatus}}
+        </td>
+        <td>
+            {{#aireview}}
+                <span class="proctoring-ai-review-list-status {{#isflagged}}proctoring-ai-review-list-flagged{{/isflagged}} {{#isfailed}}proctoring-ai-review-list-failed{{/isfailed}}">
+                    {{compactlabel}}
+                </span>
+                <div class="proctoring-ai-review-meta">{{providerlabel}}</div>
+            {{/aireview}}
+            {{^aireview}}
+                <span class="text-muted">{{#str}}aireview:notqueued,quizaccess_proctoring{{/str}}</span>
+            {{/aireview}}
         </td>
         <td>
             {{{actionmenu}}}
