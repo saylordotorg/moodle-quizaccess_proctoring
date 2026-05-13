@@ -161,6 +161,15 @@ if ($hassiteconfig) {
         get_string('setting:requireentirescreen', 'quizaccess_proctoring'),
         get_string('setting:requireentirescreen_desc', 'quizaccess_proctoring'), 1));
 
+    $settings->add(new admin_setting_configselect('quizaccess_proctoring/multimonitormode',
+        get_string('setting:multimonitormode', 'quizaccess_proctoring'),
+        get_string('setting:multimonitormode_desc', 'quizaccess_proctoring'), 'warn', [
+            'off' => get_string('setting:multimonitormode_off', 'quizaccess_proctoring'),
+            'log' => get_string('setting:multimonitormode_log', 'quizaccess_proctoring'),
+            'warn' => get_string('setting:multimonitormode_warn', 'quizaccess_proctoring'),
+            'block' => get_string('setting:multimonitormode_block', 'quizaccess_proctoring'),
+        ]));
+
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/captureviolationdesktop',
         get_string('setting:captureviolationdesktop', 'quizaccess_proctoring'),
         get_string('setting:captureviolationdesktop_desc', 'quizaccess_proctoring'), 1));

@@ -409,6 +409,11 @@ function quizaccess_proctoring_calculate_attempt_risk(int $courseid, int $cmid, 
         $eventparams,
         ['screen_marker_missing', 'screen_share_stopped']
     );
+    $multimonitorcount = quizaccess_proctoring_count_risk_events(
+        $eventwhere,
+        $eventparams,
+        ['multiple_monitors_detected']
+    );
     $aitoolcount = quizaccess_proctoring_count_risk_events(
         $eventwhere,
         $eventparams,
@@ -461,6 +466,12 @@ function quizaccess_proctoring_calculate_attempt_risk(int $courseid, int $cmid, 
             $screenissuecount,
             18,
             36
+        ),
+        quizaccess_proctoring_build_risk_factor(
+            get_string('riskscore:multimonitor', 'quizaccess_proctoring'),
+            $multimonitorcount,
+            25,
+            25
         ),
         quizaccess_proctoring_build_risk_factor(
             get_string('riskscore:aitool', 'quizaccess_proctoring'),

@@ -53,6 +53,14 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     private const MOBILE_SCREEN_SHARE_REQUIRE = 'require';
     /** @var string Block mobile/tablet browsers when desktop screen sharing is required. */
     private const MOBILE_SCREEN_SHARE_BLOCK = 'block';
+    /** @var string Disable browser multi-monitor detection. */
+    private const MULTI_MONITOR_OFF = 'off';
+    /** @var string Log multi-monitor detection events without interrupting the student. */
+    private const MULTI_MONITOR_LOG = 'log';
+    /** @var string Warn students when multiple monitors are detected. */
+    private const MULTI_MONITOR_WARN = 'warn';
+    /** @var string Block quiz start when multiple monitors are detected. */
+    private const MULTI_MONITOR_BLOCK = 'block';
 
     /**
      * Determines whether a preflight check is required for the given attempt.
@@ -159,6 +167,26 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
 
         return self::MOBILE_SCREEN_SHARE_BYPASS;
+    }
+
+    /**
+     * Get the configured browser multi-monitor detection mode.
+     *
+     * @return string One of the MULTI_MONITOR_* constants.
+     */
+    private static function multi_monitor_mode() {
+        $mode = get_config('quizaccess_proctoring', 'multimonitormode');
+
+        if (in_array($mode, [
+            self::MULTI_MONITOR_OFF,
+            self::MULTI_MONITOR_LOG,
+            self::MULTI_MONITOR_WARN,
+            self::MULTI_MONITOR_BLOCK,
+        ], true)) {
+            return $mode;
+        }
+
+        return self::MULTI_MONITOR_WARN;
     }
 
     /**
@@ -411,6 +439,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @param string|int $faceidcheck Whether face recognition is required.
      * @param bool $registerface Whether the first face capture will register the user.
      * @param int $requireentirescreen Whether entire screen sharing is required.
+     * @param string $multimonitormode Browser multi-monitor detection mode.
      * @return string Checklist HTML.
      * @throws coding_exception
      */
@@ -419,7 +448,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $captcharequired,
         $faceidcheck,
         $registerface,
-        $requireentirescreen
+        $requireentirescreen,
+        $multimonitormode
     ) {
         $requirements = [];
 
@@ -436,6 +466,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
         if ((int)$requireentirescreen === 1) {
             $requirements['screen'] = get_string('preflight:screenshare', 'quizaccess_proctoring');
+        }
+        if ($multimonitormode === self::MULTI_MONITOR_BLOCK) {
+            $requirements['multimonitor'] = get_string('preflight:singlemonitor', 'quizaccess_proctoring');
         }
 
         if (empty($requirements)) {
@@ -552,6 +585,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $requireentirescreen = $this->requires_entire_screen() ? 1 : 0;
         $honorrequired = self::honor_statement_required();
         $captcharequired = $this->should_require_captcha($attemptid);
+        $multimonitormode = self::multi_monitor_mode();
 
         // Prepare data for the JavaScript module.
         $examurl = new moodle_url('/mod/quiz/startattempt.php');
@@ -574,6 +608,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             'requireentirescreen' => $requireentirescreen,
             'honorrequired' => $honorrequired ? 1 : 0,
             'captcharequired' => $captcharequired ? 1 : 0,
+            'multimonitormode' => $multimonitormode,
             'screenmonitorurl' => $usepersistentmonitor ? $screenmonitorurl->out(false) : '',
             'screenmonitorchannel' => $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '',
             'screenmonitorstatuskey' => $usepersistentmonitor ? 'quizaccess_proctoring_screen_status_' . $screenmonitorkey : '',
@@ -598,7 +633,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 $captcharequired,
                 $faceidcheck,
                 $registerface,
-                $requireentirescreen
+                $requireentirescreen,
+                $multimonitormode
             )
         );
 
@@ -742,6 +778,27 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $mform->addElement('html', $screensharebtn);
         }
 
+        if ($multimonitormode === self::MULTI_MONITOR_BLOCK) {
+            $monitorcheck = sprintf(
+                "<section id='proctoring-step-multimonitor' class='proctoring-preflight-step' data-preflight-step='multimonitor'>
+                %s
+                <div class='container'><div class='row'><div class='col'>
+                    <div id='multi_monitor_result' class='mb-2'>%s</div>
+                    <button id='multimonitorvalidate' class='btn btn-secondary mt-2' style='display: flex;
+                                                justify-content: center; align-items: center;'>
+                        %s
+                    </button>
+                </div></div></div></section>",
+                self::make_preflight_step_heading(
+                    get_string('preflightstep:multimonitor:title', 'quizaccess_proctoring'),
+                    get_string('preflightstep:multimonitor:desc', 'quizaccess_proctoring')
+                ),
+                get_string('modal:pending', 'quizaccess_proctoring'),
+                get_string('modal:checkmonitors', 'quizaccess_proctoring')
+            );
+            $mform->addElement('html', $monitorcheck);
+        }
+
         $mform->addElement(
             'html',
             html_writer::div(
@@ -755,6 +812,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         // Add hidden inputs.
         $mform->addElement('hidden', 'entirescreenconfirmed', 0);
         $mform->setType('entirescreenconfirmed', PARAM_INT);
+        $mform->addElement('hidden', 'multimonitorconfirmed', $multimonitormode === self::MULTI_MONITOR_BLOCK ? 0 : 1);
+        $mform->setType('multimonitorconfirmed', PARAM_INT);
 
         // Close the form wrapper.
         $mform->addElement('html', '</div>');
@@ -786,6 +845,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $errorkey = self::honor_statement_required() ? 'proctoring' : 'entirescreenconfirmed';
             if (empty($errors[$errorkey])) {
                 $errors[$errorkey] = get_string('entirescreenrequired', 'quizaccess_proctoring');
+            }
+        }
+
+        if (self::multi_monitor_mode() === self::MULTI_MONITOR_BLOCK && empty($data['multimonitorconfirmed'])) {
+            $errorkey = self::honor_statement_required() ? 'proctoring' : 'multimonitorconfirmed';
+            if (empty($errors[$errorkey])) {
+                $errors[$errorkey] = get_string('multimonitor:blockmessage', 'quizaccess_proctoring');
             }
         }
 
@@ -1102,6 +1168,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->monitorbrowseractivity = (int)(get_config('quizaccess_proctoring', 'monitorbrowseractivity') ?? 1);
             $record->blockclipboard = (int)(get_config('quizaccess_proctoring', 'blockclipboard') ?? 1);
             $record->captureviolationdesktop = $this->should_capture_violation_desktop() ? 1 : 0;
+            $record->multimonitormode = self::multi_monitor_mode();
             $record->blurquizwithoutface = (int)(get_config('quizaccess_proctoring', 'blurquizwithoutface') ?? 0);
             $faceblurminscore = (float)(get_config('quizaccess_proctoring', 'faceblurminscore') ?: 0.30);
             $record->faceblurminscore = max(0.10, min(0.95, $faceblurminscore));

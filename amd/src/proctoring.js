@@ -161,10 +161,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             const monitorActivity = parseInt(props.monitorbrowseractivity, 10) === 1;
             const blockClipboard = parseInt(props.blockclipboard, 10) === 1;
             const captureDesktop = parseInt(props.captureviolationdesktop, 10) === 1;
+            const multiMonitorMode = ['log', 'warn', 'block'].includes(props.multimonitormode) ?
+                props.multimonitormode : 'off';
             const clipboardEvents = [
                 'clipboard_copy',
                 'clipboard_cut',
                 'clipboard_paste'
+            ];
+            const multiMonitorEvents = [
+                'multiple_monitors_detected',
+                'monitor_detection_unavailable'
             ];
             const clipboardShortcutEvents = {
                 c: 'clipboard_copy',
@@ -185,7 +191,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 'shortcut',
                 'possible_ai_tool',
                 'page_exit',
-                'screen_marker_missing'
+                'screen_marker_missing',
+                'multiple_monitors_detected'
             ];
             let screenStream = null;
             let screenVideo = null;
@@ -195,6 +202,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let screenGateTimer = null;
             let screenMonitorClient = null;
             let latestDesktopFrame = '';
+            let multiMonitorLastState = '';
             const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
 
             const positionScreenMarker = function(markerElement) {
@@ -694,7 +702,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
             const logEvent = function(eventType, detail) {
                 if (!monitorActivity && !(blockClipboard && clipboardEvents.includes(eventType)) &&
-                        !(captureDesktop && screenShareEvents.includes(eventType))) {
+                        !(captureDesktop && screenShareEvents.includes(eventType)) &&
+                        !(multiMonitorMode !== 'off' && multiMonitorEvents.includes(eventType))) {
                     return;
                 }
 
@@ -727,7 +736,70 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 });
             };
 
+            const detectMonitorSetup = async function(allowPermissionPrompt) {
+                if (window.screen && typeof window.screen.isExtended === 'boolean') {
+                    return {
+                        supported: true,
+                        multiple: !!window.screen.isExtended,
+                        count: window.screen.isExtended ? 2 : 1,
+                        source: 'screen.isExtended',
+                    };
+                }
+
+                if (allowPermissionPrompt && typeof window.getScreenDetails === 'function') {
+                    try {
+                        const details = await window.getScreenDetails();
+                        const count = details && details.screens ? details.screens.length : 0;
+                        return {
+                            supported: count > 0,
+                            multiple: count > 1,
+                            count: count,
+                            source: 'getScreenDetails',
+                        };
+                    } catch (error) {
+                        return {
+                            supported: false,
+                            multiple: false,
+                            count: 0,
+                            source: 'getScreenDetails',
+                            error: error && error.name ? error.name : 'unknown',
+                        };
+                    }
+                }
+
+                return {
+                    supported: false,
+                    multiple: false,
+                    count: 0,
+                    source: 'unavailable',
+                };
+            };
+
+            const checkMultiMonitorSetup = async function() {
+                if (multiMonitorMode === 'off') {
+                    return;
+                }
+
+                const status = await detectMonitorSetup(false);
+                const state = !status.supported ? 'unavailable' : (status.multiple ? 'multiple' : 'single');
+                if (state === multiMonitorLastState) {
+                    return;
+                }
+                multiMonitorLastState = state;
+
+                if (!status.supported) {
+                    logEvent('monitor_detection_unavailable', status);
+                } else if (status.multiple) {
+                    logEvent('multiple_monitors_detected', status);
+                }
+            };
+
             initScreenShareGate();
+            checkMultiMonitorSetup();
+            if (multiMonitorMode !== 'off') {
+                window.setInterval(checkMultiMonitorSetup, 60000);
+                window.addEventListener('focus', checkMultiMonitorSetup, true);
+            }
 
             if (monitorActivity) {
                 document.addEventListener('visibilitychange', function() {
@@ -903,7 +975,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 if (parseInt(props.monitorbrowseractivity, 10) === 1 ||
                         parseInt(props.blockclipboard, 10) === 1 ||
-                        parseInt(props.captureviolationdesktop, 10) === 1) {
+                        parseInt(props.captureviolationdesktop, 10) === 1 ||
+                        ['log', 'warn', 'block'].includes(props.multimonitormode)) {
                     initSuspiciousActivityMonitoring(props, strings);
                 }
 

@@ -23,6 +23,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'preflight:actionneeded', component: 'quizaccess_proctoring'},
                 {key: 'modal:pending', component: 'quizaccess_proctoring'},
                 {key: 'preflight:submitlocked', component: 'quizaccess_proctoring'},
+                {key: 'multimonitor:detected', component: 'quizaccess_proctoring'},
+                {key: 'multimonitor:warning', component: 'quizaccess_proctoring'},
+                {key: 'multimonitor:single', component: 'quizaccess_proctoring'},
+                {key: 'multimonitor:unavailable', component: 'quizaccess_proctoring'},
+                {key: 'multimonitor:blockmessage', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -48,6 +53,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     preflightactionneeded: strings[18],
                     preflightpending: strings[19],
                     preflightsubmitlocked: strings[20],
+                    multimonitordetected: strings[21],
+                    multimonitorwarning: strings[22],
+                    multimonitorsingle: strings[23],
+                    multimonitorunavailable: strings[24],
+                    multimonitorblockmessage: strings[25],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -205,11 +215,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const screenRequired = parseInt(props.requireentirescreen, 10) === 1;
                 const honorRequired = parseInt(props.honorrequired || 0, 10) === 1;
                 const captchaRequired = parseInt(props.captcharequired || 0, 10) === 1;
+                const multiMonitorMode = ['log', 'warn', 'block'].includes(props.multimonitormode) ?
+                    props.multimonitormode : 'off';
+                const multiMonitorBlocks = multiMonitorMode === 'block';
                 const submitButtonDefaultLabel = submitButton.is('input') ? submitButton.val() : submitButton.text();
                 let faceReady = !faceRequired;
                 let screenReady = !screenRequired;
                 let honorReady = !honorRequired;
                 let captchaReady = !captchaRequired;
+                let multiMonitorReady = !multiMonitorBlocks;
                 let screenStream = null;
                 let screenVideo = null;
                 let screenCanvas = null;
@@ -243,6 +257,144 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 ? strings.preflightactionneeded
                                 : strings.preflightpending
                     );
+                };
+
+                const logPreflightEvent = function(eventType, detail) {
+                    Ajax.call([{
+                        methodname: 'quizaccess_proctoring_log_event',
+                        args: {
+                            courseid: parseInt(props.courseid, 10) || 0,
+                            quizid: parseInt(props.cmid, 10) || 0,
+                            attemptid: parseInt(props.attemptid, 10) || 0,
+                            reportid: 0,
+                            eventtype: eventType,
+                            eventdetail: JSON.stringify(detail || {}),
+                            pagevisibility: document.visibilityState || '',
+                            currenturl: window.location.href,
+                            screenshot: '',
+                        }
+                    }])[0].fail(function() {});
+                };
+
+                const detectMonitorSetup = async function(allowPermissionPrompt) {
+                    if (window.screen && typeof window.screen.isExtended === 'boolean') {
+                        return {
+                            supported: true,
+                            multiple: !!window.screen.isExtended,
+                            count: window.screen.isExtended ? 2 : 1,
+                            source: 'screen.isExtended',
+                        };
+                    }
+
+                    if (typeof window.getScreenDetails === 'function') {
+                        if (!allowPermissionPrompt) {
+                            return {
+                                supported: false,
+                                multiple: false,
+                                count: 0,
+                                source: 'getScreenDetails',
+                                promptrequired: true,
+                            };
+                        }
+                        try {
+                            const details = await window.getScreenDetails();
+                            const count = details && details.screens ? details.screens.length : 0;
+                            return {
+                                supported: count > 0,
+                                multiple: count > 1,
+                                count: count,
+                                source: 'getScreenDetails',
+                            };
+                        } catch (error) {
+                            return {
+                                supported: false,
+                                multiple: false,
+                                count: 0,
+                                source: 'getScreenDetails',
+                                error: error && error.name ? error.name : 'unknown',
+                            };
+                        }
+                    }
+
+                    return {
+                        supported: false,
+                        multiple: false,
+                        count: 0,
+                        source: 'unavailable',
+                    };
+                };
+
+                const setMultiMonitorConfirmed = function(confirmed) {
+                    const input = document.getElementById('id_multimonitorconfirmed');
+                    if (input) {
+                        input.value = confirmed ? 1 : 0;
+                    }
+                };
+
+                const setMultiMonitorResult = function(message, success) {
+                    const result = document.getElementById('multi_monitor_result');
+                    if (result) {
+                        result.innerHTML = `<span style="color: ${success ? 'green' : 'red'}">${escapeHtml(message)}</span>`;
+                    }
+                };
+
+                const checkMultiMonitorSetup = async function(allowPermissionPrompt = false) {
+                    if (multiMonitorMode === 'off') {
+                        multiMonitorReady = true;
+                        setMultiMonitorConfirmed(true);
+                        return;
+                    }
+
+                    if (multiMonitorBlocks) {
+                        setRequirementStatus('multimonitor', 'pending');
+                    }
+
+                    const status = await detectMonitorSetup(allowPermissionPrompt);
+                    if (status.promptrequired && multiMonitorBlocks) {
+                        multiMonitorReady = false;
+                        setMultiMonitorConfirmed(false);
+                        setMultiMonitorResult(strings.preflightactionneeded, false);
+                        setRequirementStatus('multimonitor', 'action');
+                        updatePreflightGate();
+                        return;
+                    }
+
+                    if (!status.supported) {
+                        logPreflightEvent('monitor_detection_unavailable', status);
+                        multiMonitorReady = true;
+                        setMultiMonitorConfirmed(true);
+                        setMultiMonitorResult(strings.multimonitorunavailable, true);
+                        if (multiMonitorBlocks) {
+                            setRequirementStatus('multimonitor', 'complete', strings.multimonitorunavailable);
+                        }
+                        updatePreflightGate();
+                        return;
+                    }
+
+                    if (status.multiple) {
+                        logPreflightEvent('multiple_monitors_detected', status);
+                        if (multiMonitorMode === 'warn') {
+                            Notification.addNotification({
+                                message: strings.multimonitorwarning,
+                                type: 'warning'
+                            });
+                        }
+                        multiMonitorReady = !multiMonitorBlocks;
+                        setMultiMonitorConfirmed(!multiMonitorBlocks);
+                        setMultiMonitorResult(strings.multimonitordetected, false);
+                        if (multiMonitorBlocks) {
+                            setRequirementStatus('multimonitor', 'action', strings.multimonitorblockmessage);
+                        }
+                    } else {
+                        multiMonitorReady = true;
+                        setMultiMonitorConfirmed(true);
+                        setMultiMonitorResult(strings.multimonitorsingle, true);
+                        if (multiMonitorBlocks) {
+                            setRequirementStatus('multimonitor', 'complete', strings.multimonitorsingle);
+                        }
+                    }
+
+                    updatePreflightGate();
                 };
 
                 const syncHonorRequirement = function() {
@@ -392,6 +544,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     if (screenRequired && !screenReady) {
                         return 'screen';
                     }
+                    if (multiMonitorBlocks && !multiMonitorReady) {
+                        return 'multimonitor';
+                    }
 
                     return 'ready';
                 };
@@ -405,7 +560,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             stepName === 'honor' && honorReady ||
                             stepName === 'captcha' && captchaReady ||
                             stepName === 'face' && faceReady ||
-                            stepName === 'screen' && screenReady
+                            stepName === 'screen' && screenReady ||
+                            stepName === 'multimonitor' && multiMonitorReady
                         ));
                     });
 
@@ -424,7 +580,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 };
 
                 const updatePreflightGate = function() {
-                    const ready = honorReady && captchaReady && faceReady && screenReady;
+                    const ready = honorReady && captchaReady && faceReady && screenReady && multiMonitorReady;
                     actionBar.addClass('proctoring-preflight-actionbar');
                     actionBar.css("visibility", "visible");
                     submitButton.show();
@@ -449,8 +605,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (screenRequired) {
                     setRequirementStatus('screen', 'pending');
                 }
+                if (multiMonitorBlocks) {
+                    setRequirementStatus('multimonitor', 'pending');
+                }
 
-                if (honorRequired || captchaRequired || faceRequired || screenRequired) {
+                if (honorRequired || captchaRequired || faceRequired || screenRequired || multiMonitorBlocks) {
                     updatePreflightGate();
                 }
 
@@ -471,6 +630,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         }
                     }, 500);
                 }
+
+                if (multiMonitorMode !== 'off') {
+                    checkMultiMonitorSetup(false);
+                }
+
+                $("#multimonitorvalidate").click(async function(event) {
+                    event.preventDefault();
+                    await checkMultiMonitorSetup(true);
+                });
 
                 const initScreenMarker = function() {
                     if (!screenRequired || document.getElementById('proctoring-screen-verification-marker')) {

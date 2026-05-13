@@ -682,6 +682,11 @@ if (
                 $eventwhere . " AND eventtype IN ('screen_marker_missing', 'screen_share_stopped')",
                 $eventparams
             ),
+            'multimonitor' => $DB->count_records_select(
+                'quizaccess_proctoring_events',
+                $eventwhere . ' AND eventtype = :eventtype_multimonitor',
+                $eventparams + ['eventtype_multimonitor' => 'multiple_monitors_detected']
+            ),
             'clipboard' => $DB->count_records_select(
                 'quizaccess_proctoring_events',
                 $eventwhere . " AND eventtype IN ('clipboard_copy', 'clipboard_cut', 'clipboard_paste', 'contextmenu')",
@@ -741,6 +746,10 @@ if (
             quizaccess_proctoring_build_overview_row(
                 get_string('reportoverview:screenshareissue', 'quizaccess_proctoring'),
                 $overviewcounts['screen']
+            ),
+            quizaccess_proctoring_build_overview_row(
+                get_string('reportoverview:multimonitor', 'quizaccess_proctoring'),
+                $overviewcounts['multimonitor']
             ),
             quizaccess_proctoring_build_overview_row(
                 get_string('reportoverview:clipboardactivity', 'quizaccess_proctoring'),

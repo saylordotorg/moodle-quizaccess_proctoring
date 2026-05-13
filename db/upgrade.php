@@ -605,5 +605,14 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051143, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051144) {
+        // No schema changes. Adds configurable browser-supported multi-monitor detection.
+        if (get_config('quizaccess_proctoring', 'multimonitormode') === false) {
+            set_config('multimonitormode', 'warn', 'quizaccess_proctoring');
+        }
+
+        upgrade_plugin_savepoint(true, 2026051144, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

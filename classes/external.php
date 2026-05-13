@@ -314,6 +314,8 @@ class quizaccess_proctoring_external extends external_api {
             'face_missing',
             'no_face_detected',
             'audio_detected',
+            'multiple_monitors_detected',
+            'monitor_detection_unavailable',
         ];
 
         if (!in_array($eventtype, $allowedevents, true)) {
