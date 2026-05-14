@@ -726,5 +726,27 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051157, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051158) {
+        if (get_config('quizaccess_proctoring', 'privacynoticerequired') === false) {
+            set_config('privacynoticerequired', 1, 'quizaccess_proctoring');
+        }
+        if (get_config('quizaccess_proctoring', 'privacynotice') === false) {
+            set_config(
+                'privacynotice',
+                get_string('privacynotice:default', 'quizaccess_proctoring'),
+                'quizaccess_proctoring'
+            );
+        }
+        if (get_config('quizaccess_proctoring', 'privacyagreementlabel') === false) {
+            set_config(
+                'privacyagreementlabel',
+                get_string('privacynotice:agreementdefault', 'quizaccess_proctoring'),
+                'quizaccess_proctoring'
+            );
+        }
+
+        upgrade_plugin_savepoint(true, 2026051158, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

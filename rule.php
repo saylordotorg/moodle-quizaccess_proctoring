@@ -399,6 +399,105 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * Check whether the pre-quiz privacy notice agreement is required.
+     *
+     * @return bool True when the notice is required.
+     */
+    private static function privacy_notice_required() {
+        $setting = get_config('quizaccess_proctoring', 'privacynoticerequired');
+        return $setting === false ? true : (int)$setting === 1;
+    }
+
+    /**
+     * Get the configured pre-quiz privacy notice.
+     *
+     * @return string Notice text.
+     */
+    private static function get_privacy_notice() {
+        $notice = get_config('quizaccess_proctoring', 'privacynotice');
+
+        if ($notice === false || trim((string)$notice) === '') {
+            return get_string('privacynotice:default', 'quizaccess_proctoring');
+        }
+
+        return (string)$notice;
+    }
+
+    /**
+     * Get the configured privacy agreement checkbox label.
+     *
+     * @return string Checkbox label.
+     */
+    private static function get_privacy_agreement_label() {
+        $label = get_config('quizaccess_proctoring', 'privacyagreementlabel');
+
+        if ($label === false || trim((string)$label) === '') {
+            return get_string('privacynotice:agreementdefault', 'quizaccess_proctoring');
+        }
+
+        return (string)$label;
+    }
+
+    /**
+     * Build a concise data collection summary based on enabled proctoring settings.
+     *
+     * @param bool $captcharequired Whether CAPTCHA is required.
+     * @param string|int $faceidcheck Whether face recognition is required.
+     * @param int $requireentirescreen Whether screen sharing is required.
+     * @param string $multimonitormode Multi-monitor mode.
+     * @return string Rendered details HTML.
+     */
+    private static function make_privacy_notice_details($captcharequired, $faceidcheck, $requireentirescreen, $multimonitormode): string {
+        $items = [
+            get_string('privacynotice:item_eventlogs', 'quizaccess_proctoring'),
+        ];
+
+        if ((string)$faceidcheck === '1') {
+            $items[] = get_string('privacynotice:item_webcam', 'quizaccess_proctoring');
+        }
+        if ((int)$requireentirescreen === 1 || (int)get_config('quizaccess_proctoring', 'captureviolationdesktop') === 1) {
+            $items[] = get_string('privacynotice:item_desktop', 'quizaccess_proctoring');
+        }
+        if ((int)get_config('quizaccess_proctoring', 'monitorbrowseractivity') === 1) {
+            $items[] = get_string('privacynotice:item_browseractivity', 'quizaccess_proctoring');
+        }
+        if ((int)get_config('quizaccess_proctoring', 'blockclipboard') === 1) {
+            $items[] = get_string('privacynotice:item_clipboard', 'quizaccess_proctoring');
+        }
+        if ($captcharequired) {
+            $items[] = get_string('privacynotice:item_captcha', 'quizaccess_proctoring');
+        }
+        if ($multimonitormode !== self::MULTI_MONITOR_OFF) {
+            $items[] = get_string('privacynotice:item_monitors', 'quizaccess_proctoring');
+        }
+        if ((int)get_config('quizaccess_proctoring', 'aireviewenabled') === 1) {
+            $items[] = get_string('privacynotice:item_aireview', 'quizaccess_proctoring');
+        }
+        if ((int)get_config('quizaccess_proctoring', 'riskreviewenabled') === 1 ||
+                (int)get_config('quizaccess_proctoring', 'cheatinglockoutenabled') === 1) {
+            $items[] = get_string('privacynotice:item_riskreview', 'quizaccess_proctoring');
+        }
+
+        $list = '';
+        foreach ($items as $item) {
+            $list .= html_writer::tag('li', s($item));
+        }
+
+        $retentiondays = (int)get_config('quizaccess_proctoring', 'imageretentiondays');
+        $retention = $retentiondays > 0
+            ? get_string('privacynotice:retentiondays', 'quizaccess_proctoring', $retentiondays)
+            : get_string('privacynotice:retentionmanual', 'quizaccess_proctoring');
+
+        return html_writer::tag(
+            'details',
+            html_writer::tag('summary', s(get_string('privacynotice:detailsummary', 'quizaccess_proctoring'))) .
+            html_writer::tag('ul', $list, ['class' => 'mb-2']) .
+            html_writer::div(s($retention), 'small text-muted'),
+            ['class' => 'proctoring-privacy-details mt-2']
+        );
+    }
+
+    /**
      * Check whether the current user can bypass student-only high-risk retake lockouts.
      *
      * @return bool True when the current user can review risk holds for this quiz.
@@ -438,6 +537,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     /**
      * Build the visible checklist shown in the quiz start preflight popup.
      *
+     * @param bool $privacyrequired Whether the privacy notice agreement is required.
      * @param bool $honorrequired Whether the integrity statement is required.
      * @param bool $captcharequired Whether a CAPTCHA/security check is required.
      * @param string|int $faceidcheck Whether face recognition is required.
@@ -448,6 +548,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @throws coding_exception
      */
     private static function make_preflight_requirements_panel(
+        $privacyrequired,
         $honorrequired,
         $captcharequired,
         $faceidcheck,
@@ -457,6 +558,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     ) {
         $requirements = [];
 
+        if ($privacyrequired) {
+            $requirements['privacy'] = get_string('preflight:privacy', 'quizaccess_proctoring');
+        }
         if ($honorrequired) {
             $requirements['honor'] = get_string('preflight:honesty', 'quizaccess_proctoring');
         }
@@ -587,6 +691,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $hasreferenceimage = $DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $USER->id]);
         $registerface = ($faceidcheck === '1' && !$hasreferenceimage);
         $requireentirescreen = $this->requires_entire_screen() ? 1 : 0;
+        $privacyrequired = self::privacy_notice_required();
         $honorrequired = self::honor_statement_required();
         $captcharequired = $this->should_require_captcha($attemptid);
         $multimonitormode = self::multi_monitor_mode();
@@ -610,6 +715,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             'registerface' => $registerface ? 1 : 0,
             'faceidcheck' => $faceidcheck === '1' ? 1 : 0,
             'requireentirescreen' => $requireentirescreen,
+            'privacyrequired' => $privacyrequired ? 1 : 0,
             'honorrequired' => $honorrequired ? 1 : 0,
             'captcharequired' => $captcharequired ? 1 : 0,
             'multimonitormode' => $multimonitormode,
@@ -633,6 +739,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $mform->addElement(
             'html',
             self::make_preflight_requirements_panel(
+                $privacyrequired,
                 $honorrequired,
                 $captcharequired,
                 $faceidcheck,
@@ -648,6 +755,36 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             : '';
 
         $mform->addElement('html', "<div class='proctoring-preflight-steps'>");
+
+        if ($privacyrequired) {
+            $notice = html_writer::div(
+                format_text(self::get_privacy_notice(), FORMAT_PLAIN, ['para' => true]),
+                'proctoring-privacy-notice-text'
+            );
+            $mform->addElement(
+                'html',
+                "<section id='proctoring-step-privacy' class='proctoring-preflight-step' data-preflight-step='privacy'>" .
+                self::make_preflight_step_heading(
+                    get_string('preflightstep:privacy:title', 'quizaccess_proctoring'),
+                    get_string('preflightstep:privacy:desc', 'quizaccess_proctoring')
+                )
+            );
+            $mform->addElement(
+                'html',
+                html_writer::div(
+                    $notice . self::make_privacy_notice_details(
+                        $captcharequired,
+                        $faceidcheck,
+                        $requireentirescreen,
+                        $multimonitormode
+                    ),
+                    'proctoring-privacy-notice alert alert-info mb-3'
+                )
+            );
+            $mform->addElement('checkbox', 'proctoringprivacy', '', self::get_privacy_agreement_label());
+            $mform->addRule('proctoringprivacy', get_string('privacynotice:required', 'quizaccess_proctoring'), 'required', null, 'client');
+            $mform->addElement('html', '</section>');
+        }
 
         if ($honorrequired) {
             $statement = html_writer::div(
@@ -841,6 +978,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
 
         // Ensure the integrity statement checkbox is checked when the setting is enabled.
+        if (self::privacy_notice_required() && empty($data['proctoringprivacy'])) {
+            $errors['proctoringprivacy'] = get_string('privacynotice:required', 'quizaccess_proctoring');
+        }
+
         if (self::honor_statement_required() && empty($data['proctoring'])) {
             $errors['proctoring'] = get_string('youmustagree', 'quizaccess_proctoring');
         }

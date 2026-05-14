@@ -57,6 +57,20 @@ if ($hassiteconfig) {
         get_string('setting:honoragreementlabel_desc', 'quizaccess_proctoring'),
         get_string('honorstatement:agreementdefault', 'quizaccess_proctoring'), PARAM_TEXT));
 
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/privacynoticerequired',
+        get_string('setting:privacynoticerequired', 'quizaccess_proctoring'),
+        get_string('setting:privacynoticerequired_desc', 'quizaccess_proctoring'), 1));
+
+    $settings->add(new admin_setting_configtextarea('quizaccess_proctoring/privacynotice',
+        get_string('setting:privacynotice', 'quizaccess_proctoring'),
+        get_string('setting:privacynotice_desc', 'quizaccess_proctoring'),
+        get_string('privacynotice:default', 'quizaccess_proctoring'), PARAM_TEXT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/privacyagreementlabel',
+        get_string('setting:privacyagreementlabel', 'quizaccess_proctoring'),
+        get_string('setting:privacyagreementlabel_desc', 'quizaccess_proctoring'),
+        get_string('privacynotice:agreementdefault', 'quizaccess_proctoring'), PARAM_TEXT));
+
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/captchabeforeattemptenabled',
         get_string('setting:captchabeforeattemptenabled', 'quizaccess_proctoring'),
         get_string('setting:captchabeforeattemptenabled_desc', 'quizaccess_proctoring'), 0));

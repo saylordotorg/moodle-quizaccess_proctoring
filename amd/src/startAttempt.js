@@ -213,6 +213,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const actionBar = $("#form_activate");
                 const faceRequired = parseInt(props.faceidcheck, 10) === 1;
                 const screenRequired = parseInt(props.requireentirescreen, 10) === 1;
+                const privacyRequired = parseInt(props.privacyrequired || 0, 10) === 1;
                 const honorRequired = parseInt(props.honorrequired || 0, 10) === 1;
                 const captchaRequired = parseInt(props.captcharequired || 0, 10) === 1;
                 const multiMonitorMode = ['log', 'warn', 'block'].includes(props.multimonitormode) ?
@@ -221,6 +222,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const submitButtonDefaultLabel = submitButton.is('input') ? submitButton.val() : submitButton.text();
                 let faceReady = !faceRequired;
                 let screenReady = !screenRequired;
+                let privacyReady = !privacyRequired;
                 let honorReady = !honorRequired;
                 let captchaReady = !captchaRequired;
                 let multiMonitorReady = !multiMonitorBlocks;
@@ -425,6 +427,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     setRequirementStatus('honor', honorReady ? 'complete' : 'pending');
                 };
 
+                const syncPrivacyRequirement = function() {
+                    if (!privacyRequired) {
+                        return;
+                    }
+
+                    const checkbox = document.querySelector('input[name="proctoringprivacy"]');
+                    privacyReady = !!(checkbox && checkbox.checked);
+                    setRequirementStatus('privacy', privacyReady ? 'complete' : 'pending');
+                };
+
                 const getCaptchaToken = function() {
                     const turnstile = document.querySelector('input[name="cf-turnstile-response"]');
                     const recaptcha = document.querySelector('textarea[name="g-recaptcha-response"], input[name="g-recaptcha-response"]');
@@ -550,6 +562,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 };
 
                 const getCurrentPreflightStep = function() {
+                    if (privacyRequired && !privacyReady) {
+                        return 'privacy';
+                    }
                     if (honorRequired && !honorReady) {
                         return 'honor';
                     }
@@ -575,6 +590,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         const stepName = step.getAttribute('data-preflight-step');
                         step.classList.toggle('is-active', !ready && stepName === currentStep);
                         step.classList.toggle('is-complete', ready || (
+                            stepName === 'privacy' && privacyReady ||
                             stepName === 'honor' && honorReady ||
                             stepName === 'captcha' && captchaReady ||
                             stepName === 'face' && faceReady ||
@@ -598,7 +614,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 };
 
                 const updatePreflightGate = function() {
-                    const ready = honorReady && captchaReady && faceReady && screenReady && multiMonitorReady;
+                    const ready = privacyReady && honorReady && captchaReady && faceReady && screenReady && multiMonitorReady;
                     actionBar.addClass('proctoring-preflight-actionbar');
                     actionBar.css("visibility", "visible");
                     submitButton.show();
@@ -615,6 +631,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     );
                 };
 
+                syncPrivacyRequirement();
                 syncHonorRequirement();
                 syncCaptchaRequirement();
                 if (faceRequired) {
@@ -627,8 +644,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     setRequirementStatus('multimonitor', 'pending');
                 }
 
-                if (honorRequired || captchaRequired || faceRequired || screenRequired || multiMonitorBlocks) {
+                if (privacyRequired || honorRequired || captchaRequired || faceRequired || screenRequired || multiMonitorBlocks) {
                     updatePreflightGate();
+                }
+
+                const privacyCheckbox = document.querySelector('input[name="proctoringprivacy"]');
+                if (privacyCheckbox) {
+                    privacyCheckbox.addEventListener('change', function() {
+                        syncPrivacyRequirement();
+                        updatePreflightGate();
+                    });
                 }
 
                 const honorCheckbox = document.querySelector('input[name="proctoring"]');
