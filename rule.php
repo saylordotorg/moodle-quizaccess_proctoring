@@ -61,6 +61,12 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     private const MULTI_MONITOR_WARN = 'warn';
     /** @var string Block quiz start when multiple monitors are detected. */
     private const MULTI_MONITOR_BLOCK = 'block';
+    /** @var string Choose the least intrusive screen-share persistence mode for the active policy. */
+    private const SCREEN_SHARE_PERSISTENCE_AUTO = 'auto';
+    /** @var string Keep screen sharing on the main Moodle page. */
+    private const SCREEN_SHARE_PERSISTENCE_MAIN = 'main';
+    /** @var string Use the persistent helper window to keep screen sharing across page loads. */
+    private const SCREEN_SHARE_PERSISTENCE_HELPER = 'helper';
 
     /**
      * Determines whether a preflight check is required for the given attempt.
@@ -191,6 +197,57 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
 
         return self::MULTI_MONITOR_WARN;
+    }
+
+    /**
+     * Get the configured screen-share persistence mode.
+     *
+     * @return string One of the SCREEN_SHARE_PERSISTENCE_* constants.
+     */
+    private static function screen_share_persistence_mode(): string {
+        $mode = get_config('quizaccess_proctoring', 'screensharepersistencemode');
+
+        if (in_array($mode, [
+            self::SCREEN_SHARE_PERSISTENCE_AUTO,
+            self::SCREEN_SHARE_PERSISTENCE_MAIN,
+            self::SCREEN_SHARE_PERSISTENCE_HELPER,
+        ], true)) {
+            return $mode;
+        }
+
+        return self::SCREEN_SHARE_PERSISTENCE_AUTO;
+    }
+
+    /**
+     * Determine whether the persistent helper window should be used.
+     *
+     * @param string $multimonitormode Effective multi-monitor mode.
+     * @return bool True when the helper window should be used.
+     */
+    private static function should_use_persistent_screen_monitor(string $multimonitormode): bool {
+        if (self::is_mobile_or_tablet()) {
+            return false;
+        }
+
+        $mode = self::screen_share_persistence_mode();
+        if ($mode === self::SCREEN_SHARE_PERSISTENCE_HELPER) {
+            return true;
+        }
+        if ($mode === self::SCREEN_SHARE_PERSISTENCE_MAIN) {
+            return false;
+        }
+
+        return $multimonitormode !== self::MULTI_MONITOR_BLOCK;
+    }
+
+    /**
+     * Determine whether the visible screen check marker is needed.
+     *
+     * @param string $multimonitormode Effective multi-monitor mode.
+     * @return bool True when the marker should be shown and checked.
+     */
+    private static function should_require_screen_marker(string $multimonitormode): bool {
+        return $multimonitormode !== self::MULTI_MONITOR_BLOCK;
     }
 
     /**
@@ -695,6 +752,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $honorrequired = self::honor_statement_required();
         $captcharequired = $this->should_require_captcha($attemptid);
         $multimonitormode = self::multi_monitor_mode();
+        $usepersistentmonitor = self::should_use_persistent_screen_monitor($multimonitormode);
+        $screenmarkerrequired = $usepersistentmonitor || self::should_require_screen_marker($multimonitormode);
 
         // Prepare data for the JavaScript module.
         $examurl = new moodle_url('/mod/quiz/startattempt.php');
@@ -703,7 +762,6 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             'cmid' => (int)$coursedata['cmid'],
             'key' => $screenmonitorkey,
         ]);
-        $usepersistentmonitor = !self::is_mobile_or_tablet();
         $record = [
             'id' => 0,
             'courseid' => (int)$coursedata['courseid'],
@@ -719,6 +777,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             'honorrequired' => $honorrequired ? 1 : 0,
             'captcharequired' => $captcharequired ? 1 : 0,
             'multimonitormode' => $multimonitormode,
+            'screenmarkerrequired' => $screenmarkerrequired ? 1 : 0,
             'screenmonitorurl' => $usepersistentmonitor ? $screenmonitorurl->out(false) : '',
             'screenmonitorchannel' => $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '',
             'screenmonitorstatuskey' => $usepersistentmonitor ? 'quizaccess_proctoring_screen_status_' . $screenmonitorkey : '',
@@ -1330,12 +1389,14 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->faceblurhits = max(1, min(10, $faceblurhits));
             $faceblurinitialgrace = (int)(get_config('quizaccess_proctoring', 'faceblurinitialgrace') ?: 10);
             $record->faceblurinitialgrace = max(0, min(60, $faceblurinitialgrace));
+            $usepersistentmonitor = self::should_use_persistent_screen_monitor($record->multimonitormode);
+            $record->screenmarkerrequired = ($usepersistentmonitor ||
+                self::should_require_screen_marker($record->multimonitormode)) ? 1 : 0;
             $screenmonitorkey = 'cm' . (int)$cmid . 'user' . (int)$USER->id;
             $screenmonitorurl = new moodle_url('/mod/quiz/accessrule/proctoring/screenmonitor.php', [
                 'cmid' => (int)$cmid,
                 'key' => $screenmonitorkey,
             ]);
-            $usepersistentmonitor = !self::is_mobile_or_tablet();
             $record->screenmonitorurl = $usepersistentmonitor ? $screenmonitorurl->out(false) : '';
             $record->screenmonitorchannel = $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '';
             $record->screenmonitorstatuskey = $usepersistentmonitor ?

@@ -184,6 +184,14 @@ if ($hassiteconfig) {
             'block' => get_string('setting:multimonitormode_block', 'quizaccess_proctoring'),
         ]));
 
+    $settings->add(new admin_setting_configselect('quizaccess_proctoring/screensharepersistencemode',
+        get_string('setting:screensharepersistencemode', 'quizaccess_proctoring'),
+        get_string('setting:screensharepersistencemode_desc', 'quizaccess_proctoring'), 'auto', [
+            'auto' => get_string('setting:screensharepersistencemode_auto', 'quizaccess_proctoring'),
+            'main' => get_string('setting:screensharepersistencemode_main', 'quizaccess_proctoring'),
+            'helper' => get_string('setting:screensharepersistencemode_helper', 'quizaccess_proctoring'),
+        ]));
+
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/captureviolationdesktop',
         get_string('setting:captureviolationdesktop', 'quizaccess_proctoring'),
         get_string('setting:captureviolationdesktop_desc', 'quizaccess_proctoring'), 1));

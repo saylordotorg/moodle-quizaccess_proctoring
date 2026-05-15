@@ -213,6 +213,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const actionBar = $("#form_activate");
                 const faceRequired = parseInt(props.faceidcheck, 10) === 1;
                 const screenRequired = parseInt(props.requireentirescreen, 10) === 1;
+                const screenMarkerRequired = parseInt(
+                    props.screenmarkerrequired === undefined ? 1 : props.screenmarkerrequired,
+                    10
+                ) === 1;
                 const privacyRequired = parseInt(props.privacyrequired || 0, 10) === 1;
                 const honorRequired = parseInt(props.honorrequired || 0, 10) === 1;
                 const captchaRequired = parseInt(props.captcharequired || 0, 10) === 1;
@@ -684,7 +688,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 });
 
                 const initScreenMarker = function() {
-                    if (!screenRequired || document.getElementById('proctoring-screen-verification-marker')) {
+                    if (!screenRequired || !screenMarkerRequired ||
+                            document.getElementById('proctoring-screen-verification-marker')) {
                         return;
                     }
 
@@ -778,6 +783,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 };
 
                 const sharedScreenContainsMarker = function() {
+                    if (!screenMarkerRequired) {
+                        return true;
+                    }
+
                     const imageData = drawScreenFrame();
                     if (!imageData) {
                         return false;

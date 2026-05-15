@@ -12,6 +12,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'webcam', component: 'quizaccess_proctoring'},
                 {key: 'videonotavailable', component: 'quizaccess_proctoring'},
                 {key: 'desktopcaptureprompt', component: 'quizaccess_proctoring'},
+                {key: 'desktopcapturepromptnomarker', component: 'quizaccess_proctoring'},
                 {key: 'desktopcapturetitle', component: 'quizaccess_proctoring'},
                 {key: 'entirescreenrequired', component: 'quizaccess_proctoring'},
                 {key: 'modal:shareentirescreen', component: 'quizaccess_proctoring'},
@@ -40,23 +41,24 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     webcam: strings[4],
                     videonotavailable: strings[5],
                     desktopcaptureprompt: strings[6],
-                    desktopcapturetitle: strings[7],
-                    entirescreenrequired: strings[8],
-                    shareentirescreen: strings[9],
-                    screenshareaccepted: strings[10],
-                    screensharedenied: strings[11],
-                    screensharenotsupported: strings[12],
-                    screensharestopped: strings[13],
-                    screenmarkerlabel: strings[14],
-                    screenmarkerwrongmonitor: strings[15],
-                    screenmonitorwindowopened: strings[16],
-                    screenmonitorpopupblocked: strings[17],
-                    faceblurmessage: strings[18],
-                    attemptwarningmultiplemonitors: strings[19],
-                    attemptwarningquiznotinview: strings[20],
-                    attemptwarningscreensharestopped: strings[21],
-                    attemptwarningtitle: strings[22],
-                    attemptwarningwrongscreen: strings[23],
+                    desktopcapturepromptnomarker: strings[7],
+                    desktopcapturetitle: strings[8],
+                    entirescreenrequired: strings[9],
+                    shareentirescreen: strings[10],
+                    screenshareaccepted: strings[11],
+                    screensharedenied: strings[12],
+                    screensharenotsupported: strings[13],
+                    screensharestopped: strings[14],
+                    screenmarkerlabel: strings[15],
+                    screenmarkerwrongmonitor: strings[16],
+                    screenmonitorwindowopened: strings[17],
+                    screenmonitorpopupblocked: strings[18],
+                    faceblurmessage: strings[19],
+                    attemptwarningmultiplemonitors: strings[20],
+                    attemptwarningquiznotinview: strings[21],
+                    attemptwarningscreensharestopped: strings[22],
+                    attemptwarningtitle: strings[23],
+                    attemptwarningwrongscreen: strings[24],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -194,6 +196,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             const monitorActivity = parseInt(props.monitorbrowseractivity, 10) === 1;
             const blockClipboard = parseInt(props.blockclipboard, 10) === 1;
             const captureDesktop = parseInt(props.captureviolationdesktop, 10) === 1;
+            const screenMarkerRequired = parseInt(
+                props.screenmarkerrequired === undefined ? 1 : props.screenmarkerrequired,
+                10
+            ) === 1;
             const multiMonitorMode = ['log', 'warn', 'block'].includes(props.multimonitormode) ?
                 props.multimonitormode : 'off';
             const clipboardEvents = [
@@ -385,7 +391,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             };
 
             const initScreenMarker = function() {
-                if (!captureDesktop || document.getElementById('proctoring-screen-verification-marker')) {
+                if (!captureDesktop || !screenMarkerRequired ||
+                        document.getElementById('proctoring-screen-verification-marker')) {
                     return;
                 }
 
@@ -501,7 +508,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             };
 
             const sharedScreenContainsMarker = function() {
-                if (!captureDesktop || !screenVideo) {
+                if (!screenMarkerRequired || !captureDesktop || !screenVideo) {
                     return true;
                 }
 
@@ -606,6 +613,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             };
 
             const requireCorrectSharedScreen = function(reason) {
+                if (!screenMarkerRequired) {
+                    return;
+                }
+
                 logEvent('screen_marker_missing', {
                     reason: reason,
                     note: 'The shared monitor did not contain the visible Moodle quiz screen marker.'
@@ -617,7 +628,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             };
 
             const startMarkerChecks = function() {
-                if (!captureDesktop) {
+                if (!captureDesktop || !screenMarkerRequired) {
                     return;
                 }
 
@@ -721,7 +732,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         (props.screenmonitorurl ? ' style="display:none;"' : '') + '>' +
                         '<div class="proctoring-screen-share-panel">' +
                             `<h3>${strings.desktopcapturetitle}</h3>` +
-                            `<p>${strings.desktopcaptureprompt}</p>` +
+                            `<p>${screenMarkerRequired ?
+                                strings.desktopcaptureprompt : strings.desktopcapturepromptnomarker}</p>` +
                             '<div id="proctoring-screen-share-status" class="proctoring-screen-share-status"></div>' +
                             '<button id="proctoring-screen-share-button" class="btn btn-primary">' +
                                 strings.shareentirescreen +

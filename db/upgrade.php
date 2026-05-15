@@ -748,5 +748,13 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051158, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051159) {
+        if (get_config('quizaccess_proctoring', 'screensharepersistencemode') === false) {
+            set_config('screensharepersistencemode', 'auto', 'quizaccess_proctoring');
+        }
+
+        upgrade_plugin_savepoint(true, 2026051159, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
