@@ -55,20 +55,20 @@ jobs:
 
       - name: PHP lint
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci phplint ./plugin
+        run: moodle-plugin-ci phplint ./moodle/mod/quiz/accessrule/proctoring
 
       - name: Validate plugin
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci validate ./plugin
+        run: moodle-plugin-ci validate ./moodle/mod/quiz/accessrule/proctoring
 
       - name: Check upgrade savepoints
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci savepoints ./plugin
+        run: moodle-plugin-ci savepoints ./moodle/mod/quiz/accessrule/proctoring
 
       - name: Mustache lint
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci mustache ./plugin
+        run: moodle-plugin-ci mustache ./moodle/mod/quiz/accessrule/proctoring
 
       - name: PHPUnit
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci phpunit ./plugin
+        run: moodle-plugin-ci phpunit ./moodle/mod/quiz/accessrule/proctoring
