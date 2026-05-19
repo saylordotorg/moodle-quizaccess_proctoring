@@ -163,6 +163,27 @@ final class security_test extends advanced_testcase {
     }
 
     /**
+     * Capabilities that handle biometric or proctoring data should be marked as personal-data risks.
+     */
+    public function test_sensitive_capabilities_declare_personal_data_risk(): void {
+        $capabilities = [];
+        require(__DIR__ . '/../db/access.php');
+
+        foreach ([
+            'quizaccess/proctoring:sendcamshot',
+            'quizaccess/proctoring:viewreport',
+            'quizaccess/proctoring:deletecamshots',
+            'quizaccess/proctoring:analyzeimages',
+            'quizaccess/proctoring:reviewriskholds',
+        ] as $capability) {
+            $this->assertArrayHasKey($capability, $capabilities);
+            $this->assertNotEmpty($capabilities[$capability]['riskbitmask'] & RISK_PERSONAL);
+        }
+
+        $this->assertNotEmpty($capabilities['quizaccess/proctoring:deletecamshots']['riskbitmask'] & RISK_DATALOSS);
+    }
+
+    /**
      * Creates a quiz, proctoring log, and matching stored pluginfile record.
      *
      * @return array Fixture values.

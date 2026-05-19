@@ -798,5 +798,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051901, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051902) {
+        // No schema changes. Capability risk metadata updated for personal proctoring data.
+        upgrade_plugin_savepoint(true, 2026051902, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

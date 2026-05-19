@@ -34,6 +34,7 @@ defined('MOODLE_INTERNAL') || die();
 $capabilities = [
     // This allows the student or manager to send a webcam screenshot when proctoring is active.
     'quizaccess/proctoring:sendcamshot' => [
+        'riskbitmask' => RISK_PERSONAL,
         'captype' => 'write',
         'contextlevel' => CONTEXT_MODULE,
         'archetypes' => [
@@ -44,6 +45,7 @@ $capabilities = [
 
     // This capability allows teachers, editing teachers, and managers to view the proctoring report.
     'quizaccess/proctoring:viewreport' => [
+        'riskbitmask' => RISK_PERSONAL,
         'captype' => 'read',
         'contextlevel' => CONTEXT_MODULE,
         'archetypes' => [
@@ -55,7 +57,7 @@ $capabilities = [
 
     // This capability allows editing teachers and managers to delete webcam camshot.
     'quizaccess/proctoring:deletecamshots' => [
-        'riskbitmask' => RISK_DATALOSS, // Action involves potential data loss.
+        'riskbitmask' => RISK_DATALOSS | RISK_PERSONAL, // Action involves potential personal-data loss.
         'captype' => 'write',
         'contextlevel' => CONTEXT_MODULE,
         'archetypes' => [
@@ -66,6 +68,7 @@ $capabilities = [
 
     // This capability allows teachers, editing teachers, and managers to analyze the webcam camshot.
     'quizaccess/proctoring:analyzeimages' => [
+        'riskbitmask' => RISK_PERSONAL,
         'captype' => 'read',
         'contextlevel' => CONTEXT_MODULE,
         'archetypes' => [
