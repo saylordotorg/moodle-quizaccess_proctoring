@@ -11,6 +11,28 @@
     along with Moodle. If not, see <http://www.gnu.org/licenses/>.
 }}
 
+{{!
+    @template quizaccess_proctoring/proctoring_summary
+    Example context (json):
+    {
+        "summarypagedesc": "Course proctoring summary.",
+        "coursesummary": [
+            {
+                "courseshortname": "COURSE101",
+                "coursefullname": "Course 101",
+                "url_course_delete": "https://example.com/delete-course",
+                "quizsummary": [
+                    {
+                        "name": "Final Quiz",
+                        "camshotcount": 12,
+                        "url_quiz_delete": "https://example.com/delete-quiz"
+                    }
+                ]
+            }
+        ]
+    }
+}}
+
 <div class="box generalbox m-b-1 adminerror p-y-1 mb-3">
     {{summarypagedesc}}
 </div>
@@ -26,7 +48,7 @@
     <tbody>
         {{#coursesummary}}
             <tr class="proctoring-course-row">
-                <td colspan="4" class="align-middle">
+                <td colspan="3" class="align-middle">
                     <strong>{{courseshortname}}: {{coursefullname}}</strong>
                 </td>
                 <td class="align-middle">

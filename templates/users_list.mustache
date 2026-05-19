@@ -14,18 +14,17 @@
     @template quizaccess_proctoring/users_list
     Example context (json):
     {
-        'users' => array_values($users),
-        'redirecturl' => new moodle_url('/mod/quiz/accessrule/proctoring/upload_image.php'),
-        'settingsurl' => new moodle_url('/admin/settings.php?section=modsettingsquizcatproctoring'),
-        'searchvalue' => $search,
-        'action' => new moodle_url('/mod/quiz/accessrule/proctoring/userslist.php'),
-        'btnclass' => "btn-primary",
-        'inputname' => "search",
-        'searchstring' => "Search user",
-        'direction' => true/false
-        'pagination' => $pagination,
-        'perpage' => $perpage,
-         
+        "users": [],
+        "redirecturl": "https://example.com/mod/quiz/accessrule/proctoring/upload_image.php",
+        "settingsurl": "https://example.com/admin/settings.php?section=modsettingsquizcatproctoring",
+        "searchvalue": "",
+        "action": "https://example.com/mod/quiz/accessrule/proctoring/userslist.php",
+        "btnclass": "btn-primary",
+        "inputname": "search",
+        "searchstring": "Search user",
+        "direction": true,
+        "pagination": "",
+        "perpage": 25
     }
 }}
 

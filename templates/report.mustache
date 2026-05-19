@@ -11,31 +11,38 @@
 }}
 
 {{!
-    @template quizaccess_proctoring/proctoring_page
+    @template quizaccess_proctoring/report
     Example context (json):
     {
-        'quizname': 'Sample Quiz',
-        'url': 'http://example.com/search',
-        'courseid': '123',
-        'cmid': '456',
-        'searchkey': 'example@domain.com',
-        'showclearbutton': true,
-        'settingsbtn': true,
-        'settingspageurl': 'http://example.com/settings',
-        'proctoringsummary': 'Summary of proctoring details.',
-        'searchplaceholder': 'Search Placeholder Text',
-        'searchbuttontext': 'Search Button Text',
-        'clearbuttontext': 'Clear Button Text',
-        'checkrow': true,
-        'rows': [
+        "quizname": "Sample Quiz",
+        "url": "https://example.com/search",
+        "backbutton": "https://example.com/course/view.php?id=1",
+        "courseid": "123",
+        "cmid": "456",
+        "searchkey": "example@example.com",
+        "showclearbutton": true,
+        "settingsbtn": true,
+        "settingspageurl": "https://example.com/settings",
+        "proctoringsummary": "Summary of proctoring details.",
+        "searchplaceholder": "Search Placeholder Text",
+        "searchbuttontext": "Search Button Text",
+        "clearbuttontext": "Clear Button Text",
+        "checkrow": true,
+        "rows": [
             {
-                'userlink': 'http://example.com/user/1',
-                'fullname': 'John Doe',
-                'email': 'john.doe@example.com',
-                'timemodified': '2024-01-01',
-                'warningicon': true,
-                'viewurl': 'http://example.com/view',
-                'deleteurl': 'http://example.com/delete/1'
+                "userlink": "https://example.com/user/1",
+                "fullname": "John Doe",
+                "email": "john.doe@example.com",
+                "timemodified": "2024-01-01",
+                "warningicon": true,
+                "eventwarning": true,
+                "eventcount": 2,
+                "riskbadgeclass": "badge badge-warning",
+                "riskscore": 70,
+                "risklevel": "Medium",
+                "riskholdstatus": "",
+                "aireview": false,
+                "actionmenu": "<a href=\"https://example.com/view\">View</a>"
             }
         ]
     }
@@ -132,8 +139,8 @@
             {{{actionmenu}}}
         </td>
     </tr>
-    </tbody>
 {{/rows}}
+</tbody>
 </table>
 {{/checkrow}}
 
