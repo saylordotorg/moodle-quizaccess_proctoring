@@ -32,16 +32,34 @@ $courseid = required_param('courseid', PARAM_INT);
 $reportid = required_param('reportid', PARAM_INT);
 $imgid = required_param('imgid', PARAM_INT);
 
+if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    throw new moodle_exception('invalidrequest', 'error');
+}
+require_sesskey();
+
 list($course, $cm) = get_course_and_cm_from_cmid($cmid, 'quiz');
 
 require_login($course, true, $cm);
+$courseid = (int)$course->id;
+$cmid = (int)$cm->id;
 
 // Context and validation.
 $context = context_module::instance($cmid, MUST_EXIST);
 
-// Check if the user has the required capability or is a site admin.
-if (!has_capability('quizaccess/proctoring:analyzeimages', $context) && !is_siteadmin()) {
-    throw new moodle_exception('nopermission', 'error', '', null, 'You do not have permission to access this page.');
+require_capability('quizaccess/proctoring:analyzeimages', $context);
+
+$report = $DB->get_record('quizaccess_proctoring_logs', ['id' => $reportid], '*', MUST_EXIST);
+$image = $DB->get_record('quizaccess_proctoring_logs', ['id' => $imgid], '*', MUST_EXIST);
+if ((int)$report->courseid !== (int)$courseid || (int)$report->quizid !== (int)$cmid ||
+        (int)$report->userid !== (int)$studentid || (int)$image->courseid !== (int)$courseid ||
+        (int)$image->quizid !== (int)$cmid || (int)$image->userid !== (int)$studentid) {
+    throw new moodle_exception('invalidrequest', 'error');
+}
+if ((int)$report->status > 0 && (int)$image->status !== (int)$report->status) {
+    throw new moodle_exception('invalidrequest', 'error');
+}
+if ((int)$report->status <= 0 && (int)$image->id !== (int)$report->id) {
+    throw new moodle_exception('invalidrequest', 'error');
 }
 
 $fcmethod = quizaccess_proctoring_get_proctoring_settings("fcmethod");

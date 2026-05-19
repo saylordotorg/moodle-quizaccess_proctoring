@@ -98,7 +98,6 @@ if ($mform->is_cancelled()) {
 
     // For base64 to file.
     $faceimagedata = $data->face_image;
-    list(, $faceimagedata) = explode(';', $faceimagedata);
 
     // Get the face image url of admin uploaded image.
     $url = quizaccess_proctoring_geturl_of_faceimage($faceimagedata, $userid, $faceimagefile, $context, $fs);

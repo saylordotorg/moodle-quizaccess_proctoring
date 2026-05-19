@@ -55,9 +55,11 @@ require_capability('quizaccess/proctoring:viewreport', $context);
 
 list($course, $cm) = get_course_and_cm_from_cmid($cmid, 'quiz');
 require_login($course, true, $cm);
+$courseid = (int)$course->id;
+$cmid = (int)$cm->id;
 
 // Course and quiz data.
-$coursedata = $DB->get_record('course', ['id' => $courseid]);
+$coursedata = $course;
 $quiz = $DB->get_record('quiz', ['id' => $cm->instance]);
 
 // URL setup.
@@ -150,6 +152,7 @@ $PAGE->navbar->add(get_string('quizaccess_proctoring', 'quizaccess_proctoring'),
 $PAGE->requires->js_call_amd('quizaccess_proctoring/lightbox2', 'init', [$fcmethod , [
     'analyzebtn' => $analyzebtn,
     'analyzebtnconfirm' => $analyzebtnconfirm,
+    'sesskey' => sesskey(),
 ]]);
 $PAGE->requires->css('/mod/quiz/accessrule/proctoring/styles.css');
 // Add navbar for studnet report.
@@ -161,60 +164,66 @@ if ($studentid != null && $cmid != null && $courseid != null && $reportid != nul
 $settingsbtn = has_capability('quizaccess/proctoring:viewreport', $context, $USER->id);
 $showclearbutton = ($submittype === 'Search' && !empty($searchkey));
 
-if (has_capability('quizaccess/proctoring:deletecamshots', $context, $USER->id) && $studentid != null
-    && $cmid != null && $courseid != null && $reportid != null&& !empty($logaction)) {
+if (!empty($logaction)) {
+    if ($logaction !== 'delete' || $studentid === null || $reportid === null) {
+        throw new moodle_exception('invalidrequest', 'error');
+    }
 
-        $DB->delete_records('quizaccess_proctoring_logs', [
-            'courseid' => $courseid,
-            'quizid' => $cmid,
-            'userid' => $studentid,
-        ]);
-        $DB->delete_records('quizaccess_proctoring_fm_warnings', [
-            'courseid' => $courseid,
-            'quizid' => $cmid,
-            'userid' => $studentid,
-        ]);
-        $DB->delete_records('quizaccess_proctoring_events', [
-            'courseid' => $courseid,
-            'quizid' => $cmid,
-            'userid' => $studentid,
-        ]);
-        $DB->delete_records('quizaccess_proctoring_ai_reviews', [
-            'courseid' => $courseid,
-            'quizid' => $cmid,
-            'userid' => $studentid,
-        ]);
-        $fs = get_file_storage();
-        foreach (['picture', 'violation_screenshot'] as $filearea) {
-            $params = [
-                'userid' => $studentid,
-                'contextid' => $context->id,
-                'component' => 'quizaccess_proctoring',
-                'filearea'  => $filearea,
-            ];
+    require_capability('quizaccess/proctoring:deletecamshots', $context);
 
-            $usersfile = $DB->get_records('files', $params);
-            foreach ($usersfile as $file) {
-                $fileinfo = [
-                    'component' => 'quizaccess_proctoring',
-                    'filearea' => $filearea,
-                    'itemid' => $file->itemid,
-                    'contextid' => $context->id,
-                    'filepath' => '/',
-                    'filename' => $file->filename,
-                ];
-                $storedfile = $fs->get_file($fileinfo['contextid'], $fileinfo['component'], $fileinfo['filearea'],
-                            $fileinfo['itemid'], $fileinfo['filepath'], $fileinfo['filename']);
-                if ($storedfile) {
-                    $storedfile->delete();
-                }
-            }
+    if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        throw new moodle_exception('invalidrequest', 'error');
+    }
+    require_sesskey();
+
+    $report = $DB->get_record('quizaccess_proctoring_logs', ['id' => $reportid], '*', MUST_EXIST);
+    if ((int)$report->courseid !== (int)$courseid || (int)$report->quizid !== (int)$cmid ||
+            (int)$report->userid !== (int)$studentid) {
+        throw new moodle_exception('invalidrequest', 'error');
+    }
+
+    $deletewhere = 'courseid = :courseid AND quizid = :cmid AND userid = :studentid';
+    $deleteparams = [
+        'courseid' => $courseid,
+        'cmid' => $cmid,
+        'studentid' => $studentid,
+    ];
+    if ((int)$report->status > 0) {
+        $deletewhere .= ' AND status = :attemptid';
+        $deleteparams['attemptid'] = (int)$report->status;
+    } else {
+        $deletewhere .= ' AND id = :reportid';
+        $deleteparams['reportid'] = (int)$reportid;
+    }
+
+    $logids = $DB->get_fieldset_select('quizaccess_proctoring_logs', 'id', $deletewhere, $deleteparams);
+    if (!empty($logids)) {
+        $logs = $DB->get_records_list('quizaccess_proctoring_logs', 'id', $logids, '', 'id, webcampicture');
+        foreach ($logs as $log) {
+            quizaccess_proctoring_delete_pluginfile_url((string)$log->webcampicture);
         }
 
-        redirect(new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
-            'courseid' => $courseid,
-            'cmid' => $cmid,
-        ]), 'Images deleted!', -11);
+        $events = $DB->get_records_list('quizaccess_proctoring_events', 'reportid', $logids, '', 'id, screenshoturl');
+        foreach ($events as $event) {
+            quizaccess_proctoring_delete_pluginfile_url((string)$event->screenshoturl);
+        }
+
+        $faceimages = $DB->get_records_list('quizaccess_proctoring_face_images', 'parentid', $logids, '', 'id, faceimage');
+        foreach ($faceimages as $faceimage) {
+            quizaccess_proctoring_delete_pluginfile_url((string)$faceimage->faceimage);
+        }
+
+        $DB->delete_records_list('quizaccess_proctoring_fm_warnings', 'reportid', $logids);
+        $DB->delete_records_list('quizaccess_proctoring_events', 'reportid', $logids);
+        $DB->delete_records_list('quizaccess_proctoring_ai_reviews', 'reportid', $logids);
+        $DB->delete_records_list('quizaccess_proctoring_face_images', 'parentid', $logids);
+        $DB->delete_records_list('quizaccess_proctoring_logs', 'id', $logids);
+    }
+
+    redirect(new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
+        'courseid' => $courseid,
+        'cmid' => $cmid,
+    ]), get_string('settings:deleteallsuccess', 'quizaccess_proctoring'), -11);
 }
 
 if ($riskaction === 'release' && $holdid > 0) {
@@ -478,39 +487,44 @@ if (
             );
             $actionmenu->add($viewaction);
 
-            $deleteurl = new moodle_url($PAGE->url, [
-                'courseid' => $courseid,
-                'quizid' => $cmid,
-                'cmid' => $cmid,
-                'studentid' => $info->studentid,
-                'reportid' => $info->reportid,
-                'logaction' => 'delete',
-                'sesskey' => sesskey(),
-            ]);
-
-            // Prepare attributes for the delete action.
-            $attributes = [
-                'data-confirmation' => 'modal',
-                'data-confirmation-type' => 'delete',
-                'data-confirmation-title-str' => json_encode(['delete', 'core']),
-                'data-confirmation-content-str' => json_encode(['areyousure_delete_record', 'quizaccess_proctoring']),
-                'data-confirmation-yes-button-str' => json_encode(['delete', 'core']),
-                'data-confirmation-action-url' => $deleteurl->out(false),
-                'data-confirmation-destination' => $deleteurl->out(false),
-                'class' => 'text-danger',
-            ];
-
-            $deleteaction = new action_menu_link_secondary(
-                $deleteurl,
-                new pix_icon('t/delete', '', 'moodle'),
-                get_string('delete'),
-                $attributes
-            );
-
-            $actionmenu->add($deleteaction);
+            $deleteform = '';
+            if (has_capability('quizaccess/proctoring:deletecamshots', $context, $USER->id)) {
+                $deleteurl = new moodle_url('/mod/quiz/accessrule/proctoring/report.php');
+                $deleteparams = [
+                    'courseid' => $courseid,
+                    'cmid' => $cmid,
+                    'studentid' => $info->studentid,
+                    'reportid' => $info->reportid,
+                    'logaction' => 'delete',
+                    'sesskey' => sesskey(),
+                ];
+                $deleteform = html_writer::start_tag('form', [
+                    'method' => 'post',
+                    'action' => $deleteurl->out(false),
+                    'class' => 'd-inline ml-2',
+                ]);
+                foreach ($deleteparams as $name => $value) {
+                    $deleteform .= html_writer::empty_tag('input', [
+                        'type' => 'hidden',
+                        'name' => $name,
+                        'value' => $value,
+                    ]);
+                }
+                $deleteform .= html_writer::tag(
+                    'button',
+                    $OUTPUT->pix_icon('t/delete', '') . ' ' . get_string('delete'),
+                    [
+                        'type' => 'submit',
+                        'class' => 'btn btn-link text-danger p-0',
+                        'onclick' => 'return confirm(' . json_encode(get_string('areyousure_delete_record',
+                            'quizaccess_proctoring')) . ');',
+                    ]
+                );
+                $deleteform .= html_writer::end_tag('form');
+            }
 
             // Add rendered HTML to template context.
-            $row['actionmenu'] = $OUTPUT->render($actionmenu);
+            $row['actionmenu'] = $OUTPUT->render($actionmenu) . $deleteform;
             $rows[] = $row;
     }
     $templatecontext = (object)[
@@ -798,9 +812,7 @@ if (
             ),
         ];
 
-        $analyzeparam = ['studentid' => $studentid, 'cmid' => $cmid, 'courseid' => $courseid, 'reportid' => $reportid];
-        $analyzeurl = new moodle_url('/mod/quiz/accessrule/proctoring/analyzeimage.php', $analyzeparam);
-        $analyzeurl = preg_replace('/&amp;/', '&', $analyzeurl);
+        $analyzeurl = new moodle_url('/mod/quiz/accessrule/proctoring/analyzeimage.php');
         $userimageurl = quizaccess_proctoring_get_image_url($user->id);
         if (!$userimageurl) {
             $userimageurl = $OUTPUT->image_url('u/f2');
@@ -814,7 +826,12 @@ if (
             'lastname' => $info->lastname,
             'email' => $info->email,
             'fcmethod' => quizaccess_proctoring_is_facematch_method_enabled($fcmethod),
-            'analyzeurl' => $analyzeurl,
+            'analyzeurl' => $analyzeurl->out(false),
+            'analyzecourseid' => $courseid,
+            'analyzecmid' => $cmid,
+            'analyzestudentid' => $studentid,
+            'analyzereportid' => $reportid,
+            'sesskey' => sesskey(),
             'riskscore' => $riskscore,
             'aireview' => $aireviewdata,
             'overviewrows' => $overviewrows,

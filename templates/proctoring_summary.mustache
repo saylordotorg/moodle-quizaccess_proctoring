@@ -30,16 +30,11 @@
                     <strong>{{courseshortname}}: {{coursefullname}}</strong>
                 </td>
                 <td class="align-middle">
-                    <button class="btn btn-danger"
-                            data-confirmation="modal"
-                            data-confirmation-type="delete"
-                            data-confirmation-title-str='["delete", "core"]'
-                            data-confirmation-content-str='["confirmdeletioncourse", "quizaccess_proctoring"]'
-                            data-confirmation-yes-button-str='["delete", "core"]'
-                            data-confirmation-action-url="{{url_course_delete}}"
-                            data-confirmation-destination="{{url_course_delete}}">
-                        <i class="fa fa-trash fa-fw"></i> {{#str}}deleteallcourse, quizaccess_proctoring{{/str}}
-                    </button>
+                    <form method="post" action="{{url_course_delete}}" class="d-inline">
+                        <button class="btn btn-danger" type="submit">
+                            <i class="fa fa-trash fa-fw"></i> {{#str}}deleteallcourse, quizaccess_proctoring{{/str}}
+                        </button>
+                    </form>
                 </td>
             </tr>
 
@@ -49,20 +44,14 @@
                     <td class="align-middle">{{name}}</td>
                     <td class="align-middle">{{camshotcount}}</td>
                     <td class="align-middle">
-                        <button class="btn btn-danger"
-                                data-confirmation="modal"
-                                data-confirmation-type="delete"
-                                data-confirmation-title-str='["delete", "core"]'
-                                data-confirmation-content-str='["confirmdeletionquiz", "quizaccess_proctoring"]'
-                                data-confirmation-yes-button-str='["delete", "core"]'
-                                data-confirmation-action-url="{{url_quiz_delete}}"
-                                data-confirmation-destination="{{url_quiz_delete}}">
-                            <i class="fa fa-trash fa-fw"></i> {{#str}}deletequizdata, quizaccess_proctoring{{/str}}
-                        </button>
+                        <form method="post" action="{{url_quiz_delete}}" class="d-inline">
+                            <button class="btn btn-danger" type="submit">
+                                <i class="fa fa-trash fa-fw"></i> {{#str}}deletequizdata, quizaccess_proctoring{{/str}}
+                            </button>
+                        </form>
                     </td>
                 </tr>
             {{/quizsummary}}
         {{/coursesummary}}
     </tbody>
 </table>
-

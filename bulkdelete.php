@@ -27,31 +27,23 @@ require_once($CFG->dirroot . '/lib/tablelib.php');
 require_once(__DIR__ . '/classes/additional_settings_helper.php');
 use quizaccess_proctoring\additional_settings_helper;
 
-require_login();
-
 // Get parameters.
 $cmid = required_param('cmid', PARAM_INT);
-$type = required_param('type', PARAM_TEXT);
+$type = required_param('type', PARAM_ALPHA);
 $id = required_param('id', PARAM_INT);
-$sesskey = required_param('sesskey', PARAM_ALPHANUM);
-if (!confirm_sesskey($sesskey)) {
-    throw new moodle_exception('invalidsesskey', 'quizaccess_proctoring');
+
+if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    throw new moodle_exception('invalidrequest', 'error');
 }
+require_sesskey();
+
+list($course, $cm) = get_course_and_cm_from_cmid($cmid, 'quiz');
+require_login($course, true, $cm);
 
 // Make sure debugging is not interfering with redirection.
 $context = context_module::instance($cmid, MUST_EXIST);
 // Ensure the user has the required capability to delete camshots.
-if (!has_capability('quizaccess/proctoring:deletecamshots', $context)) {
-    // Show a notification and redirect back to the previous page (or a specific page).
-    $url = new moodle_url('/mod/quiz/view.php', ['id' => $cmid]);  // Redirects to the quiz page.
-    $message = get_string('nopermission', 'quizaccess_proctoring');  // You can create a string in lang file for 'nopermission'.
-
-    // Show the notification.
-    \core\notification::error($message);
-
-    // Redirect with the notification.
-    redirect($url);
-}
+require_capability('quizaccess/proctoring:deletecamshots', $context);
 
 $params = [
     'cmid' => $cmid,
@@ -63,21 +55,43 @@ $params = [
 if ($type == 'course' || $type == 'quiz') {
 
     $helper = new additional_settings_helper();
+    $rowids = [];
 
     if ($type == 'course') {
-        $camshotdata = $helper->searchbycourseid($id);
+        if ((int)$id !== (int)$course->id) {
+            throw new moodle_exception('invalidrequest', 'error');
+        }
+
+        $camshotdata = $helper->searchbycourseid((int)$course->id);
+        $targetcmids = [];
+        foreach ($camshotdata as $row) {
+            $rowids[] = $row->id;
+            $targetcmids[(int)$row->quizid] = (int)$row->quizid;
+        }
+        $camshotdata->close();
+
+        foreach ($targetcmids as $targetcmid) {
+            $targetcontext = context_module::instance($targetcmid, MUST_EXIST);
+            require_capability('quizaccess/proctoring:deletecamshots', $targetcontext);
+        }
     } else if ($type == 'quiz') {
-        $camshotdata = $helper->searchbyquizid($id);
+        list($targetcourse, $targetcm) = get_course_and_cm_from_cmid($id, 'quiz');
+        if ((int)$targetcourse->id !== (int)$course->id) {
+            throw new moodle_exception('invalidrequest', 'error');
+        }
+
+        $targetcontext = context_module::instance($targetcm->id, MUST_EXIST);
+        require_capability('quizaccess/proctoring:deletecamshots', $targetcontext);
+
+        $camshotdata = $helper->searchbyquizid((int)$targetcm->id);
+        foreach ($camshotdata as $row) {
+            $rowids[] = $row->id;
+        }
+        $camshotdata->close();
     }
 
-    if (empty($camshotdata)) {
-        // If no data is found, show an error message.
+    if (empty($rowids)) {
         throw new moodle_exception('nodata', 'quizaccess_proctoring');
-    }
-
-    $rowids = [];
-    foreach ($camshotdata as $row) {
-        array_push($rowids, $row->id);
     }
 
     $rowidstring = implode(',', $rowids);

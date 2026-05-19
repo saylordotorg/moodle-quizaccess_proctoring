@@ -220,7 +220,18 @@
                     </tr>
                     {{#fcmethod}}
                      <tr>
-                        <td class = "text-center"><a href="{{analyzeurl}}" class="btn btn-primary text-center">{{#str}}analyzimage, quizaccess_proctoring{{/str}}</a></td>
+                        <td class = "text-center">
+                            <form method="post" action="{{analyzeurl}}" class="d-inline">
+                                <input type="hidden" name="courseid" value="{{analyzecourseid}}">
+                                <input type="hidden" name="cmid" value="{{analyzecmid}}">
+                                <input type="hidden" name="studentid" value="{{analyzestudentid}}">
+                                <input type="hidden" name="reportid" value="{{analyzereportid}}">
+                                <input type="hidden" name="sesskey" value="{{sesskey}}">
+                                <button type="submit" class="btn btn-primary text-center">
+                                    {{#str}}analyzimage, quizaccess_proctoring{{/str}}
+                                </button>
+                            </form>
+                        </td>
                     </tr>
                     {{/fcmethod}}
                 </tbody>

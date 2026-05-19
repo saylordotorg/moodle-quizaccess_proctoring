@@ -756,5 +756,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051159, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051900) {
+        // No schema changes. Stable v1.0.0 release with P0/P1 security hardening.
+        upgrade_plugin_savepoint(true, 2026051900, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

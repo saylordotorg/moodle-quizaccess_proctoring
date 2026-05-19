@@ -71,7 +71,7 @@ class provider implements
             'courseid' => 'privacy:metadata:courseid',
             'quizid' => 'privacy:metadata:quizid',
             'userid' => 'privacy:metadata:userid',
-            'attemptid' => 'privacy:metadata:status',
+            'attemptid' => 'privacy:metadata:attemptid',
             'reportid' => 'privacy:metadata:reportid',
             'eventtype' => 'privacy:metadata:eventtype',
             'eventdetail' => 'privacy:metadata:eventdetail',
@@ -133,6 +133,30 @@ class provider implements
             'quizaccess_proctoring_ai_reviews',
             $quizaccessproctoringaireviews,
             'privacy:metadata:quizaccess_proctoring_ai_reviews'
+        );
+
+        $quizaccessproctoringuserimages = [
+            'user_id' => 'privacy:metadata:userid',
+            'photo_draft_id' => 'privacy:metadata:photo_draft_id',
+        ];
+
+        $collection->add_database_table(
+            'quizaccess_proctoring_user_images',
+            $quizaccessproctoringuserimages,
+            'privacy:metadata:quizaccess_proctoring_user_images'
+        );
+
+        $quizaccessproctoringfaceimages = [
+            'parent_type' => 'privacy:metadata:parent_type',
+            'parentid' => 'privacy:metadata:parentid',
+            'faceimage' => 'privacy:metadata:faceimage',
+            'facefound' => 'privacy:metadata:facefound',
+        ];
+
+        $collection->add_database_table(
+            'quizaccess_proctoring_face_images',
+            $quizaccessproctoringfaceimages,
+            'privacy:metadata:quizaccess_proctoring_face_images'
         );
 
         $collection->add_external_location_link(
@@ -204,12 +228,36 @@ class provider implements
                  WHERE qpar.userid = :userid
               GROUP BY c.id";
         $contextlist->add_from_sql($sql, $params);
+
+        $systemparams = [
+            'systemcontext' => CONTEXT_SYSTEM,
+            'userid' => $userid,
+        ];
+        $sql = "SELECT DISTINCT c.id
+                  FROM {context} c
+                  JOIN {quizaccess_proctoring_user_images} qui ON qui.user_id = :userid
+                 WHERE c.contextlevel = :systemcontext";
+        $contextlist->add_from_sql($sql, $systemparams);
+
         $fileparams = ['component' => 'quizaccess_proctoring', 'userid' => $userid];
 
         $sqlfile = "SELECT DISTINCT contextid as id
                     FROM {files}
                     WHERE component = :component
                     AND userid= :userid";
+        $contextlist->add_from_sql($sqlfile, $fileparams);
+
+        $fileparams = [
+            'component' => 'quizaccess_proctoring',
+            'userid' => $userid,
+            'userphoto' => 'user_photo',
+            'faceimage' => 'face_image',
+        ];
+        $sqlfile = "SELECT DISTINCT contextid AS id
+                      FROM {files}
+                     WHERE component = :component
+                       AND filearea IN (:userphoto, :faceimage)
+                       AND itemid = :userid";
         $contextlist->add_from_sql($sqlfile, $fileparams);
         return $contextlist;
     }
@@ -221,6 +269,30 @@ class provider implements
      */
     public static function get_users_in_context(userlist $userlist) {
         $context = $userlist->get_context();
+
+        if ($context->contextlevel === CONTEXT_SYSTEM) {
+            $sql = "SELECT DISTINCT qui.user_id AS userid
+                      FROM {quizaccess_proctoring_user_images} qui";
+            $userlist->add_from_sql('userid', $sql, []);
+
+            $sql = "SELECT DISTINCT f.itemid AS userid
+                      FROM {files} f
+                     WHERE f.contextid = :contextid
+                       AND f.component = :component
+                       AND f.filearea IN (:userphoto, :faceimage)
+                       AND f.itemid > 0";
+            $userlist->add_from_sql('userid', $sql, [
+                'contextid' => $context->id,
+                'component' => 'quizaccess_proctoring',
+                'userphoto' => 'user_photo',
+                'faceimage' => 'face_image',
+            ]);
+            return;
+        }
+
+        if ($context->contextlevel !== CONTEXT_MODULE) {
+            return;
+        }
 
         // The data is associated at the quiz module context level, so retrieve the user's context id.
         $sql = "SELECT DISTINCT qpl.userid AS userid
@@ -316,6 +388,42 @@ class provider implements
                             ->export_data($subcontext, $data);
                     }
 
+                }
+
+                $logids = array_map('intval', array_keys($qaplogs));
+                if ($logids) {
+                    list($loginsql, $loginparams) = $DB->get_in_or_equal($logids, SQL_PARAMS_NAMED, 'logid');
+                    $faceparams = $loginparams;
+                    $faceparams['adminparent'] = 'admin_image';
+                    $faceimages = $DB->get_records_select(
+                        'quizaccess_proctoring_face_images',
+                        "parentid {$loginsql} AND parent_type <> :adminparent",
+                        $faceparams,
+                        '',
+                        'id, parent_type, parentid, faceimage, facefound'
+                    );
+
+                    $index = 0;
+                    foreach ($faceimages as $faceimage) {
+                        $index++;
+                        $subcontext = [
+                            get_string('quizaccess_proctoring', 'quizaccess_proctoring'),
+                            'proctoring_face_images',
+                            $index,
+                        ];
+
+                        $data = (object)[
+                            'id' => $faceimage->id,
+                            'parent_type' => $faceimage->parent_type,
+                            'parentid' => $faceimage->parentid,
+                            'faceimage' => $faceimage->faceimage,
+                            'facefound' => $faceimage->facefound,
+                        ];
+
+                        writer::with_context($context)
+                            ->export_area_files($subcontext, 'quizaccess_proctoring', 'face_image', $faceimage->parentid)
+                            ->export_data($subcontext, $data);
+                    }
                 }
 
                 $eventfields = 'id, courseid, quizid, userid, attemptid, reportid, eventtype, eventdetail, ' .
@@ -448,6 +556,58 @@ class provider implements
 
                     writer::with_context($context)->export_data($subcontext, $data);
                 }
+            } else if ($context->contextlevel === CONTEXT_SYSTEM) {
+                $userid = $contextlist->get_user()->id;
+                $userimage = $DB->get_record(
+                    'quizaccess_proctoring_user_images',
+                    ['user_id' => $userid],
+                    'id, user_id, photo_draft_id'
+                );
+                if ($userimage) {
+                    $subcontext = [
+                        get_string('quizaccess_proctoring', 'quizaccess_proctoring'),
+                        'proctoring_reference_image',
+                    ];
+                    $data = (object)[
+                        'id' => $userimage->id,
+                        'user_id' => $userimage->user_id,
+                        'photo_draft_id' => $userimage->photo_draft_id,
+                    ];
+
+                    writer::with_context($context)
+                        ->export_area_files($subcontext, 'quizaccess_proctoring', 'user_photo', $userid)
+                        ->export_area_files($subcontext, 'quizaccess_proctoring', 'face_image', $userid)
+                        ->export_data($subcontext, $data);
+
+                    $faceimages = $DB->get_records(
+                        'quizaccess_proctoring_face_images',
+                        [
+                            'parentid' => $userimage->id,
+                            'parent_type' => 'admin_image',
+                        ],
+                        '',
+                        'id, parent_type, parentid, faceimage, facefound'
+                    );
+
+                    $index = 0;
+                    foreach ($faceimages as $faceimage) {
+                        $index++;
+                        $subcontext = [
+                            get_string('quizaccess_proctoring', 'quizaccess_proctoring'),
+                            'proctoring_reference_face_image',
+                            $index,
+                        ];
+                        $data = (object)[
+                            'id' => $faceimage->id,
+                            'parent_type' => $faceimage->parent_type,
+                            'parentid' => $faceimage->parentid,
+                            'faceimage' => $faceimage->faceimage,
+                            'facefound' => $faceimage->facefound,
+                        ];
+
+                        writer::with_context($context)->export_data($subcontext, $data);
+                    }
+                }
             }
         }
     }
@@ -464,18 +624,32 @@ class provider implements
         // Sanity check that context is at the module context level.
         if ($context->contextlevel === CONTEXT_MODULE) {
             $cmid = $context->instanceid;
+            $logids = $DB->get_fieldset_select(
+                'quizaccess_proctoring_logs',
+                'id',
+                'quizid = :cmid',
+                ['cmid' => $cmid]
+            );
+            self::delete_face_image_records_for_logids($logids);
 
             $DB->set_field_select('quizaccess_proctoring_logs', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
             $DB->set_field_select('quizaccess_proctoring_events', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
             $DB->set_field_select('quizaccess_proctoring_risk_holds', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
             $DB->set_field_select('quizaccess_proctoring_risk_holds', 'reviewerid', 0, "quizid = :cmid", ['cmid' => $cmid]);
             $DB->set_field_select('quizaccess_proctoring_ai_reviews', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
-        }
 
-        // Delete all of the webcam images for this user.
-        $fs = get_file_storage();
-        $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'picture');
-        $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'violation_screenshot');
+            $fs = get_file_storage();
+            $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'picture');
+            $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'face_image');
+            $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'violation_screenshot');
+        } else if ($context->contextlevel === CONTEXT_SYSTEM) {
+            $DB->delete_records('quizaccess_proctoring_face_images', ['parent_type' => 'admin_image']);
+            $DB->delete_records('quizaccess_proctoring_user_images');
+
+            $fs = get_file_storage();
+            $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'user_photo');
+            $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'face_image');
+        }
     }
 
     /**
@@ -485,50 +659,19 @@ class provider implements
      * @throws dml_exception
      */
     public static function delete_data_for_users(approved_userlist $userlist) {
-        global $DB;
         $context = $userlist->get_context();
+        $userids = $userlist->get_userids();
 
-        // Sanity check that context is at the Module context level.
+        if ($context->contextlevel === CONTEXT_SYSTEM) {
+            self::delete_reference_image_data_for_userids($userids);
+            return;
+        }
+
         if ($context->contextlevel !== CONTEXT_MODULE) {
             return;
         }
 
-        $userids = $userlist->get_userids();
-        list($insql, $inparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED);
-
-        // Anonymize quizaccess_proctoring_logs entries.
-        $DB->set_field_select('quizaccess_proctoring_logs', 'userid', 0, "userid {$insql}", $inparams);
-        $DB->set_field_select('quizaccess_proctoring_events', 'userid', 0, "userid {$insql}", $inparams);
-        $DB->set_field_select('quizaccess_proctoring_risk_holds', 'userid', 0, "userid {$insql}", $inparams);
-        $DB->set_field_select('quizaccess_proctoring_risk_holds', 'reviewerid', 0, "reviewerid {$insql}", $inparams);
-        $DB->set_field_select('quizaccess_proctoring_ai_reviews', 'userid', 0, "userid {$insql}", $inparams);
-
-        // Delete users' webcam images using Moodle File API.
-        $fs = get_file_storage();
-
-        foreach (['picture', 'violation_screenshot'] as $filearea) {
-            $params = array_merge([
-                'contextid' => $context->id,
-                'component' => 'quizaccess_proctoring',
-                'filearea' => $filearea,
-            ], $inparams);
-
-            $sql = "SELECT *
-                      FROM {files}
-                     WHERE contextid = :contextid
-                       AND component = :component
-                       AND filearea = :filearea
-                       AND userid {$insql}";
-
-            $files = $DB->get_records_sql($sql, $params);
-
-            foreach ($files as $file) {
-                $storedfile = $fs->get_file_instance($file);
-                if ($storedfile) {
-                    $storedfile->delete();
-                }
-            }
-        }
+        self::delete_module_data_for_userids($context, $userids);
     }
 
     /**
@@ -538,28 +681,189 @@ class provider implements
      * @throws dml_exception If there is an issue with the database operation.
      */
     public static function delete_data_for_user(approved_contextlist $contextlist) {
-        global $DB;
-
-        // If the user has data, then only the User context should be present so get the first context.
         $contexts = $contextlist->get_contexts();
         if (count($contexts) == 0) {
             return;
         }
 
-        $params['userid'] = $contextlist->get_user()->id;
-        $DB->set_field_select('quizaccess_proctoring_logs', 'userid', 0, "userid = :userid", $params);
-        $DB->set_field_select('quizaccess_proctoring_events', 'userid', 0, "userid = :userid", $params);
-        $DB->set_field_select('quizaccess_proctoring_risk_holds', 'userid', 0, "userid = :userid", $params);
-        $DB->set_field_select('quizaccess_proctoring_risk_holds', 'reviewerid', 0, "reviewerid = :userid", $params);
-        $DB->set_field_select('quizaccess_proctoring_ai_reviews', 'userid', 0, "userid = :userid", $params);
-        foreach ($contextlist as $context) {
-            // Delete user files.
-            $userfiles = $DB->get_records('files', $params);
-            $fs = get_file_storage();
-            foreach ($userfiles as $file):
-                $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'picture', $file->itemid);
-                $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'violation_screenshot', $file->itemid);
-            endforeach;
+        $userid = $contextlist->get_user()->id;
+        foreach ($contexts as $context) {
+            if ($context->contextlevel === CONTEXT_MODULE) {
+                self::delete_module_data_for_userids($context, [$userid]);
+            } else if ($context->contextlevel === CONTEXT_SYSTEM) {
+                self::delete_reference_image_data_for_userids([$userid]);
+            }
+        }
+    }
+
+    /**
+     * Anonymizes module records and deletes user-owned proctoring files for selected users.
+     *
+     * @param context $context Module context.
+     * @param array $userids User IDs.
+     */
+    private static function delete_module_data_for_userids(context $context, array $userids): void {
+        global $DB;
+
+        $userids = array_values(array_filter(array_map('intval', $userids)));
+        if (!$userids || $context->contextlevel !== CONTEXT_MODULE) {
+            return;
+        }
+
+        $cmid = $context->instanceid;
+        list($insql, $inparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'userid');
+        $params = array_merge(['cmid' => $cmid], $inparams);
+
+        $logids = $DB->get_fieldset_select(
+            'quizaccess_proctoring_logs',
+            'id',
+            "quizid = :cmid AND userid {$insql}",
+            $params
+        );
+        self::delete_face_image_records_for_logids($logids);
+
+        $DB->set_field_select('quizaccess_proctoring_logs', 'userid', 0, "quizid = :cmid AND userid {$insql}", $params);
+        $DB->set_field_select('quizaccess_proctoring_events', 'userid', 0, "quizid = :cmid AND userid {$insql}", $params);
+        $DB->set_field_select(
+            'quizaccess_proctoring_risk_holds',
+            'userid',
+            0,
+            "quizid = :cmid AND userid {$insql}",
+            $params
+        );
+        $DB->set_field_select(
+            'quizaccess_proctoring_risk_holds',
+            'reviewerid',
+            0,
+            "quizid = :cmid AND reviewerid {$insql}",
+            $params
+        );
+        $DB->set_field_select(
+            'quizaccess_proctoring_ai_reviews',
+            'userid',
+            0,
+            "quizid = :cmid AND userid {$insql}",
+            $params
+        );
+
+        self::delete_files_for_userids($context, $userids, ['picture', 'face_image', 'violation_screenshot']);
+    }
+
+    /**
+     * Deletes face-image database rows for module webcam log records.
+     *
+     * @param array $logids Proctoring log IDs.
+     */
+    private static function delete_face_image_records_for_logids(array $logids): void {
+        global $DB;
+
+        $logids = array_values(array_filter(array_map('intval', $logids)));
+        if (!$logids) {
+            return;
+        }
+
+        list($insql, $inparams) = $DB->get_in_or_equal($logids, SQL_PARAMS_NAMED, 'logid');
+        $params = array_merge($inparams, ['adminparent' => 'admin_image']);
+        $DB->delete_records_select(
+            'quizaccess_proctoring_face_images',
+            "parentid {$insql} AND parent_type <> :adminparent",
+            $params
+        );
+    }
+
+    /**
+     * Deletes stored files for selected users from selected file areas.
+     *
+     * @param context $context File context.
+     * @param array $userids User IDs.
+     * @param array $fileareas File areas.
+     */
+    private static function delete_files_for_userids(context $context, array $userids, array $fileareas): void {
+        global $DB;
+
+        $userids = array_values(array_filter(array_map('intval', $userids)));
+        if (!$userids || !$fileareas) {
+            return;
+        }
+
+        list($userinsql, $userparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'userid');
+        list($areainsql, $areaparams) = $DB->get_in_or_equal($fileareas, SQL_PARAMS_NAMED, 'filearea');
+        $params = array_merge([
+            'contextid' => $context->id,
+            'component' => 'quizaccess_proctoring',
+        ], $userparams, $areaparams);
+
+        $sql = "SELECT *
+                  FROM {files}
+                 WHERE contextid = :contextid
+                   AND component = :component
+                   AND filearea {$areainsql}
+                   AND userid {$userinsql}";
+
+        $fs = get_file_storage();
+        $files = $DB->get_records_sql($sql, $params);
+        foreach ($files as $file) {
+            $storedfile = $fs->get_file_instance($file);
+            if ($storedfile) {
+                $storedfile->delete();
+            }
+        }
+    }
+
+    /**
+     * Deletes system-context reference images and related face crops for selected users.
+     *
+     * @param array $userids User IDs.
+     */
+    private static function delete_reference_image_data_for_userids(array $userids): void {
+        global $DB;
+
+        $userids = array_values(array_filter(array_map('intval', $userids)));
+        if (!$userids) {
+            return;
+        }
+
+        list($userinsql, $userparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'userid');
+        $parentids = $DB->get_fieldset_select(
+            'quizaccess_proctoring_user_images',
+            'id',
+            "user_id {$userinsql}",
+            $userparams
+        );
+        if ($parentids) {
+            list($parentinsql, $parentparams) = $DB->get_in_or_equal($parentids, SQL_PARAMS_NAMED, 'parentid');
+            $params = array_merge($parentparams, ['adminparent' => 'admin_image']);
+            $DB->delete_records_select(
+                'quizaccess_proctoring_face_images',
+                "parentid {$parentinsql} AND parent_type = :adminparent",
+                $params
+            );
+        }
+        $DB->delete_records_select('quizaccess_proctoring_user_images', "user_id {$userinsql}", $userparams);
+
+        $context = \context_system::instance();
+        list($iteminsql, $itemparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'itemid');
+        $params = array_merge([
+            'contextid' => $context->id,
+            'component' => 'quizaccess_proctoring',
+            'userphoto' => 'user_photo',
+            'faceimage' => 'face_image',
+        ], $itemparams);
+
+        $sql = "SELECT *
+                  FROM {files}
+                 WHERE contextid = :contextid
+                   AND component = :component
+                   AND filearea IN (:userphoto, :faceimage)
+                   AND itemid {$iteminsql}";
+
+        $fs = get_file_storage();
+        $files = $DB->get_records_sql($sql, $params);
+        foreach ($files as $file) {
+            $storedfile = $fs->get_file_instance($file);
+            if ($storedfile) {
+                $storedfile->delete();
+            }
         }
     }
 

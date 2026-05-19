@@ -218,14 +218,31 @@ define(['jquery'],
                                 var url_string = window.location.href
                                 var url = new URL(url_string);
                                 var cCourseId = url.searchParams.get("courseid");
-                                var cQuizId = url.searchParams.get("quizid");
                                 var cCmId = url.searchParams.get("cmid");
                                 var cStudentId = url.searchParams.get("studentid");
                                 var cReportId = url.searchParams.get("reportid");
                                 var rootUrl = url_string.split("report.php");
 
-                                var newUrl = rootUrl[0]+"analyzesingleimage.php?courseid="+cCourseId+"&quizid="+cQuizId+"&cmid="+cCmId+"&studentid="+cStudentId+"&reportid="+cReportId+"&imgid="+imgrowid;
-                                window.location.href = newUrl;
+                                var form = $('<form>', {
+                                    method: 'post',
+                                    action: rootUrl[0] + 'analyzesingleimage.php'
+                                });
+                                $.each({
+                                    courseid: cCourseId,
+                                    cmid: cCmId,
+                                    studentid: cStudentId,
+                                    reportid: cReportId,
+                                    imgid: imgrowid,
+                                    sesskey: analyzeobj.sesskey || ''
+                                }, function(name, value) {
+                                    form.append($('<input>', {
+                                        type: 'hidden',
+                                        name: name,
+                                        value: value
+                                    }));
+                                });
+                                $('body').append(form);
+                                form.trigger('submit');
                             }
                         }
                     }

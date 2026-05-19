@@ -32,6 +32,27 @@ require_once($CFG->dirroot.'/mod/quiz/accessrule/proctoring/lib.php');
  */
 class quizaccess_proctoring_external extends external_api {
 
+    /** Maximum decoded webcam image payload size. */
+    private const MAX_WEBCAM_IMAGE_BYTES = 3145728;
+
+    /** Maximum decoded cropped face image payload size. */
+    private const MAX_FACE_IMAGE_BYTES = 2097152;
+
+    /** Maximum decoded desktop violation screenshot payload size. */
+    private const MAX_DESKTOP_IMAGE_BYTES = 12582912;
+
+    /** Maximum image pixels accepted from browser-submitted images. */
+    private const MAX_IMAGE_PIXELS = 12000000;
+
+    /** Upload/event rate limit window in seconds. */
+    private const RATE_LIMIT_WINDOW = 60;
+
+    /** Maximum camshot uploads per user/module/window. */
+    private const MAX_CAMSHOTS_PER_WINDOW = 30;
+
+    /** Maximum suspicious events per user/module/window. */
+    private const MAX_EVENTS_PER_WINDOW = 120;
+
     /**
      * Defines the parameters required for sending a camshot.
      *
@@ -108,44 +129,43 @@ class quizaccess_proctoring_external extends external_api {
             ]
         );
 
-        // Check if the user is enrolled in the course as a student or teacher.
-        $context = context_course::instance($courseid);
-
-        if (
-            !is_enrolled($context, $USER->id, 'mod/quiz:attempt') && // Check student capability.
-            !has_capability('mod/quiz:grade', $context)              // Check teacher capability.
-        ) {
-            throw new moodle_exception(
-                'accessdenied', 'quizaccess_proctoring', '', null,
-                get_string('notenrolled', 'quizaccess_proctoring')
-            );
-        }
+        [$cm, $context] = self::get_authorized_quiz_context((int)$courseid, (int)$quizid);
 
         $warnings = [];
 
         if ($imagetype == 1) {
+            $parenttype = self::clean_parent_type((string)$parenttype);
+            self::validate_image_payload($webcampicture, self::MAX_WEBCAM_IMAGE_BYTES);
+            if (!empty($faceimage)) {
+                self::validate_image_payload($faceimage, self::MAX_FACE_IMAGE_BYTES);
+            }
+            self::enforce_recent_record_limit('quizaccess_proctoring_logs', [
+                'courseid' => (int)$courseid,
+                'quizid' => (int)$cm->id,
+                'userid' => (int)$USER->id,
+            ], self::MAX_CAMSHOTS_PER_WINDOW);
+
+            $camshot = self::get_owned_report((int)$screenshotid, (int)$courseid, (int)$cm->id);
+            if ((int)$camshot->status > 0) {
+                self::get_owned_quiz_attempt((int)$camshot->status, $cm);
+            }
+
             $record = new stdClass();
             $record->filearea = 'picture';
             $record->component = 'quizaccess_proctoring';
             $record->filepath = '';
-            $record->itemid = $screenshotid;
+            $record->itemid = (int)$screenshotid;
             $record->license = '';
             $record->author = '';
 
-            $context = context_module::instance($quizid);
             $fs = get_file_storage();
             $record->filepath = file_correct_filepath($record->filepath);
 
-            // For base64 to file.
-            $data = $webcampicture;
-            list(, $data) = explode(';', $data);
-            $url = self::geturl($data, $screenshotid, $USER, $courseid, $record, $context, $fs);
-
-            $camshot = $DB->get_record('quizaccess_proctoring_logs', ['id' => $screenshotid]);
+            $url = self::geturl($webcampicture, (int)$screenshotid, $USER, (int)$courseid, $record, $context, $fs);
 
             $record = new stdClass();
-            $record->courseid = $courseid;
-            $record->quizid = $quizid;
+            $record->courseid = (int)$courseid;
+            $record->quizid = (int)$cm->id;
             $record->userid = $USER->id;
             $record->webcampicture = "{$url}";
             $record->status = $camshot->status;
@@ -162,17 +182,13 @@ class quizaccess_proctoring_external extends external_api {
             $record->license = '';
             $record->author = '';
 
-            $context = context_module::instance($quizid);
             $fs = get_file_storage();
             $record->filepath = file_correct_filepath($record->filepath);
 
             $url = "";
             if ($faceimage) {
-                // For base64 to file.
-                $data = $faceimage;
-                list(, $data) = explode(';', $data);
                 $url = self::quizaccess_proctoring_geturl_without_timecode(
-                    $data, $screenshotid, $USER, $courseid, $record, $context, $fs);
+                    $faceimage, $screenshotid, $USER, (int)$courseid, $record, $context, $fs);
             }
             $record = new stdClass();
             $record->parent_type = $parenttype;
@@ -282,19 +298,7 @@ class quizaccess_proctoring_external extends external_api {
             ]
         );
 
-        $cm = get_coursemodule_from_id('quiz', $quizid, $courseid, false, MUST_EXIST);
-        $context = context_module::instance($cm->id, MUST_EXIST);
-        self::validate_context($context);
-
-        if (
-            !is_enrolled(context_course::instance($courseid), $USER->id, 'mod/quiz:attempt') &&
-            !has_capability('mod/quiz:grade', $context)
-        ) {
-            throw new moodle_exception(
-                'accessdenied', 'quizaccess_proctoring', '', null,
-                get_string('notenrolled', 'quizaccess_proctoring')
-            );
-        }
+        [$cm, $context] = self::get_authorized_quiz_context((int)$courseid, (int)$quizid);
 
         $allowedevents = [
             'tab_hidden',
@@ -322,12 +326,36 @@ class quizaccess_proctoring_external extends external_api {
             $eventtype = 'shortcut';
         }
 
+        $attemptid = max(0, (int)$attemptid);
+        $reportid = max(0, (int)$reportid);
+        if ($attemptid > 0) {
+            self::get_owned_quiz_attempt($attemptid, $cm);
+        }
+        if ($reportid > 0) {
+            $report = self::get_owned_report($reportid, (int)$courseid, (int)$cm->id, $attemptid);
+            if ($attemptid === 0 && (int)$report->status > 0) {
+                $attemptid = (int)$report->status;
+                self::get_owned_quiz_attempt($attemptid, $cm);
+            }
+        } else if (!empty($screenshot)) {
+            throw new invalid_parameter_exception('A report id is required when saving a desktop screenshot.');
+        }
+
+        if (!empty($screenshot)) {
+            self::validate_image_payload($screenshot, self::MAX_DESKTOP_IMAGE_BYTES);
+        }
+        self::enforce_recent_record_limit('quizaccess_proctoring_events', [
+            'courseid' => (int)$courseid,
+            'quizid' => (int)$cm->id,
+            'userid' => (int)$USER->id,
+        ], self::MAX_EVENTS_PER_WINDOW);
+
         $record = new stdClass();
-        $record->courseid = $courseid;
+        $record->courseid = (int)$courseid;
         $record->quizid = $cm->id;
         $record->userid = $USER->id;
-        $record->attemptid = max(0, (int)$attemptid);
-        $record->reportid = max(0, (int)$reportid);
+        $record->attemptid = $attemptid;
+        $record->reportid = $reportid;
         $record->eventtype = substr($eventtype, 0, 40);
         $record->eventdetail = substr($eventdetail, 0, 2000);
         $record->pagevisibility = substr($pagevisibility, 0, 20);
@@ -369,6 +397,113 @@ class quizaccess_proctoring_external extends external_api {
     }
 
     /**
+     * Resolves and authorizes a quiz course module for browser-submitted proctoring data.
+     *
+     * @param int $courseid Course ID.
+     * @param int $cmid Quiz course module ID.
+     * @return array [cm_info|stdClass, context_module]
+     */
+    private static function get_authorized_quiz_context(int $courseid, int $cmid): array {
+        $cm = get_coursemodule_from_id('quiz', $cmid, $courseid, false, MUST_EXIST);
+        $context = context_module::instance($cm->id, MUST_EXIST);
+        self::validate_context($context);
+        require_capability('quizaccess/proctoring:sendcamshot', $context);
+
+        return [$cm, $context];
+    }
+
+    /**
+     * Verifies that a quiz attempt belongs to the current user and quiz module.
+     *
+     * @param int $attemptid Quiz attempt ID.
+     * @param stdClass|cm_info $cm Quiz course module.
+     * @return stdClass Attempt record.
+     */
+    private static function get_owned_quiz_attempt(int $attemptid, $cm): stdClass {
+        global $DB, $USER;
+
+        $attempt = $DB->get_record('quiz_attempts', ['id' => $attemptid], 'id, quiz, userid, state', MUST_EXIST);
+        if ((int)$attempt->userid !== (int)$USER->id || (int)$attempt->quiz !== (int)$cm->instance) {
+            throw new invalid_parameter_exception('Invalid quiz attempt.');
+        }
+
+        if (!in_array((string)$attempt->state, ['inprogress', 'overdue'], true)) {
+            throw new invalid_parameter_exception('Quiz attempt is not active.');
+        }
+
+        return $attempt;
+    }
+
+    /**
+     * Verifies that a proctoring report row belongs to the current user, module, and attempt.
+     *
+     * @param int $reportid Proctoring log ID.
+     * @param int $courseid Course ID.
+     * @param int $cmid Quiz course module ID.
+     * @param int $attemptid Optional quiz attempt ID.
+     * @return stdClass Proctoring log row.
+     */
+    private static function get_owned_report(int $reportid, int $courseid, int $cmid, int $attemptid = 0): stdClass {
+        global $DB, $USER;
+
+        $report = $DB->get_record('quizaccess_proctoring_logs', ['id' => $reportid], '*', MUST_EXIST);
+        if ((int)$report->courseid !== $courseid || (int)$report->quizid !== $cmid ||
+                (int)$report->userid !== (int)$USER->id) {
+            throw new invalid_parameter_exception('Invalid proctoring report.');
+        }
+
+        if ($attemptid > 0 && (int)$report->status > 0 && (int)$report->status !== $attemptid) {
+            throw new invalid_parameter_exception('Proctoring report does not belong to this attempt.');
+        }
+
+        return $report;
+    }
+
+    /**
+     * Restricts submitted face parent types to values the plugin creates.
+     *
+     * @param string $parenttype Submitted parent type.
+     * @return string Clean parent type.
+     */
+    private static function clean_parent_type(string $parenttype): string {
+        return in_array($parenttype, ['camshot_image', 'admin_image'], true) ? $parenttype : 'camshot_image';
+    }
+
+    /**
+     * Validates browser-submitted image data without storing it.
+     *
+     * @param string $data Data URL or base64 image.
+     * @param int $maxbytes Maximum decoded bytes.
+     */
+    private static function validate_image_payload(string $data, int $maxbytes): void {
+        self::decode_base64_image_data($data, $maxbytes);
+    }
+
+    /**
+     * Applies a practical per-user rate limit for proctoring writes.
+     *
+     * @param string $table Database table.
+     * @param array $conditions Equality conditions.
+     * @param int $limit Maximum records in the window.
+     */
+    private static function enforce_recent_record_limit(string $table, array $conditions, int $limit): void {
+        global $DB;
+
+        $where = [];
+        $params = ['since' => time() - self::RATE_LIMIT_WINDOW];
+        foreach ($conditions as $field => $value) {
+            $param = 'p_' . $field;
+            $where[] = $field . ' = :' . $param;
+            $params[$param] = $value;
+        }
+        $where[] = 'timemodified >= :since';
+
+        if ($DB->count_records_select($table, implode(' AND ', $where), $params) >= $limit) {
+            throw new moodle_exception('error', 'error', '', null, 'Too many proctoring requests. Please wait and try again.');
+        }
+    }
+
+    /**
      * Stores a desktop screenshot captured for a suspicious activity event.
      *
      * @param int $courseid Course ID.
@@ -396,7 +531,7 @@ class quizaccess_proctoring_external extends external_api {
         $record->contextid = $context->id;
         $record->userid = $USER->id;
 
-        $data = self::add_timecode_to_image(self::decode_base64_image_data($screenshot));
+        $data = self::add_timecode_to_image(self::decode_base64_image_data($screenshot, self::MAX_DESKTOP_IMAGE_BYTES));
         $fs->create_file_from_string($record, $data);
 
         return moodle_url::make_pluginfile_url(
@@ -560,18 +695,19 @@ class quizaccess_proctoring_external extends external_api {
             ]
         );
 
-        // Check if the user is enrolled in the course as a student or teacher.
-        $context = context_course::instance($courseid);
-
-        if (
-            !is_enrolled($context, $USER->id, 'mod/quiz:attempt') && // Check student capability.
-            !has_capability('mod/quiz:grade', $context)              // Check teacher capability.
-        ) {
-            throw new moodle_exception(
-                'accessdenied', 'quizaccess_proctoring', '', null,
-                get_string('notenrolled', 'quizaccess_proctoring')
-            );
+        [$cm, $context] = self::get_authorized_quiz_context((int)$courseid, (int)$cmid);
+        $parenttype = self::clean_parent_type((string)$parenttype);
+        if (!empty($webcampicture)) {
+            self::validate_image_payload($webcampicture, self::MAX_WEBCAM_IMAGE_BYTES);
         }
+        if (!empty($faceimage)) {
+            self::validate_image_payload($faceimage, self::MAX_FACE_IMAGE_BYTES);
+        }
+        self::enforce_recent_record_limit('quizaccess_proctoring_logs', [
+            'courseid' => (int)$courseid,
+            'quizid' => (int)$cm->id,
+            'userid' => (int)$USER->id,
+        ], self::MAX_CAMSHOTS_PER_WINDOW);
 
         $warnings = [];
 
@@ -609,7 +745,6 @@ class quizaccess_proctoring_external extends external_api {
         $record->license = '';
         $record->author = '';
 
-        $context = context_module::instance($cmid);
         $fs = get_file_storage();
         $record->filepath = file_correct_filepath($record->filepath);
 
@@ -618,8 +753,8 @@ class quizaccess_proctoring_external extends external_api {
         $url = self::geturl($data, $screenshotid, $USER, $courseid, $record, $context, $fs);
 
         $record = new stdClass();
-        $record->courseid = $courseid;
-        $record->quizid = $cmid;
+        $record->courseid = (int)$courseid;
+        $record->quizid = (int)$cm->id;
         $record->userid = $USER->id;
         $record->webcampicture = "{$url}";
         $record->status = $screenshotid;
@@ -635,17 +770,13 @@ class quizaccess_proctoring_external extends external_api {
         $record->license = '';
         $record->author = '';
 
-        $context = context_module::instance($cmid);
         $fs = get_file_storage();
         $record->filepath = file_correct_filepath($record->filepath);
 
         $url = "";
         if ($faceimage) {
-            // For base64 to file.
-            $data = $faceimage;
-            list(, $data) = explode(';', $data);
             $url = self::quizaccess_proctoring_geturl_without_timecode(
-                $data, $screenshotid, $USER, $courseid, $record, $context, $fs);
+                $faceimage, $screenshotid, $USER, $courseid, $record, $context, $fs);
         }
         $record = new stdClass();
         $record->parent_type = $parenttype;
@@ -809,7 +940,7 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         $imagedata = !empty($faceimage) ? $faceimage : $webcampicture;
-        $image = @imagecreatefromstring(self::decode_base64_image_data($imagedata));
+        $image = @imagecreatefromstring(self::decode_base64_image_data($imagedata, self::MAX_FACE_IMAGE_BYTES));
         if (!$image) {
             return false;
         }
@@ -888,14 +1019,43 @@ class quizaccess_proctoring_external extends external_api {
      * @return string Decoded binary image data.
      * @throws invalid_parameter_exception If the payload cannot be decoded.
      */
-    private static function decode_base64_image_data(string $data): string {
-        if (strpos($data, ',') !== false) {
+    private static function decode_base64_image_data(string $data, int $maxbytes = self::MAX_WEBCAM_IMAGE_BYTES): string {
+        $data = trim($data);
+        if ($data === '') {
+            throw new invalid_parameter_exception('Image data is required.');
+        }
+
+        if (preg_match('/^data:([^;]+);base64,(.*)$/is', $data, $matches)) {
+            $mime = strtolower($matches[1]);
+            if (!in_array($mime, ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'], true)) {
+                throw new invalid_parameter_exception('Unsupported image type.');
+            }
+            $data = $matches[2];
+        } else if (strpos($data, ',') !== false) {
             [, $data] = explode(',', $data, 2);
+        }
+
+        $data = preg_replace('/\s+/', '', $data);
+        $maxencoded = (int)ceil(($maxbytes * 4) / 3) + 1024;
+        if (strlen($data) > $maxencoded) {
+            throw new invalid_parameter_exception('Image data is too large.');
         }
 
         $decoded = base64_decode($data, true);
         if ($decoded === false) {
             throw new invalid_parameter_exception('Invalid reference image data.');
+        }
+        if (strlen($decoded) > $maxbytes) {
+            throw new invalid_parameter_exception('Image data is too large.');
+        }
+
+        $info = @getimagesizefromstring($decoded);
+        if (empty($info[0]) || empty($info[1]) || empty($info['mime']) ||
+                strpos((string)$info['mime'], 'image/') !== 0) {
+            throw new invalid_parameter_exception('Invalid image data.');
+        }
+        if (((int)$info[0] * (int)$info[1]) > self::MAX_IMAGE_PIXELS) {
+            throw new invalid_parameter_exception('Image dimensions are too large.');
         }
 
         return $decoded;
@@ -917,8 +1077,7 @@ class quizaccess_proctoring_external extends external_api {
      * @return mixed The URL of the stored image file with the timecode added.
      */
     private static function geturl(string $data, int $screenshotid, $USER, int $courseid, stdClass $record, $context, $fs) {
-        list(, $data) = explode(',', $data);
-        $data = base64_decode($data);
+        $data = self::decode_base64_image_data($data, self::MAX_WEBCAM_IMAGE_BYTES);
         $filename = 'webcam-' . $screenshotid . '-' . $USER->id . '-' . $courseid . '-' . time() . random_int(1, 1000) . '.png';
 
         $data = self::add_timecode_to_image($data);
@@ -958,8 +1117,7 @@ class quizaccess_proctoring_external extends external_api {
      */
     private static function quizaccess_proctoring_geturl_without_timecode(
         string $data, int $screenshotid, $USER, int $courseid, stdClass $record, $context, $fs) {
-        list(, $data) = explode(',', $data);
-        $data = base64_decode($data);
+        $data = self::decode_base64_image_data($data, self::MAX_FACE_IMAGE_BYTES);
         $filename = 'webcam-' . $screenshotid . '-' . $USER->id . '-' . $courseid . '-' . time() . random_int(1, 1000) . '.png';
 
         $record->courseid = $courseid;

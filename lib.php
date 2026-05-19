@@ -60,8 +60,16 @@ $token = "";
  * @return bool Returns false if the file cannot be found.
  */
 function quizaccess_proctoring_pluginfile($course, $cm, $context, $filearea, $args, $forcedownload, array $options = []) {
+    $allowedfileareas = ['picture', 'face_image', 'user_photo', 'violation_screenshot'];
+    if (!in_array($filearea, $allowedfileareas, true) || empty($args)) {
+        return false;
+    }
+
     $itemid = array_shift($args);
     $filename = array_pop($args);
+    if (empty($filename) || $filename === '.') {
+        return false;
+    }
 
     if (!$args) {
         $filepath = '/';
@@ -75,7 +83,231 @@ function quizaccess_proctoring_pluginfile($course, $cm, $context, $filearea, $ar
     if (!$file) {
         return false;
     }
+
+    if ($file->is_directory() ||
+            !quizaccess_proctoring_can_serve_pluginfile($course, $cm, $context, $filearea, (int)$itemid, $filename, $file)) {
+        return false;
+    }
+
+    $options = array_merge(['cacheability' => 'private'], $options);
     send_stored_file($file, 0, 0, $forcedownload, $options);
+}
+
+/**
+ * Checks whether the current user can access a stored proctoring file.
+ *
+ * @param stdClass|null $course Course record.
+ * @param cm_info|stdClass|null $cm Course module record.
+ * @param context $context File context.
+ * @param string $filearea Plugin file area.
+ * @param int $itemid File item id.
+ * @param string $filename Stored filename.
+ * @param stored_file $file Stored file.
+ * @return bool
+ */
+function quizaccess_proctoring_can_serve_pluginfile($course, $cm, $context, string $filearea, int $itemid,
+        string $filename, stored_file $file): bool {
+    global $USER;
+
+    if ($context->contextlevel === CONTEXT_MODULE) {
+        if (empty($course) || empty($cm) ||
+                !in_array($filearea, ['picture', 'face_image', 'violation_screenshot'], true)) {
+            return false;
+        }
+
+        require_login($course, true, $cm);
+
+        if (!quizaccess_proctoring_module_file_has_record((int)$course->id, (int)$cm->id, $filearea, $filename)) {
+            return false;
+        }
+
+        if (has_capability('quizaccess/proctoring:viewreport', $context)) {
+            return true;
+        }
+
+        return (int)$file->get_userid() === (int)$USER->id;
+    }
+
+    if ($context->contextlevel === CONTEXT_SYSTEM) {
+        if (!in_array($filearea, ['user_photo', 'face_image'], true)) {
+            return false;
+        }
+
+        require_login();
+
+        $ownerid = $filearea === 'user_photo' ? $itemid : (int)$file->get_itemid();
+        if ($ownerid > 0 && (int)$USER->id === $ownerid) {
+            return true;
+        }
+
+        if (has_capability('moodle/site:config', $context)) {
+            return true;
+        }
+
+        return quizaccess_proctoring_user_has_report_access_for_user($ownerid);
+    }
+
+    return false;
+}
+
+/**
+ * Verifies that a module-context proctoring file is referenced by a plugin record in the same module.
+ *
+ * @param int $courseid Course ID.
+ * @param int $cmid Course module ID.
+ * @param string $filearea File area.
+ * @param string $filename Filename.
+ * @return bool
+ */
+function quizaccess_proctoring_module_file_has_record(int $courseid, int $cmid, string $filearea, string $filename): bool {
+    global $DB;
+
+    $filenameparam = '%' . $DB->sql_like_escape($filename) . '%';
+
+    if ($filearea === 'picture') {
+        return $DB->record_exists_select(
+            'quizaccess_proctoring_logs',
+            "courseid = :courseid AND quizid = :cmid AND " .
+                $DB->sql_like('webcampicture', ':filename', false),
+            ['courseid' => $courseid, 'cmid' => $cmid, 'filename' => $filenameparam]
+        );
+    }
+
+    if ($filearea === 'violation_screenshot') {
+        return $DB->record_exists_select(
+            'quizaccess_proctoring_events',
+            "courseid = :courseid AND quizid = :cmid AND " .
+                $DB->sql_like('screenshoturl', ':filename', false),
+            ['courseid' => $courseid, 'cmid' => $cmid, 'filename' => $filenameparam]
+        );
+    }
+
+    if ($filearea === 'face_image') {
+        $sql = "SELECT fi.id
+                  FROM {quizaccess_proctoring_face_images} fi
+                  JOIN {quizaccess_proctoring_logs} l ON l.id = fi.parentid
+                 WHERE l.courseid = :courseid
+                   AND l.quizid = :cmid
+                   AND " . $DB->sql_like('fi.faceimage', ':filename', false);
+
+        return $DB->record_exists_sql($sql, [
+            'courseid' => $courseid,
+            'cmid' => $cmid,
+            'filename' => $filenameparam,
+        ]);
+    }
+
+    return false;
+}
+
+/**
+ * Checks whether the current user can view any proctoring report for a target user.
+ *
+ * This is used for system-context reference images because those files do not carry a module context in the URL.
+ *
+ * @param int $targetuserid Target user ID.
+ * @return bool
+ */
+function quizaccess_proctoring_user_has_report_access_for_user(int $targetuserid): bool {
+    global $DB;
+
+    if ($targetuserid <= 0) {
+        return false;
+    }
+
+    $recordset = $DB->get_recordset('quizaccess_proctoring_logs', ['userid' => $targetuserid], '', 'DISTINCT quizid');
+    foreach ($recordset as $record) {
+        try {
+            $context = context_module::instance((int)$record->quizid, IGNORE_MISSING);
+            if ($context && has_capability('quizaccess/proctoring:viewreport', $context)) {
+                $recordset->close();
+                return true;
+            }
+        } catch (Throwable $e) {
+            continue;
+        }
+    }
+    $recordset->close();
+
+    return false;
+}
+
+/**
+ * Loads bytes for a pluginfile URL directly from Moodle file storage when possible.
+ *
+ * @param string $url Pluginfile URL.
+ * @return string|false File bytes, or false when the URL is not a pluginfile URL for this plugin.
+ */
+function quizaccess_proctoring_pluginfile_url_to_bytes(string $url) {
+    $file = quizaccess_proctoring_stored_file_from_pluginfile_url($url);
+    if (!$file || $file->is_directory()) {
+        return false;
+    }
+
+    return $file->get_content();
+}
+
+/**
+ * Deletes a stored pluginfile URL when it belongs to this plugin.
+ *
+ * @param string $url Pluginfile URL.
+ */
+function quizaccess_proctoring_delete_pluginfile_url(string $url): void {
+    $file = quizaccess_proctoring_stored_file_from_pluginfile_url($url);
+    if ($file && !$file->is_directory()) {
+        $file->delete();
+    }
+}
+
+/**
+ * Resolves a quizaccess_proctoring pluginfile URL to a stored_file.
+ *
+ * @param string $url Pluginfile URL.
+ * @return stored_file|null Stored file, or null when it cannot be resolved.
+ */
+function quizaccess_proctoring_stored_file_from_pluginfile_url(string $url): ?stored_file {
+    $parts = parse_url(str_replace('&amp;', '&', $url));
+    if (empty($parts['path'])) {
+        return null;
+    }
+
+    $queryparams = [];
+    if (!empty($parts['query'])) {
+        parse_str($parts['query'], $queryparams);
+    }
+
+    $fileargument = '';
+    if (!empty($queryparams['file'])) {
+        $fileargument = $queryparams['file'];
+    } else {
+        $marker = '/pluginfile.php/';
+        $position = strpos($parts['path'], $marker);
+        if ($position === false) {
+            return null;
+        }
+        $fileargument = substr($parts['path'], $position + strlen($marker));
+    }
+
+    $segments = array_values(array_filter(explode('/', trim($fileargument, '/')), 'strlen'));
+    if (count($segments) < 5) {
+        return null;
+    }
+
+    $contextid = (int)array_shift($segments);
+    $component = rawurldecode((string)array_shift($segments));
+    $filearea = rawurldecode((string)array_shift($segments));
+    $itemid = (int)array_shift($segments);
+    $filename = rawurldecode((string)array_pop($segments));
+    $filepath = empty($segments) ? '/' : '/' . implode('/', array_map('rawurldecode', $segments)) . '/';
+
+    if ($component !== 'quizaccess_proctoring' || $contextid <= 0 || $itemid < 0 || $filename === '') {
+        return null;
+    }
+
+    $fs = get_file_storage();
+    $file = $fs->get_file($contextid, $component, $filearea, $itemid, $filepath, $filename);
+
+    return $file ?: null;
 }
 
 /**
@@ -660,6 +892,84 @@ function quizaccess_proctoring_normalize_compatible_ai_endpoint(string $endpoint
 }
 
 /**
+ * Validates a configured outbound endpoint before the server sends proctoring images to it.
+ *
+ * @param string $endpoint Endpoint URL.
+ * @return string Trimmed endpoint URL.
+ * @throws moodle_exception If the endpoint is invalid or resolves to a blocked address.
+ */
+function quizaccess_proctoring_validate_outbound_endpoint(string $endpoint): string {
+    $endpoint = trim($endpoint);
+    $parts = parse_url($endpoint);
+    if (!$parts || empty($parts['scheme']) || empty($parts['host'])) {
+        throw new moodle_exception('outboundendpointinvalid', 'quizaccess_proctoring');
+    }
+    if (!empty($parts['user']) || !empty($parts['pass'])) {
+        throw new moodle_exception('outboundendpointinvalid', 'quizaccess_proctoring');
+    }
+
+    $scheme = strtolower((string)$parts['scheme']);
+    if (!in_array($scheme, ['http', 'https'], true)) {
+        throw new moodle_exception('outboundendpointinvalid', 'quizaccess_proctoring');
+    }
+
+    $host = trim((string)$parts['host'], '[]');
+    if ($host === '' || strtolower($host) === 'localhost') {
+        throw new moodle_exception('outboundendpointblocked', 'quizaccess_proctoring');
+    }
+
+    $ips = quizaccess_proctoring_resolve_outbound_host_ips($host);
+    if (!$ips) {
+        throw new moodle_exception('outboundendpointunresolved', 'quizaccess_proctoring');
+    }
+
+    foreach ($ips as $ip) {
+        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            throw new moodle_exception('outboundendpointblocked', 'quizaccess_proctoring');
+        }
+    }
+
+    return $endpoint;
+}
+
+/**
+ * Resolves a host to IP addresses for outbound endpoint validation.
+ *
+ * @param string $host Hostname or IP address.
+ * @return array IP addresses.
+ */
+function quizaccess_proctoring_resolve_outbound_host_ips(string $host): array {
+    $host = trim($host, '[]');
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+        return [$host];
+    }
+
+    $ips = [];
+    if (function_exists('dns_get_record')) {
+        $records = @dns_get_record($host, DNS_A + DNS_AAAA);
+        if (is_array($records)) {
+            foreach ($records as $record) {
+                if (!empty($record['ip'])) {
+                    $ips[] = $record['ip'];
+                }
+                if (!empty($record['ipv6'])) {
+                    $ips[] = $record['ipv6'];
+                }
+            }
+        }
+    }
+
+    if (!$ips) {
+        $records = @gethostbynamel($host);
+        if (is_array($records)) {
+            $ips = array_merge($ips, $records);
+        }
+    }
+
+    return array_values(array_unique(array_filter($ips, 'strlen')));
+}
+
+/**
  * Get configured AI image review settings.
  *
  * @return array Normalized AI review settings.
@@ -739,7 +1049,15 @@ function quizaccess_proctoring_ai_review_provider_configured(string $provider, ?
         case 'anthropic':
             return !empty($settings['anthropicapikey']) && !empty($settings['anthropicmodel']);
         case 'compatible':
-            return !empty($settings['compatibleendpoint']) && !empty($settings['compatiblemodel']);
+            if (empty($settings['compatibleendpoint']) || empty($settings['compatiblemodel'])) {
+                return false;
+            }
+            try {
+                quizaccess_proctoring_validate_outbound_endpoint((string)$settings['compatibleendpoint']);
+            } catch (moodle_exception $e) {
+                return false;
+            }
+            return true;
         default:
             return false;
     }
@@ -1795,7 +2113,7 @@ function quizaccess_proctoring_url_to_data_url(string $url): ?string {
         return $imagebytes ? quizaccess_proctoring_image_bytes_to_ai_data_url($imagebytes) : null;
     }
 
-    $imagebytes = @file_get_contents($url);
+    $imagebytes = quizaccess_proctoring_pluginfile_url_to_bytes($url);
     if ($imagebytes === false || $imagebytes === '') {
         return null;
     }
@@ -2218,9 +2536,11 @@ function quizaccess_proctoring_call_openai_compatible_image_review(
     $curl = new curl();
     $options = [
         'CURLOPT_TIMEOUT' => 45,
+        'CURLOPT_FOLLOWLOCATION' => false,
         'CURLOPT_HTTPHEADER' => $headers,
     ];
-    $response = $curl->post($settings['compatibleendpoint'], json_encode($payload), $options);
+    $endpoint = quizaccess_proctoring_validate_outbound_endpoint((string)$settings['compatibleendpoint']);
+    $response = $curl->post($endpoint, json_encode($payload), $options);
 
     if ($curl->get_errno()) {
         throw new moodle_exception(
@@ -3038,8 +3358,16 @@ function quizaccess_proctoring_check_similarity_customapi(
         return false;
     }
 
-    $referenceimage = @file_get_contents($referenceimageurl);
-    $targetimage = @file_get_contents($targetimageurl);
+    try {
+        $endpoint = quizaccess_proctoring_validate_outbound_endpoint($endpoint);
+    } catch (moodle_exception $e) {
+        mtrace('Error: Configured Saylor AI endpoint URL is not allowed.');
+        quizaccess_proctoring_update_match_result((int)$reportid, 0, 101);
+        return false;
+    }
+
+    $referenceimage = quizaccess_proctoring_pluginfile_url_to_bytes($referenceimageurl);
+    $targetimage = quizaccess_proctoring_pluginfile_url_to_bytes($targetimageurl);
 
     if ($referenceimage === false || $targetimage === false) {
         mtrace('Error: Unable to load images for the Saylor AI endpoint.');
@@ -3059,7 +3387,7 @@ function quizaccess_proctoring_check_similarity_customapi(
     $curl = new curl();
     $options = [
         'CURLOPT_TIMEOUT' => 30,
-        'CURLOPT_FOLLOWLOCATION' => true,
+        'CURLOPT_FOLLOWLOCATION' => false,
         'CURLOPT_HTTPHEADER' => [
             'X-API-Key: ' . $apikey,
             'Content-Type: application/json',
@@ -3136,6 +3464,50 @@ function quizaccess_proctoring_log_fm_warning(int $reportid): void {
 }
 
 /**
+ * Decodes and validates a browser-submitted base64 image payload.
+ *
+ * @param string $data Data URL or base64 image.
+ * @param int $maxbytes Maximum decoded byte size.
+ * @return string Decoded image bytes.
+ * @throws invalid_parameter_exception If the payload is not a valid image.
+ */
+function quizaccess_proctoring_decode_base64_image_data(string $data, int $maxbytes = 2097152): string {
+    $data = trim($data);
+    if ($data === '') {
+        throw new invalid_parameter_exception('Image payload is empty.');
+    }
+
+    if (preg_match('#^data:image/(png|jpeg|jpg|webp);base64,#i', $data)) {
+        $data = preg_replace('#^data:image/[^;]+;base64,#i', '', $data);
+    } else if (strpos($data, ',') !== false) {
+        [, $data] = explode(',', $data, 2);
+    }
+
+    $data = preg_replace('/\s+/', '', $data);
+    if ($data === '' || ((int)(strlen($data) * 3 / 4) > $maxbytes)) {
+        throw new invalid_parameter_exception('Image payload is too large.');
+    }
+
+    $decoded = base64_decode($data, true);
+    if ($decoded === false || strlen($decoded) > $maxbytes) {
+        throw new invalid_parameter_exception('Image payload is invalid.');
+    }
+
+    $info = @getimagesizefromstring($decoded);
+    if ($info === false || empty($info['mime']) || strpos($info['mime'], 'image/') !== 0) {
+        throw new invalid_parameter_exception('Image payload is not an image.');
+    }
+
+    $width = (int)($info[0] ?? 0);
+    $height = (int)($info[1] ?? 0);
+    if ($width <= 0 || $height <= 0 || ($width * $height) > 12000000) {
+        throw new invalid_parameter_exception('Image dimensions are invalid.');
+    }
+
+    return $decoded;
+}
+
+/**
  * Saves the face image as a file and returns its URL.
  *
  * This function decodes a base64 string, saves the image as a file in Moodle's file system,
@@ -3149,11 +3521,7 @@ function quizaccess_proctoring_log_fm_warning(int $reportid): void {
  * @return moodle_url The URL to access the saved face image.
  */
 function quizaccess_proctoring_geturl_of_faceimage(string $data, int $userid, stdClass $record, $context, $fs): moodle_url {
-    // Remove any metadata from the base64 string.
-    list(, $data) = explode(',', $data);
-
-    // Decode the base64 data into raw binary image data.
-    $data = base64_decode($data);
+    $data = quizaccess_proctoring_decode_base64_image_data($data, 2097152);
 
     // Generate a unique filename for the image.
     $filename = 'faceimage-' . $userid . '-' . time() . random_int(1, 1000) . '.png';
