@@ -256,6 +256,10 @@ class send_daily_report_task extends scheduled_task {
                        MAX(e.timemodified) AS lastactivity,
                        u.firstname,
                        u.lastname,
+                       u.firstnamephonetic,
+                       u.lastnamephonetic,
+                       u.middlename,
+                       u.alternatename,
                        u.email,
                        c.fullname AS coursename,
                        q.name AS quizname
@@ -268,7 +272,9 @@ class send_daily_report_task extends scheduled_task {
                    AND e.timemodified < :endtime
                    AND e.deletionprogress = :deletionprogress
                    AND e.status > 0
-              GROUP BY e.courseid, e.quizid, e.userid, e.status, u.firstname, u.lastname, u.email, c.fullname, q.name";
+              GROUP BY e.courseid, e.quizid, e.userid, e.status,
+                       u.firstname, u.lastname, u.firstnamephonetic, u.lastnamephonetic, u.middlename, u.alternatename,
+                       u.email, c.fullname, q.name";
 
         $records = $DB->get_records_sql($sql, [
             'starttime' => $start,
@@ -296,6 +302,10 @@ class send_daily_report_task extends scheduled_task {
                        h.timemodified AS lastactivity,
                        u.firstname,
                        u.lastname,
+                       u.firstnamephonetic,
+                       u.lastnamephonetic,
+                       u.middlename,
+                       u.alternatename,
                        u.email,
                        c.fullname AS coursename,
                        q.name AS quizname

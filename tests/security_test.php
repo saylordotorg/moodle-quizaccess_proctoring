@@ -194,11 +194,14 @@ final class security_test extends advanced_testcase {
         $task = new send_daily_report_task();
 
         set_config('dailyreportallowexternal', 0, 'quizaccess_proctoring');
+        ob_start();
         $recipients = $this->invoke_task_method($task, 'get_recipients', [
             $teacher->email . ', external-security@example.com',
         ]);
+        $output = ob_get_clean();
         $this->assertCount(1, $recipients);
         $this->assertSame($teacher->id, reset($recipients)->id);
+        $this->assertStringContainsString('external recipients are disabled', $output);
 
         set_config('dailyreportallowexternal', 1, 'quizaccess_proctoring');
         $recipients = $this->invoke_task_method($task, 'get_recipients', [
