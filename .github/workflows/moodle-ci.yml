@@ -55,20 +55,20 @@ jobs:
 
       - name: PHP lint
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci phplint
+        run: moodle-plugin-ci phplint ./plugin
 
       - name: Validate plugin
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci validate
+        run: moodle-plugin-ci validate ./plugin
 
       - name: Check upgrade savepoints
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci savepoints
+        run: moodle-plugin-ci savepoints ./plugin
 
       - name: Mustache lint
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci mustache
+        run: moodle-plugin-ci mustache ./plugin
 
       - name: PHPUnit
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci phpunit
+        run: moodle-plugin-ci phpunit ./plugin

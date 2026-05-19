@@ -246,9 +246,9 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, true, false, 0, null);
         $table->add_field('attemptid', XMLDB_TYPE_INTEGER, '10', null, true, false, 0, null);
         $table->add_field('reportid', XMLDB_TYPE_INTEGER, '10', null, true, false, 0, null);
-        $table->add_field('eventtype', XMLDB_TYPE_CHAR, '40', null, true, false, '', null);
+        $table->add_field('eventtype', XMLDB_TYPE_CHAR, '40', null, true, false, 'unknown', null);
         $table->add_field('eventdetail', XMLDB_TYPE_TEXT, null, null, false, false, null, null);
-        $table->add_field('pagevisibility', XMLDB_TYPE_CHAR, '20', null, true, false, '', null);
+        $table->add_field('pagevisibility', XMLDB_TYPE_CHAR, '20', null, true, false, 'unknown', null);
         $table->add_field('currenturl', XMLDB_TYPE_TEXT, null, null, false, false, null, null);
         $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, true, false, 0, null);
         $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
@@ -521,10 +521,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
             $table->add_field('holdid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
             $table->add_field('riskscore', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
             $table->add_field('triggerthreshold', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
-            $table->add_field('provider', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, '');
-            $table->add_field('model', XMLDB_TYPE_CHAR, '80', null, XMLDB_NOTNULL, null, '');
+            $table->add_field('provider', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'none');
+            $table->add_field('model', XMLDB_TYPE_CHAR, '80', null, XMLDB_NOTNULL, null, 'none');
             $table->add_field('reviewscore', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
-            $table->add_field('decision', XMLDB_TYPE_CHAR, '40', null, XMLDB_NOTNULL, null, '');
+            $table->add_field('decision', XMLDB_TYPE_CHAR, '40', null, XMLDB_NOTNULL, null, 'pending');
             $table->add_field('status', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
             $table->add_field('summary', XMLDB_TYPE_TEXT, null, null, null, null, null);
             $table->add_field('evidence', XMLDB_TYPE_TEXT, null, null, null, null, null);
@@ -759,6 +759,43 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
     if ($oldversion < 2026051900) {
         // No schema changes. Stable v1.0.0 release with P0/P1 security hardening.
         upgrade_plugin_savepoint(true, 2026051900, 'quizaccess', 'proctoring');
+    }
+
+    if ($oldversion < 2026051901) {
+        $table = new xmldb_table('quizaccess_proctoring_face_images');
+
+        if ($dbman->table_exists($table)) {
+            $field = new xmldb_field(
+                'facefound',
+                XMLDB_TYPE_INTEGER,
+                '2',
+                null,
+                XMLDB_NOTNULL,
+                null,
+                '0',
+                'faceimage'
+            );
+            if ($dbman->field_exists($table, $field)) {
+                $dbman->change_field_type($table, $field);
+                $dbman->change_field_default($table, $field);
+            }
+
+            $field = new xmldb_field(
+                'timemodified',
+                XMLDB_TYPE_INTEGER,
+                '10',
+                null,
+                XMLDB_NOTNULL,
+                null,
+                '0',
+                'facefound'
+            );
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+
+        upgrade_plugin_savepoint(true, 2026051901, 'quizaccess', 'proctoring');
     }
 
     return true;

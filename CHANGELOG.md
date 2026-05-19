@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 - Marked the Saylor Proctored Quiz plugin as the first stable v1 release for Moodle 4.5.
 - Added P0/P1 security hardening for pluginfile access, destructive actions, browser-submitted proctoring data, analysis actions, Privacy API coverage, and outbound AI endpoints.
 - Added Moodle Plugin CI workflow coverage for Moodle 4.5.
+- Fixed Moodle 4.5 XMLDB install validation issues found by CI.
 
 # v1.6.16
 - Renamed the displayed plugin name to Saylor Proctored Quiz.

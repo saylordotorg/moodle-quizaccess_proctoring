@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026051159"
+<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026051901"
        COMMENT="XMLDB file for Moodle mod/quiz/accessrule/proctoring"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:noNamespaceSchemaLocation="../../../../../lib/xmldb/xmldb.xsd"
@@ -41,22 +41,22 @@
                 <FIELD NAME="quizid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" SEQUENCE="false"
                        COMMENT="Quiz id" PREVIOUS="courseid" NEXT="userid"/>
                 <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0" SEQUENCE="false"
-                       COMMENT="User who validate identity" PREVIOUS="quizid" NEXT="profilepicture"/>
+                       COMMENT="User who validate identity" PREVIOUS="quizid" NEXT="webcampicture"/>
                 <FIELD NAME="webcampicture" TYPE="text" NOTNULL="true" UNSIGNED="false" SEQUENCE="false"
-                       COMMENT="Webcam photo used for validation purposes" PREVIOUS="profilepicture" NEXT="status"/>
+                       COMMENT="Webcam photo used for validation purposes" PREVIOUS="userid" NEXT="status"/>
                 <FIELD NAME="status" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="false"
-                       COMMENT="Validation process status" PREVIOUS="webcampicture" NEXT="timemodified"/>
+                       COMMENT="Validation process status" PREVIOUS="webcampicture" NEXT="awsscore"/>
                 <FIELD NAME="awsscore" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
                        SEQUENCE="false" COMMENT="AWS image match score" PREVIOUS="status" NEXT="awsflag"/>
                 <FIELD NAME="awsflag" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
-                       SEQUENCE="false" COMMENT="AWS image match score" PREVIOUS="awsscore" NEXT="timemodified"/>
+                       SEQUENCE="false" COMMENT="AWS image match score" PREVIOUS="awsscore" NEXT="deletionprogress"/>
                 <FIELD NAME="deletionprogress" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
                        SEQUENCE="false" COMMENT="Progress of deletion process" PREVIOUS="awsflag" NEXT="timemodified"/>      
                 <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="false"
-                       COMMENT="Validation process date and time" PREVIOUS="status"/>
+                       COMMENT="Validation process date and time" PREVIOUS="deletionprogress"/>
             </FIELDS>
             <KEYS>
-                <KEY NAME="primary" TYPE="primary" FIELDS="id" NEXT="quizid"/>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
             </KEYS>
         </TABLE>
 
@@ -74,7 +74,7 @@
                        COMMENT="Validation process date and time" PREVIOUS="reportid"/>
             </FIELDS>
             <KEYS>
-                <KEY NAME="primary" TYPE="primary" FIELDS="id" NEXT="refimageurl"/>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
             </KEYS>
         </TABLE>
 
@@ -91,7 +91,7 @@
                        COMMENT="User id"/>
             </FIELDS>
             <KEYS>
-                <KEY NAME="primary" TYPE="primary" FIELDS="id" NEXT="reportid"/>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
             </KEYS>
         </TABLE>
 
@@ -108,11 +108,11 @@
                        SEQUENCE="false" COMMENT="Quiz attempt id" PREVIOUS="userid" NEXT="reportid"/>
                 <FIELD NAME="reportid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
                        SEQUENCE="false" COMMENT="Initial proctoring log id" PREVIOUS="attemptid" NEXT="eventtype"/>
-                <FIELD NAME="eventtype" TYPE="char" LENGTH="40" NOTNULL="true" DEFAULT=""
+                <FIELD NAME="eventtype" TYPE="char" LENGTH="40" NOTNULL="true" DEFAULT="unknown"
                        SEQUENCE="false" COMMENT="Suspicious event type" PREVIOUS="reportid" NEXT="eventdetail"/>
                 <FIELD NAME="eventdetail" TYPE="text" NOTNULL="false" SEQUENCE="false"
                        COMMENT="JSON event details" PREVIOUS="eventtype" NEXT="pagevisibility"/>
-                <FIELD NAME="pagevisibility" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT=""
+                <FIELD NAME="pagevisibility" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="unknown"
                        SEQUENCE="false" COMMENT="Document visibility state" PREVIOUS="eventdetail" NEXT="currenturl"/>
                 <FIELD NAME="currenturl" TYPE="text" NOTNULL="false" SEQUENCE="false"
                        COMMENT="Quiz page URL when the event was logged" PREVIOUS="pagevisibility" NEXT="screenshoturl"/>
@@ -198,13 +198,13 @@
                        SEQUENCE="false" COMMENT="Risk score at queue time" PREVIOUS="holdid" NEXT="triggerthreshold"/>
                 <FIELD NAME="triggerthreshold" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
                        SEQUENCE="false" COMMENT="AI review trigger threshold" PREVIOUS="riskscore" NEXT="provider"/>
-                <FIELD NAME="provider" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT=""
+                <FIELD NAME="provider" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="none"
                        SEQUENCE="false" COMMENT="AI review provider" PREVIOUS="triggerthreshold" NEXT="model"/>
-                <FIELD NAME="model" TYPE="char" LENGTH="80" NOTNULL="true" DEFAULT=""
+                <FIELD NAME="model" TYPE="char" LENGTH="80" NOTNULL="true" DEFAULT="none"
                        SEQUENCE="false" COMMENT="AI model used for review" PREVIOUS="provider" NEXT="reviewscore"/>
                 <FIELD NAME="reviewscore" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
                        SEQUENCE="false" COMMENT="AI review score from 0 to 100" PREVIOUS="model" NEXT="decision"/>
-                <FIELD NAME="decision" TYPE="char" LENGTH="40" NOTNULL="true" DEFAULT=""
+                <FIELD NAME="decision" TYPE="char" LENGTH="40" NOTNULL="true" DEFAULT="pending"
                        SEQUENCE="false" COMMENT="AI review decision key" PREVIOUS="reviewscore" NEXT="status"/>
                 <FIELD NAME="status" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
                        SEQUENCE="false" COMMENT="0 queued, 1 processing, 2 complete, 3 failed" PREVIOUS="decision" NEXT="summary"/>
@@ -253,10 +253,14 @@
                 <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
                 <FIELD NAME="parent_type" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="1" SEQUENCE="false"
                        COMMENT="Foreign key for quizaccess_proctoring_logs table or proctoring_user_images table"/>
-                <FIELD NAME="parentid" TYPE="int" LENGTH="20" NOTNULL="true" SEQUENCE="false"/>
+                <FIELD NAME="parentid" TYPE="int" LENGTH="20" NOTNULL="true" SEQUENCE="false" PREVIOUS="parent_type"
+                       NEXT="faceimage"/>
                 <FIELD NAME="faceimage" TYPE="text" NOTNULL="true" UNSIGNED="false" SEQUENCE="false"
-                       COMMENT="Face photo used for validation purposes" PREVIOUS="profilepicture" NEXT="status"/>
-                <FIELD NAME="facefound" TYPE="char" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+                       COMMENT="Face photo used for validation purposes" PREVIOUS="parentid" NEXT="facefound"/>
+                <FIELD NAME="facefound" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false"
+                       PREVIOUS="faceimage" NEXT="timemodified"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Face image creation or update time" PREVIOUS="facefound"/>
             </FIELDS>
             <KEYS>
                 <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

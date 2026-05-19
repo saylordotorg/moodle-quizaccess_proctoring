@@ -151,6 +151,7 @@ class provider implements
             'parentid' => 'privacy:metadata:parentid',
             'faceimage' => 'privacy:metadata:faceimage',
             'facefound' => 'privacy:metadata:facefound',
+            'timemodified' => 'timemodified',
         ];
 
         $collection->add_database_table(
@@ -400,7 +401,7 @@ class provider implements
                         "parentid {$loginsql} AND parent_type <> :adminparent",
                         $faceparams,
                         '',
-                        'id, parent_type, parentid, faceimage, facefound'
+                        'id, parent_type, parentid, faceimage, facefound, timemodified'
                     );
 
                     $index = 0;
@@ -418,6 +419,7 @@ class provider implements
                             'parentid' => $faceimage->parentid,
                             'faceimage' => $faceimage->faceimage,
                             'facefound' => $faceimage->facefound,
+                            'timemodified' => transform::datetime($faceimage->timemodified),
                         ];
 
                         writer::with_context($context)
@@ -586,7 +588,7 @@ class provider implements
                             'parent_type' => 'admin_image',
                         ],
                         '',
-                        'id, parent_type, parentid, faceimage, facefound'
+                        'id, parent_type, parentid, faceimage, facefound, timemodified'
                     );
 
                     $index = 0;
@@ -603,6 +605,7 @@ class provider implements
                             'parentid' => $faceimage->parentid,
                             'faceimage' => $faceimage->faceimage,
                             'facefound' => $faceimage->facefound,
+                            'timemodified' => transform::datetime($faceimage->timemodified),
                         ];
 
                         writer::with_context($context)->export_data($subcontext, $data);
