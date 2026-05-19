@@ -803,5 +803,13 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051902, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026051903) {
+        if (get_config('quizaccess_proctoring', 'dailyreportallowexternal') === false) {
+            set_config('dailyreportallowexternal', 0, 'quizaccess_proctoring');
+        }
+
+        upgrade_plugin_savepoint(true, 2026051903, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

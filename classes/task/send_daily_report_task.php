@@ -16,6 +16,7 @@
 
 namespace quizaccess_proctoring\task;
 
+use context_module;
 use core\task\scheduled_task;
 use core_user;
 use moodle_url;
@@ -63,32 +64,36 @@ class send_daily_report_task extends scheduled_task {
             return;
         }
 
+        $sendempty = (int)get_config('quizaccess_proctoring', 'dailyreportsendempty') === 1;
         $end = time();
         $start = $end - DAYSECS;
-        $data = $this->build_report_data($start, $end);
-        $sendempty = (int)get_config('quizaccess_proctoring', 'dailyreportsendempty') === 1;
-        if (empty($data['rows']) && !$sendempty) {
-            mtrace('No Saylor Proctored Quiz report rows to send.');
-            return;
-        }
-
-        $subject = get_string('dailyreport:subject', 'quizaccess_proctoring', userdate($end, '%Y-%m-%d'));
-        $messagetext = $this->render_text_report($data, $start, $end);
-        $messagehtml = $this->render_html_report($data, $start, $end);
         $from = core_user::get_noreply_user();
 
         $sent = 0;
+        $skippedempty = 0;
         foreach ($recipients as $recipient) {
+            $data = $this->build_report_data($start, $end, $recipient);
+            if (empty($data['rows']) && !$sendempty) {
+                $skippedempty++;
+                continue;
+            }
+
+            $subject = get_string('dailyreport:subject', 'quizaccess_proctoring', userdate($end, '%Y-%m-%d'));
+            $messagetext = $this->render_text_report($data, $start, $end);
+            $messagehtml = $this->render_html_report($data, $start, $end);
             if (email_to_user($recipient, $from, $subject, $messagetext, $messagehtml)) {
                 $sent++;
             }
         }
 
         mtrace("Sent Saylor Proctored Quiz daily report to {$sent} recipient(s).");
+        if ($skippedempty > 0) {
+            mtrace("Skipped {$skippedempty} recipient(s) with no authorized report rows.");
+        }
     }
 
     /**
-     * Parses recipient emails into user-like objects accepted by email_to_user().
+     * Parses recipient emails into user objects accepted by email_to_user().
      *
      * @param string $rawemails Raw setting value.
      * @return array
@@ -96,6 +101,7 @@ class send_daily_report_task extends scheduled_task {
     private function get_recipients(string $rawemails): array {
         global $CFG;
 
+        $allowexternal = (int)get_config('quizaccess_proctoring', 'dailyreportallowexternal') === 1;
         $emails = preg_split('/[\s,;]+/', trim($rawemails), -1, PREG_SPLIT_NO_EMPTY);
         $emails = array_unique(array_map('strtolower', $emails ?: []));
         $recipients = [];
@@ -107,23 +113,35 @@ class send_daily_report_task extends scheduled_task {
             }
 
             $user = core_user::get_user_by_email($email);
-            if (!$user) {
-                $user = (object)[
-                    'id' => -1,
-                    'email' => $email,
-                    'firstname' => get_string('dailyreport:recipientfirstname', 'quizaccess_proctoring'),
-                    'lastname' => get_string('dailyreport:recipientlastname', 'quizaccess_proctoring'),
-                    'maildisplay' => 1,
-                    'mailformat' => 1,
-                    'deleted' => 0,
-                    'suspended' => 0,
-                    'auth' => 'manual',
-                    'mnethostid' => $CFG->mnet_localhost_id ?? 1,
-                    'confirmed' => 1,
-                ];
+            if ($user) {
+                if (!empty($user->deleted) || !empty($user->suspended) || empty($user->confirmed)) {
+                    mtrace("Skipping inactive daily report recipient Moodle user: {$email}");
+                    continue;
+                }
+
+                $recipients[] = $user;
+                continue;
             }
 
-            $recipients[] = $user;
+            if (!$allowexternal) {
+                mtrace("Skipping external daily report recipient email because external recipients are disabled: {$email}");
+                continue;
+            }
+
+            $recipients[] = (object)[
+                'id' => -1,
+                'email' => $email,
+                'firstname' => get_string('dailyreport:recipientfirstname', 'quizaccess_proctoring'),
+                'lastname' => get_string('dailyreport:recipientlastname', 'quizaccess_proctoring'),
+                'maildisplay' => 1,
+                'mailformat' => 1,
+                'deleted' => 0,
+                'suspended' => 0,
+                'auth' => 'manual',
+                'mnethostid' => $CFG->mnet_localhost_id ?? 1,
+                'confirmed' => 1,
+                'quizaccessproctoringexternal' => true,
+            ];
         }
 
         return $recipients;
@@ -134,11 +152,11 @@ class send_daily_report_task extends scheduled_task {
      *
      * @param int $start Start timestamp.
      * @param int $end End timestamp.
+     * @param stdClass|null $recipient Recipient used to scope report rows.
      * @return array
      */
-    private function build_report_data(int $start, int $end): array {
+    private function build_report_data(int $start, int $end, ?stdClass $recipient = null): array {
         $attempts = $this->get_recent_attempts($start, $end);
-        $recentattemptcount = count($attempts);
         foreach ($this->get_active_hold_attempts() as $key => $attempt) {
             $attempts[$key] = $attempts[$key] ?? $attempt;
             $attempts[$key]->fromactivehold = true;
@@ -147,7 +165,7 @@ class send_daily_report_task extends scheduled_task {
         $includeall = (int)get_config('quizaccess_proctoring', 'dailyreportincludeall') === 1;
         $rows = [];
         $summary = [
-            'recentattempts' => $recentattemptcount,
+            'recentattempts' => 0,
             'reportrows' => 0,
             'highrisk' => 0,
             'activeholds' => 0,
@@ -156,7 +174,14 @@ class send_daily_report_task extends scheduled_task {
         ];
 
         foreach ($attempts as $attempt) {
+            if ($recipient && !$this->recipient_can_view_attempt($recipient, $attempt)) {
+                continue;
+            }
+
             $row = $this->build_attempt_row($attempt);
+            if (empty($attempt->fromactivehold)) {
+                $summary['recentattempts']++;
+            }
             $summary['events'] += $row['eventcount'];
             if ($row['activehold']) {
                 $summary['activeholds']++;
@@ -187,6 +212,30 @@ class send_daily_report_task extends scheduled_task {
             'summary' => $summary,
             'rows' => $rows,
         ];
+    }
+
+    /**
+     * Checks whether a recipient can receive a row for the supplied attempt.
+     *
+     * @param stdClass $recipient Recipient user object.
+     * @param stdClass $attempt Attempt record.
+     * @return bool
+     */
+    private function recipient_can_view_attempt(stdClass $recipient, stdClass $attempt): bool {
+        if (!empty($recipient->quizaccessproctoringexternal)) {
+            return true;
+        }
+
+        if (empty($recipient->id) || (int)$recipient->id < 1) {
+            return false;
+        }
+
+        $context = context_module::instance((int)$attempt->cmid, IGNORE_MISSING);
+        if (!$context) {
+            return false;
+        }
+
+        return has_capability('quizaccess/proctoring:viewreport', $context, (int)$recipient->id);
     }
 
     /**
@@ -329,6 +378,8 @@ class send_daily_report_task extends scheduled_task {
         ]);
 
         return [
+            'courseid' => (int)$attempt->courseid,
+            'cmid' => (int)$attempt->cmid,
             'course' => (string)$attempt->coursename,
             'quiz' => (string)$attempt->quizname,
             'student' => fullname($attempt),

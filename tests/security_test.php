@@ -25,6 +25,7 @@
 namespace quizaccess_proctoring;
 
 use advanced_testcase;
+use quizaccess_proctoring\task\send_daily_report_task;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -181,6 +182,110 @@ final class security_test extends advanced_testcase {
         }
 
         $this->assertNotEmpty($capabilities['quizaccess/proctoring:deletecamshots']['riskbitmask'] & RISK_DATALOSS);
+    }
+
+    /**
+     * External daily report addresses should require an explicit privacy-aware admin opt-in.
+     */
+    public function test_daily_report_external_recipients_require_explicit_opt_in(): void {
+        $this->resetAfterTest();
+
+        $teacher = $this->getDataGenerator()->create_user(['email' => 'teacher-security@example.com']);
+        $task = new send_daily_report_task();
+
+        set_config('dailyreportallowexternal', 0, 'quizaccess_proctoring');
+        $recipients = $this->invoke_task_method($task, 'get_recipients', [
+            $teacher->email . ', external-security@example.com',
+        ]);
+        $this->assertCount(1, $recipients);
+        $this->assertSame($teacher->id, reset($recipients)->id);
+
+        set_config('dailyreportallowexternal', 1, 'quizaccess_proctoring');
+        $recipients = $this->invoke_task_method($task, 'get_recipients', [
+            $teacher->email . ', external-security@example.com',
+        ]);
+        $this->assertCount(2, $recipients);
+
+        $external = array_values(array_filter($recipients, static function($recipient): bool {
+            return !empty($recipient->quizaccessproctoringexternal);
+        }));
+        $this->assertCount(1, $external);
+        $this->assertSame('external-security@example.com', $external[0]->email);
+    }
+
+    /**
+     * Moodle-user daily report recipients should only receive rows they can view.
+     */
+    public function test_daily_report_rows_are_scoped_to_recipient_report_capability(): void {
+        $this->resetAfterTest();
+
+        set_config('dailyreportincludeall', 1, 'quizaccess_proctoring');
+        $task = new send_daily_report_task();
+
+        [$firstcourse, $firstcm] = $this->create_daily_report_log_fixture('First security course');
+        [, $secondcm] = $this->create_daily_report_log_fixture('Second security course');
+
+        $teacher = $this->getDataGenerator()->create_user();
+        $outsider = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($teacher->id, $firstcourse->id, 'teacher');
+
+        $start = time() - DAYSECS;
+        $end = time() + MINSECS;
+
+        $teacherdata = $this->invoke_task_method($task, 'build_report_data', [$start, $end, $teacher]);
+        $this->assertCount(1, $teacherdata['rows']);
+        $this->assertSame((int)$firstcm->id, (int)$teacherdata['rows'][0]['cmid']);
+
+        $outsiderdata = $this->invoke_task_method($task, 'build_report_data', [$start, $end, $outsider]);
+        $this->assertCount(0, $outsiderdata['rows']);
+        $this->assertSame(0, $outsiderdata['summary']['recentattempts']);
+
+        $externalrecipient = (object)['id' => -1, 'quizaccessproctoringexternal' => true];
+        $externaldata = $this->invoke_task_method($task, 'build_report_data', [$start, $end, $externalrecipient]);
+        $this->assertCount(2, $externaldata['rows']);
+        $this->assertContains((int)$firstcm->id, array_map('intval', array_column($externaldata['rows'], 'cmid')));
+        $this->assertContains((int)$secondcm->id, array_map('intval', array_column($externaldata['rows'], 'cmid')));
+    }
+
+    /**
+     * Calls a private task method for focused security regression tests.
+     *
+     * @param object $object Object under test.
+     * @param string $method Method name.
+     * @param array $arguments Method arguments.
+     * @return mixed
+     */
+    private function invoke_task_method(object $object, string $method, array $arguments = []) {
+        $reflection = new \ReflectionMethod($object, $method);
+        $reflection->setAccessible(true);
+        return $reflection->invokeArgs($object, $arguments);
+    }
+
+    /**
+     * Creates one recent proctored attempt log for daily report filtering tests.
+     *
+     * @param string $coursename Course full name.
+     * @return array Course and course module.
+     */
+    private function create_daily_report_log_fixture(string $coursename): array {
+        global $DB;
+
+        $course = $this->getDataGenerator()->create_course(['fullname' => $coursename]);
+        $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id]);
+        $cm = get_coursemodule_from_id('quiz', $quiz->cmid, $course->id, false, MUST_EXIST);
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id, 'student');
+
+        $DB->insert_record('quizaccess_proctoring_logs', (object)[
+            'courseid' => $course->id,
+            'quizid' => $cm->id,
+            'userid' => $student->id,
+            'webcampicture' => '',
+            'status' => 1,
+            'timemodified' => time(),
+        ]);
+
+        return [$course, $cm];
     }
 
     /**

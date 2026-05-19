@@ -336,6 +336,10 @@ if ($hassiteconfig) {
         get_string('setting:dailyreportemails', 'quizaccess_proctoring'),
         get_string('setting:dailyreportemails_desc', 'quizaccess_proctoring'), '', PARAM_TEXT));
 
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/dailyreportallowexternal',
+        get_string('setting:dailyreportallowexternal', 'quizaccess_proctoring'),
+        get_string('setting:dailyreportallowexternal_desc', 'quizaccess_proctoring'), 0));
+
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/dailyreportincludeall',
         get_string('setting:dailyreportincludeall', 'quizaccess_proctoring'),
         get_string('setting:dailyreportincludeall_desc', 'quizaccess_proctoring'), 0));

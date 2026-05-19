@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.0.2
+- Hardened daily proctoring report email recipients so external addresses require explicit admin opt-in.
+- Scoped daily report rows for Moodle-user recipients to attempts they can view with proctoring report capability.
+
 # v1.0.1
 - Added Moodle `RISK_PERSONAL` metadata to capabilities that submit, view, analyze, or delete proctoring personal data.
 
