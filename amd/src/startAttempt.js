@@ -248,7 +248,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 let screenVideo = null;
                 let screenCanvas = null;
                 let idLiveStream = null;
+                let idDocumentStream = null;
+                let idDocumentAutoCaptureTimer = null;
+                let idDocumentAutoCaptureScore = 0;
+                let idDocumentAutoCaptureRunning = false;
+                let capturedIdImage = '';
                 let screenMonitorClient = null;
+                const idDocumentAutoCaptureRequiredScore = 3;
+                const idDocumentAutoCaptureInterval = 350;
                 const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
 
                 const escapeHtml = function(text) {
@@ -597,6 +604,49 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     });
                 };
 
+                const setIdDocumentCaptureState = function(state) {
+                    const preview = document.getElementById('proctoring-id-document-preview');
+                    const video = document.getElementById('proctoring-id-document-video');
+                    const image = document.getElementById('proctoring-id-document-preview-image');
+                    const guide = document.querySelector('.proctoring-id-document-guide');
+                    const startButton = document.getElementById('idverificationdocumentcamera');
+                    const captureButton = document.getElementById('idverificationdocumentcapture');
+                    const retakeButton = document.getElementById('idverificationdocumentretake');
+                    const cameraMode = state === 'camera';
+                    const capturedMode = state === 'captured';
+
+                    if (preview) {
+                        preview.style.display = cameraMode || capturedMode ? 'block' : 'none';
+                    }
+                    if (video) {
+                        video.style.display = cameraMode ? 'block' : 'none';
+                    }
+                    if (guide) {
+                        guide.style.display = cameraMode ? 'block' : 'none';
+                    }
+                    if (image) {
+                        image.style.display = capturedMode ? 'block' : 'none';
+                    }
+                    if (startButton) {
+                        startButton.style.display = cameraMode || capturedMode ? 'none' : 'inline-flex';
+                    }
+                    if (captureButton) {
+                        captureButton.style.display = cameraMode ? 'inline-flex' : 'none';
+                    }
+                    if (retakeButton) {
+                        retakeButton.style.display = capturedMode ? 'inline-flex' : 'none';
+                    }
+                };
+
+                const stopIdDocumentAutoCapture = function() {
+                    if (idDocumentAutoCaptureTimer) {
+                        window.clearInterval(idDocumentAutoCaptureTimer);
+                        idDocumentAutoCaptureTimer = null;
+                    }
+                    idDocumentAutoCaptureScore = 0;
+                    idDocumentAutoCaptureRunning = false;
+                };
+
                 const waitForVideoFrame = async function(video) {
                     for (let attempts = 0; attempts < 20; attempts++) {
                         if (video && video.videoWidth && video.videoHeight) {
@@ -608,11 +658,272 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return false;
                 };
 
+                const stopIdDocumentStream = function() {
+                    const video = document.getElementById('proctoring-id-document-video');
+                    stopIdDocumentAutoCapture();
+                    if (idDocumentStream) {
+                        idDocumentStream.getTracks().forEach((track) => track.stop());
+                        idDocumentStream = null;
+                    }
+                    if (video) {
+                        video.srcObject = null;
+                    }
+                };
+
                 const stopIdLiveStream = function() {
                     if (idLiveStream) {
                         idLiveStream.getTracks().forEach((track) => track.stop());
                         idLiveStream = null;
                     }
+                };
+
+                const getContainedVideoRect = function(video) {
+                    const bounds = video.getBoundingClientRect();
+                    const sourceWidth = video.videoWidth || 0;
+                    const sourceHeight = video.videoHeight || 0;
+                    if (!bounds.width || !bounds.height || !sourceWidth || !sourceHeight) {
+                        return null;
+                    }
+
+                    const sourceRatio = sourceWidth / sourceHeight;
+                    const boundsRatio = bounds.width / bounds.height;
+                    if (sourceRatio > boundsRatio) {
+                        const height = bounds.width / sourceRatio;
+                        return {
+                            left: bounds.left,
+                            top: bounds.top + ((bounds.height - height) / 2),
+                            width: bounds.width,
+                            height: height,
+                        };
+                    }
+
+                    const width = bounds.height * sourceRatio;
+                    return {
+                        left: bounds.left + ((bounds.width - width) / 2),
+                        top: bounds.top,
+                        width: width,
+                        height: bounds.height,
+                    };
+                };
+
+                const getIdDocumentGuideSourceRect = function(video, paddingRatio) {
+                    const guide = document.querySelector('.proctoring-id-document-guide');
+                    const videoRect = getContainedVideoRect(video);
+                    if (!guide || !videoRect) {
+                        return null;
+                    }
+
+                    const guideRect = guide.getBoundingClientRect();
+                    if (!guideRect.width || !guideRect.height) {
+                        return null;
+                    }
+
+                    const padding = Math.min(guideRect.width, guideRect.height) * (paddingRatio || 0);
+                    const visibleLeft = Math.max(videoRect.left, guideRect.left - padding);
+                    const visibleTop = Math.max(videoRect.top, guideRect.top - padding);
+                    const visibleRight = Math.min(videoRect.left + videoRect.width, guideRect.right + padding);
+                    const visibleBottom = Math.min(videoRect.top + videoRect.height, guideRect.bottom + padding);
+                    if (visibleRight <= visibleLeft || visibleBottom <= visibleTop) {
+                        return null;
+                    }
+
+                    const x = ((visibleLeft - videoRect.left) / videoRect.width) * video.videoWidth;
+                    const y = ((visibleTop - videoRect.top) / videoRect.height) * video.videoHeight;
+                    const width = ((visibleRight - visibleLeft) / videoRect.width) * video.videoWidth;
+                    const height = ((visibleBottom - visibleTop) / videoRect.height) * video.videoHeight;
+
+                    return {
+                        x: Math.max(0, Math.floor(x)),
+                        y: Math.max(0, Math.floor(y)),
+                        width: Math.max(1, Math.min(video.videoWidth - Math.floor(x), Math.floor(width))),
+                        height: Math.max(1, Math.min(video.videoHeight - Math.floor(y), Math.floor(height))),
+                    };
+                };
+
+                const documentRegionLooksAligned = function(video) {
+                    const canvas = document.getElementById('proctoring-id-document-canvas');
+                    const rect = getIdDocumentGuideSourceRect(video, 0);
+                    if (!canvas || !rect) {
+                        return false;
+                    }
+
+                    const sampleWidth = 180;
+                    const sampleHeight = Math.max(80, Math.round(sampleWidth * (rect.height / rect.width)));
+                    canvas.width = sampleWidth;
+                    canvas.height = sampleHeight;
+
+                    const context = canvas.getContext('2d');
+                    context.drawImage(video, rect.x, rect.y, rect.width, rect.height, 0, 0, sampleWidth, sampleHeight);
+                    const imageData = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
+                    const step = 3;
+                    let count = 0;
+                    let bright = 0;
+                    let sum = 0;
+                    let sumsq = 0;
+                    let edges = 0;
+                    let edgeComparisons = 0;
+                    let previousRow = [];
+
+                    for (let yy = 0; yy < sampleHeight; yy += step) {
+                        const row = [];
+                        let column = 0;
+                        for (let xx = 0; xx < sampleWidth; xx += step) {
+                            const index = ((yy * sampleWidth) + xx) * 4;
+                            const luminance = (0.2126 * imageData[index]) +
+                                (0.7152 * imageData[index + 1]) +
+                                (0.0722 * imageData[index + 2]);
+                            row[column] = luminance;
+                            sum += luminance;
+                            sumsq += luminance * luminance;
+                            count++;
+                            if (luminance > 70) {
+                                bright++;
+                            }
+                            if (column > 0) {
+                                if (Math.abs(luminance - row[column - 1]) > 28) {
+                                    edges++;
+                                }
+                                edgeComparisons++;
+                            }
+                            if (previousRow[column] !== undefined) {
+                                if (Math.abs(luminance - previousRow[column]) > 28) {
+                                    edges++;
+                                }
+                                edgeComparisons++;
+                            }
+                            column++;
+                        }
+                        previousRow = row;
+                    }
+
+                    if (!count || !edgeComparisons) {
+                        return false;
+                    }
+
+                    const brightness = sum / count;
+                    const variance = Math.max(0, (sumsq / count) - (brightness * brightness));
+                    const contrast = Math.sqrt(variance);
+                    const brightRatio = bright / count;
+                    const edgeDensity = edges / edgeComparisons;
+
+                    return brightness >= 75 &&
+                        brightness <= 235 &&
+                        contrast >= 12 &&
+                        brightRatio >= 0.55 &&
+                        edgeDensity >= 0.035 &&
+                        edgeDensity <= 0.45;
+                };
+
+                const drawIdDocumentCapture = function(video, canvas) {
+                    const context = canvas.getContext('2d');
+                    const rect = getIdDocumentGuideSourceRect(video, 0.035);
+                    if (!rect) {
+                        const fallbackSize = getCameraCaptureSize(video);
+                        canvas.width = fallbackSize.width;
+                        canvas.height = fallbackSize.height;
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        return;
+                    }
+
+                    const targetWidth = Math.min(1280, Math.max(640, Math.round(rect.width)));
+                    const targetHeight = Math.max(1, Math.round(targetWidth * (rect.height / rect.width)));
+                    canvas.width = targetWidth;
+                    canvas.height = targetHeight;
+                    context.drawImage(video, rect.x, rect.y, rect.width, rect.height, 0, 0, targetWidth, targetHeight);
+                };
+
+                const startIdDocumentAutoCapture = function() {
+                    stopIdDocumentAutoCapture();
+                    idDocumentAutoCaptureTimer = window.setInterval(async function() {
+                        const video = document.getElementById('proctoring-id-document-video');
+                        if (idDocumentAutoCaptureRunning || capturedIdImage || !idDocumentStream ||
+                                !video || video.srcObject !== idDocumentStream || !video.videoWidth) {
+                            return;
+                        }
+
+                        idDocumentAutoCaptureRunning = true;
+                        try {
+                            idDocumentAutoCaptureScore = documentRegionLooksAligned(video)
+                                ? idDocumentAutoCaptureScore + 1
+                                : 0;
+                            if (idDocumentAutoCaptureScore >= idDocumentAutoCaptureRequiredScore) {
+                                await captureIdDocumentImage();
+                            }
+                        } finally {
+                            idDocumentAutoCaptureRunning = false;
+                        }
+                    }, idDocumentAutoCaptureInterval);
+                };
+
+                const startIdDocumentCamera = async function() {
+                    const video = document.getElementById('proctoring-id-document-video');
+                    if (!video) {
+                        return false;
+                    }
+
+                    if (idDocumentStream && video.srcObject === idDocumentStream && video.videoWidth) {
+                        setIdDocumentCaptureState('camera');
+                        startIdDocumentAutoCapture();
+                        return true;
+                    }
+
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                        return false;
+                    }
+
+                    stopIdLiveStream();
+                    stopIdDocumentStream();
+                    idDocumentStream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: {ideal: 'environment'},
+                            width: {ideal: 1280},
+                            height: {ideal: 720}
+                        },
+                        audio: false
+                    }).catch(() => navigator.mediaDevices.getUserMedia({video: true, audio: false}));
+
+                    video.srcObject = idDocumentStream;
+                    video.muted = true;
+                    video.playsInline = true;
+                    await video.play();
+
+                    if (!await waitForVideoFrame(video)) {
+                        stopIdDocumentStream();
+                        setIdDocumentCaptureState('hidden');
+                        return false;
+                    }
+
+                    setIdDocumentCaptureState('camera');
+                    startIdDocumentAutoCapture();
+                    return true;
+                };
+
+                const captureIdDocumentImage = async function() {
+                    const video = document.getElementById('proctoring-id-document-video');
+                    const canvas = document.getElementById('proctoring-id-document-canvas');
+                    const preview = document.getElementById('proctoring-id-document-preview-image');
+                    if (!video || !canvas || !preview) {
+                        return false;
+                    }
+                    if (!idDocumentStream || video.srcObject !== idDocumentStream || !video.videoWidth) {
+                        if (!await startIdDocumentCamera()) {
+                            return false;
+                        }
+                    }
+
+                    drawIdDocumentCapture(video, canvas);
+                    capturedIdImage = canvas.toDataURL('image/png');
+                    preview.setAttribute('src', capturedIdImage);
+                    stopIdDocumentAutoCapture();
+                    setIdDocumentCaptureState('captured');
+                    stopIdDocumentStream();
+
+                    const idInput = document.getElementById('proctoring-id-document');
+                    if (idInput) {
+                        idInput.value = '';
+                    }
+
+                    return true;
                 };
 
                 const startIdVerificationCamera = async function() {
@@ -629,6 +940,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         return false;
                     }
 
+                    stopIdDocumentStream();
+                    if (!capturedIdImage) {
+                        setIdDocumentCaptureState('hidden');
+                    }
                     stopIdLiveStream();
                     idLiveStream = await navigator.mediaDevices.getUserMedia({
                         video: {
@@ -768,6 +1083,17 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     });
                 }
 
+                const idDocumentInput = document.getElementById('proctoring-id-document');
+                if (idDocumentInput) {
+                    idDocumentInput.addEventListener('change', function() {
+                        if (idDocumentInput.files && idDocumentInput.files[0]) {
+                            capturedIdImage = '';
+                            stopIdDocumentStream();
+                            setIdDocumentCaptureState('hidden');
+                        }
+                    });
+                }
+
                 if (captchaRequired) {
                     window.setInterval(function() {
                         const previousReady = captchaReady;
@@ -785,6 +1111,48 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 $("#multimonitorvalidate").click(async function(event) {
                     event.preventDefault();
                     await checkMultiMonitorSetup(true);
+                });
+
+                $("#idverificationdocumentcamera").click(async function(event) {
+                    event.preventDefault();
+                    capturedIdImage = '';
+                    try {
+                        if (!await startIdDocumentCamera()) {
+                            setIdVerificationResult(strings.videonotavailable, false);
+                        }
+                    } catch (error) {
+                        setIdDocumentCaptureState('hidden');
+                        setIdVerificationResult(strings.videonotavailable, false);
+                    }
+                });
+
+                $("#idverificationdocumentcapture").click(async function(event) {
+                    event.preventDefault();
+                    try {
+                        if (!await captureIdDocumentImage()) {
+                            setIdVerificationResult(strings.idverificationdocumentmissing, false);
+                        }
+                    } catch (error) {
+                        setIdVerificationResult(strings.idverificationdocumentmissing, false);
+                    }
+                });
+
+                $("#idverificationdocumentretake").click(async function(event) {
+                    event.preventDefault();
+                    capturedIdImage = '';
+                    const preview = document.getElementById('proctoring-id-document-preview-image');
+                    if (preview) {
+                        preview.removeAttribute('src');
+                    }
+                    try {
+                        if (!await startIdDocumentCamera()) {
+                            setIdDocumentCaptureState('hidden');
+                            setIdVerificationResult(strings.videonotavailable, false);
+                        }
+                    } catch (error) {
+                        setIdDocumentCaptureState('hidden');
+                        setIdVerificationResult(strings.videonotavailable, false);
+                    }
                 });
 
                 $("#idverificationcamera").click(async function(event) {
@@ -827,7 +1195,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     };
 
                     const idInput = document.getElementById('proctoring-id-document');
-                    if (!idInput || !idInput.files || !idInput.files[0]) {
+                    if (!capturedIdImage && (!idInput || !idInput.files || !idInput.files[0])) {
                         failIdentity(strings.idverificationdocumentmissing);
                         return;
                     }
@@ -864,12 +1232,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         liveFaceFound = detection.faceFound;
                     }
 
-                    let idImage = '';
-                    try {
-                        idImage = await readFileAsDataUrl(idInput.files[0]);
-                    } catch (error) {
-                        failIdentity(strings.idverificationdocumentmissing);
-                        return;
+                    let idImage = capturedIdImage;
+                    if (!idImage) {
+                        try {
+                            idImage = await readFileAsDataUrl(idInput.files[0]);
+                        } catch (error) {
+                            failIdentity(strings.idverificationdocumentmissing);
+                            return;
+                        }
                     }
 
                     Ajax.call([{

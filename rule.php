@@ -960,6 +960,62 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                     'alert alert-success proctoring-idv-existing'
                 )
                 : '';
+            $idcameracapture = html_writer::div(
+                html_writer::div(
+                    html_writer::tag('video', '', [
+                        'id' => 'proctoring-id-document-video',
+                        'class' => 'proctoring-id-document-video',
+                        'autoplay' => 'autoplay',
+                        'muted' => 'muted',
+                        'playsinline' => 'playsinline',
+                    ]) .
+                    html_writer::div('', 'proctoring-id-document-guide', ['aria-hidden' => 'true']) .
+                    html_writer::empty_tag('img', [
+                        'id' => 'proctoring-id-document-preview-image',
+                        'class' => 'proctoring-id-document-preview-image',
+                        'alt' => '',
+                    ]),
+                    'proctoring-id-document-preview',
+                    ['id' => 'proctoring-id-document-preview', 'style' => 'display:none;']
+                ) .
+                html_writer::tag('canvas', '', [
+                    'id' => 'proctoring-id-document-canvas',
+                    'style' => 'display:none;',
+                ]) .
+                html_writer::div(
+                    html_writer::tag(
+                        'button',
+                        get_string('modal:idverificationdocumentcamera', 'quizaccess_proctoring'),
+                        [
+                            'type' => 'button',
+                            'id' => 'idverificationdocumentcamera',
+                            'class' => 'btn btn-secondary mr-2 mb-2',
+                        ]
+                    ) .
+                    html_writer::tag(
+                        'button',
+                        get_string('modal:idverificationdocumentcapture', 'quizaccess_proctoring'),
+                        [
+                            'type' => 'button',
+                            'id' => 'idverificationdocumentcapture',
+                            'class' => 'btn btn-secondary mr-2 mb-2',
+                            'style' => 'display:none;',
+                        ]
+                    ) .
+                    html_writer::tag(
+                        'button',
+                        get_string('modal:idverificationdocumentretake', 'quizaccess_proctoring'),
+                        [
+                            'type' => 'button',
+                            'id' => 'idverificationdocumentretake',
+                            'class' => 'btn btn-link mb-2',
+                            'style' => 'display:none;',
+                        ]
+                    ),
+                    'proctoring-id-document-actions'
+                ),
+                'proctoring-id-document-camera mb-3'
+            );
             $idverificationhtml = html_writer::div(
                 html_writer::label(
                     get_string('modal:idverificationdocument', 'quizaccess_proctoring'),
@@ -974,6 +1030,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                     'accept' => 'image/*',
                     'capture' => 'environment',
                 ]) .
+                $idcameracapture .
                 html_writer::tag('video', '', [
                     'id' => 'proctoring-id-live-video',
                     'class' => 'proctoring-id-live-video mb-2',

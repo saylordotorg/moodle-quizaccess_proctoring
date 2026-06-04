@@ -1,6 +1,12 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.2
+- Added automatic ID image capture when the document remains aligned in the on-screen guide.
+
+# v1.1.1
+- Added an optional guided ID document camera capture with an on-screen alignment outline for pre-attempt ID verification.
+
 # v1.1.0
 - Added optional pre-attempt ID verification with ID image upload, live face capture, and Saylor/custom AI endpoint scoring.
 - Added private ID verification evidence storage, retention cleanup, pluginfile access controls, and Privacy API export/delete coverage.

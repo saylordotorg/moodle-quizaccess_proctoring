@@ -320,6 +320,77 @@ body.proctoring-lb-disable-scrolling {
     width: 100%;
 }
 
+.proctoring-id-document-camera {
+    width: 100%;
+}
+
+.proctoring-id-document-preview {
+    background: #111;
+    border: 1px solid #ced4da;
+    border-radius: 0.25rem;
+    max-width: 520px;
+    overflow: hidden;
+    position: relative;
+    width: 100%;
+}
+
+.proctoring-id-document-preview::before {
+    content: "";
+    display: block;
+    padding-top: 75%;
+}
+
+.proctoring-id-document-video,
+.proctoring-id-document-preview-image {
+    display: none;
+    height: 100%;
+    inset: 0;
+    object-fit: contain;
+    position: absolute;
+    width: 100%;
+}
+
+.proctoring-id-document-guide {
+    aspect-ratio: 1.586 / 1;
+    border: 3px solid rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
+    box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.28), 0 0 18px rgba(0, 0, 0, 0.45);
+    display: none;
+    left: 8%;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 84%;
+}
+
+.proctoring-id-document-guide::before,
+.proctoring-id-document-guide::after {
+    background: rgba(255, 255, 255, 0.8);
+    content: "";
+    position: absolute;
+}
+
+.proctoring-id-document-guide::before {
+    height: 1px;
+    left: 8%;
+    right: 8%;
+    top: 50%;
+}
+
+.proctoring-id-document-guide::after {
+    bottom: 12%;
+    top: 12%;
+    left: 50%;
+    width: 1px;
+}
+
+.proctoring-id-document-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
 .proctoring-id-live-video {
     background: #111;
     border: 1px solid #ced4da;
