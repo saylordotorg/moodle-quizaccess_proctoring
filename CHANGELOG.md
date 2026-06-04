@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.3
+- Slowed automatic ID image capture so the document must remain aligned for longer before capture.
+
 # v1.1.2
 - Added automatic ID image capture when the document remains aligned in the on-screen guide.
 

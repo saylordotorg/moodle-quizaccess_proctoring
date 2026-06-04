@@ -254,8 +254,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 let idDocumentAutoCaptureRunning = false;
                 let capturedIdImage = '';
                 let screenMonitorClient = null;
-                const idDocumentAutoCaptureRequiredScore = 3;
-                const idDocumentAutoCaptureInterval = 350;
+                const idDocumentAutoCaptureRequiredScore = 8;
+                const idDocumentAutoCaptureInterval = 400;
                 const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
 
                 const escapeHtml = function(text) {
