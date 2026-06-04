@@ -52,6 +52,17 @@ $functions = [
         'services'     => [MOODLE_OFFICIAL_MOBILE_SERVICE],
     ],
 
+    // Send an ID document and live face image for pre-attempt identity verification.
+    'quizaccess_proctoring_verify_id' => [
+        'classname'    => 'quizaccess_proctoring_external',
+        'methodname'   => 'verify_id',
+        'description'  => 'Verify an ID document against a live face and Moodle profile name.',
+        'type'         => 'write',
+        'ajax'         => true,
+        'capabilities' => 'quizaccess/proctoring:sendcamshot',
+        'services'     => [MOODLE_OFFICIAL_MOBILE_SERVICE],
+    ],
+
     // Log suspicious browser activity during a proctored quiz attempt.
     'quizaccess_proctoring_log_event' => [
         'classname'    => 'quizaccess_proctoring_external',

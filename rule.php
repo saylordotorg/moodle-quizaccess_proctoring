@@ -411,6 +411,42 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * Determine whether the site requires ID verification before starting new proctored quiz attempts.
+     *
+     * @return bool True if ID verification is required.
+     */
+    private static function site_requires_id_verification(): bool {
+        $setting = get_config('quizaccess_proctoring', 'idverificationenabled');
+
+        return $setting !== false && (int)$setting === 1;
+    }
+
+    /**
+     * Determine whether this preflight submission should require ID verification.
+     *
+     * @param int|null $attemptid Current attempt id, if one already exists.
+     * @return bool True when starting a new attempt requires ID verification.
+     */
+    private function should_require_id_verification($attemptid): bool {
+        return empty($attemptid) && self::site_requires_id_verification();
+    }
+
+    /**
+     * Check whether the current user has passed ID verification for this quiz module.
+     *
+     * @return bool True when a passing server-side ID verification row exists.
+     */
+    private function current_user_has_passed_id_verification(): bool {
+        global $USER;
+
+        return quizaccess_proctoring_user_has_passed_id_verification(
+            (int)$this->quiz->course,
+            (int)$this->quiz->cmid,
+            (int)$USER->id
+        );
+    }
+
+    /**
      * Determine whether students must accept the pre-quiz integrity statement.
      *
      * @return bool True if the integrity statement checkbox is required.
@@ -504,11 +540,20 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @param string $multimonitormode Multi-monitor mode.
      * @return string Rendered details HTML.
      */
-    private static function make_privacy_notice_details($captcharequired, $faceidcheck, $requireentirescreen, $multimonitormode): string {
+    private static function make_privacy_notice_details(
+        $captcharequired,
+        $idverificationrequired,
+        $faceidcheck,
+        $requireentirescreen,
+        $multimonitormode
+    ): string {
         $items = [
             get_string('privacynotice:item_eventlogs', 'quizaccess_proctoring'),
         ];
 
+        if ($idverificationrequired) {
+            $items[] = get_string('privacynotice:item_idverification', 'quizaccess_proctoring');
+        }
         if ((string)$faceidcheck === '1') {
             $items[] = get_string('privacynotice:item_webcam', 'quizaccess_proctoring');
         }
@@ -597,6 +642,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @param bool $privacyrequired Whether the privacy notice agreement is required.
      * @param bool $honorrequired Whether the integrity statement is required.
      * @param bool $captcharequired Whether a CAPTCHA/security check is required.
+     * @param bool $idverificationrequired Whether ID verification is required.
      * @param string|int $faceidcheck Whether face recognition is required.
      * @param bool $registerface Whether the first face capture will register the user.
      * @param int $requireentirescreen Whether entire screen sharing is required.
@@ -608,6 +654,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $privacyrequired,
         $honorrequired,
         $captcharequired,
+        $idverificationrequired,
         $faceidcheck,
         $registerface,
         $requireentirescreen,
@@ -623,6 +670,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
         if ($captcharequired) {
             $requirements['captcha'] = get_string('preflight:securitycheck', 'quizaccess_proctoring');
+        }
+        if ($idverificationrequired) {
+            $requirements['identity'] = get_string('preflight:idverification', 'quizaccess_proctoring');
         }
         if ((string)$faceidcheck === '1') {
             $requirements['face'] = $registerface
@@ -751,6 +801,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $privacyrequired = self::privacy_notice_required();
         $honorrequired = self::honor_statement_required();
         $captcharequired = $this->should_require_captcha($attemptid);
+        $idverificationrequired = $this->should_require_id_verification($attemptid);
+        $idverificationpassed = $idverificationrequired ? $this->current_user_has_passed_id_verification() : true;
         $multimonitormode = self::multi_monitor_mode();
         $usepersistentmonitor = self::should_use_persistent_screen_monitor($multimonitormode);
         $screenmarkerrequired = $usepersistentmonitor || self::should_require_screen_marker($multimonitormode);
@@ -776,6 +828,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             'privacyrequired' => $privacyrequired ? 1 : 0,
             'honorrequired' => $honorrequired ? 1 : 0,
             'captcharequired' => $captcharequired ? 1 : 0,
+            'idverificationrequired' => $idverificationrequired ? 1 : 0,
+            'idverificationpassed' => $idverificationpassed ? 1 : 0,
             'multimonitormode' => $multimonitormode,
             'screenmarkerrequired' => $screenmarkerrequired ? 1 : 0,
             'screenmonitorurl' => $usepersistentmonitor ? $screenmonitorurl->out(false) : '',
@@ -787,7 +841,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         // Include Face API JS library if required.
         $fcmethod = get_config('quizaccess_proctoring', 'fcmethod');
         $modelurl = null;
-        if ($fcmethod === 'customapi') {
+        if ($fcmethod === 'customapi' || $idverificationrequired) {
             $modelurl = $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/thirdpartylibs/models';
             $PAGE->requires->js('/mod/quiz/accessrule/proctoring/amd/build/face-api.min.js', true);
         }
@@ -801,6 +855,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 $privacyrequired,
                 $honorrequired,
                 $captcharequired,
+                $idverificationrequired,
                 $faceidcheck,
                 $registerface,
                 $requireentirescreen,
@@ -833,6 +888,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 html_writer::div(
                     $notice . self::make_privacy_notice_details(
                         $captcharequired,
+                        $idverificationrequired,
                         $faceidcheck,
                         $requireentirescreen,
                         $multimonitormode
@@ -895,6 +951,92 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 );
             }
             $mform->addElement('html', '</div></section>');
+        }
+
+        if ($idverificationrequired) {
+            $alreadyverified = $idverificationpassed
+                ? html_writer::div(
+                    get_string('modal:idverificationpassed', 'quizaccess_proctoring'),
+                    'alert alert-success proctoring-idv-existing'
+                )
+                : '';
+            $idverificationhtml = html_writer::div(
+                html_writer::label(
+                    get_string('modal:idverificationdocument', 'quizaccess_proctoring'),
+                    'proctoring-id-document',
+                    false,
+                    ['class' => 'font-weight-bold']
+                ) .
+                html_writer::empty_tag('input', [
+                    'type' => 'file',
+                    'id' => 'proctoring-id-document',
+                    'class' => 'form-control mb-3',
+                    'accept' => 'image/*',
+                    'capture' => 'environment',
+                ]) .
+                html_writer::tag('video', '', [
+                    'id' => 'proctoring-id-live-video',
+                    'class' => 'proctoring-id-live-video mb-2',
+                    'autoplay' => 'autoplay',
+                    'muted' => 'muted',
+                    'playsinline' => 'playsinline',
+                ]) .
+                html_writer::tag('canvas', '', [
+                    'id' => 'proctoring-id-live-canvas',
+                    'style' => 'display:none;',
+                ]) .
+                html_writer::empty_tag('img', [
+                    'id' => 'proctoring-id-live-crop',
+                    'alt' => '',
+                    'style' => 'display:none;',
+                ]) .
+                html_writer::div(
+                    html_writer::tag(
+                        'button',
+                        get_string('modal:idverificationcapture', 'quizaccess_proctoring'),
+                        [
+                            'type' => 'button',
+                            'id' => 'idverificationcamera',
+                            'class' => 'btn btn-secondary mr-2 mb-2',
+                        ]
+                    ) .
+                    html_writer::tag(
+                        'button',
+                        html_writer::div('', 'proctoring-loadingspinner', ['id' => 'idverification_spinner']) .
+                            get_string('modal:idverificationverify', 'quizaccess_proctoring'),
+                        [
+                            'type' => 'button',
+                            'id' => 'idverificationvalidate',
+                            'class' => 'btn btn-primary mb-2',
+                        ]
+                    ),
+                    'proctoring-idv-actions'
+                ) .
+                html_writer::div(
+                    get_string('modal:idverification', 'quizaccess_proctoring') . ' ' .
+                    html_writer::span(
+                        $idverificationpassed
+                            ? get_string('preflight:complete', 'quizaccess_proctoring')
+                            : get_string('modal:pending', 'quizaccess_proctoring'),
+                        '',
+                        ['id' => 'id_verification_result']
+                    ),
+                    'proctoring-idv-result mt-2'
+                ),
+                'proctoring-idv-panel alert alert-info'
+            );
+
+            $mform->addElement(
+                'html',
+                "<section id='proctoring-step-identity' class='proctoring-preflight-step' data-preflight-step='identity'>" .
+                self::make_preflight_step_heading(
+                    get_string('preflightstep:idverification:title', 'quizaccess_proctoring'),
+                    get_string('preflightstep:idverification:desc', 'quizaccess_proctoring')
+                ) .
+                $alreadyverified .
+                $idverificationhtml .
+                '</section>'
+            );
         }
 
         // Hidden form inputs.
@@ -1014,6 +1156,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $mform->setType('entirescreenconfirmed', PARAM_INT);
         $mform->addElement('hidden', 'multimonitorconfirmed', $multimonitormode === self::MULTI_MONITOR_BLOCK ? 0 : 1);
         $mform->setType('multimonitorconfirmed', PARAM_INT);
+        $mform->addElement('hidden', 'idverificationconfirmed', $idverificationpassed ? 1 : 0);
+        $mform->setType('idverificationconfirmed', PARAM_INT);
 
         // Close the form wrapper.
         $mform->addElement('html', '</div>');
@@ -1056,6 +1200,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $errorkey = self::honor_statement_required() ? 'proctoring' : 'multimonitorconfirmed';
             if (empty($errors[$errorkey])) {
                 $errors[$errorkey] = get_string('multimonitor:blockmessage', 'quizaccess_proctoring');
+            }
+        }
+
+        if ($this->should_require_id_verification($attemptid) && !$this->current_user_has_passed_id_verification()) {
+            $errorkey = self::honor_statement_required() ? 'proctoring' : 'idverificationconfirmed';
+            if (empty($errors[$errorkey])) {
+                $errors[$errorkey] = get_string('modal:idverificationfailed', 'quizaccess_proctoring');
             }
         }
 

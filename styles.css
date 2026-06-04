@@ -315,6 +315,35 @@ body.proctoring-lb-disable-scrolling {
         -webkit-overflow-scrolling: touch;
     }
 }
+
+.proctoring-idv-panel {
+    width: 100%;
+}
+
+.proctoring-id-live-video {
+    background: #111;
+    border: 1px solid #ced4da;
+    border-radius: 0.25rem;
+    display: block;
+    max-height: 320px;
+    max-width: 100%;
+    min-height: 180px;
+    object-fit: contain;
+    width: 100%;
+}
+
+.proctoring-idv-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.proctoring-idv-actions .btn {
+    align-items: center;
+    display: inline-flex;
+    gap: 0.35rem;
+}
 /* user image is not uploaded warning  */
 .proctoring-custom-warning-message {
     font-size: 1.1em;

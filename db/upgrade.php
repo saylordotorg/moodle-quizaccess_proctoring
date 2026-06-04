@@ -811,5 +811,49 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051903, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026060400) {
+        $table = new xmldb_table('quizaccess_proctoring_idv');
+
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('quizid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('attemptid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('status', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'pending');
+            $table->add_field('facescore', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('namescore', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('extractedname', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('profilename', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('idimageurl', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('liveimageurl', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('errormessage', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_index('coursequizuser', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'quizid', 'userid']);
+            $table->add_index('status', XMLDB_INDEX_NOTUNIQUE, ['status']);
+            $table->add_index('timemodified', XMLDB_INDEX_NOTUNIQUE, ['timemodified']);
+
+            $dbman->create_table($table);
+        }
+
+        if (get_config('quizaccess_proctoring', 'idverificationenabled') === false) {
+            set_config('idverificationenabled', 0, 'quizaccess_proctoring');
+        }
+        if (get_config('quizaccess_proctoring', 'idverificationfacethreshold') === false) {
+            set_config('idverificationfacethreshold', 80, 'quizaccess_proctoring');
+        }
+        if (get_config('quizaccess_proctoring', 'idverificationnamethreshold') === false) {
+            set_config('idverificationnamethreshold', 80, 'quizaccess_proctoring');
+        }
+        if (get_config('quizaccess_proctoring', 'idverificationretentiondays') === false) {
+            set_config('idverificationretentiondays', 30, 'quizaccess_proctoring');
+        }
+
+        upgrade_plugin_savepoint(true, 2026060400, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

@@ -50,6 +50,7 @@ class delete_images_task extends scheduled_task {
 
         try {
             $this->queue_expired_attempt_images();
+            $this->delete_expired_id_verifications();
 
             // Select 10 random rows from proctoring logs where deletionprogress = 1.
             $sql = "SELECT id, webcampicture, status
@@ -178,6 +179,46 @@ class delete_images_task extends scheduled_task {
         list($insql, $params) = $DB->get_in_or_equal($ids);
         $DB->set_field_select('quizaccess_proctoring_logs', 'deletionprogress', 1, "id $insql", $params);
         mtrace('Queued ' . count($ids) . ' expired proctoring image record(s) for deletion.');
+    }
+
+    /**
+     * Deletes expired ID verification images and records.
+     *
+     * @return void
+     */
+    private function delete_expired_id_verifications(): void {
+        global $DB;
+
+        $retentiondays = (int)get_config('quizaccess_proctoring', 'idverificationretentiondays');
+        if ($retentiondays <= 0) {
+            return;
+        }
+
+        $cutoff = time() - ($retentiondays * DAYSECS);
+        $records = $DB->get_records_select(
+            'quizaccess_proctoring_idv',
+            'timemodified > 0 AND timemodified <= :cutoff',
+            ['cutoff' => $cutoff],
+            'timemodified ASC',
+            'id, idimageurl, liveimageurl',
+            0,
+            50
+        );
+
+        if (empty($records)) {
+            return;
+        }
+
+        $fs = get_file_storage();
+        $ids = [];
+        foreach ($records as $record) {
+            $this->delete_file($fs, $record->idimageurl, 'quizaccess_proctoring', 'id_document');
+            $this->delete_file($fs, $record->liveimageurl, 'quizaccess_proctoring', 'id_live_image');
+            $ids[] = (int)$record->id;
+        }
+
+        $DB->delete_records_list('quizaccess_proctoring_idv', 'id', $ids);
+        mtrace('Deleted ' . count($ids) . ' expired ID verification record(s).');
     }
 
     /**

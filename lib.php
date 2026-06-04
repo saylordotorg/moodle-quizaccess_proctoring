@@ -60,7 +60,14 @@ $token = "";
  * @return bool Returns false if the file cannot be found.
  */
 function quizaccess_proctoring_pluginfile($course, $cm, $context, $filearea, $args, $forcedownload, array $options = []) {
-    $allowedfileareas = ['picture', 'face_image', 'user_photo', 'violation_screenshot'];
+    $allowedfileareas = [
+        'picture',
+        'face_image',
+        'user_photo',
+        'violation_screenshot',
+        'id_document',
+        'id_live_image',
+    ];
     if (!in_array($filearea, $allowedfileareas, true) || empty($args)) {
         return false;
     }
@@ -111,7 +118,13 @@ function quizaccess_proctoring_can_serve_pluginfile($course, $cm, $context, stri
 
     if ($context->contextlevel === CONTEXT_MODULE) {
         if (empty($course) || empty($cm) ||
-                !in_array($filearea, ['picture', 'face_image', 'violation_screenshot'], true)) {
+                !in_array($filearea, [
+                    'picture',
+                    'face_image',
+                    'violation_screenshot',
+                    'id_document',
+                    'id_live_image',
+                ], true)) {
             return false;
         }
 
@@ -197,6 +210,16 @@ function quizaccess_proctoring_module_file_has_record(int $courseid, int $cmid, 
         ]);
     }
 
+    if ($filearea === 'id_document' || $filearea === 'id_live_image') {
+        $field = $filearea === 'id_document' ? 'idimageurl' : 'liveimageurl';
+
+        return $DB->record_exists_select(
+            'quizaccess_proctoring_idv',
+            "courseid = :courseid AND quizid = :cmid AND " . $DB->sql_like($field, ':filename', false),
+            ['courseid' => $courseid, 'cmid' => $cmid, 'filename' => $filenameparam]
+        );
+    }
+
     return false;
 }
 
@@ -230,6 +253,29 @@ function quizaccess_proctoring_user_has_report_access_for_user(int $targetuserid
     $recordset->close();
 
     return false;
+}
+
+/**
+ * Checks whether a user has a passed ID verification for a quiz module.
+ *
+ * @param int $courseid Course ID.
+ * @param int $cmid Quiz course module ID.
+ * @param int $userid User ID.
+ * @return bool True when a passing ID verification row exists.
+ */
+function quizaccess_proctoring_user_has_passed_id_verification(int $courseid, int $cmid, int $userid): bool {
+    global $DB;
+
+    if ($courseid <= 0 || $cmid <= 0 || $userid <= 0) {
+        return false;
+    }
+
+    return $DB->record_exists('quizaccess_proctoring_idv', [
+        'courseid' => $courseid,
+        'quizid' => $cmid,
+        'userid' => $userid,
+        'status' => 'pass',
+    ]);
 }
 
 /**

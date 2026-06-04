@@ -141,6 +141,36 @@ if ($hassiteconfig) {
         get_string('setting:custom_api_key', 'quizaccess_proctoring'),
         get_string('setting:custom_api_key_desc', 'quizaccess_proctoring'), '', PARAM_TEXT));
 
+    $settings->add(new admin_setting_heading(
+        'quizaccess_proctoring_idverificationheading',
+        get_string('setting:idverificationheading', 'quizaccess_proctoring'),
+        get_string('setting:idverificationheading_desc', 'quizaccess_proctoring')
+    ));
+
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/idverificationenabled',
+        get_string('setting:idverificationenabled', 'quizaccess_proctoring'),
+        get_string('setting:idverificationenabled_desc', 'quizaccess_proctoring'), 0));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/idverificationendpoint',
+        get_string('setting:idverificationendpoint', 'quizaccess_proctoring'),
+        get_string('setting:idverificationendpoint_desc', 'quizaccess_proctoring'), '', PARAM_URL));
+
+    $settings->add(new admin_setting_configpasswordunmask('quizaccess_proctoring/idverificationapikey',
+        get_string('setting:idverificationapikey', 'quizaccess_proctoring'),
+        get_string('setting:idverificationapikey_desc', 'quizaccess_proctoring'), '', PARAM_TEXT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/idverificationfacethreshold',
+        get_string('setting:idverificationfacethreshold', 'quizaccess_proctoring'),
+        get_string('setting:idverificationfacethreshold_desc', 'quizaccess_proctoring'), 80, PARAM_INT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/idverificationnamethreshold',
+        get_string('setting:idverificationnamethreshold', 'quizaccess_proctoring'),
+        get_string('setting:idverificationnamethreshold_desc', 'quizaccess_proctoring'), 80, PARAM_INT));
+
+    $settings->add(new admin_setting_configtext('quizaccess_proctoring/idverificationretentiondays',
+        get_string('setting:idverificationretentiondays', 'quizaccess_proctoring'),
+        get_string('setting:idverificationretentiondays_desc', 'quizaccess_proctoring'), 30, PARAM_INT));
+
     $settings->add(new admin_setting_configtext('quizaccess_proctoring/threshold',
         get_string('setting:fcthreshold', 'quizaccess_proctoring'),
         get_string('setting:fcthresholddesc', 'quizaccess_proctoring'), '68', PARAM_INT));

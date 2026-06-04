@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.0
+- Added optional pre-attempt ID verification with ID image upload, live face capture, and Saylor/custom AI endpoint scoring.
+- Added private ID verification evidence storage, retention cleanup, pluginfile access controls, and Privacy API export/delete coverage.
+- Added preflight gating so students cannot start a proctored quiz until the server records a passing ID verification result when enabled.
+
 # v1.0.2
 - Hardened daily proctoring report email recipients so external addresses require explicit admin opt-in.
 - Scoped daily report rows for Moodle-user recipients to attempts they can view with proctoring report capability.

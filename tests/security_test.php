@@ -128,6 +128,69 @@ final class security_test extends advanced_testcase {
     }
 
     /**
+     * ID verification pluginfile checks must be scoped to the owning module.
+     */
+    public function test_id_verification_file_record_check_is_scoped_to_module(): void {
+        $this->resetAfterTest();
+
+        [$course, $cm, , $filename] = $this->create_id_verification_file_fixture('id_document');
+        $othercourse = $this->getDataGenerator()->create_course();
+        $otherquiz = $this->getDataGenerator()->create_module('quiz', ['course' => $othercourse->id]);
+
+        $this->assertTrue(\quizaccess_proctoring_module_file_has_record(
+            (int)$course->id,
+            (int)$cm->id,
+            'id_document',
+            $filename
+        ));
+        $this->assertFalse(\quizaccess_proctoring_module_file_has_record(
+            (int)$othercourse->id,
+            (int)$otherquiz->cmid,
+            'id_document',
+            $filename
+        ));
+    }
+
+    /**
+     * Only a passing ID verification row should satisfy the preflight server-side gate.
+     */
+    public function test_id_verification_pass_check_requires_pass_status(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+
+        [$course, $cm, $student] = $this->create_id_verification_record_fixture('failed');
+        $this->assertFalse(\quizaccess_proctoring_user_has_passed_id_verification(
+            (int)$course->id,
+            (int)$cm->id,
+            (int)$student->id
+        ));
+
+        $DB->insert_record('quizaccess_proctoring_idv', (object)[
+            'courseid' => $course->id,
+            'quizid' => $cm->id,
+            'userid' => $student->id,
+            'attemptid' => 0,
+            'status' => 'pass',
+            'facescore' => 92,
+            'namescore' => 88,
+            'extractedname' => fullname($student),
+            'profilename' => fullname($student),
+            'idimageurl' => '',
+            'liveimageurl' => '',
+            'errormessage' => '',
+            'timecreated' => time(),
+            'timemodified' => time(),
+        ]);
+
+        $this->assertTrue(\quizaccess_proctoring_user_has_passed_id_verification(
+            (int)$course->id,
+            (int)$cm->id,
+            (int)$student->id
+        ));
+    }
+
+    /**
      * Configured outbound AI endpoints must not point at localhost or private infrastructure.
      */
     public function test_outbound_endpoint_validation_blocks_private_ranges(): void {
@@ -289,6 +352,79 @@ final class security_test extends advanced_testcase {
         ]);
 
         return [$course, $cm];
+    }
+
+    /**
+     * Creates an ID verification row and matching file record.
+     *
+     * @param string $filearea File area.
+     * @return array Fixture values.
+     */
+    private function create_id_verification_file_fixture(string $filearea): array {
+        global $DB;
+
+        [$course, $cm, $student, $recordid] = $this->create_id_verification_record_fixture('pass');
+        $context = \context_module::instance((int)$cm->id);
+        $filename = $filearea . '-security-test.png';
+        $filerecord = [
+            'contextid' => $context->id,
+            'component' => 'quizaccess_proctoring',
+            'filearea' => $filearea,
+            'itemid' => $recordid,
+            'filepath' => '/',
+            'filename' => $filename,
+            'userid' => $student->id,
+        ];
+        $file = get_file_storage()->create_file_from_string($filerecord, 'id verification image fixture');
+        $url = \moodle_url::make_pluginfile_url(
+            $context->id,
+            'quizaccess_proctoring',
+            $filearea,
+            $recordid,
+            '/',
+            $filename,
+            false
+        )->out(false);
+
+        $field = $filearea === 'id_document' ? 'idimageurl' : 'liveimageurl';
+        $DB->set_field('quizaccess_proctoring_idv', $field, $url, ['id' => $recordid]);
+
+        return [$course, $cm, $student, $filename, $url, $file];
+    }
+
+    /**
+     * Creates an ID verification row without files.
+     *
+     * @param string $status Verification status.
+     * @return array Course, course module, and student.
+     */
+    private function create_id_verification_record_fixture(string $status): array {
+        global $DB;
+
+        $course = $this->getDataGenerator()->create_course();
+        $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id]);
+        $cm = get_coursemodule_from_id('quiz', $quiz->cmid, $course->id, false, MUST_EXIST);
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id, 'student');
+
+        $recordid = $DB->insert_record('quizaccess_proctoring_idv', (object)[
+            'courseid' => $course->id,
+            'quizid' => $cm->id,
+            'userid' => $student->id,
+            'attemptid' => 0,
+            'status' => $status,
+            'facescore' => $status === 'pass' ? 90 : 40,
+            'namescore' => $status === 'pass' ? 90 : 40,
+            'extractedname' => fullname($student),
+            'profilename' => fullname($student),
+            'idimageurl' => '',
+            'liveimageurl' => '',
+            'errormessage' => '',
+            'timecreated' => time(),
+            'timemodified' => time(),
+        ]);
+
+        return [$course, $cm, $student, $recordid];
     }
 
     /**

@@ -41,6 +41,9 @@ class quizaccess_proctoring_external extends external_api {
     /** Maximum decoded desktop violation screenshot payload size. */
     private const MAX_DESKTOP_IMAGE_BYTES = 12582912;
 
+    /** Maximum decoded ID document image payload size. */
+    private const MAX_ID_DOCUMENT_IMAGE_BYTES = 8388608;
+
     /** Maximum image pixels accepted from browser-submitted images. */
     private const MAX_IMAGE_PIXELS = 12000000;
 
@@ -52,6 +55,9 @@ class quizaccess_proctoring_external extends external_api {
 
     /** Maximum suspicious events per user/module/window. */
     private const MAX_EVENTS_PER_WINDOW = 120;
+
+    /** Maximum ID verification requests per user/module/window. */
+    private const MAX_ID_VERIFICATIONS_PER_WINDOW = 12;
 
     /**
      * Defines the parameters required for sending a camshot.
@@ -850,6 +856,395 @@ class quizaccess_proctoring_external extends external_api {
                 'warnings' => new external_warnings(),
             ]
         );
+    }
+
+    /**
+     * Defines parameters for pre-attempt ID verification.
+     *
+     * @return external_function_parameters
+     */
+    public static function verify_id_parameters() {
+        return new external_function_parameters(
+            [
+                'courseid' => new external_value(PARAM_INT, 'course id'),
+                'cmid' => new external_value(PARAM_INT, 'cm id'),
+                'attemptid' => new external_value(PARAM_INT, 'attempt id', VALUE_DEFAULT, 0),
+                'idimage' => new external_value(PARAM_RAW, 'ID document image'),
+                'liveimage' => new external_value(PARAM_RAW, 'Live webcam image'),
+                'livefacefound' => new external_value(PARAM_INT, 'Browser face detection flag', VALUE_DEFAULT, 0),
+            ]
+        );
+    }
+
+    /**
+     * Stores ID verification evidence and sends it to the configured Saylor/custom AI endpoint.
+     *
+     * @param int $courseid Course ID.
+     * @param int $cmid Quiz course module ID.
+     * @param int $attemptid Attempt ID when known.
+     * @param string $idimage ID document image data URI.
+     * @param string $liveimage Live webcam image data URI.
+     * @param int $livefacefound Whether browser-side detection found a live face.
+     * @return array Verification result.
+     */
+    public static function verify_id($courseid, $cmid, $attemptid, $idimage, $liveimage, $livefacefound = 0) {
+        global $DB, $USER;
+
+        self::validate_parameters(
+            self::verify_id_parameters(),
+            [
+                'courseid' => $courseid,
+                'cmid' => $cmid,
+                'attemptid' => $attemptid,
+                'idimage' => $idimage,
+                'liveimage' => $liveimage,
+                'livefacefound' => $livefacefound,
+            ]
+        );
+
+        [$cm, $context] = self::get_authorized_quiz_context((int)$courseid, (int)$cmid);
+        if ((int)get_config('quizaccess_proctoring', 'idverificationenabled') !== 1) {
+            return [
+                'verificationid' => 0,
+                'status' => 'disabled',
+                'facescore' => 0,
+                'namescore' => 0,
+                'extractedname' => '',
+                'message' => '',
+                'warnings' => [],
+            ];
+        }
+
+        self::validate_image_payload((string)$idimage, self::MAX_ID_DOCUMENT_IMAGE_BYTES);
+        self::validate_image_payload((string)$liveimage, self::MAX_WEBCAM_IMAGE_BYTES);
+        self::enforce_recent_record_limit('quizaccess_proctoring_idv', [
+            'courseid' => (int)$courseid,
+            'quizid' => (int)$cm->id,
+            'userid' => (int)$USER->id,
+        ], self::MAX_ID_VERIFICATIONS_PER_WINDOW);
+
+        $now = time();
+        $profilename = fullname($USER);
+        $record = (object)[
+            'courseid' => (int)$courseid,
+            'quizid' => (int)$cm->id,
+            'userid' => (int)$USER->id,
+            'attemptid' => (int)$attemptid,
+            'status' => 'pending',
+            'facescore' => 0,
+            'namescore' => 0,
+            'extractedname' => '',
+            'profilename' => $profilename,
+            'idimageurl' => '',
+            'liveimageurl' => '',
+            'errormessage' => '',
+            'timecreated' => $now,
+            'timemodified' => $now,
+        ];
+
+        $verificationid = $DB->insert_record('quizaccess_proctoring_idv', $record);
+        $idbytes = self::decode_base64_image_data((string)$idimage, self::MAX_ID_DOCUMENT_IMAGE_BYTES);
+        $livebytes = self::decode_base64_image_data((string)$liveimage, self::MAX_WEBCAM_IMAGE_BYTES);
+        $record->id = $verificationid;
+        $record->idimageurl = self::save_id_verification_image(
+            (int)$courseid,
+            (int)$cm->id,
+            (int)$verificationid,
+            'id_document',
+            $idbytes,
+            $context
+        );
+        $record->liveimageurl = self::save_id_verification_image(
+            (int)$courseid,
+            (int)$cm->id,
+            (int)$verificationid,
+            'id_live_image',
+            $livebytes,
+            $context
+        );
+
+        if ((int)$livefacefound !== 1) {
+            $providerresult = [
+                'status' => 'retry',
+                'facescore' => 0,
+                'namescore' => 0,
+                'extractedname' => '',
+                'message' => get_string('facenotfoundoncam', 'quizaccess_proctoring'),
+            ];
+        } else {
+            $providerresult = self::call_id_verification_endpoint($idbytes, $livebytes, $USER);
+        }
+
+        $record->status = $providerresult['status'];
+        $record->facescore = $providerresult['facescore'];
+        $record->namescore = $providerresult['namescore'];
+        $record->extractedname = $providerresult['extractedname'];
+        $record->errormessage = $providerresult['message'];
+        $record->timemodified = time();
+        $DB->update_record('quizaccess_proctoring_idv', $record);
+
+        return [
+            'verificationid' => (int)$verificationid,
+            'status' => $record->status,
+            'facescore' => (int)$record->facescore,
+            'namescore' => (int)$record->namescore,
+            'extractedname' => (string)$record->extractedname,
+            'message' => (string)$record->errormessage,
+            'warnings' => [],
+        ];
+    }
+
+    /**
+     * Returns the ID verification response structure.
+     *
+     * @return external_single_structure
+     */
+    public static function verify_id_returns() {
+        return new external_single_structure(
+            [
+                'verificationid' => new external_value(PARAM_INT, 'ID verification record id'),
+                'status' => new external_value(PARAM_TEXT, 'pass, failed, retry, error, or disabled'),
+                'facescore' => new external_value(PARAM_INT, 'Face match score'),
+                'namescore' => new external_value(PARAM_INT, 'Name match score'),
+                'extractedname' => new external_value(PARAM_TEXT, 'Name extracted from the ID document'),
+                'message' => new external_value(PARAM_TEXT, 'Provider or validation message'),
+                'warnings' => new external_warnings(),
+            ]
+        );
+    }
+
+    /**
+     * Saves a pre-attempt ID verification image to Moodle file storage.
+     *
+     * @param int $courseid Course ID.
+     * @param int $cmid Quiz course module ID.
+     * @param int $verificationid ID verification record ID.
+     * @param string $filearea File area.
+     * @param string $bytes Validated image bytes.
+     * @param context $context Module context.
+     * @return string Stored pluginfile URL.
+     */
+    private static function save_id_verification_image(
+        int $courseid,
+        int $cmid,
+        int $verificationid,
+        string $filearea,
+        string $bytes,
+        context $context
+    ): string {
+        global $USER;
+
+        $prefix = $filearea === 'id_document' ? 'id-document' : 'id-live';
+        $record = new stdClass();
+        $record->contextid = $context->id;
+        $record->component = 'quizaccess_proctoring';
+        $record->filearea = $filearea;
+        $record->itemid = $verificationid;
+        $record->filepath = file_correct_filepath('');
+        $record->filename = $prefix . '-' . $verificationid . '-' . $USER->id . '-' . $courseid . '-' . time() .
+            '-' . random_int(1, 1000) . '.png';
+        $record->userid = $USER->id;
+        $record->author = fullname($USER);
+        $record->license = '';
+        $record->courseid = $courseid;
+
+        $fs = get_file_storage();
+        $fs->create_file_from_string($record, $bytes);
+
+        return moodle_url::make_pluginfile_url(
+            $context->id,
+            $record->component,
+            $record->filearea,
+            $record->itemid,
+            $record->filepath,
+            $record->filename,
+            false
+        )->out(false);
+    }
+
+    /**
+     * Calls the configured Saylor/custom ID verification endpoint.
+     *
+     * @param string $idbytes ID document image bytes.
+     * @param string $livebytes Live webcam image bytes.
+     * @param stdClass $user Moodle user record.
+     * @return array Normalized result.
+     */
+    private static function call_id_verification_endpoint(string $idbytes, string $livebytes, stdClass $user): array {
+        $endpoint = trim((string)get_config('quizaccess_proctoring', 'idverificationendpoint'));
+        $apikey = trim((string)get_config('quizaccess_proctoring', 'idverificationapikey'));
+        $faceconfig = get_config('quizaccess_proctoring', 'idverificationfacethreshold');
+        $nameconfig = get_config('quizaccess_proctoring', 'idverificationnamethreshold');
+        $facethreshold = max(1, min(100, $faceconfig === false ? 80 : (int)$faceconfig));
+        $namethreshold = max(1, min(100, $nameconfig === false ? 80 : (int)$nameconfig));
+
+        if ($endpoint === '' || $apikey === '') {
+            return self::make_id_verification_result(
+                'error',
+                0,
+                0,
+                '',
+                get_string('modal:idverificationprovidererror', 'quizaccess_proctoring')
+            );
+        }
+
+        try {
+            $endpoint = quizaccess_proctoring_validate_outbound_endpoint($endpoint);
+        } catch (moodle_exception $e) {
+            return self::make_id_verification_result(
+                'error',
+                0,
+                0,
+                '',
+                get_string('outboundendpointinvalid', 'quizaccess_proctoring')
+            );
+        }
+
+        $payload = json_encode([
+            'id_image' => base64_encode($idbytes),
+            'live_image' => base64_encode($livebytes),
+            'profile_firstname' => (string)($user->firstname ?? ''),
+            'profile_lastname' => (string)($user->lastname ?? ''),
+            'profile_fullname' => fullname($user),
+            'face_threshold' => $facethreshold,
+            'name_threshold' => $namethreshold,
+        ]);
+
+        if ($payload === false) {
+            return self::make_id_verification_result(
+                'error',
+                0,
+                0,
+                '',
+                get_string('modal:idverificationprovidererror', 'quizaccess_proctoring')
+            );
+        }
+
+        $curl = new curl();
+        $response = $curl->post($endpoint, $payload, [
+            'CURLOPT_TIMEOUT' => 45,
+            'CURLOPT_FOLLOWLOCATION' => false,
+            'CURLOPT_HTTPHEADER' => [
+                'X-API-Key: ' . $apikey,
+                'Content-Type: application/json',
+            ],
+        ]);
+
+        if ($curl->get_errno()) {
+            return self::make_id_verification_result(
+                'error',
+                0,
+                0,
+                '',
+                get_string('modal:idverificationprovidererror', 'quizaccess_proctoring')
+            );
+        }
+
+        $httpcode = (int)($curl->get_info()['http_code'] ?? 0);
+        if ($httpcode < 200 || $httpcode >= 300) {
+            return self::make_id_verification_result(
+                'error',
+                0,
+                0,
+                '',
+                get_string('modal:idverificationprovidererror', 'quizaccess_proctoring')
+            );
+        }
+
+        $decoded = json_decode((string)$response, true);
+        if (!is_array($decoded)) {
+            return self::make_id_verification_result(
+                'error',
+                0,
+                0,
+                '',
+                get_string('modal:idverificationprovidererror', 'quizaccess_proctoring')
+            );
+        }
+
+        $verified = !empty($decoded['verified']) || !empty($decoded['match']);
+        $facescore = self::get_first_numeric_response_value($decoded, [
+            'face_score',
+            'faceScore',
+            'similarity',
+            'similarity_score',
+        ]);
+        $namescore = self::get_first_numeric_response_value($decoded, [
+            'name_score',
+            'nameScore',
+            'profile_name_score',
+            'name_similarity',
+        ]);
+
+        if ($verified) {
+            $facescore = $facescore > 0 ? $facescore : 100;
+            $namescore = $namescore > 0 ? $namescore : 100;
+        }
+
+        $rawstatus = strtolower((string)($decoded['status'] ?? $decoded['decision'] ?? ''));
+        $status = ($facescore >= $facethreshold && $namescore >= $namethreshold) ? 'pass' : 'failed';
+        if ($status !== 'pass' && in_array($rawstatus, ['retry', 'manual', 'error'], true)) {
+            $status = $rawstatus === 'manual' ? 'failed' : $rawstatus;
+        }
+
+        $extractedname = (string)($decoded['extracted_name'] ?? $decoded['id_name'] ?? $decoded['name'] ?? '');
+        $message = (string)($decoded['message'] ?? $decoded['summary'] ?? '');
+        if ($message === '') {
+            $message = $status === 'pass'
+                ? get_string('modal:idverificationpassed', 'quizaccess_proctoring')
+                : get_string('modal:idverificationfailed', 'quizaccess_proctoring');
+        }
+
+        return self::make_id_verification_result($status, $facescore, $namescore, $extractedname, $message);
+    }
+
+    /**
+     * Gets the first numeric response value matching a set of candidate keys.
+     *
+     * @param array $response Decoded API response.
+     * @param array $keys Candidate keys.
+     * @return int Rounded score.
+     */
+    private static function get_first_numeric_response_value(array $response, array $keys): int {
+        foreach ($keys as $key) {
+            if (isset($response[$key]) && is_numeric($response[$key])) {
+                return max(0, min(100, (int)round((float)$response[$key])));
+            }
+        }
+
+        if (isset($response['scores']) && is_array($response['scores'])) {
+            return self::get_first_numeric_response_value($response['scores'], $keys);
+        }
+
+        return 0;
+    }
+
+    /**
+     * Creates a normalized ID verification result array.
+     *
+     * @param string $status Result status.
+     * @param int $facescore Face score.
+     * @param int $namescore Name score.
+     * @param string $extractedname Extracted ID name.
+     * @param string $message Provider or validation message.
+     * @return array
+     */
+    private static function make_id_verification_result(
+        string $status,
+        int $facescore,
+        int $namescore,
+        string $extractedname,
+        string $message
+    ): array {
+        $status = in_array($status, ['pass', 'failed', 'retry', 'error'], true) ? $status : 'failed';
+
+        return [
+            'status' => $status,
+            'facescore' => max(0, min(100, $facescore)),
+            'namescore' => max(0, min(100, $namescore)),
+            'extractedname' => core_text::substr($extractedname, 0, 255),
+            'message' => core_text::substr($message, 0, 1000),
+        ];
     }
 
     /**
