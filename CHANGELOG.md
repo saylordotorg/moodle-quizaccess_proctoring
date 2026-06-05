@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.14
+- Reused a passed ID verification live face capture to complete the face recognition preflight step when both checks are enabled.
+
 # v1.1.13
 - Disabled automatic ID photo capture and gated the manual capture button on a steady green ID-in-window state.
 

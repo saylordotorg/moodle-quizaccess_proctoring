@@ -1391,6 +1391,126 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     );
                 };
 
+                const setFaceValidationResult = function(message, success) {
+                    $("#face_validation_result").html(
+                        `<span style="color: ${success ? 'green' : 'red'}">${escapeHtml(message)}</span>`
+                    );
+                };
+
+                const setFaceValidationSpinner = function(visible) {
+                    const spinner = document.getElementById('loading_spinner');
+                    if (spinner) {
+                        spinner.style.display = visible ? 'block' : 'none';
+                    }
+                };
+
+                const setFaceValidationComplete = function(message) {
+                    const video = document.getElementById('video');
+                    const validateButton = document.getElementById('fcvalidate');
+                    if (video) {
+                        $("#video").css("border", "10px solid green");
+                    }
+                    setFaceValidationResult(message, true);
+                    if (validateButton) {
+                        validateButton.style.display = "none";
+                    }
+                    faceReady = true;
+                    setRequirementStatus('face', 'complete');
+                    updatePreflightGate();
+                };
+
+                const setFaceValidationAction = function(message) {
+                    const video = document.getElementById('video');
+                    if (video) {
+                        $("#video").css("border", "10px solid red");
+                    }
+                    setFaceValidationResult(message, false);
+                    faceReady = false;
+                    setRequirementStatus('face', 'action');
+                    updatePreflightGate();
+                };
+
+                const submitFaceValidation = function(webcamPicture, faceImage, faceFound) {
+                    const courseidInput = document.getElementById('courseidval');
+                    const cmidInput = document.getElementById('cmidval');
+                    const profileImageInput = document.getElementById('profileimage');
+                    const request = {
+                        methodname: 'quizaccess_proctoring_validate_face',
+                        args: {
+                            courseid: courseidInput ? courseidInput.value : (parseInt(props.courseid, 10) || 0),
+                            cmid: cmidInput ? cmidInput.value : (parseInt(props.cmid, 10) || 0),
+                            profileimage: profileImageInput ? profileImageInput.value : '',
+                            webcampicture: webcamPicture,
+                            parenttype: 'camshot_image',
+                            faceimage: faceImage,
+                            facefound: faceFound,
+                        }
+                    };
+
+                    return new Promise(function(resolve, reject) {
+                        Ajax.call([request])[0].done(resolve).fail(reject);
+                    });
+                };
+
+                const applyFaceValidationResponse = function(res) {
+                    setFaceValidationSpinner(false);
+                    if (!res || (res.warnings && res.warnings.length >= 1)) {
+                        Notification.addNotification({
+                            message: strings.wrongduringtakingimage,
+                            type: 'error'
+                        });
+                        setFaceValidationAction(strings.facequalityfailed);
+                        return false;
+                    }
+
+                    const status = res.status;
+                    if (status === 'success') {
+                        setFaceValidationComplete(strings.facematched);
+                        return true;
+                    }
+                    if (status === 'registered') {
+                        setFaceValidationComplete(strings.faceregistered);
+                        return true;
+                    }
+                    if (status === 'photonotuploaded') {
+                        setFaceValidationAction(strings.photonotuploaded);
+                        return false;
+                    }
+                    if (status === 'invalidApi') {
+                        setFaceValidationAction(strings.invalidapi);
+                        return false;
+                    }
+                    if (status === 'facenotfound') {
+                        setFaceValidationAction(strings.facenotfoundoncam);
+                        return false;
+                    }
+                    if (status === 'faceunclear') {
+                        setFaceValidationAction(strings.facequalityfailed);
+                        return false;
+                    }
+
+                    setFaceValidationAction(strings.facenotmatched);
+                    return false;
+                };
+
+                const validateFacePreflightImage = async function(webcamPicture, faceImage, faceFound) {
+                    if (!faceRequired) {
+                        return true;
+                    }
+
+                    setRequirementStatus('face', 'pending');
+                    setFaceValidationSpinner(true);
+                    try {
+                        const res = await submitFaceValidation(webcamPicture, faceImage, faceFound);
+                        return applyFaceValidationResponse(res);
+                    } catch (error) {
+                        setFaceValidationSpinner(false);
+                        setFaceValidationAction(strings.facequalityfailed);
+                        Notification.exception(error);
+                        return false;
+                    }
+                };
+
                 syncPrivacyRequirement();
                 syncHonorRequirement();
                 syncCaptchaRequirement();
@@ -1590,6 +1710,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     const liveImage = canvas.toDataURL('image/png');
 
                     let liveFaceFound = 0;
+                    let liveFaceImage = "";
                     if (modelurl !== null) {
                         const detection = await detectface(canvas, canvas, crop);
                         if (!detection.qualityPassed) {
@@ -1597,6 +1718,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             return;
                         }
                         liveFaceFound = detection.faceFound;
+                        liveFaceImage = detection.faceImage;
                     }
 
                     let idImage = capturedIdImages.front;
@@ -1630,7 +1752,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             livefacefound: liveFaceFound,
                             idbackimage: idBackImage || ''
                         }
-                    }])[0].done(function(res) {
+                    }])[0].done(async function(res) {
                         if (spinner) {
                             spinner.style.display = 'none';
                         }
@@ -1640,6 +1762,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             setIdVerificationConfirmed(true);
                             setIdVerificationResult(strings.idverificationpassed, true);
                             setRequirementStatus('identity', 'complete');
+                            if (faceRequired) {
+                                await validateFacePreflightImage(liveImage, liveFaceImage, liveFaceFound);
+                            }
                             stopIdLiveStream();
                         } else if (res.status === 'retry') {
                             failIdentity(res.message || strings.idverificationretry);
@@ -1958,10 +2083,6 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     var data = canvas.toDataURL('image/png');
                     photo.setAttribute('src', data);
 
-                    const courseid = document.getElementById('courseidval').value;
-                    const cmid = document.getElementById('cmidval').value;
-                    const profileimage = document.getElementById('profileimage').value;
-
                     // Getting the face image from screenshot.
                     let croppedImage = document.getElementById('validate-cropimg');
                     croppedImage.removeAttribute('src');
@@ -1970,79 +2091,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     if (modelurl !== null) {
                         const detection = await detectface(canvas, canvas, croppedImage);
                         if (!detection.qualityPassed) {
-                            $("#video").css("border", "10px solid red");
-                            $("#face_validation_result").html(`<span style="color: red">${strings.facequalityfailed}</span>`);
-                            setRequirementStatus('face', 'action');
+                            setFaceValidationAction(strings.facequalityfailed);
                             return;
                         }
                         faceFound = detection.faceFound;
                         faceImage = detection.faceImage;
                     }
-                    const wsfunction = 'quizaccess_proctoring_validate_face';
-                    const params = {
-                        'courseid': courseid,
-                        'cmid': cmid,
-                        'profileimage': profileimage,
-                        'webcampicture': data,
-                        'parenttype': 'camshot_image',
-                        'faceimage': faceImage,
-                        'facefound': faceFound,
-                    };
-
-                    const request = {
-                        methodname: wsfunction,
-                        args: params
-                    };
-                    document.getElementById('loading_spinner').style.display = 'block';
-                    Ajax.call([request])[0].done(function(res) {
-                        if (res.warnings.length < 1) {
-                            document.getElementById('loading_spinner').style.display = 'none';
-                            var status = res.status;
-                            if (status === 'success') {
-                                $("#video").css("border", "10px solid green");
-                                $("#face_validation_result").html(`<span style="color: green">${strings.facematched}</span>`);
-                                document.getElementById("fcvalidate").style.display = "none";
-                                faceReady = true;
-                                setRequirementStatus('face', 'complete');
-                                updatePreflightGate();
-                            } else if (status === 'registered') {
-                                $("#video").css("border", "10px solid green");
-                                $("#face_validation_result").html(`<span style="color: green">${strings.faceregistered}</span>`);
-                                document.getElementById("fcvalidate").style.display = "none";
-                                faceReady = true;
-                                setRequirementStatus('face', 'complete');
-                                updatePreflightGate();
-                            } else if (status === 'photonotuploaded') {
-                                $("#video").css("border", "10px solid red");
-                                $("#face_validation_result").html(`<span style="color: red">${strings.photonotuploaded}</span>`);
-                                setRequirementStatus('face', 'action');
-                            } else if (status === 'invalidApi') {
-                                $("#video").css("border", "10px solid red");
-                                $("#face_validation_result").html(`<span style="color: red">${strings.invalidapi}</span>`);
-                                setRequirementStatus('face', 'action');
-                            } else if (status === 'facenotfound') {
-                                $("#video").css("border", "10px solid red");
-                                $("#face_validation_result").html(`<span style="color: red">${strings.facenotfoundoncam}</span>`);
-                                setRequirementStatus('face', 'action');
-                            } else if (status === 'faceunclear') {
-                                $("#video").css("border", "10px solid red");
-                                $("#face_validation_result").html(`<span style="color: red">${strings.facequalityfailed}</span>`);
-                                setRequirementStatus('face', 'action');
-                            } else {
-                                $("#video").css("border", "10px solid red");
-                                $("#face_validation_result").html(`<span style="color: red">${strings.facenotmatched}</span>`);
-                                setRequirementStatus('face', 'action');
-                            }
-                        } else {
-                            document.getElementById('loading_spinner').style.display = 'none';
-                            if (video) {
-                                Notification.addNotification({
-                                    message: strings.wrongduringtakingimage,
-                                    type: 'error'
-                                });
-                            }
-                        }
-                    }).fail(Notification.exception);
+                    await validateFacePreflightImage(data, faceImage, faceFound);
 
                 });
 
