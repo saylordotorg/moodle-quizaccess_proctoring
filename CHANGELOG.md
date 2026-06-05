@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.5
+- Added ID verification suboptions for checking the ID photo, the ID name, or both.
+
 # v1.1.4
 - Added an admin option to show student-facing ID verification failure reasons.
 

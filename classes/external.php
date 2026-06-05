@@ -902,6 +902,7 @@ class quizaccess_proctoring_external extends external_api {
             ]
         );
 
+        [$checkface, $checkname] = self::get_id_verification_checks();
         [$cm, $context] = self::get_authorized_quiz_context((int)$courseid, (int)$cmid);
         if ((int)get_config('quizaccess_proctoring', 'idverificationenabled') !== 1) {
             return [
@@ -963,7 +964,7 @@ class quizaccess_proctoring_external extends external_api {
             $context
         );
 
-        if ((int)$livefacefound !== 1) {
+        if ($checkface && (int)$livefacefound !== 1) {
             $providerresult = [
                 'status' => 'retry',
                 'facescore' => 0,
@@ -1078,6 +1079,7 @@ class quizaccess_proctoring_external extends external_api {
         $nameconfig = get_config('quizaccess_proctoring', 'idverificationnamethreshold');
         $facethreshold = max(1, min(100, $faceconfig === false ? 80 : (int)$faceconfig));
         $namethreshold = max(1, min(100, $nameconfig === false ? 80 : (int)$nameconfig));
+        [$checkface, $checkname] = self::get_id_verification_checks();
 
         if ($endpoint === '' || $apikey === '') {
             return self::make_id_verification_result(
@@ -1109,6 +1111,8 @@ class quizaccess_proctoring_external extends external_api {
             'profile_fullname' => fullname($user),
             'face_threshold' => $facethreshold,
             'name_threshold' => $namethreshold,
+            'check_face' => $checkface,
+            'check_name' => $checkname,
         ]);
 
         if ($payload === false) {
@@ -1183,7 +1187,10 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         $rawstatus = strtolower((string)($decoded['status'] ?? $decoded['decision'] ?? ''));
-        $status = ($facescore >= $facethreshold && $namescore >= $namethreshold) ? 'pass' : 'failed';
+        $status = 'pass';
+        if (($checkface && $facescore < $facethreshold) || ($checkname && $namescore < $namethreshold)) {
+            $status = 'failed';
+        }
         if ($status !== 'pass' && in_array($rawstatus, ['retry', 'manual', 'error'], true)) {
             $status = $rawstatus === 'manual' ? 'failed' : $rawstatus;
         }
@@ -1197,6 +1204,24 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         return self::make_id_verification_result($status, $facescore, $namescore, $extractedname, $message);
+    }
+
+    /**
+     * Gets enabled ID verification subchecks.
+     *
+     * @return array{0: bool, 1: bool} Face check and name check booleans.
+     */
+    private static function get_id_verification_checks(): array {
+        $faceconfig = get_config('quizaccess_proctoring', 'idverificationcheckface');
+        $nameconfig = get_config('quizaccess_proctoring', 'idverificationcheckname');
+        $checkface = $faceconfig === false ? true : (int)$faceconfig === 1;
+        $checkname = $nameconfig === false ? true : (int)$nameconfig === 1;
+
+        if (!$checkface && !$checkname) {
+            return [true, true];
+        }
+
+        return [$checkface, $checkname];
     }
 
     /**
@@ -1221,8 +1246,9 @@ class quizaccess_proctoring_external extends external_api {
         $nameconfig = get_config('quizaccess_proctoring', 'idverificationnamethreshold');
         $facethreshold = max(1, min(100, $faceconfig === false ? 80 : (int)$faceconfig));
         $namethreshold = max(1, min(100, $nameconfig === false ? 80 : (int)$nameconfig));
-        $facefailed = (int)($result['facescore'] ?? 0) < $facethreshold;
-        $namefailed = (int)($result['namescore'] ?? 0) < $namethreshold;
+        [$checkface, $checkname] = self::get_id_verification_checks();
+        $facefailed = $checkface && (int)($result['facescore'] ?? 0) < $facethreshold;
+        $namefailed = $checkname && (int)($result['namescore'] ?? 0) < $namethreshold;
 
         if ($facefailed && $namefailed) {
             return get_string('modal:idverificationfailed_both', 'quizaccess_proctoring');
