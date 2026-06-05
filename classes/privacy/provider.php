@@ -257,9 +257,11 @@ class provider implements
         $sql = "SELECT DISTINCT c.id
                   FROM {quizaccess_proctoring_risk_holds} qprh
                   JOIN {context} c ON c.instanceid = qprh.quizid AND c.contextlevel = :context
-                 WHERE qprh.userid = :userid OR qprh.reviewerid = :userid
+                 WHERE qprh.userid = :userid OR qprh.reviewerid = :reviewerid
               GROUP BY c.id";
-        $contextlist->add_from_sql($sql, $params);
+        $riskholdparams = $params;
+        $riskholdparams['reviewerid'] = $userid;
+        $contextlist->add_from_sql($sql, $riskholdparams);
         $sql = "SELECT DISTINCT c.id
                   FROM {quizaccess_proctoring_ai_reviews} qpar
                   JOIN {context} c ON c.instanceid = qpar.quizid AND c.contextlevel = :context
