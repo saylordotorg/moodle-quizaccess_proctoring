@@ -2,6 +2,77 @@ body.proctoring-lb-disable-scrolling {
     overflow: hidden;
 }
 
+.quizaccess-proctoring-admin-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: 100%;
+}
+
+.quizaccess-proctoring-admin-intro {
+    color: #495057;
+}
+
+.quizaccess-proctoring-admin-tabs,
+.quizaccess-proctoring-admin-bulk-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.quizaccess-proctoring-admin-tab[aria-pressed="true"] {
+    background-color: #0f6cbf;
+    border-color: #0f6cbf;
+    color: #fff;
+}
+
+.quizaccess-proctoring-admin-quickgrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.5rem;
+}
+
+.quizaccess-proctoring-admin-toggle {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #d5dbe0;
+    border-radius: 6px;
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    margin: 0;
+    min-height: 42px;
+    padding: 0.5rem 0.65rem;
+}
+
+.quizaccess-proctoring-admin-toggle:hover {
+    border-color: #9aa6b2;
+}
+
+.quizaccess-proctoring-admin-toggle.is-enabled {
+    background: #f4fbf6;
+    border-color: #5d8f68;
+}
+
+.quizaccess-proctoring-admin-toggle.is-unavailable {
+    opacity: 0.6;
+}
+
+.quizaccess-proctoring-admin-toggle-input {
+    margin: 0;
+}
+
+.quizaccess-proctoring-admin-toggle-label {
+    line-height: 1.25;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.quizaccess-proctoring-admin-toggle-state {
+    min-width: 2.75rem;
+    text-align: center;
+}
+
 .proctoring-lightboxOverlay {
     position: absolute;
     top: 0;

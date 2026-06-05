@@ -911,5 +911,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026060513, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026060514) {
+        // No schema changes. Adds admin settings shortcuts and tabbed section navigation.
+        upgrade_plugin_savepoint(true, 2026060514, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

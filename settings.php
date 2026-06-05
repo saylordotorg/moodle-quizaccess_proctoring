@@ -43,6 +43,142 @@ if (!class_exists('quizaccess_proctoring_admin_category', false)) {
 }
 
 if ($hassiteconfig) {
+    global $PAGE, $DB;
+
+    $adminsections = [
+        [
+            'key' => 'precheck',
+            'label' => get_string('setting:admincontrols_tab_precheck', 'quizaccess_proctoring'),
+            'heading' => get_string('setting:precheckheading', 'quizaccess_proctoring'),
+        ],
+        [
+            'key' => 'face',
+            'label' => get_string('setting:admincontrols_tab_face', 'quizaccess_proctoring'),
+            'heading' => get_string('setting:faceheading', 'quizaccess_proctoring'),
+        ],
+        [
+            'key' => 'identity',
+            'label' => get_string('setting:admincontrols_tab_identity', 'quizaccess_proctoring'),
+            'heading' => get_string('setting:idverificationheading', 'quizaccess_proctoring'),
+        ],
+        [
+            'key' => 'monitoring',
+            'label' => get_string('setting:admincontrols_tab_monitoring', 'quizaccess_proctoring'),
+            'heading' => get_string('setting:monitoringheading', 'quizaccess_proctoring'),
+        ],
+        [
+            'key' => 'review',
+            'label' => get_string('setting:admincontrols_tab_review', 'quizaccess_proctoring'),
+            'heading' => get_string('setting:riskheading', 'quizaccess_proctoring'),
+        ],
+        [
+            'key' => 'ai',
+            'label' => get_string('setting:admincontrols_tab_ai', 'quizaccess_proctoring'),
+            'heading' => get_string('setting:aireviewheading', 'quizaccess_proctoring'),
+        ],
+        [
+            'key' => 'reporting',
+            'label' => get_string('setting:admincontrols_tab_reporting', 'quizaccess_proctoring'),
+            'heading' => get_string('setting:reportingheading', 'quizaccess_proctoring'),
+        ],
+        [
+            'key' => 'retention',
+            'label' => get_string('setting:admincontrols_tab_retention', 'quizaccess_proctoring'),
+            'heading' => get_string('setting:retentionheading', 'quizaccess_proctoring'),
+        ],
+    ];
+
+    $admintabs = array_merge([[
+        'key' => 'all',
+        'label' => get_string('setting:admincontrols_tab_all', 'quizaccess_proctoring'),
+        'heading' => '',
+    ]], $adminsections);
+
+    $quicktoggles = [
+        [
+            'setting' => 'privacynoticerequired',
+            'label' => get_string('setting:quicktoggle_privacy', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'honorstatementrequired',
+            'label' => get_string('setting:quicktoggle_honesty', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'captchabeforeattemptenabled',
+            'label' => get_string('setting:quicktoggle_captcha', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'idverificationenabled',
+            'label' => get_string('setting:quicktoggle_idverification', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'fcheckstartchk',
+            'label' => get_string('setting:quicktoggle_facebeforestart', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'continuousfacecheck',
+            'label' => get_string('setting:quicktoggle_continuousface', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'requireentirescreen',
+            'label' => get_string('setting:quicktoggle_screenshare', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'monitorbrowseractivity',
+            'label' => get_string('setting:quicktoggle_browseractivity', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'blockclipboard',
+            'label' => get_string('setting:quicktoggle_clipboard', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'captureviolationdesktop',
+            'label' => get_string('setting:quicktoggle_desktopcapture', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'blurquizwithoutface',
+            'label' => get_string('setting:quicktoggle_faceblur', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'blurquizwithmultiplemonitors',
+            'label' => get_string('setting:quicktoggle_monitorblur', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'aireviewenabled',
+            'label' => get_string('setting:quicktoggle_aireview', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'riskreviewenabled',
+            'label' => get_string('setting:quicktoggle_riskreview', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'studentholdnoticeenabled',
+            'label' => get_string('setting:quicktoggle_studentnotice', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'cheatinglockoutenabled',
+            'label' => get_string('setting:quicktoggle_retakelockout', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'dailyreportenabled',
+            'label' => get_string('setting:quicktoggle_dailyreport', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'dailyreportincludeall',
+            'label' => get_string('setting:quicktoggle_reportall', 'quizaccess_proctoring'),
+        ],
+        [
+            'setting' => 'dailyreportsendempty',
+            'label' => get_string('setting:quicktoggle_reportempty', 'quizaccess_proctoring'),
+        ],
+    ];
+
+    $PAGE->requires->js_call_amd('quizaccess_proctoring/adminSettings', 'init', [[
+        'tabs' => $admintabs,
+        'toggles' => $quicktoggles,
+        'storagekey' => 'quizaccess_proctoring_admin_tab',
+    ]]);
+
     // Plugin description and name.
     $plugindescription = get_string('plugin_description', 'quizaccess_proctoring');
 
@@ -51,6 +187,74 @@ if ($hassiteconfig) {
         'pluginnameheading',
         '',
         $plugindescription
+    ));
+
+    $tabbuttons = '';
+    foreach ($admintabs as $tab) {
+        $tabbuttons .= html_writer::tag('button', $tab['label'], [
+            'type' => 'button',
+            'class' => 'btn btn-outline-secondary btn-sm quizaccess-proctoring-admin-tab',
+            'data-proctoring-admin-tab' => $tab['key'],
+            'aria-pressed' => $tab['key'] === 'all' ? 'true' : 'false',
+        ]);
+    }
+
+    $bulkbuttons = html_writer::tag(
+        'button',
+        get_string('setting:admincontrols_enableall', 'quizaccess_proctoring'),
+        [
+            'type' => 'button',
+            'class' => 'btn btn-secondary btn-sm',
+            'data-proctoring-admin-bulk' => 'enable',
+        ]
+    ) . html_writer::tag(
+        'button',
+        get_string('setting:admincontrols_disableall', 'quizaccess_proctoring'),
+        [
+            'type' => 'button',
+            'class' => 'btn btn-outline-secondary btn-sm',
+            'data-proctoring-admin-bulk' => 'disable',
+        ]
+    );
+
+    $togglehtml = '';
+    foreach ($quicktoggles as $toggle) {
+        $togglehtml .= html_writer::tag(
+            'label',
+            html_writer::empty_tag('input', [
+                'type' => 'checkbox',
+                'class' => 'quizaccess-proctoring-admin-toggle-input',
+                'data-proctoring-admin-setting' => $toggle['setting'],
+                'aria-label' => $toggle['label'],
+            ]) .
+            html_writer::span($toggle['label'], 'quizaccess-proctoring-admin-toggle-label') .
+            html_writer::span(
+                get_string('setting:admincontrols_badge_off', 'quizaccess_proctoring'),
+                'badge bg-secondary quizaccess-proctoring-admin-toggle-state',
+                [
+                    'data-proctoring-admin-state' => '',
+                    'data-on-label' => get_string('setting:admincontrols_badge_on', 'quizaccess_proctoring'),
+                    'data-off-label' => get_string('setting:admincontrols_badge_off', 'quizaccess_proctoring'),
+                ]
+            ),
+            ['class' => 'quizaccess-proctoring-admin-toggle']
+        );
+    }
+
+    $admincontrolhtml = html_writer::div(
+        html_writer::div(get_string('setting:admincontrols_desc', 'quizaccess_proctoring'),
+            'quizaccess-proctoring-admin-intro') .
+        html_writer::div($tabbuttons, 'quizaccess-proctoring-admin-tabs', ['role' => 'tablist']) .
+        html_writer::div($bulkbuttons, 'quizaccess-proctoring-admin-bulk-actions') .
+        html_writer::div($togglehtml, 'quizaccess-proctoring-admin-quickgrid'),
+        'quizaccess-proctoring-admin-controls',
+        ['id' => 'quizaccess-proctoring-admin-controls']
+    );
+
+    $settings->add(new admin_setting_description(
+        'quizaccess_proctoring/admincontrols',
+        get_string('setting:admincontrolsheading', 'quizaccess_proctoring'),
+        $admincontrolhtml
     ));
 
 
@@ -456,7 +660,6 @@ if ($hassiteconfig) {
         html_writer::tag('p', get_string('settingscontroll:deletealldescription', 'quizaccess_proctoring'))
     );
 
-    global $DB;
     $dbman = $DB->get_manager();
     $exists = $dbman->table_exists('quizaccess_proctoring_logs') && $DB->record_exists('quizaccess_proctoring_logs', ['deletionprogress' => 0]);
     if ($exists) {

@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.18
+- Added top-level admin settings shortcuts for common proctoring gates and tabbed navigation for the main settings groups.
+
 # v1.1.17
 - Reorganized the site admin quiz settings so AI proctor settings contains Review diagnostics and Cost estimate subpages.
 
