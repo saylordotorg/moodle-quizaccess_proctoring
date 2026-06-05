@@ -9,52 +9,78 @@ on:
 
 jobs:
   test:
-    name: Moodle ${{ matrix.moodle }} / PHP ${{ matrix.php }} / PostgreSQL
+    name: Moodle ${{ matrix.moodle.version }} / PHP ${{ matrix.moodle.php }} / ${{ matrix.database.name }}
     runs-on: ubuntu-22.04
-    continue-on-error: ${{ matrix.experimental }}
+    continue-on-error: ${{ matrix.moodle.experimental }}
 
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - moodle: '405'
+        moodle:
+          - version: '405'
             branch: MOODLE_405_STABLE
             php: '8.3'
             pluginpath: ./moodle/mod/quiz/accessrule/proctoring
             experimental: false
-          - moodle: '500'
+          - version: '500'
             branch: MOODLE_500_STABLE
             php: '8.3'
             pluginpath: ./moodle/mod/quiz/accessrule/proctoring
             experimental: false
-          - moodle: '501'
+          - version: '501'
             branch: MOODLE_501_STABLE
             php: '8.3'
             pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
             experimental: false
-          - moodle: '502'
+          - version: '502'
             branch: MOODLE_502_STABLE
             php: '8.3'
             pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
             experimental: false
           # Moodle 5.3 does not have a MOODLE_503_STABLE branch yet.
           # Run the 503 lane against main for early compatibility signal without blocking stable CI.
-          - moodle: '503'
+          - version: '503'
             branch: main
             php: '8.3'
             pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
             experimental: true
+        database:
+          - name: PostgreSQL 16
+            type: pgsql
+            image: postgres:16
+            port: 5432
+            containerport: 5432
+            user: postgres
+            healthcmd: pg_isready -U postgres
+          - name: MySQL 8.4
+            type: mysqli
+            image: mysql:8.4
+            port: 3306
+            containerport: 3306
+            user: root
+            healthcmd: mysqladmin ping -uroot
+          - name: MariaDB 10.11
+            type: mariadb
+            image: mariadb:10.11
+            port: 3306
+            containerport: 3306
+            user: root
+            healthcmd: mysqladmin ping -uroot
 
     services:
-      postgres:
-        image: postgres:16
+      database:
+        image: ${{ matrix.database.image }}
         env:
           POSTGRES_USER: postgres
           POSTGRES_HOST_AUTH_METHOD: trust
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'true'
+          MYSQL_ROOT_HOST: '%'
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: 'true'
+          MARIADB_ROOT_HOST: '%'
         ports:
-          - 5432:5432
+          - "${{ matrix.database.port }}:${{ matrix.database.containerport }}"
         options: >-
-          --health-cmd pg_isready
+          --health-cmd="${{ matrix.database.healthcmd }}"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 3
@@ -68,8 +94,8 @@ jobs:
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: ${{ matrix.php }}
-          extensions: pgsql, zip, gd, intl, soap
+          php-version: ${{ matrix.moodle.php }}
+          extensions: mysqli, pgsql, zip, gd, intl, soap
           ini-values: max_input_vars=5000
           coverage: none
 
@@ -81,27 +107,28 @@ jobs:
           sudo locale-gen en_AU.UTF-8
 
       - name: Install Moodle test site
-        run: moodle-plugin-ci install --plugin ./plugin --db-host=127.0.0.1
+        run: moodle-plugin-ci install --plugin ./plugin --db-host=127.0.0.1 --db-port=${{ matrix.database.port }}
         env:
-          DB: pgsql
-          MOODLE_BRANCH: ${{ matrix.branch }}
+          DB: ${{ matrix.database.type }}
+          DB_USER: ${{ matrix.database.user }}
+          MOODLE_BRANCH: ${{ matrix.moodle.branch }}
 
       - name: PHP lint
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci phplint ${{ matrix.pluginpath }}
+        run: moodle-plugin-ci phplint ${{ matrix.moodle.pluginpath }}
 
       - name: Validate plugin
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci validate ${{ matrix.pluginpath }}
+        run: moodle-plugin-ci validate ${{ matrix.moodle.pluginpath }}
 
       - name: Check upgrade savepoints
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci savepoints ${{ matrix.pluginpath }}
+        run: moodle-plugin-ci savepoints ${{ matrix.moodle.pluginpath }}
 
       - name: Mustache lint
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci mustache ${{ matrix.pluginpath }}
+        run: moodle-plugin-ci mustache ${{ matrix.moodle.pluginpath }}
 
       - name: PHPUnit
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci phpunit ${{ matrix.pluginpath }}
+        run: moodle-plugin-ci phpunit ${{ matrix.moodle.pluginpath }}
