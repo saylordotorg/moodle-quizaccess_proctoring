@@ -515,12 +515,7 @@ function quizaccess_proctoring_get_face_match_status_class(int $awsflag, int $aw
  * @return bool True when the shortcut matches.
  */
 function quizaccess_proctoring_event_has_shortcut(string $eventdetail, string $shortcut): bool {
-    $decoded = json_decode($eventdetail, true);
-    if (!is_array($decoded) || empty($decoded['shortcut'])) {
-        return false;
-    }
-
-    return strtoupper((string)$decoded['shortcut']) === strtoupper($shortcut);
+    return \quizaccess_proctoring\local\risk_calculator::event_has_shortcut($eventdetail, $shortcut);
 }
 
 /**
@@ -538,19 +533,12 @@ function quizaccess_proctoring_count_risk_events(
     array $eventtypes,
     bool $requirescreenshot = false
 ): int {
-    global $DB;
-
-    if (empty($eventtypes)) {
-        return 0;
-    }
-
-    [$insql, $inparams] = $DB->get_in_or_equal($eventtypes, SQL_PARAMS_NAMED, 'riskevent');
-    $where = $eventwhere . " AND eventtype {$insql}";
-    if ($requirescreenshot) {
-        $where .= " AND COALESCE(screenshoturl, '') <> ''";
-    }
-
-    return $DB->count_records_select('quizaccess_proctoring_events', $where, array_merge($eventparams, $inparams));
+    return \quizaccess_proctoring\local\risk_calculator::count_events(
+        $eventwhere,
+        $eventparams,
+        $eventtypes,
+        $requirescreenshot
+    );
 }
 
 /**
@@ -562,24 +550,7 @@ function quizaccess_proctoring_count_risk_events(
  * @return int Number of matching shortcut events.
  */
 function quizaccess_proctoring_count_risk_shortcuts(string $eventwhere, array $eventparams, string $shortcut): int {
-    global $DB;
-
-    $shortcutrecords = $DB->get_records_select(
-        'quizaccess_proctoring_events',
-        $eventwhere . ' AND eventtype = :riskshortcuttype',
-        $eventparams + ['riskshortcuttype' => 'shortcut'],
-        '',
-        'id, eventdetail'
-    );
-
-    $count = 0;
-    foreach ($shortcutrecords as $shortcutrecord) {
-        if (quizaccess_proctoring_event_has_shortcut($shortcutrecord->eventdetail, $shortcut)) {
-            $count++;
-        }
-    }
-
-    return $count;
+    return \quizaccess_proctoring\local\risk_calculator::count_shortcuts($eventwhere, $eventparams, $shortcut);
 }
 
 /**
@@ -597,14 +568,7 @@ function quizaccess_proctoring_build_risk_factor(
     int $pointsperevent,
     int $maxpoints
 ): array {
-    $points = min($maxpoints, max(0, $count) * $pointsperevent);
-
-    return [
-        'label' => $label,
-        'count' => $count,
-        'points' => $points,
-        'haspoints' => $points > 0,
-    ];
+    return \quizaccess_proctoring\local\risk_calculator::build_factor($label, $count, $pointsperevent, $maxpoints);
 }
 
 /**
@@ -614,29 +578,7 @@ function quizaccess_proctoring_build_risk_factor(
  * @return array Risk-level template data.
  */
 function quizaccess_proctoring_get_risk_level(int $score): array {
-    if ($score >= 80) {
-        return [
-            'label' => get_string('riskscore:critical', 'quizaccess_proctoring'),
-            'class' => 'proctoring-risk-critical',
-        ];
-    }
-    if ($score >= 50) {
-        return [
-            'label' => get_string('riskscore:high', 'quizaccess_proctoring'),
-            'class' => 'proctoring-risk-high',
-        ];
-    }
-    if ($score >= 20) {
-        return [
-            'label' => get_string('riskscore:moderate', 'quizaccess_proctoring'),
-            'class' => 'proctoring-risk-moderate',
-        ];
-    }
-
-    return [
-        'label' => get_string('riskscore:low', 'quizaccess_proctoring'),
-        'class' => 'proctoring-risk-low',
-    ];
+    return \quizaccess_proctoring\local\risk_calculator::get_level($score);
 }
 
 /**
@@ -649,222 +591,7 @@ function quizaccess_proctoring_get_risk_level(int $score): array {
  * @return array Risk score template data.
  */
 function quizaccess_proctoring_calculate_attempt_risk(int $courseid, int $cmid, int $studentid, int $reportid): array {
-    global $DB;
-
-    $attemptid = (int)$DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]);
-    $threshold = max(1, (int)quizaccess_proctoring_get_proctoring_settings('threshold'));
-
-    $eventwhere = 'courseid = :riskcourseid AND quizid = :riskcmid AND userid = :riskstudentid';
-    $eventparams = [
-        'riskcourseid' => $courseid,
-        'riskcmid' => $cmid,
-        'riskstudentid' => $studentid,
-    ];
-    if ($attemptid > 0) {
-        $eventwhere .= ' AND attemptid = :riskattemptid';
-        $eventparams['riskattemptid'] = $attemptid;
-    }
-
-    $logwhere = 'courseid = :risklogcourseid AND quizid = :risklogcmid AND userid = :risklogstudentid
-        AND deletionprogress = :riskdeletionprogress';
-    $logparams = [
-        'risklogcourseid' => $courseid,
-        'risklogcmid' => $cmid,
-        'risklogstudentid' => $studentid,
-        'riskdeletionprogress' => 0,
-    ];
-    if ($attemptid > 0) {
-        $logwhere .= ' AND status = :risklogattemptid';
-        $logparams['risklogattemptid'] = $attemptid;
-    } else if ($reportid > 0) {
-        $logwhere .= ' AND id = :risklogreportid';
-        $logparams['risklogreportid'] = $reportid;
-    }
-
-    $faceimagewhere = 'l.courseid = :riskfacecourseid AND l.quizid = :riskfacecmid
-        AND l.userid = :riskfacestudentid AND l.deletionprogress = :riskfacedeletionprogress';
-    $faceimageparams = [
-        'riskfacecourseid' => $courseid,
-        'riskfacecmid' => $cmid,
-        'riskfacestudentid' => $studentid,
-        'riskfacedeletionprogress' => 0,
-        'riskfacefound' => '1',
-    ];
-    if ($attemptid > 0) {
-        $faceimagewhere .= ' AND l.status = :riskfaceattemptid';
-        $faceimageparams['riskfaceattemptid'] = $attemptid;
-    } else if ($reportid > 0) {
-        $faceimagewhere .= ' AND l.id = :riskfacereportid';
-        $faceimageparams['riskfacereportid'] = $reportid;
-    }
-
-    $webcamcount = $DB->count_records_select(
-        'quizaccess_proctoring_logs',
-        $logwhere . " AND COALESCE(webcampicture, '') <> ''",
-        $logparams
-    );
-
-    $facemismatchcount = $DB->count_records_select(
-        'quizaccess_proctoring_logs',
-        $logwhere . ' AND awsflag = :riskawschecked AND awsscore < :riskthreshold',
-        $logparams + [
-            'riskawschecked' => 2,
-            'riskthreshold' => $threshold,
-        ]
-    );
-    $facefailedcount = $DB->count_records_select(
-        'quizaccess_proctoring_logs',
-        $logwhere . ' AND awsflag = :riskawsfailed',
-        $logparams + ['riskawsfailed' => 3]
-    );
-
-    $nofaceimagecount = $DB->count_records_sql(
-        "SELECT COUNT(1)
-           FROM {quizaccess_proctoring_face_images} fi
-           JOIN {quizaccess_proctoring_logs} l ON l.id = fi.parentid
-          WHERE {$faceimagewhere}
-            AND fi.facefound <> :riskfacefound",
-        $faceimageparams
-    );
-
-    $tabactivitycount = quizaccess_proctoring_count_risk_events(
-        $eventwhere,
-        $eventparams,
-        ['focus_lost', 'tab_hidden', 'page_exit']
-    );
-    $clipboardcount = quizaccess_proctoring_count_risk_events(
-        $eventwhere,
-        $eventparams,
-        ['clipboard_copy', 'clipboard_cut', 'clipboard_paste', 'contextmenu']
-    );
-    $screenissuecount = quizaccess_proctoring_count_risk_events(
-        $eventwhere,
-        $eventparams,
-        ['screen_marker_missing', 'screen_share_stopped']
-    );
-    $multimonitorcount = quizaccess_proctoring_count_risk_events(
-        $eventwhere,
-        $eventparams,
-        ['multiple_monitors_detected']
-    );
-    $aitoolcount = quizaccess_proctoring_count_risk_events(
-        $eventwhere,
-        $eventparams,
-        ['possible_ai_tool']
-    );
-    $aitoolscreenshotcount = quizaccess_proctoring_count_risk_events(
-        $eventwhere,
-        $eventparams,
-        ['possible_ai_tool'],
-        true
-    );
-    $f12count = quizaccess_proctoring_count_risk_shortcuts($eventwhere, $eventparams, 'F12');
-    $multiplefacescount = quizaccess_proctoring_count_risk_events(
-        $eventwhere,
-        $eventparams,
-        ['multiple_faces_detected']
-    );
-    $audioactivitycount = quizaccess_proctoring_count_risk_events(
-        $eventwhere,
-        $eventparams,
-        ['audio_detected']
-    );
-    $nofaceeventcount = quizaccess_proctoring_count_risk_events(
-        $eventwhere,
-        $eventparams,
-        ['face_missing', 'no_face_detected']
-    );
-
-    $factors = [
-        quizaccess_proctoring_build_risk_factor(
-            get_string('riskscore:facemismatch', 'quizaccess_proctoring'),
-            $facemismatchcount,
-            35,
-            35
-        ),
-        quizaccess_proctoring_build_risk_factor(
-            get_string('riskscore:multiplefaces', 'quizaccess_proctoring'),
-            $multiplefacescount,
-            30,
-            30
-        ),
-        quizaccess_proctoring_build_risk_factor(
-            get_string('riskscore:noface', 'quizaccess_proctoring'),
-            max($nofaceimagecount, $facefailedcount) + $nofaceeventcount,
-            8,
-            24
-        ),
-        quizaccess_proctoring_build_risk_factor(
-            get_string('riskscore:screenshare', 'quizaccess_proctoring'),
-            $screenissuecount,
-            18,
-            36
-        ),
-        quizaccess_proctoring_build_risk_factor(
-            get_string('riskscore:multimonitor', 'quizaccess_proctoring'),
-            $multimonitorcount,
-            25,
-            25
-        ),
-        quizaccess_proctoring_build_risk_factor(
-            get_string('riskscore:aitool', 'quizaccess_proctoring'),
-            $aitoolcount,
-            20,
-            30
-        ),
-        quizaccess_proctoring_build_risk_factor(
-            get_string('riskscore:aitoolscreenshot', 'quizaccess_proctoring'),
-            $aitoolscreenshotcount,
-            15,
-            30
-        ),
-        quizaccess_proctoring_build_risk_factor(
-            get_string('riskscore:clipboard', 'quizaccess_proctoring'),
-            $clipboardcount,
-            8,
-            24
-        ),
-        quizaccess_proctoring_build_risk_factor(
-            get_string('riskscore:tabactivity', 'quizaccess_proctoring'),
-            $tabactivitycount,
-            5,
-            20
-        ),
-        quizaccess_proctoring_build_risk_factor(
-            get_string('riskscore:f12', 'quizaccess_proctoring'),
-            $f12count,
-            15,
-            15
-        ),
-        quizaccess_proctoring_build_risk_factor(
-            get_string('riskscore:audio', 'quizaccess_proctoring'),
-            $audioactivitycount,
-            6,
-            18
-        ),
-        quizaccess_proctoring_build_risk_factor(
-            get_string('riskscore:webcammissing', 'quizaccess_proctoring'),
-            $webcamcount > 0 ? 0 : 1,
-            15,
-            15
-        ),
-    ];
-
-    $score = 0;
-    foreach ($factors as $factor) {
-        $score += (int)$factor['points'];
-    }
-    $score = min(100, $score);
-    $level = quizaccess_proctoring_get_risk_level($score);
-
-    return [
-        'score' => $score,
-        'level' => $level['label'],
-        'badgeclass' => 'proctoring-risk-badge ' . $level['class'],
-        'cardclass' => 'proctoring-risk-card ' . $level['class'],
-        'factors' => $factors,
-        'attemptid' => $attemptid,
-    ];
+    return \quizaccess_proctoring\local\risk_calculator::calculate_attempt($courseid, $cmid, $studentid, $reportid);
 }
 
 /**
@@ -928,20 +655,7 @@ function quizaccess_proctoring_get_risk_review_auto_release_days(): int {
  * @return string Endpoint URL to call.
  */
 function quizaccess_proctoring_normalize_compatible_ai_endpoint(string $endpoint): string {
-    $endpoint = rtrim(trim($endpoint), '/');
-    if ($endpoint === '') {
-        return '';
-    }
-
-    $path = (string)(parse_url($endpoint, PHP_URL_PATH) ?: '');
-    if ($path === '' || $path === '/') {
-        return $endpoint . '/v1/chat/completions';
-    }
-    if (preg_match('#/v1$#', $path)) {
-        return $endpoint . '/chat/completions';
-    }
-
-    return $endpoint;
+    return \quizaccess_proctoring\local\outbound_endpoint_validator::normalize_compatible_endpoint($endpoint);
 }
 
 /**
@@ -952,37 +666,7 @@ function quizaccess_proctoring_normalize_compatible_ai_endpoint(string $endpoint
  * @throws moodle_exception If the endpoint is invalid or resolves to a blocked address.
  */
 function quizaccess_proctoring_validate_outbound_endpoint(string $endpoint): string {
-    $endpoint = trim($endpoint);
-    $parts = parse_url($endpoint);
-    if (!$parts || empty($parts['scheme']) || empty($parts['host'])) {
-        throw new moodle_exception('outboundendpointinvalid', 'quizaccess_proctoring');
-    }
-    if (!empty($parts['user']) || !empty($parts['pass'])) {
-        throw new moodle_exception('outboundendpointinvalid', 'quizaccess_proctoring');
-    }
-
-    $scheme = strtolower((string)$parts['scheme']);
-    if (!in_array($scheme, ['http', 'https'], true)) {
-        throw new moodle_exception('outboundendpointinvalid', 'quizaccess_proctoring');
-    }
-
-    $host = trim((string)$parts['host'], '[]');
-    if ($host === '' || strtolower($host) === 'localhost') {
-        throw new moodle_exception('outboundendpointblocked', 'quizaccess_proctoring');
-    }
-
-    $ips = quizaccess_proctoring_resolve_outbound_host_ips($host);
-    if (!$ips) {
-        throw new moodle_exception('outboundendpointunresolved', 'quizaccess_proctoring');
-    }
-
-    foreach ($ips as $ip) {
-        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
-            throw new moodle_exception('outboundendpointblocked', 'quizaccess_proctoring');
-        }
-    }
-
-    return $endpoint;
+    return \quizaccess_proctoring\local\outbound_endpoint_validator::validate($endpoint);
 }
 
 /**
@@ -992,34 +676,7 @@ function quizaccess_proctoring_validate_outbound_endpoint(string $endpoint): str
  * @return array IP addresses.
  */
 function quizaccess_proctoring_resolve_outbound_host_ips(string $host): array {
-    $host = trim($host, '[]');
-    if (filter_var($host, FILTER_VALIDATE_IP)) {
-        return [$host];
-    }
-
-    $ips = [];
-    if (function_exists('dns_get_record')) {
-        $records = @dns_get_record($host, DNS_A + DNS_AAAA);
-        if (is_array($records)) {
-            foreach ($records as $record) {
-                if (!empty($record['ip'])) {
-                    $ips[] = $record['ip'];
-                }
-                if (!empty($record['ipv6'])) {
-                    $ips[] = $record['ipv6'];
-                }
-            }
-        }
-    }
-
-    if (!$ips) {
-        $records = @gethostbynamel($host);
-        if (is_array($records)) {
-            $ips = array_merge($ips, $records);
-        }
-    }
-
-    return array_values(array_unique(array_filter($ips, 'strlen')));
+    return \quizaccess_proctoring\local\outbound_endpoint_validator::resolve_host_ips($host);
 }
 
 /**

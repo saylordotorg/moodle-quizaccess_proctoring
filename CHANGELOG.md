@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.12
+- Extracted risk scoring and outbound endpoint validation into local service classes, preserving existing compatibility functions.
+- Rejected outbound API endpoints with invalid explicit ports before DNS resolution.
+
 # v1.1.11
 - Made the ID camera guide smaller, changed its feedback to red/green in-window states, and required all four ID edges before auto-capture.
 
