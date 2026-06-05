@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.10
+- Required multiple ID-card edges before browser auto-capture can start the steady-hold timer.
+
 # v1.1.9
 - Tightened ID auto-capture detection so textured backgrounds do not start the hold timer without a document boundary.
 

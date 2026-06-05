@@ -898,31 +898,124 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     ) / 24));
                     const inset = 4;
                     const outset = 5;
-                    let count = 0;
-                    let sum = 0;
+                    const scan = Math.max(6, Math.floor(Math.min(
+                        innerBounds.right - innerBounds.left,
+                        innerBounds.bottom - innerBounds.top
+                    ) / 18));
+                    const strongThreshold = 16;
+                    const sides = {
+                        top: {count: 0, strong: 0, sum: 0},
+                        bottom: {count: 0, strong: 0, sum: 0},
+                        left: {count: 0, strong: 0, sum: 0},
+                        right: {count: 0, strong: 0, sum: 0},
+                    };
 
-                    const addPair = function(innerX, innerY, outerX, outerY) {
+                    const getPairDifference = function(innerX, innerY, outerX, outerY) {
                         if (outerX < 0 || outerY < 0 || outerX >= width || outerY >= height) {
-                            return;
+                            return null;
                         }
-                        sum += Math.abs(
+                        return Math.abs(
                             getLuminanceAt(imageData, width, height, innerX, innerY) -
                             getLuminanceAt(imageData, width, height, outerX, outerY)
                         );
-                        count++;
+                    };
+
+                    const addSideSample = function(side, difference) {
+                        if (difference === null) {
+                            return;
+                        }
+
+                        sides[side].count++;
+                        sides[side].sum += difference;
+                        if (difference >= strongThreshold) {
+                            sides[side].strong++;
+                        }
+                    };
+
+                    const addBestSideSample = function(side, makePair) {
+                        let best = null;
+                        for (let offset = -scan; offset <= scan; offset += 2) {
+                            const pair = makePair(offset);
+                            const difference = getPairDifference(pair.innerX, pair.innerY, pair.outerX, pair.outerY);
+                            if (difference !== null && (best === null || difference > best)) {
+                                best = difference;
+                            }
+                        }
+                        addSideSample(side, best);
                     };
 
                     for (let xx = innerBounds.left + spacing; xx < innerBounds.right - spacing; xx += spacing) {
-                        addPair(xx, innerBounds.top + inset, xx, innerBounds.top - outset);
-                        addPair(xx, innerBounds.bottom - inset, xx, innerBounds.bottom + outset);
+                        addBestSideSample('top', function(offset) {
+                            const edgeY = innerBounds.top + offset;
+                            return {
+                                innerX: xx,
+                                innerY: edgeY + inset,
+                                outerX: xx,
+                                outerY: edgeY - outset,
+                            };
+                        });
+                        addBestSideSample('bottom', function(offset) {
+                            const edgeY = innerBounds.bottom + offset;
+                            return {
+                                innerX: xx,
+                                innerY: edgeY - inset,
+                                outerX: xx,
+                                outerY: edgeY + outset,
+                            };
+                        });
                     }
 
                     for (let yy = innerBounds.top + spacing; yy < innerBounds.bottom - spacing; yy += spacing) {
-                        addPair(innerBounds.left + inset, yy, innerBounds.left - outset, yy);
-                        addPair(innerBounds.right - inset, yy, innerBounds.right + outset, yy);
+                        addBestSideSample('left', function(offset) {
+                            const edgeX = innerBounds.left + offset;
+                            return {
+                                innerX: edgeX + inset,
+                                innerY: yy,
+                                outerX: edgeX - outset,
+                                outerY: yy,
+                            };
+                        });
+                        addBestSideSample('right', function(offset) {
+                            const edgeX = innerBounds.right + offset;
+                            return {
+                                innerX: edgeX - inset,
+                                innerY: yy,
+                                outerX: edgeX + outset,
+                                outerY: yy,
+                            };
+                        });
                     }
 
-                    return count > 0 ? sum / count : 0;
+                    const summary = {
+                        average: 0,
+                        count: 0,
+                        coveredSides: 0,
+                        horizontalSides: 0,
+                        verticalSides: 0,
+                    };
+                    Object.keys(sides).forEach(function(side) {
+                        const sideStats = sides[side];
+                        if (!sideStats.count) {
+                            return;
+                        }
+
+                        const average = sideStats.sum / sideStats.count;
+                        const strongRatio = sideStats.strong / sideStats.count;
+                        const present = average >= 10 && strongRatio >= 0.35;
+                        summary.average += sideStats.sum;
+                        summary.count += sideStats.count;
+                        if (present) {
+                            summary.coveredSides++;
+                            if (side === 'top' || side === 'bottom') {
+                                summary.horizontalSides++;
+                            } else {
+                                summary.verticalSides++;
+                            }
+                        }
+                    });
+                    summary.average = summary.count > 0 ? summary.average / summary.count : 0;
+
+                    return summary;
                 };
 
                 const getIdDocumentRegionStatus = function(video, side = activeIdDocumentSide) {
@@ -974,16 +1067,17 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         fullBounds,
                         innerBounds
                     );
-                    const boundaryContrast = measureIdDocumentBoundaryContrast(
+                    const boundaryStats = measureIdDocumentBoundaryContrast(
                         imageData,
                         sampleWidth,
                         sampleHeight,
                         innerBounds
                     );
-                    const brightnessSeparation = ringStats.count > 0 ?
-                        Math.abs(innerStats.brightness - ringStats.brightness) : 0;
                     const documentBoundaryFound = ringStats.count > innerStats.count * 0.15 &&
-                        (boundaryContrast >= 13 || brightnessSeparation >= 18);
+                        boundaryStats.coveredSides >= 3 &&
+                        boundaryStats.horizontalSides >= 1 &&
+                        boundaryStats.verticalSides >= 1 &&
+                        boundaryStats.average >= 10;
                     const detected = documentBoundaryFound &&
                         innerStats.brightness >= 60 &&
                         innerStats.brightness <= 245 &&
@@ -992,7 +1086,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         innerStats.edgeDensity >= 0.02 &&
                         innerStats.edgeDensity <= 0.55;
                     const aligned = detected &&
-                        boundaryContrast >= 10 &&
+                        boundaryStats.average >= 12 &&
                         innerStats.brightness >= 75 &&
                         innerStats.brightness <= 235 &&
                         innerStats.contrast >= 12 &&
