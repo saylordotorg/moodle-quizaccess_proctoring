@@ -641,7 +641,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         : strings.idverificationdocumentmissing;
                 };
 
-                const setIdDocumentGuideProgress = function(side, score) {
+                const setIdDocumentGuideProgress = function(side, score, detected = score > 0) {
                     const preview = getIdDocumentElement(side, 'preview');
                     const guide = preview ? preview.querySelector('.proctoring-id-document-guide') : null;
                     if (!guide) {
@@ -650,7 +650,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                     const progress = Math.max(0, Math.min(1, score / idDocumentAutoCaptureRequiredScore));
                     guide.style.setProperty('--proctoring-id-hold-progress', (progress * 100).toFixed(0) + '%');
-                    guide.classList.toggle('is-detected', score > 0);
+                    guide.classList.toggle('is-detected', detected);
                     guide.classList.toggle('is-holding', progress >= 0.5);
                 };
 
@@ -803,11 +803,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     };
                 };
 
-                const documentRegionLooksAligned = function(video, side = activeIdDocumentSide) {
+                const getIdDocumentRegionStatus = function(video, side = activeIdDocumentSide) {
                     const canvas = getIdDocumentElement(side, 'canvas');
                     const rect = getIdDocumentGuideSourceRect(video, 0);
                     if (!canvas || !rect) {
-                        return false;
+                        return {
+                            detected: false,
+                            aligned: false,
+                        };
                     }
 
                     const sampleWidth = 180;
@@ -860,7 +863,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
 
                     if (!count || !edgeComparisons) {
-                        return false;
+                        return {
+                            detected: false,
+                            aligned: false,
+                        };
                     }
 
                     const brightness = sum / count;
@@ -868,13 +874,23 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     const contrast = Math.sqrt(variance);
                     const brightRatio = bright / count;
                     const edgeDensity = edges / edgeComparisons;
-
-                    return brightness >= 75 &&
+                    const detected = brightness >= 60 &&
+                        brightness <= 245 &&
+                        contrast >= 8 &&
+                        brightRatio >= 0.4 &&
+                        edgeDensity >= 0.02 &&
+                        edgeDensity <= 0.55;
+                    const aligned = brightness >= 75 &&
                         brightness <= 235 &&
                         contrast >= 12 &&
                         brightRatio >= 0.55 &&
                         edgeDensity >= 0.035 &&
                         edgeDensity <= 0.45;
+
+                    return {
+                        detected: detected,
+                        aligned: aligned,
+                    };
                 };
 
                 const drawIdDocumentCapture = function(video, canvas) {
@@ -907,9 +923,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                         idDocumentAutoCaptureRunning = true;
                         try {
-                            const aligned = documentRegionLooksAligned(video, captureSide);
-                            idDocumentAutoCaptureScore = aligned ? idDocumentAutoCaptureScore + 1 : 0;
-                            setIdDocumentGuideProgress(captureSide, idDocumentAutoCaptureScore);
+                            const documentStatus = getIdDocumentRegionStatus(video, captureSide);
+                            idDocumentAutoCaptureScore = documentStatus.aligned ? idDocumentAutoCaptureScore + 1 : 0;
+                            setIdDocumentGuideProgress(
+                                captureSide,
+                                idDocumentAutoCaptureScore,
+                                documentStatus.detected
+                            );
                             if (idDocumentAutoCaptureScore >= idDocumentAutoCaptureRequiredScore) {
                                 await captureIdDocumentImage(captureSide);
                             }

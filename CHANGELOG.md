@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.8
+- Split ID detection from the steady-hold timer so auto-capture progress starts only after an ID-like document is visible.
+
 # v1.1.7
 - Added blue/green ID guide feedback while the document is detected and held steady before auto-capture.
 
