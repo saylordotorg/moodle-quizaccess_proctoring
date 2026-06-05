@@ -641,6 +641,26 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         : strings.idverificationdocumentmissing;
                 };
 
+                const setIdDocumentGuideProgress = function(side, score) {
+                    const preview = getIdDocumentElement(side, 'preview');
+                    const guide = preview ? preview.querySelector('.proctoring-id-document-guide') : null;
+                    if (!guide) {
+                        return;
+                    }
+
+                    const progress = Math.max(0, Math.min(1, score / idDocumentAutoCaptureRequiredScore));
+                    guide.style.setProperty('--proctoring-id-hold-progress', (progress * 100).toFixed(0) + '%');
+                    guide.classList.toggle('is-detected', score > 0);
+                    guide.classList.toggle('is-holding', progress >= 0.5);
+                };
+
+                const resetIdDocumentGuideProgress = function(side = null) {
+                    const sides = side ? [getIdDocumentSide(side)] : ['front', 'back'];
+                    sides.forEach(function(captureSide) {
+                        setIdDocumentGuideProgress(captureSide, 0);
+                    });
+                };
+
                 const setIdDocumentCaptureState = function(state, side = activeIdDocumentSide) {
                     const captureSide = getIdDocumentSide(side);
                     const preview = getIdDocumentElement(captureSide, 'preview');
@@ -674,6 +694,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     if (retakeButton) {
                         retakeButton.style.display = capturedMode ? 'inline-flex' : 'none';
                     }
+                    if (!cameraMode) {
+                        resetIdDocumentGuideProgress(captureSide);
+                    }
                 };
 
                 const stopIdDocumentAutoCapture = function() {
@@ -683,6 +706,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                     idDocumentAutoCaptureScore = 0;
                     idDocumentAutoCaptureRunning = false;
+                    resetIdDocumentGuideProgress();
                 };
 
                 const waitForVideoFrame = async function(video) {
@@ -883,9 +907,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                         idDocumentAutoCaptureRunning = true;
                         try {
-                            idDocumentAutoCaptureScore = documentRegionLooksAligned(video, captureSide)
-                                ? idDocumentAutoCaptureScore + 1
-                                : 0;
+                            const aligned = documentRegionLooksAligned(video, captureSide);
+                            idDocumentAutoCaptureScore = aligned ? idDocumentAutoCaptureScore + 1 : 0;
+                            setIdDocumentGuideProgress(captureSide, idDocumentAutoCaptureScore);
                             if (idDocumentAutoCaptureScore >= idDocumentAutoCaptureRequiredScore) {
                                 await captureIdDocumentImage(captureSide);
                             }

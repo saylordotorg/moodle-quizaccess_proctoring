@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.7
+- Added blue/green ID guide feedback while the document is detected and held steady before auto-capture.
+
 # v1.1.6
 - Added an optional ID verification requirement for students to provide both front and back ID images.
 
