@@ -15,8 +15,19 @@ jobs:
 
     strategy:
       fail-fast: false
+      max-parallel: 15
       matrix:
         moodle:
+          - version: '405'
+            branch: MOODLE_405_STABLE
+            php: '8.1'
+            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
+            experimental: false
+          - version: '405'
+            branch: MOODLE_405_STABLE
+            php: '8.2'
+            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
+            experimental: false
           - version: '405'
             branch: MOODLE_405_STABLE
             php: '8.3'
@@ -24,12 +35,32 @@ jobs:
             experimental: false
           - version: '500'
             branch: MOODLE_500_STABLE
+            php: '8.2'
+            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
+            experimental: false
+          - version: '500'
+            branch: MOODLE_500_STABLE
             php: '8.3'
+            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
+            experimental: false
+          - version: '500'
+            branch: MOODLE_500_STABLE
+            php: '8.4'
             pluginpath: ./moodle/mod/quiz/accessrule/proctoring
             experimental: false
           - version: '501'
             branch: MOODLE_501_STABLE
+            php: '8.2'
+            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
+            experimental: false
+          - version: '501'
+            branch: MOODLE_501_STABLE
             php: '8.3'
+            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
+            experimental: false
+          - version: '501'
+            branch: MOODLE_501_STABLE
+            php: '8.4'
             pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
             experimental: false
           - version: '502'
@@ -37,11 +68,21 @@ jobs:
             php: '8.3'
             pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
             experimental: false
+          - version: '502'
+            branch: MOODLE_502_STABLE
+            php: '8.4'
+            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
+            experimental: false
           # Moodle 5.3 does not have a MOODLE_503_STABLE branch yet.
           # Run the 503 lane against main for early compatibility signal without blocking stable CI.
           - version: '503'
             branch: main
             php: '8.3'
+            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
+            experimental: true
+          - version: '503'
+            branch: main
+            php: '8.4'
             pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
             experimental: true
         database:
