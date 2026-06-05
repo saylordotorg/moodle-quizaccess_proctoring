@@ -37,6 +37,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'videonotavailable', component: 'quizaccess_proctoring'},
                 {key: 'modal:idverificationdocumentnotinwindow', component: 'quizaccess_proctoring'},
                 {key: 'modal:idverificationdocumentinwindow', component: 'quizaccess_proctoring'},
+                {key: 'modal:idverificationdocumentready', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -76,6 +77,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     videonotavailable: strings[32],
                     idverificationdocumentnotinwindow: strings[33],
                     idverificationdocumentinwindow: strings[34],
+                    idverificationdocumentready: strings[35],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -263,6 +265,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const capturedIdImages = {
                     front: '',
                     back: '',
+                };
+                const idDocumentCaptureReady = {
+                    front: false,
+                    back: false,
                 };
                 let screenMonitorClient = null;
                 const idDocumentAutoCaptureRequiredScore = 8;
@@ -646,6 +652,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 };
 
                 const setIdDocumentGuideProgress = function(side, score, inWindow = false) {
+                    const captureSide = getIdDocumentSide(side);
                     const preview = getIdDocumentElement(side, 'preview');
                     const guide = preview ? preview.querySelector('.proctoring-id-document-guide') : null;
                     if (!guide) {
@@ -653,10 +660,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
 
                     const progress = Math.max(0, Math.min(1, score / idDocumentAutoCaptureRequiredScore));
-                    const status = inWindow
-                        ? (strings.idverificationdocumentinwindow || 'ID in window - hold still')
-                        : (strings.idverificationdocumentnotinwindow || 'ID not in window');
+                    const ready = inWindow && progress >= 1;
+                    const status = !inWindow
+                        ? (strings.idverificationdocumentnotinwindow || 'ID not in window')
+                        : ready
+                            ? (strings.idverificationdocumentready || 'ID in window - click Capture')
+                            : (strings.idverificationdocumentinwindow || 'ID in window - hold still');
                     const statusNode = guide.querySelector('.proctoring-id-document-status');
+                    const captureButton = getIdDocumentButton(captureSide, 'capture');
+                    idDocumentCaptureReady[captureSide] = ready;
                     guide.style.setProperty('--proctoring-id-hold-progress', (progress * 100).toFixed(0) + '%');
                     guide.classList.toggle('is-detected', inWindow);
                     guide.classList.toggle('is-in-window', inWindow);
@@ -666,6 +678,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         statusNode.textContent = status;
                     }
                     guide.setAttribute('aria-label', status);
+                    if (captureButton) {
+                        captureButton.disabled = !ready;
+                        captureButton.setAttribute('aria-disabled', ready ? 'false' : 'true');
+                        captureButton.classList.toggle('disabled', !ready);
+                        captureButton.title = status;
+                    }
                 };
 
                 const resetIdDocumentGuideProgress = function(side = null) {
@@ -704,6 +722,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                     if (captureButton) {
                         captureButton.style.display = cameraMode ? 'inline-flex' : 'none';
+                        captureButton.disabled = !cameraMode || !idDocumentCaptureReady[captureSide];
+                        captureButton.setAttribute(
+                            'aria-disabled',
+                            cameraMode && idDocumentCaptureReady[captureSide] ? 'false' : 'true'
+                        );
+                        captureButton.classList.toggle('disabled', !cameraMode || !idDocumentCaptureReady[captureSide]);
                     }
                     if (retakeButton) {
                         retakeButton.style.display = capturedMode ? 'inline-flex' : 'none';
@@ -1145,21 +1169,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         idDocumentAutoCaptureRunning = true;
                         try {
                             const documentStatus = getIdDocumentRegionStatus(video, captureSide);
-                            idDocumentAutoCaptureScore = documentStatus.aligned ? idDocumentAutoCaptureScore + 1 : 0;
+                            idDocumentAutoCaptureScore = documentStatus.aligned
+                                ? Math.min(idDocumentAutoCaptureRequiredScore, idDocumentAutoCaptureScore + 1)
+                                : 0;
                             setIdDocumentGuideProgress(
                                 captureSide,
                                 idDocumentAutoCaptureScore,
                                 documentStatus.aligned
                             );
-                            if (idDocumentAutoCaptureScore >= idDocumentAutoCaptureRequiredScore) {
-                                const finalDocumentStatus = getIdDocumentRegionStatus(video, captureSide);
-                                if (finalDocumentStatus.aligned) {
-                                    await captureIdDocumentImage(captureSide);
-                                } else {
-                                    idDocumentAutoCaptureScore = 0;
-                                    setIdDocumentGuideProgress(captureSide, 0, false);
-                                }
-                            }
                         } finally {
                             idDocumentAutoCaptureRunning = false;
                         }
@@ -1227,6 +1244,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         if (!await startIdDocumentCamera(captureSide)) {
                             return false;
                         }
+                        return false;
+                    }
+
+                    const finalDocumentStatus = getIdDocumentRegionStatus(video, captureSide);
+                    if (!idDocumentCaptureReady[captureSide] || !finalDocumentStatus.aligned) {
+                        idDocumentAutoCaptureScore = 0;
+                        setIdDocumentGuideProgress(captureSide, 0, false);
+                        return false;
                     }
 
                     drawIdDocumentCapture(video, canvas);
@@ -1460,7 +1485,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         event.preventDefault();
                         try {
                             if (!await captureIdDocumentImage(captureSide)) {
-                                setIdVerificationResult(getIdDocumentMissingMessage(captureSide), false);
+                                setIdVerificationResult(
+                                    strings.idverificationdocumentnotinwindow || getIdDocumentMissingMessage(captureSide),
+                                    false
+                                );
                             }
                         } catch (error) {
                             setIdVerificationResult(getIdDocumentMissingMessage(captureSide), false);

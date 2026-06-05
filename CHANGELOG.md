@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.13
+- Disabled automatic ID photo capture and gated the manual capture button on a steady green ID-in-window state.
+
 # v1.1.12
 - Extracted risk scoring and outbound endpoint validation into local service classes, preserving existing compatibility functions.
 - Rejected outbound API endpoints with invalid explicit ports before DNS resolution.

@@ -259,6 +259,7 @@ $string['modal:idverificationdocumentfront'] = 'ID front image';
 $string['modal:idverificationdocumentinwindow'] = 'ID in window - hold still';
 $string['modal:idverificationdocumentmissing'] = 'Upload a clear image of your ID first.';
 $string['modal:idverificationdocumentnotinwindow'] = 'ID not in window';
+$string['modal:idverificationdocumentready'] = 'ID in window - click Capture';
 $string['modal:idverificationdocumentretake'] = 'Retake ID image';
 $string['modal:idverificationfailed_both'] = 'ID verification did not pass because the face and name checks did not match closely enough. Make sure the ID is readable, your face is clearly visible, and the ID name matches your Moodle profile name.';
 $string['modal:idverificationfailed'] = 'ID verification did not pass. Make sure your ID is readable and your face is visible, then try again.';
