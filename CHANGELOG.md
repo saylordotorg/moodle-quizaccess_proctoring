@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.15
+- Made the multi-monitor preflight checklist item span the full checklist width so long action messages wrap inside the panel.
+
 # v1.1.14
 - Reused a passed ID verification live face capture to complete the face recognition preflight step when both checks are enabled.
 

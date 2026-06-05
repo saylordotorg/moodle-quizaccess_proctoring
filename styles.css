@@ -912,6 +912,18 @@ body.proctoring-lb-disable-scrolling {
     border-left-color: #b42318;
 }
 
+#proctoring-check-multimonitor {
+    grid-column: 1 / -1;
+}
+
+#proctoring-check-multimonitor .proctoring-preflight-status {
+    flex: 1 1 auto;
+    line-height: 1.2;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
 .proctoring-preflight-label {
     color: #1f2933;
     font-weight: 700;
