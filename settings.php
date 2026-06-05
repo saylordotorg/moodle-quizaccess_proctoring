@@ -230,6 +230,10 @@ if ($hassiteconfig) {
             'block' => get_string('setting:multimonitormode_block', 'quizaccess_proctoring'),
         ]));
 
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/blurquizwithmultiplemonitors',
+        get_string('setting:blurquizwithmultiplemonitors', 'quizaccess_proctoring'),
+        get_string('setting:blurquizwithmultiplemonitors_desc', 'quizaccess_proctoring'), 0));
+
     $settings->add(new admin_setting_configselect('quizaccess_proctoring/screensharepersistencemode',
         get_string('setting:screensharepersistencemode', 'quizaccess_proctoring'),
         get_string('setting:screensharepersistencemode_desc', 'quizaccess_proctoring'), 'auto', [

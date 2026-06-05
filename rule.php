@@ -200,6 +200,19 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * Determine whether the quiz should blur when browser monitor detection finds multiple displays.
+     *
+     * @return bool True when multiple-monitor blur should run on the attempt page.
+     */
+    private static function blur_quiz_with_multiple_monitors(): bool {
+        if (self::is_mobile_or_tablet()) {
+            return false;
+        }
+
+        return (int)get_config('quizaccess_proctoring', 'blurquizwithmultiplemonitors') === 1;
+    }
+
+    /**
      * Get the configured screen-share persistence mode.
      *
      * @return string One of the SCREEN_SHARE_PERSISTENCE_* constants.
@@ -580,7 +593,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         if ($captcharequired) {
             $items[] = get_string('privacynotice:item_captcha', 'quizaccess_proctoring');
         }
-        if ($multimonitormode !== self::MULTI_MONITOR_OFF) {
+        if ($multimonitormode !== self::MULTI_MONITOR_OFF || self::blur_quiz_with_multiple_monitors()) {
             $items[] = get_string('privacynotice:item_monitors', 'quizaccess_proctoring');
         }
         if ((int)get_config('quizaccess_proctoring', 'aireviewenabled') === 1) {
@@ -1638,6 +1651,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->blockclipboard = (int)(get_config('quizaccess_proctoring', 'blockclipboard') ?? 1);
             $record->captureviolationdesktop = $this->should_capture_violation_desktop() ? 1 : 0;
             $record->multimonitormode = self::multi_monitor_mode();
+            $record->blurquizwithmultiplemonitors = self::blur_quiz_with_multiple_monitors() ? 1 : 0;
             $record->blurquizwithoutface = (int)(get_config('quizaccess_proctoring', 'blurquizwithoutface') ?? 0);
             $faceblurminscore = (float)(get_config('quizaccess_proctoring', 'faceblurminscore') ?: 0.30);
             $record->faceblurminscore = max(0.10, min(0.95, $faceblurminscore));

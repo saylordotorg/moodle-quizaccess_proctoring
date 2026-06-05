@@ -25,6 +25,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'screenmonitor:windowopened', component: 'quizaccess_proctoring'},
                 {key: 'screenmonitor:popupblocked', component: 'quizaccess_proctoring'},
                 {key: 'faceblurmessage', component: 'quizaccess_proctoring'},
+                {key: 'multimonitor:blurmessage', component: 'quizaccess_proctoring'},
                 {key: 'attemptwarning:multiplemonitors', component: 'quizaccess_proctoring'},
                 {key: 'attemptwarning:quiznotinview', component: 'quizaccess_proctoring'},
                 {key: 'attemptwarning:screensharestopped', component: 'quizaccess_proctoring'},
@@ -54,11 +55,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     screenmonitorwindowopened: strings[17],
                     screenmonitorpopupblocked: strings[18],
                     faceblurmessage: strings[19],
-                    attemptwarningmultiplemonitors: strings[20],
-                    attemptwarningquiznotinview: strings[21],
-                    attemptwarningscreensharestopped: strings[22],
-                    attemptwarningtitle: strings[23],
-                    attemptwarningwrongscreen: strings[24],
+                    multimonitorblurmessage: strings[20],
+                    attemptwarningmultiplemonitors: strings[21],
+                    attemptwarningquiznotinview: strings[22],
+                    attemptwarningscreensharestopped: strings[23],
+                    attemptwarningtitle: strings[24],
+                    attemptwarningwrongscreen: strings[25],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -202,6 +204,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             ) === 1;
             const multiMonitorMode = ['log', 'warn', 'block'].includes(props.multimonitormode) ?
                 props.multimonitormode : 'off';
+            const blurWhenMultipleMonitors = parseInt(props.blurquizwithmultiplemonitors || 0, 10) === 1;
+            const monitorDetectionEnabled = multiMonitorMode !== 'off' || blurWhenMultipleMonitors;
             const clipboardEvents = [
                 'clipboard_copy',
                 'clipboard_cut',
@@ -246,6 +250,37 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             const activeAttemptWarnings = {};
             const attemptWarningTimers = {};
             const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
+
+            const ensureMultiMonitorBlurNotice = function() {
+                let notice = document.getElementById('proctoring-multimonitor-blur-notice');
+                if (notice) {
+                    return notice;
+                }
+
+                notice = document.createElement('div');
+                notice.id = 'proctoring-multimonitor-blur-notice';
+                notice.className = 'proctoring-multimonitor-blur-notice';
+                notice.setAttribute('role', 'alert');
+                notice.style.display = 'none';
+                notice.textContent = strings.multimonitorblurmessage || strings.attemptwarningmultiplemonitors;
+                document.body.appendChild(notice);
+
+                return notice;
+            };
+
+            const setQuizBlurredForMultipleMonitors = function(blurred) {
+                if (!blurWhenMultipleMonitors) {
+                    return;
+                }
+
+                document.body.classList.toggle('proctoring-multimonitor-blur-active', blurred);
+                const notice = blurred ?
+                    ensureMultiMonitorBlurNotice() :
+                    document.getElementById('proctoring-multimonitor-blur-notice');
+                if (notice) {
+                    notice.style.display = blurred ? 'block' : 'none';
+                }
+            };
 
             const ensureAttemptWarning = function() {
                 let warning = document.getElementById('proctoring-attempt-warning');
@@ -835,7 +870,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             const logEvent = function(eventType, detail) {
                 if (!monitorActivity && !(blockClipboard && clipboardEvents.includes(eventType)) &&
                         !(captureDesktop && screenShareEvents.includes(eventType)) &&
-                        !(multiMonitorMode !== 'off' && multiMonitorEvents.includes(eventType))) {
+                        !(monitorDetectionEnabled && multiMonitorEvents.includes(eventType))) {
                     return;
                 }
 
@@ -908,7 +943,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             };
 
             const checkMultiMonitorSetup = async function() {
-                if (multiMonitorMode === 'off') {
+                if (!monitorDetectionEnabled) {
                     return;
                 }
 
@@ -922,19 +957,22 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (!status.supported) {
                     logEvent('monitor_detection_unavailable', status);
                     clearAttemptWarning('multiplemonitors');
+                    setQuizBlurredForMultipleMonitors(false);
                 } else if (status.multiple) {
                     logEvent('multiple_monitors_detected', status);
                     if (multiMonitorMode === 'warn' || multiMonitorMode === 'block') {
                         setAttemptWarning('multiplemonitors', strings.attemptwarningmultiplemonitors, 'warning');
                     }
+                    setQuizBlurredForMultipleMonitors(true);
                 } else {
                     clearAttemptWarning('multiplemonitors');
+                    setQuizBlurredForMultipleMonitors(false);
                 }
             };
 
             initScreenShareGate();
             checkMultiMonitorSetup();
-            if (multiMonitorMode !== 'off') {
+            if (monitorDetectionEnabled) {
                 window.setInterval(checkMultiMonitorSetup, 60000);
                 window.addEventListener('focus', checkMultiMonitorSetup, true);
             }
@@ -1119,6 +1157,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (parseInt(props.monitorbrowseractivity, 10) === 1 ||
                         parseInt(props.blockclipboard, 10) === 1 ||
                         parseInt(props.captureviolationdesktop, 10) === 1 ||
+                        parseInt(props.blurquizwithmultiplemonitors || 0, 10) === 1 ||
                         ['log', 'warn', 'block'].includes(props.multimonitormode)) {
                     initSuspiciousActivityMonitoring(props, strings);
                 }

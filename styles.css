@@ -1193,7 +1193,8 @@ body.proctoring-lb-disable-scrolling {
     cursor: default;
 }
 
-.proctoring-face-blur-notice {
+.proctoring-face-blur-notice,
+.proctoring-multimonitor-blur-notice {
     position: fixed;
     top: 96px;
     left: 50%;
@@ -1210,17 +1211,27 @@ body.proctoring-lb-disable-scrolling {
     transform: translateX(-50%);
 }
 
-body.proctoring-face-blur-active #region-main {
+.proctoring-multimonitor-blur-notice {
+    top: 152px;
+}
+
+body.proctoring-face-blur-active #region-main,
+body.proctoring-multimonitor-blur-active #region-main {
     filter: blur(8px);
     pointer-events: none;
     user-select: none;
 }
 
 body.proctoring-face-blur-active .proctoring-face-blur-notice,
+body.proctoring-multimonitor-blur-active .proctoring-multimonitor-blur-notice,
 body.proctoring-face-blur-active #proctoring-desktop-status-panel,
+body.proctoring-multimonitor-blur-active #proctoring-desktop-status-panel,
 body.proctoring-face-blur-active .proctoring-fixed-webcam-box,
+body.proctoring-multimonitor-blur-active .proctoring-fixed-webcam-box,
 body.proctoring-face-blur-active .proctoring-screen-verification-marker,
-body.proctoring-face-blur-active .proctoring-screen-share-gate {
+body.proctoring-multimonitor-blur-active .proctoring-screen-verification-marker,
+body.proctoring-face-blur-active .proctoring-screen-share-gate,
+body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
     filter: none;
     pointer-events: auto;
 }

@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.16
+- Added an admin option to blur quiz content when supported browser detection finds multiple active monitors during an attempt.
+
 # v1.1.15
 - Made the multi-monitor preflight checklist item span the full checklist width so long action messages wrap inside the panel.
 
