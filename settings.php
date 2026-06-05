@@ -159,6 +159,10 @@ if ($hassiteconfig) {
         get_string('setting:idverificationapikey', 'quizaccess_proctoring'),
         get_string('setting:idverificationapikey_desc', 'quizaccess_proctoring'), '', PARAM_TEXT));
 
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/idverificationrequireback',
+        get_string('setting:idverificationrequireback', 'quizaccess_proctoring'),
+        get_string('setting:idverificationrequireback_desc', 'quizaccess_proctoring'), 0));
+
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/idverificationcheckface',
         get_string('setting:idverificationcheckface', 'quizaccess_proctoring'),
         get_string('setting:idverificationcheckface_desc', 'quizaccess_proctoring'), 1));

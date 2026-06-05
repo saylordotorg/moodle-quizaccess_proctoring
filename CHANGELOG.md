@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.6
+- Added an optional ID verification requirement for students to provide both front and back ID images.
+
 # v1.1.5
 - Added ID verification suboptions for checking the ID photo, the ID name, or both.
 

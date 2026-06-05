@@ -200,7 +200,7 @@ class delete_images_task extends scheduled_task {
             'timemodified > 0 AND timemodified <= :cutoff',
             ['cutoff' => $cutoff],
             'timemodified ASC',
-            'id, idimageurl, liveimageurl',
+            'id, idimageurl, idbackimageurl, liveimageurl',
             0,
             50
         );
@@ -213,6 +213,7 @@ class delete_images_task extends scheduled_task {
         $ids = [];
         foreach ($records as $record) {
             $this->delete_file($fs, $record->idimageurl, 'quizaccess_proctoring', 'id_document');
+            $this->delete_file($fs, $record->idbackimageurl, 'quizaccess_proctoring', 'id_back_document');
             $this->delete_file($fs, $record->liveimageurl, 'quizaccess_proctoring', 'id_live_image');
             $ids[] = (int)$record->id;
         }

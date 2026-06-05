@@ -826,6 +826,7 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
             $table->add_field('extractedname', XMLDB_TYPE_TEXT, null, null, null, null, null);
             $table->add_field('profilename', XMLDB_TYPE_TEXT, null, null, null, null, null);
             $table->add_field('idimageurl', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('idbackimageurl', XMLDB_TYPE_TEXT, null, null, null, null, null);
             $table->add_field('liveimageurl', XMLDB_TYPE_TEXT, null, null, null, null, null);
             $table->add_field('errormessage', XMLDB_TYPE_TEXT, null, null, null, null, null);
             $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
@@ -872,6 +873,29 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         }
 
         upgrade_plugin_savepoint(true, 2026060501, 'quizaccess', 'proctoring');
+    }
+
+    if ($oldversion < 2026060502) {
+        $table = new xmldb_table('quizaccess_proctoring_idv');
+        $field = new xmldb_field(
+            'idbackimageurl',
+            XMLDB_TYPE_TEXT,
+            null,
+            null,
+            null,
+            null,
+            null,
+            'idimageurl'
+        );
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        if (get_config('quizaccess_proctoring', 'idverificationrequireback') === false) {
+            set_config('idverificationrequireback', 0, 'quizaccess_proctoring');
+        }
+
+        upgrade_plugin_savepoint(true, 2026060502, 'quizaccess', 'proctoring');
     }
 
     return true;

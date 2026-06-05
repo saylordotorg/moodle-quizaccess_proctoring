@@ -149,6 +149,20 @@ final class security_test extends advanced_testcase {
             'id_document',
             $filename
         ));
+
+        [$backcourse, $backcm, , $backfilename] = $this->create_id_verification_file_fixture('id_back_document');
+        $this->assertTrue(\quizaccess_proctoring_module_file_has_record(
+            (int)$backcourse->id,
+            (int)$backcm->id,
+            'id_back_document',
+            $backfilename
+        ));
+        $this->assertFalse(\quizaccess_proctoring_module_file_has_record(
+            (int)$othercourse->id,
+            (int)$otherquiz->cmid,
+            'id_back_document',
+            $backfilename
+        ));
     }
 
     /**
@@ -177,6 +191,7 @@ final class security_test extends advanced_testcase {
             'extractedname' => fullname($student),
             'profilename' => fullname($student),
             'idimageurl' => '',
+            'idbackimageurl' => '',
             'liveimageurl' => '',
             'errormessage' => '',
             'timecreated' => time(),
@@ -386,7 +401,12 @@ final class security_test extends advanced_testcase {
             false
         )->out(false);
 
-        $field = $filearea === 'id_document' ? 'idimageurl' : 'liveimageurl';
+        $fields = [
+            'id_document' => 'idimageurl',
+            'id_back_document' => 'idbackimageurl',
+            'id_live_image' => 'liveimageurl',
+        ];
+        $field = $fields[$filearea];
         $DB->set_field('quizaccess_proctoring_idv', $field, $url, ['id' => $recordid]);
 
         return [$course, $cm, $student, $filename, $url, $file];
@@ -418,6 +438,7 @@ final class security_test extends advanced_testcase {
             'extractedname' => fullname($student),
             'profilename' => fullname($student),
             'idimageurl' => '',
+            'idbackimageurl' => '',
             'liveimageurl' => '',
             'errormessage' => '',
             'timecreated' => time(),

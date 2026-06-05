@@ -29,6 +29,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'multimonitor:unavailable', component: 'quizaccess_proctoring'},
                 {key: 'multimonitor:blockmessage', component: 'quizaccess_proctoring'},
                 {key: 'modal:idverificationdocumentmissing', component: 'quizaccess_proctoring'},
+                {key: 'modal:idverificationdocumentbackmissing', component: 'quizaccess_proctoring'},
                 {key: 'modal:idverificationfailed', component: 'quizaccess_proctoring'},
                 {key: 'modal:idverificationpassed', component: 'quizaccess_proctoring'},
                 {key: 'modal:idverificationprovidererror', component: 'quizaccess_proctoring'},
@@ -65,11 +66,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     multimonitorunavailable: strings[24],
                     multimonitorblockmessage: strings[25],
                     idverificationdocumentmissing: strings[26],
-                    idverificationfailed: strings[27],
-                    idverificationpassed: strings[28],
-                    idverificationprovidererror: strings[29],
-                    idverificationretry: strings[30],
-                    videonotavailable: strings[31],
+                    idverificationdocumentbackmissing: strings[27],
+                    idverificationfailed: strings[28],
+                    idverificationpassed: strings[29],
+                    idverificationprovidererror: strings[30],
+                    idverificationretry: strings[31],
+                    videonotavailable: strings[32],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -233,6 +235,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const honorRequired = parseInt(props.honorrequired || 0, 10) === 1;
                 const captchaRequired = parseInt(props.captcharequired || 0, 10) === 1;
                 const identityRequired = parseInt(props.idverificationrequired || 0, 10) === 1;
+                const idBackRequired = parseInt(props.idverificationrequireback || 0, 10) === 1;
                 const multiMonitorMode = ['log', 'warn', 'block'].includes(props.multimonitormode) ?
                     props.multimonitormode : 'off';
                 const multiMonitorBlocks = multiMonitorMode === 'block';
@@ -252,7 +255,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 let idDocumentAutoCaptureTimer = null;
                 let idDocumentAutoCaptureScore = 0;
                 let idDocumentAutoCaptureRunning = false;
-                let capturedIdImage = '';
+                let activeIdDocumentSide = 'front';
+                const capturedIdImages = {
+                    front: '',
+                    back: '',
+                };
                 let screenMonitorClient = null;
                 const idDocumentAutoCaptureRequiredScore = 8;
                 const idDocumentAutoCaptureInterval = 400;
@@ -604,14 +611,45 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     });
                 };
 
-                const setIdDocumentCaptureState = function(state) {
-                    const preview = document.getElementById('proctoring-id-document-preview');
-                    const video = document.getElementById('proctoring-id-document-video');
-                    const image = document.getElementById('proctoring-id-document-preview-image');
-                    const guide = document.querySelector('.proctoring-id-document-guide');
-                    const startButton = document.getElementById('idverificationdocumentcamera');
-                    const captureButton = document.getElementById('idverificationdocumentcapture');
-                    const retakeButton = document.getElementById('idverificationdocumentretake');
+                const getIdDocumentSide = function(side) {
+                    return side === 'back' ? 'back' : 'front';
+                };
+
+                const getIdDocumentSuffix = function(side) {
+                    return getIdDocumentSide(side) === 'back' ? '-back' : '';
+                };
+
+                const getIdDocumentButtonSuffix = function(side) {
+                    return getIdDocumentSide(side) === 'back' ? 'back' : '';
+                };
+
+                const getIdDocumentElement = function(side, part) {
+                    return document.getElementById('proctoring-id-document' + getIdDocumentSuffix(side) + '-' + part);
+                };
+
+                const getIdDocumentInput = function(side) {
+                    return document.getElementById('proctoring-id-document' + getIdDocumentSuffix(side));
+                };
+
+                const getIdDocumentButton = function(side, action) {
+                    return document.getElementById('idverificationdocument' + getIdDocumentButtonSuffix(side) + action);
+                };
+
+                const getIdDocumentMissingMessage = function(side) {
+                    return getIdDocumentSide(side) === 'back'
+                        ? (strings.idverificationdocumentbackmissing || strings.idverificationdocumentmissing)
+                        : strings.idverificationdocumentmissing;
+                };
+
+                const setIdDocumentCaptureState = function(state, side = activeIdDocumentSide) {
+                    const captureSide = getIdDocumentSide(side);
+                    const preview = getIdDocumentElement(captureSide, 'preview');
+                    const video = getIdDocumentElement(captureSide, 'video');
+                    const image = getIdDocumentElement(captureSide, 'preview-image');
+                    const guide = preview ? preview.querySelector('.proctoring-id-document-guide') : null;
+                    const startButton = getIdDocumentButton(captureSide, 'camera');
+                    const captureButton = getIdDocumentButton(captureSide, 'capture');
+                    const retakeButton = getIdDocumentButton(captureSide, 'retake');
                     const cameraMode = state === 'camera';
                     const capturedMode = state === 'captured';
 
@@ -659,15 +697,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 };
 
                 const stopIdDocumentStream = function() {
-                    const video = document.getElementById('proctoring-id-document-video');
                     stopIdDocumentAutoCapture();
                     if (idDocumentStream) {
                         idDocumentStream.getTracks().forEach((track) => track.stop());
                         idDocumentStream = null;
                     }
-                    if (video) {
+                    document.querySelectorAll('.proctoring-id-document-video').forEach(function(video) {
                         video.srcObject = null;
-                    }
+                    });
                 };
 
                 const stopIdLiveStream = function() {
@@ -707,7 +744,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 };
 
                 const getIdDocumentGuideSourceRect = function(video, paddingRatio) {
-                    const guide = document.querySelector('.proctoring-id-document-guide');
+                    const guide = video && video.parentNode
+                        ? video.parentNode.querySelector('.proctoring-id-document-guide')
+                        : null;
                     const videoRect = getContainedVideoRect(video);
                     if (!guide || !videoRect) {
                         return null;
@@ -740,8 +779,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     };
                 };
 
-                const documentRegionLooksAligned = function(video) {
-                    const canvas = document.getElementById('proctoring-id-document-canvas');
+                const documentRegionLooksAligned = function(video, side = activeIdDocumentSide) {
+                    const canvas = getIdDocumentElement(side, 'canvas');
                     const rect = getIdDocumentGuideSourceRect(video, 0);
                     if (!canvas || !rect) {
                         return false;
@@ -832,22 +871,23 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     context.drawImage(video, rect.x, rect.y, rect.width, rect.height, 0, 0, targetWidth, targetHeight);
                 };
 
-                const startIdDocumentAutoCapture = function() {
+                const startIdDocumentAutoCapture = function(side = activeIdDocumentSide) {
+                    const captureSide = getIdDocumentSide(side);
                     stopIdDocumentAutoCapture();
                     idDocumentAutoCaptureTimer = window.setInterval(async function() {
-                        const video = document.getElementById('proctoring-id-document-video');
-                        if (idDocumentAutoCaptureRunning || capturedIdImage || !idDocumentStream ||
+                        const video = getIdDocumentElement(captureSide, 'video');
+                        if (idDocumentAutoCaptureRunning || capturedIdImages[captureSide] || !idDocumentStream ||
                                 !video || video.srcObject !== idDocumentStream || !video.videoWidth) {
                             return;
                         }
 
                         idDocumentAutoCaptureRunning = true;
                         try {
-                            idDocumentAutoCaptureScore = documentRegionLooksAligned(video)
+                            idDocumentAutoCaptureScore = documentRegionLooksAligned(video, captureSide)
                                 ? idDocumentAutoCaptureScore + 1
                                 : 0;
                             if (idDocumentAutoCaptureScore >= idDocumentAutoCaptureRequiredScore) {
-                                await captureIdDocumentImage();
+                                await captureIdDocumentImage(captureSide);
                             }
                         } finally {
                             idDocumentAutoCaptureRunning = false;
@@ -855,15 +895,21 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }, idDocumentAutoCaptureInterval);
                 };
 
-                const startIdDocumentCamera = async function() {
-                    const video = document.getElementById('proctoring-id-document-video');
+                const startIdDocumentCamera = async function(side = 'front') {
+                    const captureSide = getIdDocumentSide(side);
+                    const video = getIdDocumentElement(captureSide, 'video');
                     if (!video) {
                         return false;
                     }
 
+                    const previousSide = activeIdDocumentSide;
+                    activeIdDocumentSide = captureSide;
+                    if (previousSide !== captureSide && !capturedIdImages[previousSide]) {
+                        setIdDocumentCaptureState('hidden', previousSide);
+                    }
                     if (idDocumentStream && video.srcObject === idDocumentStream && video.videoWidth) {
-                        setIdDocumentCaptureState('camera');
-                        startIdDocumentAutoCapture();
+                        setIdDocumentCaptureState('camera', captureSide);
+                        startIdDocumentAutoCapture(captureSide);
                         return true;
                     }
 
@@ -889,36 +935,37 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                     if (!await waitForVideoFrame(video)) {
                         stopIdDocumentStream();
-                        setIdDocumentCaptureState('hidden');
+                        setIdDocumentCaptureState('hidden', captureSide);
                         return false;
                     }
 
-                    setIdDocumentCaptureState('camera');
-                    startIdDocumentAutoCapture();
+                    setIdDocumentCaptureState('camera', captureSide);
+                    startIdDocumentAutoCapture(captureSide);
                     return true;
                 };
 
-                const captureIdDocumentImage = async function() {
-                    const video = document.getElementById('proctoring-id-document-video');
-                    const canvas = document.getElementById('proctoring-id-document-canvas');
-                    const preview = document.getElementById('proctoring-id-document-preview-image');
+                const captureIdDocumentImage = async function(side = activeIdDocumentSide) {
+                    const captureSide = getIdDocumentSide(side);
+                    const video = getIdDocumentElement(captureSide, 'video');
+                    const canvas = getIdDocumentElement(captureSide, 'canvas');
+                    const preview = getIdDocumentElement(captureSide, 'preview-image');
                     if (!video || !canvas || !preview) {
                         return false;
                     }
                     if (!idDocumentStream || video.srcObject !== idDocumentStream || !video.videoWidth) {
-                        if (!await startIdDocumentCamera()) {
+                        if (!await startIdDocumentCamera(captureSide)) {
                             return false;
                         }
                     }
 
                     drawIdDocumentCapture(video, canvas);
-                    capturedIdImage = canvas.toDataURL('image/png');
-                    preview.setAttribute('src', capturedIdImage);
+                    capturedIdImages[captureSide] = canvas.toDataURL('image/png');
+                    preview.setAttribute('src', capturedIdImages[captureSide]);
                     stopIdDocumentAutoCapture();
-                    setIdDocumentCaptureState('captured');
+                    setIdDocumentCaptureState('captured', captureSide);
                     stopIdDocumentStream();
 
-                    const idInput = document.getElementById('proctoring-id-document');
+                    const idInput = getIdDocumentInput(captureSide);
                     if (idInput) {
                         idInput.value = '';
                     }
@@ -941,8 +988,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
 
                     stopIdDocumentStream();
-                    if (!capturedIdImage) {
-                        setIdDocumentCaptureState('hidden');
+                    if (!capturedIdImages.front) {
+                        setIdDocumentCaptureState('hidden', 'front');
+                    }
+                    if (idBackRequired && !capturedIdImages.back) {
+                        setIdDocumentCaptureState('hidden', 'back');
                     }
                     stopIdLiveStream();
                     idLiveStream = await navigator.mediaDevices.getUserMedia({
@@ -1083,16 +1133,22 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     });
                 }
 
-                const idDocumentInput = document.getElementById('proctoring-id-document');
-                if (idDocumentInput) {
+                const bindIdDocumentInput = function(side) {
+                    const captureSide = getIdDocumentSide(side);
+                    const idDocumentInput = getIdDocumentInput(captureSide);
+                    if (!idDocumentInput) {
+                        return;
+                    }
                     idDocumentInput.addEventListener('change', function() {
                         if (idDocumentInput.files && idDocumentInput.files[0]) {
-                            capturedIdImage = '';
+                            capturedIdImages[captureSide] = '';
                             stopIdDocumentStream();
-                            setIdDocumentCaptureState('hidden');
+                            setIdDocumentCaptureState('hidden', captureSide);
                         }
                     });
-                }
+                };
+                bindIdDocumentInput('front');
+                bindIdDocumentInput('back');
 
                 if (captchaRequired) {
                     window.setInterval(function() {
@@ -1113,47 +1169,53 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     await checkMultiMonitorSetup(true);
                 });
 
-                $("#idverificationdocumentcamera").click(async function(event) {
-                    event.preventDefault();
-                    capturedIdImage = '';
-                    try {
-                        if (!await startIdDocumentCamera()) {
+                const bindIdDocumentCaptureButtons = function(side) {
+                    const captureSide = getIdDocumentSide(side);
+
+                    $(getIdDocumentButton(captureSide, 'camera')).click(async function(event) {
+                        event.preventDefault();
+                        capturedIdImages[captureSide] = '';
+                        try {
+                            if (!await startIdDocumentCamera(captureSide)) {
+                                setIdVerificationResult(strings.videonotavailable, false);
+                            }
+                        } catch (error) {
+                            setIdDocumentCaptureState('hidden', captureSide);
                             setIdVerificationResult(strings.videonotavailable, false);
                         }
-                    } catch (error) {
-                        setIdDocumentCaptureState('hidden');
-                        setIdVerificationResult(strings.videonotavailable, false);
-                    }
-                });
+                    });
 
-                $("#idverificationdocumentcapture").click(async function(event) {
-                    event.preventDefault();
-                    try {
-                        if (!await captureIdDocumentImage()) {
-                            setIdVerificationResult(strings.idverificationdocumentmissing, false);
+                    $(getIdDocumentButton(captureSide, 'capture')).click(async function(event) {
+                        event.preventDefault();
+                        try {
+                            if (!await captureIdDocumentImage(captureSide)) {
+                                setIdVerificationResult(getIdDocumentMissingMessage(captureSide), false);
+                            }
+                        } catch (error) {
+                            setIdVerificationResult(getIdDocumentMissingMessage(captureSide), false);
                         }
-                    } catch (error) {
-                        setIdVerificationResult(strings.idverificationdocumentmissing, false);
-                    }
-                });
+                    });
 
-                $("#idverificationdocumentretake").click(async function(event) {
-                    event.preventDefault();
-                    capturedIdImage = '';
-                    const preview = document.getElementById('proctoring-id-document-preview-image');
-                    if (preview) {
-                        preview.removeAttribute('src');
-                    }
-                    try {
-                        if (!await startIdDocumentCamera()) {
-                            setIdDocumentCaptureState('hidden');
+                    $(getIdDocumentButton(captureSide, 'retake')).click(async function(event) {
+                        event.preventDefault();
+                        capturedIdImages[captureSide] = '';
+                        const preview = getIdDocumentElement(captureSide, 'preview-image');
+                        if (preview) {
+                            preview.removeAttribute('src');
+                        }
+                        try {
+                            if (!await startIdDocumentCamera(captureSide)) {
+                                setIdDocumentCaptureState('hidden', captureSide);
+                                setIdVerificationResult(strings.videonotavailable, false);
+                            }
+                        } catch (error) {
+                            setIdDocumentCaptureState('hidden', captureSide);
                             setIdVerificationResult(strings.videonotavailable, false);
                         }
-                    } catch (error) {
-                        setIdDocumentCaptureState('hidden');
-                        setIdVerificationResult(strings.videonotavailable, false);
-                    }
-                });
+                    });
+                };
+                bindIdDocumentCaptureButtons('front');
+                bindIdDocumentCaptureButtons('back');
 
                 $("#idverificationcamera").click(async function(event) {
                     event.preventDefault();
@@ -1194,9 +1256,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         updatePreflightGate();
                     };
 
-                    const idInput = document.getElementById('proctoring-id-document');
-                    if (!capturedIdImage && (!idInput || !idInput.files || !idInput.files[0])) {
+                    const idInput = getIdDocumentInput('front');
+                    const idBackInput = getIdDocumentInput('back');
+                    if (!capturedIdImages.front && (!idInput || !idInput.files || !idInput.files[0])) {
                         failIdentity(strings.idverificationdocumentmissing);
+                        return;
+                    }
+                    if (idBackRequired && !capturedIdImages.back &&
+                            (!idBackInput || !idBackInput.files || !idBackInput.files[0])) {
+                        failIdentity(getIdDocumentMissingMessage('back'));
                         return;
                     }
 
@@ -1232,12 +1300,22 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         liveFaceFound = detection.faceFound;
                     }
 
-                    let idImage = capturedIdImage;
+                    let idImage = capturedIdImages.front;
                     if (!idImage) {
                         try {
                             idImage = await readFileAsDataUrl(idInput.files[0]);
                         } catch (error) {
                             failIdentity(strings.idverificationdocumentmissing);
+                            return;
+                        }
+                    }
+
+                    let idBackImage = capturedIdImages.back;
+                    if (idBackRequired && !idBackImage) {
+                        try {
+                            idBackImage = await readFileAsDataUrl(idBackInput.files[0]);
+                        } catch (error) {
+                            failIdentity(getIdDocumentMissingMessage('back'));
                             return;
                         }
                     }
@@ -1250,7 +1328,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             attemptid: parseInt(props.attemptid, 10) || 0,
                             idimage: idImage,
                             liveimage: liveImage,
-                            livefacefound: liveFaceFound
+                            livefacefound: liveFaceFound,
+                            idbackimage: idBackImage || ''
                         }
                     }])[0].done(function(res) {
                         if (spinner) {

@@ -259,9 +259,11 @@
                 <FIELD NAME="profilename" TYPE="text" NOTNULL="false" SEQUENCE="false"
                        COMMENT="Moodle profile name used for comparison" PREVIOUS="extractedname" NEXT="idimageurl"/>
                 <FIELD NAME="idimageurl" TYPE="text" NOTNULL="false" SEQUENCE="false"
-                       COMMENT="Stored ID document image URL" PREVIOUS="profilename" NEXT="liveimageurl"/>
+                       COMMENT="Stored front ID document image URL" PREVIOUS="profilename" NEXT="idbackimageurl"/>
+                <FIELD NAME="idbackimageurl" TYPE="text" NOTNULL="false" SEQUENCE="false"
+                       COMMENT="Stored back ID document image URL" PREVIOUS="idimageurl" NEXT="liveimageurl"/>
                 <FIELD NAME="liveimageurl" TYPE="text" NOTNULL="false" SEQUENCE="false"
-                       COMMENT="Stored live webcam image URL" PREVIOUS="idimageurl" NEXT="errormessage"/>
+                       COMMENT="Stored live webcam image URL" PREVIOUS="idbackimageurl" NEXT="errormessage"/>
                 <FIELD NAME="errormessage" TYPE="text" NOTNULL="false" SEQUENCE="false"
                        COMMENT="Provider or validation message" PREVIOUS="liveimageurl" NEXT="timecreated"/>
                 <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" DEFAULT="0"

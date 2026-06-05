@@ -146,6 +146,7 @@ class provider implements
             'extractedname' => 'privacy:metadata:extractedname',
             'profilename' => 'privacy:metadata:profilename',
             'idimageurl' => 'privacy:metadata:idimageurl',
+            'idbackimageurl' => 'privacy:metadata:idbackimageurl',
             'liveimageurl' => 'privacy:metadata:liveimageurl',
             'timecreated' => 'privacy:metadata:timecreated',
             'timemodified' => 'timemodified',
@@ -601,7 +602,7 @@ class provider implements
                 }
 
                 $idvfields = 'id, courseid, quizid, userid, attemptid, status, facescore, namescore, extractedname, ' .
-                    'profilename, idimageurl, liveimageurl, errormessage, timecreated, timemodified';
+                    'profilename, idimageurl, idbackimageurl, liveimageurl, errormessage, timecreated, timemodified';
                 $idverifications = $DB->get_records_select(
                     'quizaccess_proctoring_idv',
                     $select,
@@ -631,6 +632,7 @@ class provider implements
                         'extractedname' => $idverification->extractedname,
                         'profilename' => $idverification->profilename,
                         'idimageurl' => $idverification->idimageurl,
+                        'idbackimageurl' => $idverification->idbackimageurl,
                         'liveimageurl' => $idverification->liveimageurl,
                         'errormessage' => $idverification->errormessage,
                         'timecreated' => transform::datetime($idverification->timecreated),
@@ -639,6 +641,7 @@ class provider implements
 
                     writer::with_context($context)
                         ->export_area_files($subcontext, 'quizaccess_proctoring', 'id_document', $idverification->id)
+                        ->export_area_files($subcontext, 'quizaccess_proctoring', 'id_back_document', $idverification->id)
                         ->export_area_files($subcontext, 'quizaccess_proctoring', 'id_live_image', $idverification->id)
                         ->export_data($subcontext, $data);
                 }
@@ -731,6 +734,7 @@ class provider implements
             $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'face_image');
             $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'violation_screenshot');
             $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'id_document');
+            $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'id_back_document');
             $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'id_live_image');
         } else if ($context->contextlevel === CONTEXT_SYSTEM) {
             $DB->delete_records('quizaccess_proctoring_face_images', ['parent_type' => 'admin_image']);
@@ -842,6 +846,7 @@ class provider implements
             'face_image',
             'violation_screenshot',
             'id_document',
+            'id_back_document',
             'id_live_image',
         ]);
     }

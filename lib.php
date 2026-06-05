@@ -66,6 +66,7 @@ function quizaccess_proctoring_pluginfile($course, $cm, $context, $filearea, $ar
         'user_photo',
         'violation_screenshot',
         'id_document',
+        'id_back_document',
         'id_live_image',
     ];
     if (!in_array($filearea, $allowedfileareas, true) || empty($args)) {
@@ -123,6 +124,7 @@ function quizaccess_proctoring_can_serve_pluginfile($course, $cm, $context, stri
                     'face_image',
                     'violation_screenshot',
                     'id_document',
+                    'id_back_document',
                     'id_live_image',
                 ], true)) {
             return false;
@@ -210,8 +212,13 @@ function quizaccess_proctoring_module_file_has_record(int $courseid, int $cmid, 
         ]);
     }
 
-    if ($filearea === 'id_document' || $filearea === 'id_live_image') {
-        $field = $filearea === 'id_document' ? 'idimageurl' : 'liveimageurl';
+    if (in_array($filearea, ['id_document', 'id_back_document', 'id_live_image'], true)) {
+        $fields = [
+            'id_document' => 'idimageurl',
+            'id_back_document' => 'idbackimageurl',
+            'id_live_image' => 'liveimageurl',
+        ];
+        $field = $fields[$filearea];
 
         return $DB->record_exists_select(
             'quizaccess_proctoring_idv',

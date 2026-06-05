@@ -872,6 +872,7 @@ class quizaccess_proctoring_external extends external_api {
                 'idimage' => new external_value(PARAM_RAW, 'ID document image'),
                 'liveimage' => new external_value(PARAM_RAW, 'Live webcam image'),
                 'livefacefound' => new external_value(PARAM_INT, 'Browser face detection flag', VALUE_DEFAULT, 0),
+                'idbackimage' => new external_value(PARAM_RAW, 'ID back document image', VALUE_DEFAULT, ''),
             ]
         );
     }
@@ -885,9 +886,10 @@ class quizaccess_proctoring_external extends external_api {
      * @param string $idimage ID document image data URI.
      * @param string $liveimage Live webcam image data URI.
      * @param int $livefacefound Whether browser-side detection found a live face.
+     * @param string $idbackimage Optional ID back document image data URI.
      * @return array Verification result.
      */
-    public static function verify_id($courseid, $cmid, $attemptid, $idimage, $liveimage, $livefacefound = 0) {
+    public static function verify_id($courseid, $cmid, $attemptid, $idimage, $liveimage, $livefacefound = 0, $idbackimage = '') {
         global $DB, $USER;
 
         self::validate_parameters(
@@ -899,6 +901,7 @@ class quizaccess_proctoring_external extends external_api {
                 'idimage' => $idimage,
                 'liveimage' => $liveimage,
                 'livefacefound' => $livefacefound,
+                'idbackimage' => $idbackimage,
             ]
         );
 
@@ -916,7 +919,24 @@ class quizaccess_proctoring_external extends external_api {
             ];
         }
 
+        $requireback = (int)get_config('quizaccess_proctoring', 'idverificationrequireback') === 1;
+        $hasbackimage = trim((string)$idbackimage) !== '';
+        if ($requireback && !$hasbackimage) {
+            return [
+                'verificationid' => 0,
+                'status' => 'retry',
+                'facescore' => 0,
+                'namescore' => 0,
+                'extractedname' => '',
+                'message' => get_string('modal:idverificationdocumentbackmissing', 'quizaccess_proctoring'),
+                'warnings' => [],
+            ];
+        }
+
         self::validate_image_payload((string)$idimage, self::MAX_ID_DOCUMENT_IMAGE_BYTES);
+        if ($hasbackimage) {
+            self::validate_image_payload((string)$idbackimage, self::MAX_ID_DOCUMENT_IMAGE_BYTES);
+        }
         self::validate_image_payload((string)$liveimage, self::MAX_WEBCAM_IMAGE_BYTES);
         self::enforce_recent_record_limit('quizaccess_proctoring_idv', [
             'courseid' => (int)$courseid,
@@ -937,6 +957,7 @@ class quizaccess_proctoring_external extends external_api {
             'extractedname' => '',
             'profilename' => $profilename,
             'idimageurl' => '',
+            'idbackimageurl' => '',
             'liveimageurl' => '',
             'errormessage' => '',
             'timecreated' => $now,
@@ -945,6 +966,9 @@ class quizaccess_proctoring_external extends external_api {
 
         $verificationid = $DB->insert_record('quizaccess_proctoring_idv', $record);
         $idbytes = self::decode_base64_image_data((string)$idimage, self::MAX_ID_DOCUMENT_IMAGE_BYTES);
+        $idbackbytes = $hasbackimage
+            ? self::decode_base64_image_data((string)$idbackimage, self::MAX_ID_DOCUMENT_IMAGE_BYTES)
+            : null;
         $livebytes = self::decode_base64_image_data((string)$liveimage, self::MAX_WEBCAM_IMAGE_BYTES);
         $record->id = $verificationid;
         $record->idimageurl = self::save_id_verification_image(
@@ -955,6 +979,16 @@ class quizaccess_proctoring_external extends external_api {
             $idbytes,
             $context
         );
+        if ($idbackbytes !== null) {
+            $record->idbackimageurl = self::save_id_verification_image(
+                (int)$courseid,
+                (int)$cm->id,
+                (int)$verificationid,
+                'id_back_document',
+                $idbackbytes,
+                $context
+            );
+        }
         $record->liveimageurl = self::save_id_verification_image(
             (int)$courseid,
             (int)$cm->id,
@@ -973,7 +1007,7 @@ class quizaccess_proctoring_external extends external_api {
                 'message' => get_string('facenotfoundoncam', 'quizaccess_proctoring'),
             ];
         } else {
-            $providerresult = self::call_id_verification_endpoint($idbytes, $livebytes, $USER);
+            $providerresult = self::call_id_verification_endpoint($idbytes, $livebytes, $USER, $idbackbytes);
         }
         $providerresult['message'] = self::get_id_verification_student_message($providerresult, $profilename);
 
@@ -1036,7 +1070,12 @@ class quizaccess_proctoring_external extends external_api {
     ): string {
         global $USER;
 
-        $prefix = $filearea === 'id_document' ? 'id-document' : 'id-live';
+        $prefixes = [
+            'id_document' => 'id-front',
+            'id_back_document' => 'id-back',
+            'id_live_image' => 'id-live',
+        ];
+        $prefix = $prefixes[$filearea] ?? 'id-verification';
         $record = new stdClass();
         $record->contextid = $context->id;
         $record->component = 'quizaccess_proctoring';
@@ -1070,9 +1109,15 @@ class quizaccess_proctoring_external extends external_api {
      * @param string $idbytes ID document image bytes.
      * @param string $livebytes Live webcam image bytes.
      * @param stdClass $user Moodle user record.
+     * @param string|null $idbackbytes Optional ID back document image bytes.
      * @return array Normalized result.
      */
-    private static function call_id_verification_endpoint(string $idbytes, string $livebytes, stdClass $user): array {
+    private static function call_id_verification_endpoint(
+        string $idbytes,
+        string $livebytes,
+        stdClass $user,
+        ?string $idbackbytes = null
+    ): array {
         $endpoint = trim((string)get_config('quizaccess_proctoring', 'idverificationendpoint'));
         $apikey = trim((string)get_config('quizaccess_proctoring', 'idverificationapikey'));
         $faceconfig = get_config('quizaccess_proctoring', 'idverificationfacethreshold');
@@ -1103,7 +1148,7 @@ class quizaccess_proctoring_external extends external_api {
             );
         }
 
-        $payload = json_encode([
+        $payloaddata = [
             'id_image' => base64_encode($idbytes),
             'live_image' => base64_encode($livebytes),
             'profile_firstname' => (string)($user->firstname ?? ''),
@@ -1113,7 +1158,11 @@ class quizaccess_proctoring_external extends external_api {
             'name_threshold' => $namethreshold,
             'check_face' => $checkface,
             'check_name' => $checkname,
-        ]);
+        ];
+        if ($idbackbytes !== null) {
+            $payloaddata['id_back_image'] = base64_encode($idbackbytes);
+        }
+        $payload = json_encode($payloaddata);
 
         if ($payload === false) {
             return self::make_id_verification_result(
