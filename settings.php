@@ -24,6 +24,23 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+if (!class_exists('quizaccess_proctoring_admin_category', false)) {
+    /**
+     * Admin category that opens the primary proctoring settings page when selected.
+     *
+     * @package quizaccess_proctoring
+     */
+    class quizaccess_proctoring_admin_category extends admin_category {
+        /**
+         * Get the URL for the primary plugin settings page.
+         *
+         * @return moodle_url Settings page URL.
+         */
+        public function get_settings_page_url(): moodle_url {
+            return new moodle_url('/admin/settings.php', ['section' => 'modsettingsquizcatproctoring']);
+        }
+    }
+}
 
 if ($hassiteconfig) {
     // Plugin description and name.
@@ -420,20 +437,6 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
 
-    $ADMIN->add('modsettingsquizcat', new admin_externalpage(
-        'quizaccess_proctoring_cost_estimate',
-        get_string('costestimate', 'quizaccess_proctoring'),
-        new moodle_url('/mod/quiz/accessrule/proctoring/cost_estimate.php'),
-        'moodle/site:config'
-    ));
-
-    $ADMIN->add('modsettingsquizcat', new admin_externalpage(
-        'quizaccess_proctoring_ai_diagnostics',
-        get_string('aireviewdiagnostics', 'quizaccess_proctoring'),
-        new moodle_url('/mod/quiz/accessrule/proctoring/ai_review_diagnostics.php'),
-        'moodle/site:config'
-    ));
-
     $pageurl = new moodle_url('/mod/quiz/accessrule/proctoring/trigger_delete.php', ['sesskey' => sesskey()]);
     $deletealllinktext = get_string('settingscontroll:deletealllinktext', 'quizaccess_proctoring');
 
@@ -465,4 +468,30 @@ if ($hassiteconfig) {
         ));
     }
 
+    $proctoringcategory = 'quizaccess_proctoring_settings_category';
+    $settings->visiblename = get_string('mainsettingspagebtn', 'quizaccess_proctoring');
+    $settings->hidden = true;
+
+    $ADMIN->add('modsettingsquizcat', new quizaccess_proctoring_admin_category(
+        $proctoringcategory,
+        get_string('mainsettingspagebtn', 'quizaccess_proctoring')
+    ));
+
+    $ADMIN->add($proctoringcategory, $settings);
+
+    $ADMIN->add($proctoringcategory, new admin_externalpage(
+        'quizaccess_proctoring_ai_diagnostics',
+        get_string('aireviewdiagnostics', 'quizaccess_proctoring'),
+        new moodle_url('/mod/quiz/accessrule/proctoring/ai_review_diagnostics.php'),
+        'moodle/site:config'
+    ));
+
+    $ADMIN->add($proctoringcategory, new admin_externalpage(
+        'quizaccess_proctoring_cost_estimate',
+        get_string('costestimate', 'quizaccess_proctoring'),
+        new moodle_url('/mod/quiz/accessrule/proctoring/cost_estimate.php'),
+        'moodle/site:config'
+    ));
+
+    $settings = null;
 }

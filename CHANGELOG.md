@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.17
+- Reorganized the site admin quiz settings so AI proctor settings contains Review diagnostics and Cost estimate subpages.
+
 # v1.1.16
 - Added an admin option to blur quiz content when supported browser detection finds multiple active monitors during an attempt.
 

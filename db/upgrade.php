@@ -906,5 +906,10 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026060512, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026060513) {
+        // No schema changes. Reorganizes the proctoring admin settings navigation.
+        upgrade_plugin_savepoint(true, 2026060513, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
