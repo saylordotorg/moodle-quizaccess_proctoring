@@ -167,6 +167,10 @@ if ($hassiteconfig) {
         get_string('setting:idverificationnamethreshold', 'quizaccess_proctoring'),
         get_string('setting:idverificationnamethreshold_desc', 'quizaccess_proctoring'), 80, PARAM_INT));
 
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/idverificationfailuredetails',
+        get_string('setting:idverificationfailuredetails', 'quizaccess_proctoring'),
+        get_string('setting:idverificationfailuredetails_desc', 'quizaccess_proctoring'), 0));
+
     $settings->add(new admin_setting_configtext('quizaccess_proctoring/idverificationretentiondays',
         get_string('setting:idverificationretentiondays', 'quizaccess_proctoring'),
         get_string('setting:idverificationretentiondays_desc', 'quizaccess_proctoring'), 30, PARAM_INT));

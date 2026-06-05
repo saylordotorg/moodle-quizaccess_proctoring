@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.4
+- Added an admin option to show student-facing ID verification failure reasons.
+
 # v1.1.3
 - Slowed automatic ID image capture so the document must remain aligned for longer before capture.
 

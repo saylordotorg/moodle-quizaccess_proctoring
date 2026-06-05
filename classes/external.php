@@ -974,6 +974,7 @@ class quizaccess_proctoring_external extends external_api {
         } else {
             $providerresult = self::call_id_verification_endpoint($idbytes, $livebytes, $USER);
         }
+        $providerresult['message'] = self::get_id_verification_student_message($providerresult, $profilename);
 
         $record->status = $providerresult['status'];
         $record->facescore = $providerresult['facescore'];
@@ -1196,6 +1197,50 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         return self::make_id_verification_result($status, $facescore, $namescore, $extractedname, $message);
+    }
+
+    /**
+     * Gets the student-facing ID verification message for a normalized provider result.
+     *
+     * @param array $result Normalized ID verification result.
+     * @param string $profilename Moodle profile name used for comparison.
+     * @return string Message shown to the student and stored with the verification row.
+     */
+    private static function get_id_verification_student_message(array $result, string $profilename): string {
+        $status = (string)($result['status'] ?? '');
+        $message = (string)($result['message'] ?? '');
+        if ($status === 'pass' || $status === 'retry' || $status === 'error') {
+            return $message;
+        }
+
+        if ((int)get_config('quizaccess_proctoring', 'idverificationfailuredetails') !== 1) {
+            return get_string('modal:idverificationfailed', 'quizaccess_proctoring');
+        }
+
+        $faceconfig = get_config('quizaccess_proctoring', 'idverificationfacethreshold');
+        $nameconfig = get_config('quizaccess_proctoring', 'idverificationnamethreshold');
+        $facethreshold = max(1, min(100, $faceconfig === false ? 80 : (int)$faceconfig));
+        $namethreshold = max(1, min(100, $nameconfig === false ? 80 : (int)$nameconfig));
+        $facefailed = (int)($result['facescore'] ?? 0) < $facethreshold;
+        $namefailed = (int)($result['namescore'] ?? 0) < $namethreshold;
+
+        if ($facefailed && $namefailed) {
+            return get_string('modal:idverificationfailed_both', 'quizaccess_proctoring');
+        }
+
+        if ($facefailed) {
+            return get_string('modal:idverificationfailed_face', 'quizaccess_proctoring');
+        }
+
+        if ($namefailed) {
+            $idname = trim((string)($result['extractedname'] ?? ''));
+            return get_string('modal:idverificationfailed_name', 'quizaccess_proctoring', (object)[
+                'idname' => $idname !== '' ? $idname : get_string('modal:idverificationnameunknown', 'quizaccess_proctoring'),
+                'profilename' => $profilename,
+            ]);
+        }
+
+        return $message !== '' ? $message : get_string('modal:idverificationfailed', 'quizaccess_proctoring');
     }
 
     /**

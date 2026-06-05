@@ -855,5 +855,13 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026060400, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026060500) {
+        if (get_config('quizaccess_proctoring', 'idverificationfailuredetails') === false) {
+            set_config('idverificationfailuredetails', 0, 'quizaccess_proctoring');
+        }
+
+        upgrade_plugin_savepoint(true, 2026060500, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
