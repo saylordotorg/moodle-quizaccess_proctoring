@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.9
+- Tightened ID auto-capture detection so textured backgrounds do not start the hold timer without a document boundary.
+
 # v1.1.8
 - Split ID detection from the steady-hold timer so auto-capture progress starts only after an ID-like document is visible.
 

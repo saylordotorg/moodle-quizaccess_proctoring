@@ -803,25 +803,28 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     };
                 };
 
-                const getIdDocumentRegionStatus = function(video, side = activeIdDocumentSide) {
-                    const canvas = getIdDocumentElement(side, 'canvas');
-                    const rect = getIdDocumentGuideSourceRect(video, 0);
-                    if (!canvas || !rect) {
-                        return {
-                            detected: false,
-                            aligned: false,
-                        };
-                    }
+                const getLuminanceAt = function(imageData, width, height, x, y) {
+                    const safeX = Math.max(0, Math.min(width - 1, Math.round(x)));
+                    const safeY = Math.max(0, Math.min(height - 1, Math.round(y)));
+                    const index = ((safeY * width) + safeX) * 4;
 
-                    const sampleWidth = 180;
-                    const sampleHeight = Math.max(80, Math.round(sampleWidth * (rect.height / rect.width)));
-                    canvas.width = sampleWidth;
-                    canvas.height = sampleHeight;
+                    return (0.2126 * imageData[index]) +
+                        (0.7152 * imageData[index + 1]) +
+                        (0.0722 * imageData[index + 2]);
+                };
 
-                    const context = canvas.getContext('2d');
-                    context.drawImage(video, rect.x, rect.y, rect.width, rect.height, 0, 0, sampleWidth, sampleHeight);
-                    const imageData = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
+                const summarizeIdDocumentRegion = function(imageData, width, height, bounds, excludeBounds = null) {
                     const step = 3;
+                    const left = Math.max(0, Math.floor(bounds.left));
+                    const top = Math.max(0, Math.floor(bounds.top));
+                    const right = Math.min(width, Math.ceil(bounds.right));
+                    const bottom = Math.min(height, Math.ceil(bounds.bottom));
+                    const exclude = excludeBounds ? {
+                        left: Math.max(0, Math.floor(excludeBounds.left)),
+                        top: Math.max(0, Math.floor(excludeBounds.top)),
+                        right: Math.min(width, Math.ceil(excludeBounds.right)),
+                        bottom: Math.min(height, Math.ceil(excludeBounds.bottom)),
+                    } : null;
                     let count = 0;
                     let bright = 0;
                     let sum = 0;
@@ -830,14 +833,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     let edgeComparisons = 0;
                     let previousRow = [];
 
-                    for (let yy = 0; yy < sampleHeight; yy += step) {
+                    for (let yy = top; yy < bottom; yy += step) {
                         const row = [];
                         let column = 0;
-                        for (let xx = 0; xx < sampleWidth; xx += step) {
-                            const index = ((yy * sampleWidth) + xx) * 4;
-                            const luminance = (0.2126 * imageData[index]) +
-                                (0.7152 * imageData[index + 1]) +
-                                (0.0722 * imageData[index + 2]);
+                        for (let xx = left; xx < right; xx += step) {
+                            if (exclude && xx >= exclude.left && xx < exclude.right &&
+                                    yy >= exclude.top && yy < exclude.bottom) {
+                                continue;
+                            }
+
+                            const luminance = getLuminanceAt(imageData, width, height, xx, yy);
                             row[column] = luminance;
                             sum += luminance;
                             sumsq += luminance * luminance;
@@ -859,33 +864,141 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             }
                             column++;
                         }
-                        previousRow = row;
+                        if (row.length > 0) {
+                            previousRow = row;
+                        }
                     }
 
                     if (!count || !edgeComparisons) {
+                        return {
+                            count: count,
+                            brightness: 0,
+                            contrast: 0,
+                            brightRatio: 0,
+                            edgeDensity: 0,
+                        };
+                    }
+
+                    const brightness = sum / count;
+                    const variance = Math.max(0, (sumsq / count) - (brightness * brightness));
+
+                    return {
+                        count: count,
+                        brightness: brightness,
+                        contrast: Math.sqrt(variance),
+                        brightRatio: bright / count,
+                        edgeDensity: edges / edgeComparisons,
+                    };
+                };
+
+                const measureIdDocumentBoundaryContrast = function(imageData, width, height, innerBounds) {
+                    const spacing = Math.max(4, Math.floor(Math.min(
+                        innerBounds.right - innerBounds.left,
+                        innerBounds.bottom - innerBounds.top
+                    ) / 24));
+                    const inset = 4;
+                    const outset = 5;
+                    let count = 0;
+                    let sum = 0;
+
+                    const addPair = function(innerX, innerY, outerX, outerY) {
+                        if (outerX < 0 || outerY < 0 || outerX >= width || outerY >= height) {
+                            return;
+                        }
+                        sum += Math.abs(
+                            getLuminanceAt(imageData, width, height, innerX, innerY) -
+                            getLuminanceAt(imageData, width, height, outerX, outerY)
+                        );
+                        count++;
+                    };
+
+                    for (let xx = innerBounds.left + spacing; xx < innerBounds.right - spacing; xx += spacing) {
+                        addPair(xx, innerBounds.top + inset, xx, innerBounds.top - outset);
+                        addPair(xx, innerBounds.bottom - inset, xx, innerBounds.bottom + outset);
+                    }
+
+                    for (let yy = innerBounds.top + spacing; yy < innerBounds.bottom - spacing; yy += spacing) {
+                        addPair(innerBounds.left + inset, yy, innerBounds.left - outset, yy);
+                        addPair(innerBounds.right - inset, yy, innerBounds.right + outset, yy);
+                    }
+
+                    return count > 0 ? sum / count : 0;
+                };
+
+                const getIdDocumentRegionStatus = function(video, side = activeIdDocumentSide) {
+                    const canvas = getIdDocumentElement(side, 'canvas');
+                    const guideRect = getIdDocumentGuideSourceRect(video, 0);
+                    const paddedRect = getIdDocumentGuideSourceRect(video, 0.18);
+                    if (!canvas || !guideRect || !paddedRect) {
                         return {
                             detected: false,
                             aligned: false,
                         };
                     }
 
-                    const brightness = sum / count;
-                    const variance = Math.max(0, (sumsq / count) - (brightness * brightness));
-                    const contrast = Math.sqrt(variance);
-                    const brightRatio = bright / count;
-                    const edgeDensity = edges / edgeComparisons;
-                    const detected = brightness >= 60 &&
-                        brightness <= 245 &&
-                        contrast >= 8 &&
-                        brightRatio >= 0.4 &&
-                        edgeDensity >= 0.02 &&
-                        edgeDensity <= 0.55;
-                    const aligned = brightness >= 75 &&
-                        brightness <= 235 &&
-                        contrast >= 12 &&
-                        brightRatio >= 0.55 &&
-                        edgeDensity >= 0.035 &&
-                        edgeDensity <= 0.45;
+                    const sampleWidth = 220;
+                    const sampleHeight = Math.max(100, Math.round(sampleWidth * (paddedRect.height / paddedRect.width)));
+                    canvas.width = sampleWidth;
+                    canvas.height = sampleHeight;
+
+                    const context = canvas.getContext('2d');
+                    context.drawImage(
+                        video,
+                        paddedRect.x,
+                        paddedRect.y,
+                        paddedRect.width,
+                        paddedRect.height,
+                        0,
+                        0,
+                        sampleWidth,
+                        sampleHeight
+                    );
+                    const imageData = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
+                    const innerBounds = {
+                        left: ((guideRect.x - paddedRect.x) / paddedRect.width) * sampleWidth,
+                        top: ((guideRect.y - paddedRect.y) / paddedRect.height) * sampleHeight,
+                        right: ((guideRect.x + guideRect.width - paddedRect.x) / paddedRect.width) * sampleWidth,
+                        bottom: ((guideRect.y + guideRect.height - paddedRect.y) / paddedRect.height) * sampleHeight,
+                    };
+                    const fullBounds = {
+                        left: 0,
+                        top: 0,
+                        right: sampleWidth,
+                        bottom: sampleHeight,
+                    };
+                    const innerStats = summarizeIdDocumentRegion(imageData, sampleWidth, sampleHeight, innerBounds);
+                    const ringStats = summarizeIdDocumentRegion(
+                        imageData,
+                        sampleWidth,
+                        sampleHeight,
+                        fullBounds,
+                        innerBounds
+                    );
+                    const boundaryContrast = measureIdDocumentBoundaryContrast(
+                        imageData,
+                        sampleWidth,
+                        sampleHeight,
+                        innerBounds
+                    );
+                    const brightnessSeparation = ringStats.count > 0 ?
+                        Math.abs(innerStats.brightness - ringStats.brightness) : 0;
+                    const documentBoundaryFound = ringStats.count > innerStats.count * 0.15 &&
+                        (boundaryContrast >= 13 || brightnessSeparation >= 18);
+                    const detected = documentBoundaryFound &&
+                        innerStats.brightness >= 60 &&
+                        innerStats.brightness <= 245 &&
+                        innerStats.contrast >= 8 &&
+                        innerStats.brightRatio >= 0.4 &&
+                        innerStats.edgeDensity >= 0.02 &&
+                        innerStats.edgeDensity <= 0.55;
+                    const aligned = detected &&
+                        boundaryContrast >= 10 &&
+                        innerStats.brightness >= 75 &&
+                        innerStats.brightness <= 235 &&
+                        innerStats.contrast >= 12 &&
+                        innerStats.brightRatio >= 0.55 &&
+                        innerStats.edgeDensity >= 0.035 &&
+                        innerStats.edgeDensity <= 0.45;
 
                     return {
                         detected: detected,
