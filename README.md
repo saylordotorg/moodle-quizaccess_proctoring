@@ -1,173 +1,323 @@
-# Moodle Proctoring
+# Saylor Proctored Quiz
 
-The Moodle Proctoring plugin is a Quiz Access plugin designed to capture a user's picture via webcam to identify the individual attempting the Moodle quiz. It automatically captures images from the user's webcam at 30-second intervals (or any configurable time gap) and stores them as PNG files. Admins can analyze these images after the exam for verification purposes using the Custom AI face matching API.
+Saylor Proctored Quiz is a Moodle quiz access rule that adds pre-attempt identity checks, webcam capture, screen-sharing checks, browser activity monitoring, risk scoring, review holds, and reporting to Moodle quiz attempts.
 
-This plugin enables the capture of random images via webcam while the student or user is attempting a quiz.
+The Moodle component name is `quizaccess_proctoring`. The plugin must be installed at:
 
+```text
+mod/quiz/accessrule/proctoring
+```
 
 ## Features
-- Automatically captures user/student images via a webcam during a quiz.
-- Prevents quiz access if the user does not allow camera permissions.
-- Admins can view reports to identify suspicious activities.
-- Works seamlessly with the existing Question Bank and Quiz modules.
-- Stores images in Moodledata as compact PNG files.
-- Provides options to delete images individually or in bulk.
-- Includes proctoring log reports with advanced search capabilities.
-- Allows admins to upload base images for user face recognition.
-- Supports face validation before quiz attempts.
-- Configurable image resolution and capture interval.
-- Face recognition using the configured Custom AI API. This feature validates a live user image against the saved reference image.
-  
+
+- Webcam capture during proctored quiz attempts.
+- Optional face registration and pre-attempt face validation using the configured Saylor AI face-match endpoint.
+- Optional pre-attempt ID verification with front ID image, optional back ID image, live face image, face threshold, and name threshold.
+- Optional honor statement and privacy notice steps before the attempt starts.
+- Optional CAPTCHA before new attempts using Cloudflare Turnstile or Moodle reCAPTCHA.
+- Optional entire-screen sharing before quiz start and during attempts.
+- Browser activity logging for tab visibility, focus loss, page exit, clipboard actions, right-click, shortcuts, possible AI-tool interactions, audio events, screen-share events, and monitor checks.
+- Optional clipboard blocking.
+- Optional desktop violation screenshots for configured suspicious events.
+- Optional face-in-view blur behavior while the quiz is open.
+- Risk scoring based on webcam, face, screen-share, monitor, clipboard, tab/focus, shortcut, audio, and possible AI-tool evidence.
+- Optional high-risk grade/certificate review holds, automatic hold release, and retake lockouts.
+- Optional advisory AI image review for high-risk attempts through OpenAI, Anthropic, or an OpenAI-compatible vision endpoint.
+- Admin reports for attempt captures, activity events, risk summaries, AI review results, and hold review.
+- Daily report email task for recent or high-risk proctored attempts.
+- Retention cleanup for webcam, face, desktop, and ID verification images.
+
+## Requirements
+
+- Moodle 4.5 or later.
+- PHP and database versions supported by the installed Moodle version.
+- HTTPS for browser camera, microphone, and screen-sharing APIs.
+- Moodle cron configured and running.
+- A browser with webcam support through `getUserMedia`.
+- Chrome or Edge is recommended for desktop screen sharing and multi-monitor checks.
+
+Optional integrations:
+
+- Saylor AI face-match endpoint and API key.
+- Saylor ID verification endpoint and API key.
+- Cloudflare Turnstile site key and secret key, or Moodle site-wide reCAPTCHA keys.
+- OpenAI, Anthropic, or OpenAI-compatible vision API credentials for advisory AI image review.
+
 ## Installation
 
-### Install by downloading the ZIP file
-- Install by downloading the ZIP file from Moodle plugins directory
-- Download zip file from GitHub
-- Unzip the zip file in /path/to/moodle/mod/quiz/accessrule/proctoring folder or upload the zip file in the install plugins options from site administration : Site Administration -> Plugins -> Install Plugins -> Upload zip file
-- In your Moodle site (as admin), Visit site administration to finish the installation.
+Install the plugin from this repository or from a ZIP built from this repository.
 
+From the Moodle root:
 
-### Install using git clone
-
-Go to Moodle Project `root/mod/quiz/accessrule/` directory and clone code by using following commands:
-
-```
+```bash
+cd mod/quiz/accessrule
 git clone https://github.com/dta121/saylorprocotring.git proctoring
+cd ../../..
+php admin/cli/upgrade.php --non-interactive
+php admin/cli/purge_caches.php
 ```
 
-### Install from Moodle Plugin directory
+ZIP installation:
 
-You can install this plugin directly from [Moodle plugins directory](https://moodle.org/plugins/quizaccess_proctoring). 
+1. Create or download a ZIP of the repository contents.
+2. Extract it to `mod/quiz/accessrule/proctoring`.
+3. Visit Site administration as an administrator, or run:
 
-## Configuration
+```bash
+php admin/cli/upgrade.php --non-interactive
+php admin/cli/purge_caches.php
+```
 
-After installing the plugin, you can enable the plugin by configuring the quiz settings: 
-- Go to your quiz setting (Edit Quiz): 
-- Change the ‘Extra restrictions on attempts’ to ‘Enable webcam capture by Proctoring’
+After installation, verify that Moodle cron is running. Several features depend on scheduled tasks.
 
-<img width="622" alt="1  Proctoring allow" src="https://github.com/user-attachments/assets/253deb17-5046-4946-9fb5-ece4f98e633e">
+## Upgrade
 
+1. Back up the Moodle database and the existing `mod/quiz/accessrule/proctoring` directory.
+2. Replace the plugin files with the new version.
+3. Run:
 
-## Settings
+```bash
+php admin/cli/upgrade.php --non-interactive
+php admin/cli/purge_caches.php
+```
 
-To update the plugin settings, navigate to plugin settings: 
- `Site Administration->Plugins->Proctoring`
-- Go to Site Administrations plugins section. 
-- Select Proctoring from the activity module section to configure your plugin settings
+4. Confirm that Site administration does not show pending plugin upgrades.
+5. Review scheduled tasks and site settings after the upgrade.
 
-### Upload User Images
-Use the `Click here to upload the images` option to add user images for verification by matching faces.
+## Site Configuration
 
-### Delete All Tracking Records
-Use the `Click here to delete all records` option to remove all tracking records, including images captured during exams.
+Open Site administration and search for `Saylor Proctored Quiz` if the navigation path differs by Moodle version.
 
-<img width="960" alt="Upload user image & delete record settings" src="https://github.com/user-attachments/assets/03c8bbe4-6494-4d94-8ecf-2200654086e1">
+Configure the site-wide defaults before enabling the plugin on quizzes.
 
-Admins can upload all user images from the following table:
-(Note: Admins cannot upload entries that do not contain any images.)
+### Precheck
 
-<img width="960" alt="Users list" src="https://github.com/user-attachments/assets/9cd9bbbb-8e4a-47d0-96c8-b2e83008d304">
+Use these settings to control the pre-attempt steps shown before students can start a proctored quiz:
 
-## Additional Settings
+- Honor statement requirement, statement text, and agreement label.
+- Privacy notice requirement, notice text, and agreement label.
+- CAPTCHA before attempt.
+- CAPTCHA provider: Cloudflare Turnstile or Moodle reCAPTCHA.
+- Turnstile site key and secret key when Turnstile is selected.
 
-### Camshot Interval
-Admins can adjust the camshot interval and camshot resolution from here.
-<image width="960" alt="camshot interval and resolutions" src="https://github.com/user-attachments/assets/5aed7aa4-457a-43e0-9034-bf5fa169fae9">
+### Face Verification
 
+Use these settings to control webcam captures and face matching:
 
-### Select Face Match Method
+- Reference image management through the Saylor Proctored Quiz users list.
+- Webcam capture interval.
+- Webcam capture image width.
+- Face match method: Saylor AI API or None.
+- Saylor AI endpoint URL and API key.
+- Face match threshold.
+- Optional face check before quiz start.
+- Optional continuous face check settings.
 
-Select the face match method from the following settings. Use Custom AI API for Saylor's configured face verification service, or None to disable automatic face matching.
+Students need a usable reference image before face validation can pass.
 
-<img width="960" alt="Face match method settings" src="https://github.com/user-attachments/assets/734558fb-1f1c-4a3f-81bd-ce68605ab802">
+### ID Verification
 
+Use these settings to require identity document verification before the attempt starts:
 
-### Custom AI API Settings
+- Enable ID verification.
+- ID verification endpoint URL and API key.
+- Require both front and back ID images.
+- Check ID portrait against the live face image.
+- Check ID name against the Moodle profile name.
+- Face and name thresholds.
+- Whether to show failure details to students.
+- ID verification image retention days.
 
-When using custom AI facematch, the Custom AI API, custom AI API Key has to be entered.
+When enabled, students must complete the ID step successfully before Moodle allows the proctored attempt to start.
 
-<img width="960" alt="Custom AI API Settings" src="https://github.com/user-attachments/assets/d83e527f-a37f-4f36-a779-ecdbf32fb08a">
+### Monitoring
 
-If you need the Custom AI API, API key for trial, please contact here: `elearning@saylor.org`.
+Use these settings to control browser and screen monitoring:
 
+- Monitor browser activity.
+- Block clipboard actions.
+- Require entire-screen sharing.
+- Multi-monitor handling: off, log, warn, or block.
+- Screen-share persistence mode: auto, main quiz page, or helper window.
+- Capture desktop screenshots for violation events.
+- Mobile and tablet screen-share behavior: bypass, require, or block.
+- Blur quiz content when no face is detected.
+- Face blur thresholds and grace period.
 
-### Validate Face on Quiz Start
+Screen sharing requires a browser that supports the Screen Capture API. Students should select the entire screen, not a browser tab or application window, when the entire-screen requirement is enabled.
 
-You can enable face validation before attempting the quiz. Users will not be able to attempt the quiz if the face doesn’t match with the image uploaded by admin. 
-<img width="960" alt="Face validation settings" src="https://github.com/user-attachments/assets/5e80eaed-bb92-4510-84e1-45b0d2dd1abd">
+### Risk Review
 
-This Modal will pop up before attempting the quiz if face validation is disabled.
-<img width="622" alt="Scheduler task" src="https://github.com/user-attachments/assets/ae6ac75e-001a-4eb3-8d71-0e51c8b1dc8d">
+Use these settings to control high-risk attempt handling:
 
-If Face validation is enabled then this modal will pop up before attempting the quiz.
-<img width="622" alt="Face validation modal" src="https://github.com/user-attachments/assets/09b68f3f-d70a-44bf-82b2-080560df73cc">
+- Hold grades/certificates for high-risk attempts.
+- Default high-risk threshold from 1 to 100.
+- Student-facing hold notice.
+- Student Affairs review window before automatic hold release.
+- Retake lockout after a high-risk score.
+- Retake lockout duration.
 
-### Face match Scheduler Task
-Images of attempted quizzes can be analyzed by an automatic scheduled task. This can be enabled from the following settings.
-<img width="960" alt="Scheduler task" src="https://github.com/user-attachments/assets/a6adee74-ec7a-4d8b-b760-ec677868ae90">
+Reviewers with the `quizaccess/proctoring:reviewriskholds` capability can release or confirm high-risk holds from the proctoring reports.
 
-## Attempting the quiz
-During attempting the quiz, the quiz page will look like this:
-<img width="960" alt="3  Quiz" src="https://github.com/user-attachments/assets/d5cacca1-14e5-46fd-95a0-70723b1560cb">
+### AI Image Review
 
-## Proctoring Report
+Use these settings for advisory image review after an attempt reaches the configured trigger threshold:
 
-Admins can view the proctoring report:
-<img width="960" alt="5  Proctoring summary" src="https://github.com/user-attachments/assets/bae1b68c-f845-4d54-b135-af78a926895f">
+- Enable AI image review.
+- Provider: OpenAI, Anthropic, or OpenAI-compatible endpoint.
+- Provider API key and model.
+- OpenAI-compatible endpoint URL.
+- Desktop screenshot review mode.
+- AI review trigger threshold.
+- AI review flag threshold.
+- Maximum images per AI review.
 
-Admins can view individual proctoring reports and analyze the images using Custom AI face matching API:
-<img width="960" alt="6  Proctoring individual report" src="https://github.com/user-attachments/assets/0e8b6519-338f-4fc5-b963-0ea3d89c6935">
+AI image review results are advisory evidence for a human reviewer. They are not an automatic misconduct decision.
 
-## Proctoring Summary
-Admin can view the details record of a course. They can delete a specific quiz record or the entire course record.
-<img width="960" alt="6  Proctoring individual report" src="https://github.com/user-attachments/assets/382f857b-200f-421f-b409-195f2c3cd730">
+### Reporting And Retention
 
-## Browser compatibility of proctoring plugin
-Proctoring plugin uses the getUserMedia() API. So, the browser compatibility will be similar to the browser compatibility of getUserMedia() API.
-<img width="960"  src="https://user-images.githubusercontent.com/72008371/195811733-c7776700-4fd3-410f-b82b-bfb94ba08618.png">
+Use these settings to control operational reporting and cleanup:
 
+- Daily report email task.
+- Daily report recipients.
+- Whether external email recipients are allowed.
+- Whether the daily report includes all attempts or only high-risk/held attempts.
+- Whether empty reports are sent.
+- Image retention days for captured attempt images and related records.
 
+## Quiz Configuration
 
+Edit a quiz and open the `Saylor Proctored Quiz` section in the quiz settings form.
 
-## FAQ’s:
+Set `Proctoring required` to enabled for quizzes that should use this access rule.
 
-1. How can I upload a user image? 
-  
-   >  From the settings of the proctoring plugin, there is an option for uploading user images.
+Per-quiz options can inherit the site default or override it:
 
-2. Why does the analyze image button give a red mark for all the images? 
-   
-    > Check whether the credentials for the face match methods are correct and the user’s image is uploaded by the admin. 
-3. Can the students upload their own images? 
-    
-    > No, only admins can access. 
+- Entire-screen sharing before quiz start.
+- CAPTCHA before attempt.
+- Risk review mode.
+- Risk review threshold.
 
-4. Where can I get the Custom AI API credentials?
-    
-    > Please contact here: elearning@saylor.org for a trial key.
+Save the quiz settings. The pre-attempt checks appear the next time a student starts a new attempt.
 
-5. Is the screenshot feature available? 
-    
-    > No, it is removed because of browser limitation
+## Student Attempt Flow
 
-6. How can I report an issue regarding this plugin? 
-    
-    > Please raise an issue in this link: https://github.com/dta121/saylorprocotring/issues
-7. Why is my moodle stuck while validating the face?
-    
-    > Please check whether the credentials for the face match methods are correct
-8.  Why can’t I upload some of the user images? 
-    
-    > Every user image needs to have a face that can be detect. Please make sure the image is bright enough and there is no multiple face in that image. Otherwise, it can’t be uploaded.
-9. As a student, why can’t I validate my face before starting a quiz? 
-    > Student’s image must be uploaded by an admin in the moodle to validate their face before an attempt. 
-10. What does the yellow mark around the image mean? 
-    
+When proctoring is required, students may be asked to complete these steps before the quiz starts:
 
-    > Case 1: Please check whether the user image is uploaded in moodle. 
-     
-    > Case 2: Images captured with previous version of proctoring plugin can’t be analyzed by the current version of proctoring plugin because it lacks some meta data.
+1. Accept the privacy notice.
+2. Accept the honor statement.
+3. Complete CAPTCHA.
+4. Complete ID verification.
+5. Register or validate their face.
+6. Share the entire screen.
+7. Complete a multi-monitor check.
 
+The exact steps depend on site settings and quiz overrides.
+
+During the attempt, the plugin can capture webcam images, log suspicious browser activity, check screen-sharing state, capture desktop violation screenshots, and blur quiz content until a face is visible.
+
+## Reports And Review
+
+Users with report access can open proctoring reports from the quiz or the plugin report pages.
+
+Reports include:
+
+- Webcam captures and face crops.
+- Desktop violation screenshots.
+- Browser activity events.
+- Risk score and risk factors.
+- Face-match status.
+- ID verification status when enabled.
+- AI image review status and results when enabled.
+- High-risk review hold status.
+
+Authorized reviewers can release or confirm risk holds. Releasing a hold clears the grade/certificate hold and related retake lockout. Confirming a hold keeps the enforcement outcome in place.
+
+## Admin Pages
+
+The plugin adds these admin-facing pages:
+
+- Saylor Proctored Quiz users list for reference images.
+- Proctoring AI cost estimate.
+- AI review diagnostics.
+- Bulk delete controls for stored proctoring records.
+
+## Scheduled Tasks
+
+Moodle cron should run regularly. The plugin defines these scheduled tasks:
+
+- `quizaccess_proctoring\task\delete_images_task`
+  Deletes eligible captured images based on retention settings.
+- `quizaccess_proctoring\task\send_daily_report_task`
+  Sends daily proctoring reports when enabled.
+- `quizaccess_proctoring\task\execute_ai_review_task`
+  Processes queued AI image reviews.
+- `quizaccess_proctoring\task\release_expired_risk_holds_task`
+  Releases active risk holds after the configured review window.
+- `quizaccess_proctoring\task\initiate_facematch_task`
+  Legacy/task-based face-match initiation. Disabled by default.
+- `quizaccess_proctoring\task\execute_facematch_task`
+  Legacy/task-based face-match execution. Disabled by default.
+
+Review task schedules in Site administration if reports, cleanup, or AI review are not running as expected.
+
+## Data And Privacy
+
+Depending on enabled settings, the plugin may store:
+
+- Webcam captures.
+- Face crops.
+- Reference face images.
+- ID document images.
+- Live ID verification face images.
+- Desktop violation screenshots.
+- Browser activity events.
+- Risk scores and review decisions.
+- AI image review summaries and evidence notes.
+
+Pluginfile access is restricted to the owning student or users with report capability in the relevant Moodle context. Outbound AI and ID verification endpoints are validated server-side before proctoring images are sent.
+
+Administrators should configure privacy notice text, retention windows, report recipient rules, and external AI endpoints according to institutional policy.
+
+## Troubleshooting
+
+Camera does not open:
+
+- Confirm the site uses HTTPS.
+- Confirm the browser has camera permission for the Moodle site.
+- Confirm no other application is holding the camera.
+
+Face validation fails:
+
+- Confirm the student has a clear reference image.
+- Confirm the Saylor AI endpoint URL and API key are configured.
+- Check the face threshold and provider logs.
+
+ID verification fails:
+
+- Confirm the ID image is readable and well lit.
+- Confirm the live face image is clear.
+- Confirm profile name matching rules and thresholds.
+- Check the ID verification endpoint configuration.
+
+Screen sharing fails:
+
+- Use Chrome or Edge on desktop.
+- Select the entire screen when prompted.
+- Allow pop-ups if the helper screen monitor window is used.
+- Check mobile/tablet screen-share behavior settings.
+
+CAPTCHA does not appear or cannot be completed:
+
+- Confirm the selected provider has valid keys.
+- For reCAPTCHA, confirm Moodle's site-wide reCAPTCHA configuration.
+- For Turnstile, confirm both site key and secret key are configured.
+
+Reports, retention cleanup, or AI review do not run:
+
+- Confirm Moodle cron is running.
+- Check scheduled task status.
+- Check provider credentials and endpoint validation errors.
 
 ## License
 
@@ -178,7 +328,7 @@ version.
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with
-this program.  If not, see <http://www.gnu.org/licenses/>.
+this program. If not, see <http://www.gnu.org/licenses/>.
