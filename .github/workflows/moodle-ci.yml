@@ -20,24 +20,29 @@ jobs:
           - moodle: '405'
             branch: MOODLE_405_STABLE
             php: '8.3'
+            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
             experimental: false
           - moodle: '500'
             branch: MOODLE_500_STABLE
             php: '8.3'
+            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
             experimental: false
           - moodle: '501'
             branch: MOODLE_501_STABLE
             php: '8.3'
+            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
             experimental: false
           - moodle: '502'
             branch: MOODLE_502_STABLE
             php: '8.3'
+            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
             experimental: false
           # Moodle 5.3 does not have a MOODLE_503_STABLE branch yet.
           # Run the 503 lane against main for early compatibility signal without blocking stable CI.
           - moodle: '503'
             branch: main
             php: '8.3'
+            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
             experimental: true
 
     services:
@@ -83,20 +88,20 @@ jobs:
 
       - name: PHP lint
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci phplint ./moodle/mod/quiz/accessrule/proctoring
+        run: moodle-plugin-ci phplint ${{ matrix.pluginpath }}
 
       - name: Validate plugin
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci validate ./moodle/mod/quiz/accessrule/proctoring
+        run: moodle-plugin-ci validate ${{ matrix.pluginpath }}
 
       - name: Check upgrade savepoints
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci savepoints ./moodle/mod/quiz/accessrule/proctoring
+        run: moodle-plugin-ci savepoints ${{ matrix.pluginpath }}
 
       - name: Mustache lint
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci mustache ./moodle/mod/quiz/accessrule/proctoring
+        run: moodle-plugin-ci mustache ${{ matrix.pluginpath }}
 
       - name: PHPUnit
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci phpunit ./moodle/mod/quiz/accessrule/proctoring
+        run: moodle-plugin-ci phpunit ${{ matrix.pluginpath }}
