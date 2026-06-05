@@ -179,14 +179,25 @@ define([], function() {
         }
     };
 
-    const setupTabs = function(config) {
+    const readTabs = function(controls) {
+        return Array.from(controls.querySelectorAll('[data-proctoring-admin-tab]'))
+            .map(function(button) {
+                return {
+                    key: button.getAttribute('data-proctoring-admin-tab'),
+                    heading: button.getAttribute('data-proctoring-admin-heading') || ''
+                };
+            });
+    };
+
+    const setupTabs = function() {
         const fieldset = getSettingsFieldset();
         const controls = document.getElementById(controlsId);
-        const tabs = config.tabs || [];
+        const tabs = controls ? readTabs(controls) : [];
         if (!fieldset || !controls || !tabs.length) {
             return;
         }
 
+        const storageKey = controls.getAttribute('data-proctoring-admin-storagekey');
         const validSections = markSections(fieldset, tabs);
         const validTabKeys = validSections.concat(['all']);
         const sectionNodes = Array.from(fieldset.querySelectorAll('[data-proctoring-admin-section]'));
@@ -206,7 +217,7 @@ define([], function() {
                 button.setAttribute('aria-pressed', selected ? 'true' : 'false');
             });
 
-            writeStoredTab(config.storagekey, activeKey);
+            writeStoredTab(storageKey, activeKey);
         };
 
         buttons.forEach(function(button) {
@@ -215,15 +226,14 @@ define([], function() {
             });
         });
 
-        applyTab(readStoredTab(config.storagekey) || 'all');
+        applyTab(readStoredTab(storageKey) || 'all');
     };
 
     return {
-        init: function(config) {
+        init: function() {
             ready(function() {
-                config = config || {};
                 setupShortcutToggles();
-                setupTabs(config);
+                setupTabs();
             });
         }
     };

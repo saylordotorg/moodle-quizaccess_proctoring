@@ -173,11 +173,7 @@ if ($hassiteconfig) {
         ],
     ];
 
-    $PAGE->requires->js_call_amd('quizaccess_proctoring/adminSettings', 'init', [[
-        'tabs' => $admintabs,
-        'toggles' => $quicktoggles,
-        'storagekey' => 'quizaccess_proctoring_admin_tab',
-    ]]);
+    $PAGE->requires->js_call_amd('quizaccess_proctoring/adminSettings', 'init');
 
     // Plugin description and name.
     $plugindescription = get_string('plugin_description', 'quizaccess_proctoring');
@@ -191,12 +187,16 @@ if ($hassiteconfig) {
 
     $tabbuttons = '';
     foreach ($admintabs as $tab) {
-        $tabbuttons .= html_writer::tag('button', $tab['label'], [
+        $tabattributes = [
             'type' => 'button',
             'class' => 'btn btn-outline-secondary btn-sm quizaccess-proctoring-admin-tab',
             'data-proctoring-admin-tab' => $tab['key'],
             'aria-pressed' => $tab['key'] === 'all' ? 'true' : 'false',
-        ]);
+        ];
+        if (!empty($tab['heading'])) {
+            $tabattributes['data-proctoring-admin-heading'] = $tab['heading'];
+        }
+        $tabbuttons .= html_writer::tag('button', $tab['label'], $tabattributes);
     }
 
     $bulkbuttons = html_writer::tag(
@@ -248,7 +248,10 @@ if ($hassiteconfig) {
         html_writer::div($bulkbuttons, 'quizaccess-proctoring-admin-bulk-actions') .
         html_writer::div($togglehtml, 'quizaccess-proctoring-admin-quickgrid'),
         'quizaccess-proctoring-admin-controls',
-        ['id' => 'quizaccess-proctoring-admin-controls']
+        [
+            'id' => 'quizaccess-proctoring-admin-controls',
+            'data-proctoring-admin-storagekey' => 'quizaccess_proctoring_admin_tab',
+        ]
     );
 
     $settings->add(new admin_setting_description(
