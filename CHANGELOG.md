@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.11
+- Made the ID camera guide smaller, changed its feedback to red/green in-window states, and required all four ID edges before auto-capture.
+
 # v1.1.10
 - Required multiple ID-card edges before browser auto-capture can start the steady-hold timer.
 

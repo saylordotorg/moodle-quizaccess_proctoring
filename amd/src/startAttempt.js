@@ -35,6 +35,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'modal:idverificationprovidererror', component: 'quizaccess_proctoring'},
                 {key: 'modal:idverificationretry', component: 'quizaccess_proctoring'},
                 {key: 'videonotavailable', component: 'quizaccess_proctoring'},
+                {key: 'modal:idverificationdocumentnotinwindow', component: 'quizaccess_proctoring'},
+                {key: 'modal:idverificationdocumentinwindow', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -72,6 +74,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     idverificationprovidererror: strings[30],
                     idverificationretry: strings[31],
                     videonotavailable: strings[32],
+                    idverificationdocumentnotinwindow: strings[33],
+                    idverificationdocumentinwindow: strings[34],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -641,7 +645,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         : strings.idverificationdocumentmissing;
                 };
 
-                const setIdDocumentGuideProgress = function(side, score, detected = score > 0) {
+                const setIdDocumentGuideProgress = function(side, score, inWindow = false) {
                     const preview = getIdDocumentElement(side, 'preview');
                     const guide = preview ? preview.querySelector('.proctoring-id-document-guide') : null;
                     if (!guide) {
@@ -649,9 +653,19 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
 
                     const progress = Math.max(0, Math.min(1, score / idDocumentAutoCaptureRequiredScore));
+                    const status = inWindow
+                        ? (strings.idverificationdocumentinwindow || 'ID in window - hold still')
+                        : (strings.idverificationdocumentnotinwindow || 'ID not in window');
+                    const statusNode = guide.querySelector('.proctoring-id-document-status');
                     guide.style.setProperty('--proctoring-id-hold-progress', (progress * 100).toFixed(0) + '%');
-                    guide.classList.toggle('is-detected', detected);
-                    guide.classList.toggle('is-holding', progress >= 0.5);
+                    guide.classList.toggle('is-detected', inWindow);
+                    guide.classList.toggle('is-in-window', inWindow);
+                    guide.classList.toggle('is-holding', inWindow && progress >= 0.5);
+                    guide.classList.toggle('is-not-in-window', !inWindow);
+                    if (statusNode) {
+                        statusNode.textContent = status;
+                    }
+                    guide.setAttribute('aria-label', status);
                 };
 
                 const resetIdDocumentGuideProgress = function(side = null) {
@@ -1001,7 +1015,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                         const average = sideStats.sum / sideStats.count;
                         const strongRatio = sideStats.strong / sideStats.count;
-                        const present = average >= 10 && strongRatio >= 0.35;
+                        const present = average >= 12 && strongRatio >= 0.45;
                         summary.average += sideStats.sum;
                         summary.count += sideStats.count;
                         if (present) {
@@ -1074,10 +1088,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         innerBounds
                     );
                     const documentBoundaryFound = ringStats.count > innerStats.count * 0.15 &&
-                        boundaryStats.coveredSides >= 3 &&
-                        boundaryStats.horizontalSides >= 1 &&
-                        boundaryStats.verticalSides >= 1 &&
-                        boundaryStats.average >= 10;
+                        boundaryStats.coveredSides >= 4 &&
+                        boundaryStats.horizontalSides >= 2 &&
+                        boundaryStats.verticalSides >= 2 &&
+                        boundaryStats.average >= 13;
                     const detected = documentBoundaryFound &&
                         innerStats.brightness >= 60 &&
                         innerStats.brightness <= 245 &&
@@ -1086,7 +1100,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         innerStats.edgeDensity >= 0.02 &&
                         innerStats.edgeDensity <= 0.55;
                     const aligned = detected &&
-                        boundaryStats.average >= 12 &&
+                        boundaryStats.average >= 15 &&
                         innerStats.brightness >= 75 &&
                         innerStats.brightness <= 235 &&
                         innerStats.contrast >= 12 &&
@@ -1135,10 +1149,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             setIdDocumentGuideProgress(
                                 captureSide,
                                 idDocumentAutoCaptureScore,
-                                documentStatus.detected
+                                documentStatus.aligned
                             );
                             if (idDocumentAutoCaptureScore >= idDocumentAutoCaptureRequiredScore) {
-                                await captureIdDocumentImage(captureSide);
+                                const finalDocumentStatus = getIdDocumentRegionStatus(video, captureSide);
+                                if (finalDocumentStatus.aligned) {
+                                    await captureIdDocumentImage(captureSide);
+                                } else {
+                                    idDocumentAutoCaptureScore = 0;
+                                    setIdDocumentGuideProgress(captureSide, 0, false);
+                                }
                             }
                         } finally {
                             idDocumentAutoCaptureRunning = false;

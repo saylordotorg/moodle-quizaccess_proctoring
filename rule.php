@@ -980,7 +980,14 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                             'muted' => 'muted',
                             'playsinline' => 'playsinline',
                         ]) .
-                        html_writer::div('', 'proctoring-id-document-guide', ['aria-hidden' => 'true']) .
+                        html_writer::div(
+                            html_writer::span(
+                                get_string('modal:idverificationdocumentnotinwindow', 'quizaccess_proctoring'),
+                                'proctoring-id-document-status'
+                            ),
+                            'proctoring-id-document-guide',
+                            ['aria-live' => 'polite']
+                        ) .
                         html_writer::empty_tag('img', [
                             'id' => 'proctoring-id-document' . $suffix . '-preview-image',
                             'class' => 'proctoring-id-document-preview-image',
