@@ -255,9 +255,18 @@
                 <FIELD NAME="namescore" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
                        SEQUENCE="false" COMMENT="ID name to profile name similarity score" PREVIOUS="facescore" NEXT="extractedname"/>
                 <FIELD NAME="extractedname" TYPE="text" NOTNULL="false" SEQUENCE="false"
-                       COMMENT="Name extracted from the ID document" PREVIOUS="namescore" NEXT="profilename"/>
+                       COMMENT="Name extracted from the ID document" PREVIOUS="namescore" NEXT="romanizedname"/>
+                <FIELD NAME="romanizedname" TYPE="text" NOTNULL="false" SEQUENCE="false"
+                       COMMENT="Latin transliteration or romanized name returned by the ID verification provider"
+                       PREVIOUS="extractedname" NEXT="matchedprofilename"/>
+                <FIELD NAME="matchedprofilename" TYPE="text" NOTNULL="false" SEQUENCE="false"
+                       COMMENT="Profile name variant matched by the ID verification provider"
+                       PREVIOUS="romanizedname" NEXT="namematchreason"/>
+                <FIELD NAME="namematchreason" TYPE="text" NOTNULL="false" SEQUENCE="false"
+                       COMMENT="Provider or Moodle reason for the ID name match decision"
+                       PREVIOUS="matchedprofilename" NEXT="profilename"/>
                 <FIELD NAME="profilename" TYPE="text" NOTNULL="false" SEQUENCE="false"
-                       COMMENT="Moodle profile name used for comparison" PREVIOUS="extractedname" NEXT="idimageurl"/>
+                       COMMENT="Moodle profile name used for comparison" PREVIOUS="namematchreason" NEXT="idimageurl"/>
                 <FIELD NAME="idimageurl" TYPE="text" NOTNULL="false" SEQUENCE="false"
                        COMMENT="Stored front ID document image URL" PREVIOUS="profilename" NEXT="idbackimageurl"/>
                 <FIELD NAME="idbackimageurl" TYPE="text" NOTNULL="false" SEQUENCE="false"

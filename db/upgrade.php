@@ -824,6 +824,9 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
             $table->add_field('facescore', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
             $table->add_field('namescore', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
             $table->add_field('extractedname', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('romanizedname', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('matchedprofilename', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('namematchreason', XMLDB_TYPE_TEXT, null, null, null, null, null);
             $table->add_field('profilename', XMLDB_TYPE_TEXT, null, null, null, null, null);
             $table->add_field('idimageurl', XMLDB_TYPE_TEXT, null, null, null, null, null);
             $table->add_field('idbackimageurl', XMLDB_TYPE_TEXT, null, null, null, null, null);
@@ -914,6 +917,60 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
     if ($oldversion < 2026060514) {
         // No schema changes. Adds admin settings shortcuts and tabbed section navigation.
         upgrade_plugin_savepoint(true, 2026060514, 'quizaccess', 'proctoring');
+    }
+
+    if ($oldversion < 2026060515) {
+        if (get_config('quizaccess_proctoring', 'monitormouseactivity') === false) {
+            set_config('monitormouseactivity', 0, 'quizaccess_proctoring');
+        }
+
+        upgrade_plugin_savepoint(true, 2026060515, 'quizaccess', 'proctoring');
+    }
+
+    if ($oldversion < 2026060516) {
+        $table = new xmldb_table('quizaccess_proctoring_idv');
+        $fields = [
+            new xmldb_field(
+                'romanizedname',
+                XMLDB_TYPE_TEXT,
+                null,
+                null,
+                null,
+                null,
+                null,
+                'extractedname'
+            ),
+            new xmldb_field(
+                'matchedprofilename',
+                XMLDB_TYPE_TEXT,
+                null,
+                null,
+                null,
+                null,
+                null,
+                'romanizedname'
+            ),
+            new xmldb_field(
+                'namematchreason',
+                XMLDB_TYPE_TEXT,
+                null,
+                null,
+                null,
+                null,
+                null,
+                'matchedprofilename'
+            ),
+        ];
+
+        if ($dbman->table_exists($table)) {
+            foreach ($fields as $field) {
+                if (!$dbman->field_exists($table, $field)) {
+                    $dbman->add_field($table, $field);
+                }
+            }
+        }
+
+        upgrade_plugin_savepoint(true, 2026060516, 'quizaccess', 'proctoring');
     }
 
     return true;

@@ -59,6 +59,33 @@ class quizaccess_proctoring_external extends external_api {
     /** Maximum ID verification requests per user/module/window. */
     private const MAX_ID_VERIFICATIONS_PER_WINDOW = 12;
 
+    /** Common English name aliases accepted by the Moodle-side ID-name fuzzy fallback. */
+    private const NAME_ALIAS_GROUPS = [
+        ['alexander', 'alex', 'xander'],
+        ['andrew', 'andy', 'drew'],
+        ['anthony', 'tony'],
+        ['benjamin', 'ben', 'benny'],
+        ['charles', 'charlie', 'chuck'],
+        ['christopher', 'chris'],
+        ['daniel', 'dan', 'danny'],
+        ['david', 'dave', 'davy'],
+        ['edward', 'ed', 'eddie', 'ted'],
+        ['elizabeth', 'liz', 'beth', 'bess'],
+        ['james', 'jim', 'jimmy'],
+        ['jennifer', 'jen', 'jenny'],
+        ['jessica', 'jess'],
+        ['john', 'jack', 'johnny'],
+        ['joseph', 'joe', 'joey'],
+        ['katherine', 'kate', 'kathy', 'kat'],
+        ['margaret', 'meg', 'maggie', 'peggy'],
+        ['michael', 'mike', 'mikey'],
+        ['nicholas', 'nick'],
+        ['patricia', 'pat', 'patty'],
+        ['robert', 'rob', 'bob', 'bobby'],
+        ['thomas', 'tom', 'tommy'],
+        ['william', 'will', 'bill', 'billy'],
+    ];
+
     /**
      * Defines the parameters required for sending a camshot.
      *
@@ -315,6 +342,8 @@ class quizaccess_proctoring_external extends external_api {
             'clipboard_cut',
             'clipboard_paste',
             'contextmenu',
+            'mouse_left_window',
+            'mouse_returned_window',
             'shortcut',
             'possible_ai_tool',
             'page_exit',
@@ -907,6 +936,10 @@ class quizaccess_proctoring_external extends external_api {
 
         [$checkface, $checkname] = self::get_id_verification_checks();
         [$cm, $context] = self::get_authorized_quiz_context((int)$courseid, (int)$cmid);
+        $attemptid = max(0, (int)$attemptid);
+        if ($attemptid > 0) {
+            self::get_owned_quiz_attempt($attemptid, $cm);
+        }
         if ((int)get_config('quizaccess_proctoring', 'idverificationenabled') !== 1) {
             return [
                 'verificationid' => 0,
@@ -914,6 +947,9 @@ class quizaccess_proctoring_external extends external_api {
                 'facescore' => 0,
                 'namescore' => 0,
                 'extractedname' => '',
+                'romanizedname' => '',
+                'matchedprofilename' => '',
+                'namematchreason' => '',
                 'message' => '',
                 'warnings' => [],
             ];
@@ -928,6 +964,9 @@ class quizaccess_proctoring_external extends external_api {
                 'facescore' => 0,
                 'namescore' => 0,
                 'extractedname' => '',
+                'romanizedname' => '',
+                'matchedprofilename' => '',
+                'namematchreason' => '',
                 'message' => get_string('modal:idverificationdocumentbackmissing', 'quizaccess_proctoring'),
                 'warnings' => [],
             ];
@@ -950,11 +989,14 @@ class quizaccess_proctoring_external extends external_api {
             'courseid' => (int)$courseid,
             'quizid' => (int)$cm->id,
             'userid' => (int)$USER->id,
-            'attemptid' => (int)$attemptid,
+            'attemptid' => $attemptid,
             'status' => 'pending',
             'facescore' => 0,
             'namescore' => 0,
             'extractedname' => '',
+            'romanizedname' => '',
+            'matchedprofilename' => '',
+            'namematchreason' => '',
             'profilename' => $profilename,
             'idimageurl' => '',
             'idbackimageurl' => '',
@@ -999,13 +1041,13 @@ class quizaccess_proctoring_external extends external_api {
         );
 
         if ($checkface && (int)$livefacefound !== 1) {
-            $providerresult = [
-                'status' => 'retry',
-                'facescore' => 0,
-                'namescore' => 0,
-                'extractedname' => '',
-                'message' => get_string('facenotfoundoncam', 'quizaccess_proctoring'),
-            ];
+            $providerresult = self::make_id_verification_result(
+                'retry',
+                0,
+                0,
+                '',
+                get_string('facenotfoundoncam', 'quizaccess_proctoring')
+            );
         } else {
             $providerresult = self::call_id_verification_endpoint($idbytes, $livebytes, $USER, $idbackbytes);
         }
@@ -1015,6 +1057,9 @@ class quizaccess_proctoring_external extends external_api {
         $record->facescore = $providerresult['facescore'];
         $record->namescore = $providerresult['namescore'];
         $record->extractedname = $providerresult['extractedname'];
+        $record->romanizedname = $providerresult['romanizedname'];
+        $record->matchedprofilename = $providerresult['matchedprofilename'];
+        $record->namematchreason = $providerresult['namematchreason'];
         $record->errormessage = $providerresult['message'];
         $record->timemodified = time();
         $DB->update_record('quizaccess_proctoring_idv', $record);
@@ -1025,6 +1070,9 @@ class quizaccess_proctoring_external extends external_api {
             'facescore' => (int)$record->facescore,
             'namescore' => (int)$record->namescore,
             'extractedname' => (string)$record->extractedname,
+            'romanizedname' => (string)$record->romanizedname,
+            'matchedprofilename' => (string)$record->matchedprofilename,
+            'namematchreason' => (string)$record->namematchreason,
             'message' => (string)$record->errormessage,
             'warnings' => [],
         ];
@@ -1043,6 +1091,9 @@ class quizaccess_proctoring_external extends external_api {
                 'facescore' => new external_value(PARAM_INT, 'Face match score'),
                 'namescore' => new external_value(PARAM_INT, 'Name match score'),
                 'extractedname' => new external_value(PARAM_TEXT, 'Name extracted from the ID document'),
+                'romanizedname' => new external_value(PARAM_TEXT, 'Romanized or Latin transliterated ID name'),
+                'matchedprofilename' => new external_value(PARAM_TEXT, 'Moodle profile name variant used for matching'),
+                'namematchreason' => new external_value(PARAM_TEXT, 'Name match explanation'),
                 'message' => new external_value(PARAM_TEXT, 'Provider or validation message'),
                 'warnings' => new external_warnings(),
             ]
@@ -1154,10 +1205,39 @@ class quizaccess_proctoring_external extends external_api {
             'profile_firstname' => (string)($user->firstname ?? ''),
             'profile_lastname' => (string)($user->lastname ?? ''),
             'profile_fullname' => fullname($user),
+            'profile_name_variants' => self::get_profile_name_variants($user),
             'face_threshold' => $facethreshold,
             'name_threshold' => $namethreshold,
             'check_face' => $checkface,
             'check_name' => $checkname,
+            'name_matching' => [
+                'contract_version' => 2,
+                'mode' => 'multilingual_fuzzy',
+                'ocr_native_scripts' => true,
+                'romanize_non_latin' => true,
+                'nickname_matching' => true,
+                'fuzzy_matching' => true,
+                'supported_scripts' => [
+                    'Latin',
+                    'Chinese',
+                    'Han',
+                    'Arabic',
+                    'Cyrillic',
+                    'Greek',
+                    'Hebrew',
+                    'Hangul',
+                    'Kana',
+                    'Thai',
+                    'Devanagari',
+                ],
+                'return_fields' => [
+                    'extracted_name',
+                    'romanized_name',
+                    'matched_profile_name',
+                    'name_score',
+                    'name_match_reason',
+                ],
+            ],
         ];
         if ($idbackbytes !== null) {
             $payloaddata['id_back_image'] = base64_encode($idbackbytes);
@@ -1217,22 +1297,74 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         $verified = !empty($decoded['verified']) || !empty($decoded['match']);
-        $facescore = self::get_first_numeric_response_value($decoded, [
+        $facescorevalue = self::get_first_numeric_response_value_or_null($decoded, [
             'face_score',
             'faceScore',
             'similarity',
             'similarity_score',
         ]);
-        $namescore = self::get_first_numeric_response_value($decoded, [
+        $namescorevalue = self::get_first_numeric_response_value_or_null($decoded, [
             'name_score',
             'nameScore',
             'profile_name_score',
             'name_similarity',
         ]);
+        $facescore = $facescorevalue ?? 0;
+        $namescore = $namescorevalue ?? 0;
+
+        $extractedname = self::get_first_string_response_value($decoded, [
+            'extracted_name',
+            'extractedName',
+            'id_name',
+            'idName',
+            'native_name',
+            'nativeName',
+            'document_name',
+            'name',
+        ]);
+        $romanizedname = self::get_first_string_response_value($decoded, [
+            'romanized_name',
+            'romanizedName',
+            'transliterated_name',
+            'transliteratedName',
+            'latin_name',
+            'latinName',
+            'ascii_name',
+            'asciiName',
+        ]);
+        $matchedprofilename = self::get_first_string_response_value($decoded, [
+            'matched_profile_name',
+            'matchedProfileName',
+            'matched_name',
+            'matchedName',
+            'matched_variant',
+            'matchedVariant',
+        ]);
+        $namematchreason = self::get_first_string_response_value($decoded, [
+            'name_match_reason',
+            'nameMatchReason',
+            'match_reason',
+            'matchReason',
+            'name_reason',
+            'nameReason',
+        ]);
 
         if ($verified) {
-            $facescore = $facescore > 0 ? $facescore : 100;
-            $namescore = $namescore > 0 ? $namescore : 100;
+            $facescore = $facescorevalue !== null ? $facescore : 100;
+            $namescore = $namescorevalue !== null ? $namescore : 100;
+        } else if ($checkname && $namescorevalue === null) {
+            $fallback = self::get_fuzzy_profile_name_match($user, [
+                $extractedname,
+                $romanizedname,
+                $matchedprofilename,
+            ]);
+            $namescore = $fallback['score'];
+            if ($matchedprofilename === '') {
+                $matchedprofilename = $fallback['matchedprofile'];
+            }
+            if ($namematchreason === '') {
+                $namematchreason = $fallback['reason'];
+            }
         }
 
         $rawstatus = strtolower((string)($decoded['status'] ?? $decoded['decision'] ?? ''));
@@ -1244,7 +1376,6 @@ class quizaccess_proctoring_external extends external_api {
             $status = $rawstatus === 'manual' ? 'failed' : $rawstatus;
         }
 
-        $extractedname = (string)($decoded['extracted_name'] ?? $decoded['id_name'] ?? $decoded['name'] ?? '');
         $message = (string)($decoded['message'] ?? $decoded['summary'] ?? '');
         if ($message === '') {
             $message = $status === 'pass'
@@ -1252,7 +1383,16 @@ class quizaccess_proctoring_external extends external_api {
                 : get_string('modal:idverificationfailed', 'quizaccess_proctoring');
         }
 
-        return self::make_id_verification_result($status, $facescore, $namescore, $extractedname, $message);
+        return self::make_id_verification_result(
+            $status,
+            $facescore,
+            $namescore,
+            $extractedname,
+            $message,
+            $romanizedname,
+            $matchedprofilename,
+            $namematchreason
+        );
     }
 
     /**
@@ -1271,6 +1411,278 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         return [$checkface, $checkname];
+    }
+
+    /**
+     * Gets Moodle profile name variants sent to multilingual ID verification providers.
+     *
+     * @param stdClass $user Moodle user.
+     * @return array Profile name variants.
+     */
+    private static function get_profile_name_variants(stdClass $user): array {
+        $firstname = trim((string)($user->firstname ?? ''));
+        $lastname = trim((string)($user->lastname ?? ''));
+        $basevariants = [
+            fullname($user),
+            trim($firstname . ' ' . $lastname),
+            trim($lastname . ' ' . $firstname),
+        ];
+        $variants = [];
+        foreach ($basevariants as $variant) {
+            self::add_unique_name_variant($variants, $variant);
+            foreach (self::get_alias_name_variants($variant) as $aliasvariant) {
+                self::add_unique_name_variant($variants, $aliasvariant);
+            }
+        }
+
+        return array_values($variants);
+    }
+
+    /**
+     * Adds a normalized non-empty profile name variant.
+     *
+     * @param array $variants Existing variants keyed by normalized value.
+     * @param string $variant Candidate variant.
+     */
+    private static function add_unique_name_variant(array &$variants, string $variant): void {
+        $variant = trim($variant);
+        if ($variant === '') {
+            return;
+        }
+
+        $tokens = self::get_name_tokens($variant);
+        if (count($tokens) < 2 && !empty($variants)) {
+            return;
+        }
+
+        $key = implode(' ', $tokens);
+        if ($key !== '' && !isset($variants[$key])) {
+            $variants[$key] = $variant;
+        }
+    }
+
+    /**
+     * Gets nickname/short-name variants for one profile-name string.
+     *
+     * @param string $name Name to expand.
+     * @return array Expanded variants.
+     */
+    private static function get_alias_name_variants(string $name): array {
+        $tokens = self::get_name_tokens($name);
+        if (empty($tokens)) {
+            return [];
+        }
+
+        $variants = [];
+        foreach ($tokens as $index => $token) {
+            foreach (self::get_token_aliases($token) as $alias) {
+                if ($alias === $token) {
+                    continue;
+                }
+                $aliasedtokens = $tokens;
+                $aliasedtokens[$index] = $alias;
+                $variants[] = ucwords(implode(' ', $aliasedtokens));
+            }
+        }
+
+        return $variants;
+    }
+
+    /**
+     * Gets accepted aliases for a normalized name token.
+     *
+     * @param string $token Normalized token.
+     * @return array Token plus aliases.
+     */
+    private static function get_token_aliases(string $token): array {
+        foreach (self::NAME_ALIAS_GROUPS as $group) {
+            if (in_array($token, $group, true)) {
+                return $group;
+            }
+        }
+
+        return [$token];
+    }
+
+    /**
+     * Gets the Moodle-side fuzzy name match when the provider does not return a score.
+     *
+     * @param stdClass $user Moodle user.
+     * @param array $candidates Extracted, romanized, or provider-matched names.
+     * @return array{score: int, matchedprofile: string, reason: string}
+     */
+    private static function get_fuzzy_profile_name_match(stdClass $user, array $candidates): array {
+        $profilevariants = self::get_profile_name_variants($user);
+        $candidates = array_values(array_unique(array_filter(array_map('trim', $candidates))));
+        $best = [
+            'score' => 0,
+            'matchedprofile' => '',
+            'matchedcandidate' => '',
+        ];
+
+        foreach ($profilevariants as $profilevariant) {
+            foreach ($candidates as $candidate) {
+                $score = self::score_name_pair($profilevariant, $candidate);
+                if ($score > $best['score']) {
+                    $best = [
+                        'score' => $score,
+                        'matchedprofile' => $profilevariant,
+                        'matchedcandidate' => $candidate,
+                    ];
+                }
+            }
+        }
+
+        $reason = '';
+        if ($best['score'] > 0) {
+            $reason = 'Moodle fuzzy match compared ID name "' . $best['matchedcandidate'] .
+                '" with profile variant "' . $best['matchedprofile'] . '".';
+        }
+
+        return [
+            'score' => $best['score'],
+            'matchedprofile' => $best['matchedprofile'],
+            'reason' => $reason,
+        ];
+    }
+
+    /**
+     * Scores two names using token coverage, aliases, transliteration, and edit-distance similarity.
+     *
+     * @param string $profile Name from Moodle or a generated Moodle profile variant.
+     * @param string $candidate Name read from the ID.
+     * @return int Score from 0 to 100.
+     */
+    private static function score_name_pair(string $profile, string $candidate): int {
+        $profiletokens = self::get_name_tokens($profile);
+        $candidatetokens = self::get_name_tokens($candidate);
+        if (empty($profiletokens) || empty($candidatetokens)) {
+            return 0;
+        }
+
+        $profilenormalized = implode(' ', $profiletokens);
+        $candidatenormalized = implode(' ', $candidatetokens);
+        if ($profilenormalized === $candidatenormalized) {
+            return 100;
+        }
+
+        $coverage = max(
+            self::get_token_coverage_score($profiletokens, $candidatetokens),
+            self::get_token_coverage_score($candidatetokens, $profiletokens)
+        );
+        $fullsimilarity = 0.0;
+        similar_text($profilenormalized, $candidatenormalized, $fullsimilarity);
+        $score = (int)round(max($coverage * 100, $fullsimilarity));
+
+        if (min(count($profiletokens), count($candidatetokens)) < 2 &&
+                max(count($profiletokens), count($candidatetokens)) >= 2) {
+            $score = min($score, 65);
+        }
+
+        return max(0, min(100, $score));
+    }
+
+    /**
+     * Gets weighted token coverage for a source token list against a target token list.
+     *
+     * @param array $sourcetokens Tokens that should be covered.
+     * @param array $targettokens Candidate tokens.
+     * @return float Score from 0.0 to 1.0.
+     */
+    private static function get_token_coverage_score(array $sourcetokens, array $targettokens): float {
+        $totalweight = 0.0;
+        $matchedweight = 0.0;
+        $lastindex = count($sourcetokens) - 1;
+        foreach ($sourcetokens as $index => $sourcetoken) {
+            $weight = $index === $lastindex && count($sourcetokens) > 1 ? 1.4 : 1.0;
+            $best = 0.0;
+            foreach ($targettokens as $targettoken) {
+                $best = max($best, self::score_name_token_pair($sourcetoken, $targettoken));
+            }
+            $matchedweight += $best * $weight;
+            $totalweight += $weight;
+        }
+
+        return $totalweight > 0 ? $matchedweight / $totalweight : 0.0;
+    }
+
+    /**
+     * Scores one normalized name token against another.
+     *
+     * @param string $first First token.
+     * @param string $second Second token.
+     * @return float Score from 0.0 to 1.0.
+     */
+    private static function score_name_token_pair(string $first, string $second): float {
+        if ($first === $second) {
+            return 1.0;
+        }
+
+        if (array_intersect(self::get_token_aliases($first), self::get_token_aliases($second))) {
+            return 0.96;
+        }
+
+        if (!preg_match('/^[a-z0-9]+$/', $first) || !preg_match('/^[a-z0-9]+$/', $second)) {
+            return 0.0;
+        }
+
+        $maxlen = max(strlen($first), strlen($second));
+        if ($maxlen < 4) {
+            return 0.0;
+        }
+
+        $levenshtein = levenshtein($first, $second);
+        $distance = 1 - min($levenshtein, $maxlen) / $maxlen;
+        similar_text($first, $second, $similarity);
+        $score = max($distance, $similarity / 100);
+
+        return $score >= 0.82 ? $score : 0.0;
+    }
+
+    /**
+     * Normalizes and tokenizes a name for fuzzy matching.
+     *
+     * @param string $name Name to tokenize.
+     * @return array Normalized tokens.
+     */
+    private static function get_name_tokens(string $name): array {
+        $normalized = self::normalize_name_for_matching($name);
+        $tokens = preg_split('/\s+/u', $normalized, -1, PREG_SPLIT_NO_EMPTY);
+
+        return $tokens === false ? [] : $tokens;
+    }
+
+    /**
+     * Normalizes a name, using ICU transliteration when available.
+     *
+     * @param string $name Name to normalize.
+     * @return string Normalized name.
+     */
+    private static function normalize_name_for_matching(string $name): string {
+        $name = trim($name);
+        if ($name === '') {
+            return '';
+        }
+
+        if (class_exists('\Transliterator')) {
+            $transliterator = \Transliterator::create('Any-Latin; Latin-ASCII; NFD; [:Nonspacing Mark:] Remove; NFC');
+            if ($transliterator) {
+                $transliterated = $transliterator->transliterate($name);
+                if (is_string($transliterated) && $transliterated !== '') {
+                    $name = $transliterated;
+                }
+            }
+        } else if (function_exists('iconv')) {
+            $transliterated = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $name);
+            if (is_string($transliterated) && $transliterated !== '') {
+                $name = $transliterated;
+            }
+        }
+
+        $name = core_text::strtolower($name);
+        $name = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $name);
+
+        return trim((string)$name);
     }
 
     /**
@@ -1309,8 +1721,22 @@ class quizaccess_proctoring_external extends external_api {
 
         if ($namefailed) {
             $idname = trim((string)($result['extractedname'] ?? ''));
+            $romanizedname = trim((string)($result['romanizedname'] ?? ''));
+            $namematchreason = trim((string)($result['namematchreason'] ?? ''));
+            $unknownname = get_string('modal:idverificationnameunknown', 'quizaccess_proctoring');
+            if ($romanizedname !== '' || $namematchreason !== '') {
+                return get_string('modal:idverificationfailed_name_multilingual', 'quizaccess_proctoring', (object)[
+                    'idname' => $idname !== '' ? $idname : $unknownname,
+                    'romanizedname' => $romanizedname !== '' ? $romanizedname : $unknownname,
+                    'profilename' => $profilename,
+                    'reason' => $namematchreason !== ''
+                        ? $namematchreason
+                        : get_string('modal:idverificationreasonunknown', 'quizaccess_proctoring'),
+                ]);
+            }
+
             return get_string('modal:idverificationfailed_name', 'quizaccess_proctoring', (object)[
-                'idname' => $idname !== '' ? $idname : get_string('modal:idverificationnameunknown', 'quizaccess_proctoring'),
+                'idname' => $idname !== '' ? $idname : $unknownname,
                 'profilename' => $profilename,
             ]);
         }
@@ -1323,20 +1749,65 @@ class quizaccess_proctoring_external extends external_api {
      *
      * @param array $response Decoded API response.
      * @param array $keys Candidate keys.
-     * @return int Rounded score.
+     * @return int|null Rounded score, or null when omitted.
      */
-    private static function get_first_numeric_response_value(array $response, array $keys): int {
+    private static function get_first_numeric_response_value_or_null(array $response, array $keys): ?int {
         foreach ($keys as $key) {
             if (isset($response[$key]) && is_numeric($response[$key])) {
                 return max(0, min(100, (int)round((float)$response[$key])));
             }
         }
 
-        if (isset($response['scores']) && is_array($response['scores'])) {
-            return self::get_first_numeric_response_value($response['scores'], $keys);
+        foreach (['scores', 'name_scores', 'identity', 'result', 'name'] as $container) {
+            if (isset($response[$container]) && is_array($response[$container])) {
+                $value = self::get_first_numeric_response_value_or_null($response[$container], $keys);
+                if ($value !== null) {
+                    return $value;
+                }
+            }
         }
 
-        return 0;
+        return null;
+    }
+
+    /**
+     * Gets the first numeric response value matching a set of candidate keys.
+     *
+     * @param array $response Decoded API response.
+     * @param array $keys Candidate keys.
+     * @return int Rounded score, defaulting to 0 when omitted.
+     */
+    private static function get_first_numeric_response_value(array $response, array $keys): int {
+        return self::get_first_numeric_response_value_or_null($response, $keys) ?? 0;
+    }
+
+    /**
+     * Gets the first string response value matching a set of candidate keys.
+     *
+     * @param array $response Decoded API response.
+     * @param array $keys Candidate keys.
+     * @return string First non-empty value.
+     */
+    private static function get_first_string_response_value(array $response, array $keys): string {
+        foreach ($keys as $key) {
+            if (isset($response[$key]) && is_scalar($response[$key])) {
+                $value = trim((string)$response[$key]);
+                if ($value !== '') {
+                    return $value;
+                }
+            }
+        }
+
+        foreach (['name', 'names', 'identity', 'id', 'document', 'ocr', 'result'] as $container) {
+            if (isset($response[$container]) && is_array($response[$container])) {
+                $value = self::get_first_string_response_value($response[$container], $keys);
+                if ($value !== '') {
+                    return $value;
+                }
+            }
+        }
+
+        return '';
     }
 
     /**
@@ -1347,6 +1818,9 @@ class quizaccess_proctoring_external extends external_api {
      * @param int $namescore Name score.
      * @param string $extractedname Extracted ID name.
      * @param string $message Provider or validation message.
+     * @param string $romanizedname Romanized or Latin transliterated ID name.
+     * @param string $matchedprofilename Moodle profile name variant matched against the ID.
+     * @param string $namematchreason Provider or Moodle-side name match explanation.
      * @return array
      */
     private static function make_id_verification_result(
@@ -1354,7 +1828,10 @@ class quizaccess_proctoring_external extends external_api {
         int $facescore,
         int $namescore,
         string $extractedname,
-        string $message
+        string $message,
+        string $romanizedname = '',
+        string $matchedprofilename = '',
+        string $namematchreason = ''
     ): array {
         $status = in_array($status, ['pass', 'failed', 'retry', 'error'], true) ? $status : 'failed';
 
@@ -1363,6 +1840,9 @@ class quizaccess_proctoring_external extends external_api {
             'facescore' => max(0, min(100, $facescore)),
             'namescore' => max(0, min(100, $namescore)),
             'extractedname' => core_text::substr($extractedname, 0, 255),
+            'romanizedname' => core_text::substr($romanizedname, 0, 255),
+            'matchedprofilename' => core_text::substr($matchedprofilename, 0, 255),
+            'namematchreason' => core_text::substr($namematchreason, 0, 1000),
             'message' => core_text::substr($message, 0, 1000),
         ];
     }

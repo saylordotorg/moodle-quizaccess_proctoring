@@ -128,6 +128,10 @@ if ($hassiteconfig) {
             'label' => get_string('setting:quicktoggle_browseractivity', 'quizaccess_proctoring'),
         ],
         [
+            'setting' => 'monitormouseactivity',
+            'label' => get_string('setting:quicktoggle_mouseactivity', 'quizaccess_proctoring'),
+        ],
+        [
             'setting' => 'blockclipboard',
             'label' => get_string('setting:quicktoggle_clipboard', 'quizaccess_proctoring'),
         ],
@@ -436,6 +440,10 @@ if ($hassiteconfig) {
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/monitorbrowseractivity',
         get_string('setting:monitorbrowseractivity', 'quizaccess_proctoring'),
         get_string('setting:monitorbrowseractivity_desc', 'quizaccess_proctoring'), 1));
+
+    $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/monitormouseactivity',
+        get_string('setting:monitormouseactivity', 'quizaccess_proctoring'),
+        get_string('setting:monitormouseactivity_desc', 'quizaccess_proctoring'), 0));
 
     $settings->add(new admin_setting_configcheckbox('quizaccess_proctoring/blockclipboard',
         get_string('setting:blockclipboard', 'quizaccess_proctoring'),

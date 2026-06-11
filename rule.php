@@ -213,6 +213,19 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * Determine whether desktop mouse/pointer activity should be logged.
+     *
+     * @return bool True when mouse activity monitoring should run on desktop attempts.
+     */
+    private static function monitors_desktop_mouse_activity(): bool {
+        if (self::is_mobile_or_tablet()) {
+            return false;
+        }
+
+        return (int)get_config('quizaccess_proctoring', 'monitormouseactivity') === 1;
+    }
+
+    /**
      * Get the configured screen-share persistence mode.
      *
      * @return string One of the SCREEN_SHARE_PERSISTENCE_* constants.
@@ -586,6 +599,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
         if ((int)get_config('quizaccess_proctoring', 'monitorbrowseractivity') === 1) {
             $items[] = get_string('privacynotice:item_browseractivity', 'quizaccess_proctoring');
+        }
+        if (self::monitors_desktop_mouse_activity()) {
+            $items[] = get_string('privacynotice:item_mouse', 'quizaccess_proctoring');
         }
         if ((int)get_config('quizaccess_proctoring', 'blockclipboard') === 1) {
             $items[] = get_string('privacynotice:item_clipboard', 'quizaccess_proctoring');
@@ -1648,6 +1664,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->image_width = $imagewidth;
             $record->quizurl = $quizurl->out();
             $record->monitorbrowseractivity = (int)(get_config('quizaccess_proctoring', 'monitorbrowseractivity') ?? 1);
+            $record->monitormouseactivity = self::monitors_desktop_mouse_activity() ? 1 : 0;
             $record->blockclipboard = (int)(get_config('quizaccess_proctoring', 'blockclipboard') ?? 1);
             $record->captureviolationdesktop = $this->should_capture_violation_desktop() ? 1 : 0;
             $record->multimonitormode = self::multi_monitor_mode();

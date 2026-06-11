@@ -198,6 +198,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             const monitorActivity = parseInt(props.monitorbrowseractivity, 10) === 1;
             const blockClipboard = parseInt(props.blockclipboard, 10) === 1;
             const captureDesktop = parseInt(props.captureviolationdesktop, 10) === 1;
+            const desktopPointerEnvironment = !(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i)
+                .test(navigator.userAgent || '') &&
+                !(window.matchMedia &&
+                    window.matchMedia('(pointer: coarse) and (max-width: 1024px)').matches);
+            const monitorMouseActivity = parseInt(props.monitormouseactivity || 0, 10) === 1 &&
+                desktopPointerEnvironment;
             const screenMarkerRequired = parseInt(
                 props.screenmarkerrequired === undefined ? 1 : props.screenmarkerrequired,
                 10
@@ -215,6 +221,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 'multiple_monitors_detected',
                 'monitor_detection_unavailable'
             ];
+            const mouseEvents = [
+                'mouse_left_window',
+                'mouse_returned_window',
+                'contextmenu'
+            ];
             const clipboardShortcutEvents = {
                 c: 'clipboard_copy',
                 x: 'clipboard_cut',
@@ -231,6 +242,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 'clipboard_cut',
                 'clipboard_paste',
                 'contextmenu',
+                'mouse_left_window',
+                'mouse_returned_window',
                 'shortcut',
                 'possible_ai_tool',
                 'page_exit',
@@ -870,7 +883,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             const logEvent = function(eventType, detail) {
                 if (!monitorActivity && !(blockClipboard && clipboardEvents.includes(eventType)) &&
                         !(captureDesktop && screenShareEvents.includes(eventType)) &&
-                        !(monitorDetectionEnabled && multiMonitorEvents.includes(eventType))) {
+                        !(monitorDetectionEnabled && multiMonitorEvents.includes(eventType)) &&
+                        !(monitorMouseActivity && mouseEvents.includes(eventType))) {
                     return;
                 }
 
@@ -901,6 +915,91 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }])[0].fail(function() {
                     // Do not interrupt the quiz attempt if activity logging is unavailable.
                 });
+            };
+
+            const getPointerBoundary = function(event) {
+                const x = typeof event.clientX === 'number' ? event.clientX : null;
+                const y = typeof event.clientY === 'number' ? event.clientY : null;
+
+                if (x !== null && x <= 0) {
+                    return 'left';
+                }
+                if (x !== null && x >= window.innerWidth - 1) {
+                    return 'right';
+                }
+                if (y !== null && y <= 0) {
+                    return 'top';
+                }
+                if (y !== null && y >= window.innerHeight - 1) {
+                    return 'bottom';
+                }
+
+                return 'unknown';
+            };
+
+            const getPointerEventDetail = function(event, reason) {
+                return {
+                    reason: reason,
+                    pointertype: event.pointerType || 'mouse',
+                    boundary: getPointerBoundary(event),
+                    clientx: typeof event.clientX === 'number' ? Math.round(event.clientX) : null,
+                    clienty: typeof event.clientY === 'number' ? Math.round(event.clientY) : null,
+                    viewportwidth: window.innerWidth || 0,
+                    viewportheight: window.innerHeight || 0
+                };
+            };
+
+            const initMouseActivityMonitoring = function() {
+                if (!monitorMouseActivity) {
+                    return;
+                }
+
+                let pointerOutsideWindow = false;
+
+                const isMousePointer = function(event) {
+                    return !event.pointerType || event.pointerType === 'mouse';
+                };
+
+                const logMouseLeft = function(event, reason) {
+                    if (pointerOutsideWindow || !isMousePointer(event)) {
+                        return;
+                    }
+                    pointerOutsideWindow = true;
+                    logEvent('mouse_left_window', getPointerEventDetail(event, reason));
+                };
+
+                const logMouseReturned = function(event, reason) {
+                    if (!pointerOutsideWindow || !isMousePointer(event)) {
+                        return;
+                    }
+                    pointerOutsideWindow = false;
+                    logEvent('mouse_returned_window', getPointerEventDetail(event, reason));
+                };
+
+                const maybeLeftWindow = function(event, reason) {
+                    if (!event.relatedTarget && !event.toElement) {
+                        logMouseLeft(event, reason);
+                    }
+                };
+
+                document.addEventListener('pointerout', function(event) {
+                    maybeLeftWindow(event, 'pointerout');
+                }, true);
+                document.addEventListener('mouseout', function(event) {
+                    maybeLeftWindow(event, 'mouseout');
+                }, true);
+                document.addEventListener('pointerover', function(event) {
+                    logMouseReturned(event, 'pointerover');
+                }, true);
+                document.addEventListener('mouseover', function(event) {
+                    logMouseReturned(event, 'mouseover');
+                }, true);
+                document.documentElement.addEventListener('mouseleave', function(event) {
+                    logMouseLeft(event, 'document_mouseleave');
+                }, true);
+                document.documentElement.addEventListener('mouseenter', function(event) {
+                    logMouseReturned(event, 'document_mouseenter');
+                }, true);
             };
 
             const detectMonitorSetup = async function(allowPermissionPrompt) {
@@ -1013,6 +1112,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }, true);
             }
 
+            initMouseActivityMonitoring();
+
             document.addEventListener('copy', function(event) {
                 if (blockClipboard) {
                     blockClipboardAction(event);
@@ -1061,7 +1162,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }
             }, true);
 
-            if (monitorActivity || blockClipboard) {
+            if (monitorActivity || blockClipboard || monitorMouseActivity) {
                 document.addEventListener('contextmenu', function(event) {
                     if (blockClipboard) {
                         blockClipboardAction(event);
@@ -1156,6 +1257,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 if (parseInt(props.monitorbrowseractivity, 10) === 1 ||
                         parseInt(props.blockclipboard, 10) === 1 ||
+                        parseInt(props.monitormouseactivity || 0, 10) === 1 ||
                         parseInt(props.captureviolationdesktop, 10) === 1 ||
                         parseInt(props.blurquizwithmultiplemonitors || 0, 10) === 1 ||
                         ['log', 'warn', 'block'].includes(props.multimonitormode)) {

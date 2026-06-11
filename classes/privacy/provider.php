@@ -149,6 +149,9 @@ class provider implements
             'facescore' => 'privacy:metadata:facescore',
             'namescore' => 'privacy:metadata:namescore',
             'extractedname' => 'privacy:metadata:extractedname',
+            'romanizedname' => 'privacy:metadata:romanizedname',
+            'matchedprofilename' => 'privacy:metadata:matchedprofilename',
+            'namematchreason' => 'privacy:metadata:namematchreason',
             'profilename' => 'privacy:metadata:profilename',
             'idimageurl' => 'privacy:metadata:idimageurl',
             'idbackimageurl' => 'privacy:metadata:idbackimageurl',
@@ -610,7 +613,8 @@ class provider implements
                 }
 
                 $idvfields = 'id, courseid, quizid, userid, attemptid, status, facescore, namescore, extractedname, ' .
-                    'profilename, idimageurl, idbackimageurl, liveimageurl, errormessage, timecreated, timemodified';
+                    'romanizedname, matchedprofilename, namematchreason, profilename, idimageurl, idbackimageurl, ' .
+                    'liveimageurl, errormessage, timecreated, timemodified';
                 $idverifications = $DB->get_records_select(
                     'quizaccess_proctoring_idv',
                     $select,
@@ -638,6 +642,9 @@ class provider implements
                         'facescore' => $idverification->facescore,
                         'namescore' => $idverification->namescore,
                         'extractedname' => $idverification->extractedname,
+                        'romanizedname' => $idverification->romanizedname,
+                        'matchedprofilename' => $idverification->matchedprofilename,
+                        'namematchreason' => $idverification->namematchreason,
                         'profilename' => $idverification->profilename,
                         'idimageurl' => $idverification->idimageurl,
                         'idbackimageurl' => $idverification->idbackimageurl,
