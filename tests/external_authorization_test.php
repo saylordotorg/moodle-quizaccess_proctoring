@@ -31,11 +31,13 @@ use required_capability_exception;
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
-require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/classes/external.php');
 require_once($CFG->dirroot . '/question/engine/lib.php');
 
 /**
  * Authorization tests for quizaccess_proctoring external services.
+ *
+ * @runTestsInSeparateProcesses
+ * @preserveGlobalState disabled
  */
 final class external_authorization_test extends advanced_testcase {
 
