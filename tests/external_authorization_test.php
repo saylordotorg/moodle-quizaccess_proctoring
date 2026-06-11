@@ -221,6 +221,10 @@ final class external_authorization_test extends advanced_testcase {
         $david = (object)[
             'firstname' => 'David',
             'lastname' => 'Ta',
+            'firstnamephonetic' => '',
+            'lastnamephonetic' => '',
+            'middlename' => '',
+            'alternatename' => '',
         ];
         $legalname = $method->invoke(null, $david, ['Vinam David Nguyen Ta']);
         $this->assertGreaterThanOrEqual(80, $legalname['score']);
@@ -233,6 +237,10 @@ final class external_authorization_test extends advanced_testcase {
         $joseph = (object)[
             'firstname' => 'Joseph',
             'lastname' => 'Smith',
+            'firstnamephonetic' => '',
+            'lastnamephonetic' => '',
+            'middlename' => '',
+            'alternatename' => '',
         ];
         $alias = $method->invoke(null, $joseph, ['Joe Smith']);
         $this->assertGreaterThanOrEqual(80, $alias['score']);
