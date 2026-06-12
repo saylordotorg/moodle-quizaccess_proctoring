@@ -37,6 +37,7 @@ require_once($CFG->dirroot . '/question/engine/lib.php');
  * Authorization tests for quizaccess_proctoring external services.
  *
  * @covers \quizaccess_proctoring_external
+ * @runTestsInSeparateProcesses
  */
 #[\PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses]
 #[\PHPUnit\Framework\Attributes\PreserveGlobalState(false)]
