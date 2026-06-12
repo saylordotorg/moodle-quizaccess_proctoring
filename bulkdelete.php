@@ -37,7 +37,7 @@ if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 }
 require_sesskey();
 
-list($course, $cm) = get_course_and_cm_from_cmid($cmid, 'quiz');
+[$course, $cm] = get_course_and_cm_from_cmid($cmid, 'quiz');
 require_login($course, true, $cm);
 
 // Make sure debugging is not interfering with redirection.
@@ -53,7 +53,6 @@ $params = [
 
 // Check the type and prepare URL for redirect.
 if ($type == 'course' || $type == 'quiz') {
-
     $helper = new additional_settings_helper();
     $rowids = [];
 
@@ -75,7 +74,7 @@ if ($type == 'course' || $type == 'quiz') {
             require_capability('quizaccess/proctoring:deletecamshots', $targetcontext);
         }
     } else if ($type == 'quiz') {
-        list($targetcourse, $targetcm) = get_course_and_cm_from_cmid($id, 'quiz');
+        [$targetcourse, $targetcm] = get_course_and_cm_from_cmid($id, 'quiz');
         if ((int)$targetcourse->id !== (int)$course->id) {
             throw new moodle_exception('invalidrequest', 'error');
         }

@@ -42,9 +42,8 @@ use dml_exception;
  */
 class provider implements
     \core_privacy\local\metadata\provider,
-    core_userlist_provider,
-    \core_privacy\local\request\plugin\provider {
-
+    \core_privacy\local\request\plugin\provider,
+    core_userlist_provider {
     /**
      * Provides metadata about the user data stored by quizaccess_proctoring.
      *
@@ -397,7 +396,7 @@ class provider implements
         // Get all cmids that correspond to the contexts for a user.
         foreach ($contextlist->get_contexts() as $context) {
             if ($context->contextlevel === CONTEXT_MODULE && $context->instanceid) {
-                list($insql, $inparams) = $DB->get_in_or_equal([$context->instanceid], SQL_PARAMS_NAMED);
+                [$insql, $inparams] = $DB->get_in_or_equal([$context->instanceid], SQL_PARAMS_NAMED);
 
                 $select = "quizid $insql AND userid = :userid";
                 $params = $inparams;
@@ -434,19 +433,21 @@ class provider implements
                     if (!empty($webcamepiclast)) {
                         $userfiles = $DB->get_record('files', $paramfile);
                         writer::with_context($context)
-                            ->export_area_files([get_string('privacy:core_files', 'quizaccess_proctoring')],
-                                'quizaccess_proctoring', 'picture', $userfiles->itemid
+                            ->export_area_files(
+                                [get_string('privacy:core_files', 'quizaccess_proctoring')],
+                                'quizaccess_proctoring',
+                                'picture',
+                                $userfiles->itemid
                             )->export_data($subcontext, $data);
                     } else {
                         writer::with_context($context)
                             ->export_data($subcontext, $data);
                     }
-
                 }
 
                 $logids = array_map('intval', array_keys($qaplogs));
                 if ($logids) {
-                    list($loginsql, $loginparams) = $DB->get_in_or_equal($logids, SQL_PARAMS_NAMED, 'logid');
+                    [$loginsql, $loginparams] = $DB->get_in_or_equal($logids, SQL_PARAMS_NAMED, 'logid');
                     $faceparams = $loginparams;
                     $faceparams['adminparent'] = 'admin_image';
                     $faceimages = $DB->get_records_select(
@@ -820,7 +821,7 @@ class provider implements
         }
 
         $cmid = $context->instanceid;
-        list($insql, $inparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'userid');
+        [$insql, $inparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'userid');
         $params = array_merge(['cmid' => $cmid], $inparams);
 
         $logids = $DB->get_fieldset_select(
@@ -880,7 +881,7 @@ class provider implements
             return;
         }
 
-        list($insql, $params) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'userid');
+        [$insql, $params] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'userid');
         $params['cmid'] = $context->instanceid;
 
         $DB->delete_records_select('quizaccess_proctoring_idv', "quizid = :cmid AND userid {$insql}", $params);
@@ -899,7 +900,7 @@ class provider implements
             return;
         }
 
-        list($insql, $inparams) = $DB->get_in_or_equal($logids, SQL_PARAMS_NAMED, 'logid');
+        [$insql, $inparams] = $DB->get_in_or_equal($logids, SQL_PARAMS_NAMED, 'logid');
         $params = array_merge($inparams, ['adminparent' => 'admin_image']);
         $DB->delete_records_select(
             'quizaccess_proctoring_face_images',
@@ -923,8 +924,8 @@ class provider implements
             return;
         }
 
-        list($userinsql, $userparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'userid');
-        list($areainsql, $areaparams) = $DB->get_in_or_equal($fileareas, SQL_PARAMS_NAMED, 'filearea');
+        [$userinsql, $userparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'userid');
+        [$areainsql, $areaparams] = $DB->get_in_or_equal($fileareas, SQL_PARAMS_NAMED, 'filearea');
         $params = array_merge([
             'contextid' => $context->id,
             'component' => 'quizaccess_proctoring',
@@ -960,7 +961,7 @@ class provider implements
             return;
         }
 
-        list($userinsql, $userparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'userid');
+        [$userinsql, $userparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'userid');
         $parentids = $DB->get_fieldset_select(
             'quizaccess_proctoring_user_images',
             'id',
@@ -968,7 +969,7 @@ class provider implements
             $userparams
         );
         if ($parentids) {
-            list($parentinsql, $parentparams) = $DB->get_in_or_equal($parentids, SQL_PARAMS_NAMED, 'parentid');
+            [$parentinsql, $parentparams] = $DB->get_in_or_equal($parentids, SQL_PARAMS_NAMED, 'parentid');
             $params = array_merge($parentparams, ['adminparent' => 'admin_image']);
             $DB->delete_records_select(
                 'quizaccess_proctoring_face_images',
@@ -979,7 +980,7 @@ class provider implements
         $DB->delete_records_select('quizaccess_proctoring_user_images', "user_id {$userinsql}", $userparams);
 
         $context = \context_system::instance();
-        list($iteminsql, $itemparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'itemid');
+        [$iteminsql, $itemparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'itemid');
         $params = array_merge([
             'contextid' => $context->id,
             'component' => 'quizaccess_proctoring',
@@ -1003,5 +1004,4 @@ class provider implements
             }
         }
     }
-
 }

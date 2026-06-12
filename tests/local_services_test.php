@@ -28,15 +28,14 @@ use advanced_testcase;
 use quizaccess_proctoring\local\outbound_endpoint_validator;
 use quizaccess_proctoring\local\risk_calculator;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Local service class tests.
  */
 final class local_services_test extends advanced_testcase {
-
     /**
      * Risk factors should clamp points to the configured maximum while preserving evidence count.
+     *
+     * @covers \quizaccess_proctoring\local\risk_calculator
      */
     public function test_risk_factor_points_are_clamped(): void {
         $this->assertSame([
@@ -56,6 +55,8 @@ final class local_services_test extends advanced_testcase {
 
     /**
      * Shortcut matching should be case-insensitive and tolerate malformed event details.
+     *
+     * @covers \quizaccess_proctoring\local\risk_calculator
      */
     public function test_shortcut_matching_is_case_insensitive_and_json_safe(): void {
         $this->assertTrue(risk_calculator::event_has_shortcut('{"shortcut":"f12"}', 'F12'));
@@ -67,6 +68,8 @@ final class local_services_test extends advanced_testcase {
 
     /**
      * Compatible AI endpoint roots should normalize to the chat completions route.
+     *
+     * @covers \quizaccess_proctoring\local\outbound_endpoint_validator
      */
     public function test_compatible_endpoint_normalization(): void {
         $this->assertSame('', outbound_endpoint_validator::normalize_compatible_endpoint('  '));
@@ -86,10 +89,12 @@ final class local_services_test extends advanced_testcase {
 
     /**
      * Endpoint validation should be testable without live DNS and should trim accepted endpoints.
+     *
+     * @covers \quizaccess_proctoring\local\outbound_endpoint_validator
      */
     public function test_outbound_endpoint_validation_supports_injected_resolution(): void {
         $resolvedhosts = [];
-        $resolver = static function(string $host) use (&$resolvedhosts): array {
+        $resolver = static function (string $host) use (&$resolvedhosts): array {
             $resolvedhosts[] = $host;
             return ['8.8.8.8'];
         };
@@ -103,10 +108,12 @@ final class local_services_test extends advanced_testcase {
 
     /**
      * Endpoint validation should reject invalid ports before any resolver callback is used.
+     *
+     * @covers \quizaccess_proctoring\local\outbound_endpoint_validator
      */
     public function test_outbound_endpoint_validation_blocks_invalid_ports(): void {
         $resolvercalled = false;
-        $resolver = static function() use (&$resolvercalled): array {
+        $resolver = static function () use (&$resolvercalled): array {
             $resolvercalled = true;
             return ['8.8.8.8'];
         };
@@ -123,12 +130,14 @@ final class local_services_test extends advanced_testcase {
 
     /**
      * Endpoint validation should reject hostnames that resolve to private infrastructure.
+     *
+     * @covers \quizaccess_proctoring\local\outbound_endpoint_validator
      */
     public function test_outbound_endpoint_validation_blocks_private_resolved_ips(): void {
         try {
             outbound_endpoint_validator::validate(
                 'https://api.example.test/v1/chat/completions',
-                static function(): array {
+                static function (): array {
                     return ['10.0.0.5'];
                 }
             );

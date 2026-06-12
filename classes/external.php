@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die;
 
-require_once($CFG->libdir.'/externallib.php');
-require_once($CFG->dirroot.'/mod/quiz/accessrule/proctoring/lib.php');
+require_once($CFG->libdir . '/externallib.php');
+require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
 /**
  * External API class for the Quiz Proctoring plugin.
@@ -31,7 +31,6 @@ require_once($CFG->dirroot.'/mod/quiz/accessrule/proctoring/lib.php');
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class quizaccess_proctoring_external extends external_api {
-
     /** Maximum decoded webcam image payload size. */
     private const MAX_WEBCAM_IMAGE_BYTES = 3145728;
 
@@ -143,8 +142,16 @@ class quizaccess_proctoring_external extends external_api {
      * @throws invalid_parameter_exception If one or more parameters are invalid.
      * @throws stored_file_creation_exception If there is a problem creating or storing files.
      */
-    public static function send_camshot
-        ($courseid, $screenshotid, $quizid, $webcampicture, $imagetype, $parenttype, $faceimage, $facefound) {
+    public static function send_camshot(
+        $courseid,
+        $screenshotid,
+        $quizid,
+        $webcampicture,
+        $imagetype,
+        $parenttype,
+        $faceimage,
+        $facefound
+    ) {
         global $DB, $USER;
 
         // Validate the params.
@@ -221,7 +228,14 @@ class quizaccess_proctoring_external extends external_api {
             $url = "";
             if ($faceimage) {
                 $url = self::quizaccess_proctoring_geturl_without_timecode(
-                    $faceimage, $screenshotid, $USER, (int)$courseid, $record, $context, $fs);
+                    $faceimage,
+                    $screenshotid,
+                    $USER,
+                    (int)$courseid,
+                    $record,
+                    $context,
+                    $fs
+                );
             }
             $record = new stdClass();
             $record->parent_type = $parenttype;
@@ -408,6 +422,10 @@ class quizaccess_proctoring_external extends external_api {
                 quizaccess_proctoring_queue_event_ai_review($eventid);
             } catch (Throwable $e) {
                 // Keep the event log even if the optional desktop capture cannot be stored.
+                debugging(
+                    'quizaccess_proctoring: failed to store desktop event screenshot: ' . $e->getMessage(),
+                    DEBUG_DEVELOPER
+                );
             }
         }
 
@@ -482,8 +500,10 @@ class quizaccess_proctoring_external extends external_api {
         global $DB, $USER;
 
         $report = $DB->get_record('quizaccess_proctoring_logs', ['id' => $reportid], '*', MUST_EXIST);
-        if ((int)$report->courseid !== $courseid || (int)$report->quizid !== $cmid ||
-                (int)$report->userid !== (int)$USER->id) {
+        if (
+            (int)$report->courseid !== $courseid || (int)$report->quizid !== $cmid ||
+                (int)$report->userid !== (int)$USER->id
+        ) {
             throw new invalid_parameter_exception('Invalid proctoring report.');
         }
 
@@ -594,8 +614,10 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         $method = quizaccess_proctoring_get_proctoring_settings('fcmethod');
-        if (!quizaccess_proctoring_is_facematch_method_enabled($method) ||
-                !quizaccess_proctoring_facematch_credentials_available($method)) {
+        if (
+            !quizaccess_proctoring_is_facematch_method_enabled($method) ||
+                !quizaccess_proctoring_facematch_credentials_available($method)
+        ) {
             return;
         }
 
@@ -658,8 +680,16 @@ class quizaccess_proctoring_external extends external_api {
 
         $image = imagecreatefromstring($data);
         imagefilledrectangle($image, 0, 0, 120, 22, imagecolorallocatealpha($image, 255, 255, 255, 60));
-        imagefttext($image, 9, 0, 4, 16, imagecolorallocate($image, 0, 0, 0),
-            $CFG->dirroot . '/mod/quiz/accessrule/proctoring/assets/Roboto-Light.ttf', date('d-m-Y H:i:s') );
+        imagefttext(
+            $image,
+            9,
+            0,
+            4,
+            16,
+            imagecolorallocate($image, 0, 0, 0),
+            $CFG->dirroot . '/mod/quiz/accessrule/proctoring/assets/Roboto-Light.ttf',
+            date('d-m-Y H:i:s')
+        );
         ob_start();
         imagepng($image);
         $data = ob_get_clean();
@@ -811,7 +841,14 @@ class quizaccess_proctoring_external extends external_api {
         $url = "";
         if ($faceimage) {
             $url = self::quizaccess_proctoring_geturl_without_timecode(
-                $faceimage, $screenshotid, $USER, $courseid, $record, $context, $fs);
+                $faceimage,
+                $screenshotid,
+                $USER,
+                $courseid,
+                $record,
+                $context,
+                $fs
+            );
         }
         $record = new stdClass();
         $record->parent_type = $parenttype;
@@ -820,7 +857,7 @@ class quizaccess_proctoring_external extends external_api {
         $record->facefound = $facefound;
         $record->timemodified = time();
         $faceimageid = $DB->insert_record('quizaccess_proctoring_face_images', $record, true);
-        $profileimageurl = quizaccess_proctoring_get_image_url( $USER->id);
+        $profileimageurl = quizaccess_proctoring_get_image_url($USER->id);
         if ($profileimageurl == false) {
             $result = [];
             $result['screenshotid'] = $screenshotid;
@@ -830,7 +867,7 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         // Face check.
-        require_once($CFG->dirroot.'/mod/quiz/accessrule/proctoring/lib.php');
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
         $method = quizaccess_proctoring_get_proctoring_settings("fcmethod");
         if ($method == "customapi") {
             $referenceimageurl = quizaccess_proctoring_get_image_url($USER->id);
@@ -1574,8 +1611,10 @@ class quizaccess_proctoring_external extends external_api {
         similar_text($profilenormalized, $candidatenormalized, $fullsimilarity);
         $score = (int)round(max($coverage * 100, $fullsimilarity));
 
-        if (min(count($profiletokens), count($candidatetokens)) < 2 &&
-                max(count($profiletokens), count($candidatetokens)) >= 2) {
+        if (
+            min(count($profiletokens), count($candidatetokens)) < 2 &&
+                max(count($profiletokens), count($candidatetokens)) >= 2
+        ) {
             $score = min($score, 65);
         }
 
@@ -2045,8 +2084,10 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         $info = @getimagesizefromstring($decoded);
-        if (empty($info[0]) || empty($info[1]) || empty($info['mime']) ||
-                strpos((string)$info['mime'], 'image/') !== 0) {
+        if (
+            empty($info[0]) || empty($info[1]) || empty($info['mime']) ||
+                strpos((string)$info['mime'], 'image/') !== 0
+        ) {
             throw new invalid_parameter_exception('Invalid image data.');
         }
         if (((int)$info[0] * (int)$info[1]) > self::MAX_IMAGE_PIXELS) {
@@ -2111,7 +2152,14 @@ class quizaccess_proctoring_external extends external_api {
      * @return mixed The URL of the stored image file without the timecode added.
      */
     private static function quizaccess_proctoring_geturl_without_timecode(
-        string $data, int $screenshotid, $USER, int $courseid, stdClass $record, $context, $fs) {
+        string $data,
+        int $screenshotid,
+        $USER,
+        int $courseid,
+        stdClass $record,
+        $context,
+        $fs
+    ) {
         $data = self::decode_base64_image_data($data, self::MAX_FACE_IMAGE_BYTES);
         $filename = 'webcam-' . $screenshotid . '-' . $USER->id . '-' . $courseid . '-' . time() . random_int(1, 1000) . '.png';
 

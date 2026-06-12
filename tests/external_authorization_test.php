@@ -36,17 +36,19 @@ require_once($CFG->dirroot . '/question/engine/lib.php');
 /**
  * Authorization tests for quizaccess_proctoring external services.
  *
- * @runTestsInSeparateProcesses
- * @preserveGlobalState disabled
+ * @covers \quizaccess_proctoring_external
  */
+#[\PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses]
+#[\PHPUnit\Framework\Attributes\PreserveGlobalState(false)]
 final class external_authorization_test extends advanced_testcase {
-
     /** A small valid PNG data URI for image payload validation. */
     private const PNG_DATA_URI = 'data:image/png;base64,' .
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 
     /**
      * Users without the webcam-submission capability must not log browser events.
+     *
+     * @covers \quizaccess_proctoring_external
      */
     public function test_log_event_requires_sendcamshot_capability(): void {
         $this->resetAfterTest();
@@ -67,6 +69,8 @@ final class external_authorization_test extends advanced_testcase {
 
     /**
      * Webcam captures must not be accepted against another student's proctoring report.
+     *
+     * @covers \quizaccess_proctoring_external
      */
     public function test_send_camshot_rejects_report_owned_by_another_student(): void {
         $this->resetAfterTest();
@@ -93,6 +97,8 @@ final class external_authorization_test extends advanced_testcase {
 
     /**
      * Browser event logs must not be attached to another student's proctoring report.
+     *
+     * @covers \quizaccess_proctoring_external
      */
     public function test_log_event_rejects_report_owned_by_another_student(): void {
         $this->resetAfterTest();
@@ -116,6 +122,8 @@ final class external_authorization_test extends advanced_testcase {
 
     /**
      * Desktop screenshot events need a report id so screenshots are tied to an owned proctoring record.
+     *
+     * @covers \quizaccess_proctoring_external
      */
     public function test_log_event_rejects_screenshot_without_report(): void {
         $this->resetAfterTest();
@@ -140,6 +148,8 @@ final class external_authorization_test extends advanced_testcase {
 
     /**
      * Mouse activity event types must be stored without falling back to a generic shortcut event.
+     *
+     * @covers \quizaccess_proctoring_external
      */
     public function test_log_event_preserves_mouse_activity_event_type(): void {
         global $DB;
@@ -165,6 +175,8 @@ final class external_authorization_test extends advanced_testcase {
 
     /**
      * ID verification must reject attempts owned by another student before accepting any evidence.
+     *
+     * @covers \quizaccess_proctoring_external
      */
     public function test_verify_id_rejects_attempt_owned_by_another_student(): void {
         $this->resetAfterTest();
@@ -189,6 +201,8 @@ final class external_authorization_test extends advanced_testcase {
 
     /**
      * ID verification must reject attempts from another quiz even when the current user owns them.
+     *
+     * @covers \quizaccess_proctoring_external
      */
     public function test_verify_id_rejects_attempt_from_another_quiz(): void {
         $this->resetAfterTest();
@@ -213,6 +227,8 @@ final class external_authorization_test extends advanced_testcase {
 
     /**
      * Moodle-side name fallback should allow full legal names, romanized names, and common short names.
+     *
+     * @covers \quizaccess_proctoring_external
      */
     public function test_id_name_fuzzy_fallback_handles_legal_names_romanization_and_aliases(): void {
         $method = new \ReflectionMethod(\quizaccess_proctoring_external::class, 'get_fuzzy_profile_name_match');

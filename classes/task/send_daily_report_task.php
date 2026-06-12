@@ -197,7 +197,7 @@ class send_daily_report_task extends scheduled_task {
             $rows[] = $row;
         }
 
-        usort($rows, static function(array $a, array $b): int {
+        usort($rows, static function (array $a, array $b): int {
             return [$b['activehold'], $b['riskscore'], $b['lastactivity']] <=>
                 [$a['activehold'], $a['riskscore'], $a['lastactivity']];
         });
@@ -479,7 +479,8 @@ class send_daily_report_task extends scheduled_task {
         $html .= '<li>' . s(get_string('dailyreport:summaryrecent', 'quizaccess_proctoring', $summary['recentattempts'])) . '</li>';
         $html .= '<li>' . s(get_string('dailyreport:summaryincluded', 'quizaccess_proctoring', $summary['reportrows'])) . '</li>';
         $html .= '<li>' . s(get_string('dailyreport:summaryhighrisk', 'quizaccess_proctoring', $summary['highrisk'])) . '</li>';
-        $html .= '<li>' . s(get_string('dailyreport:summaryactiveholds', 'quizaccess_proctoring', $summary['activeholds'])) . '</li>';
+        $html .= '<li>' .
+            s(get_string('dailyreport:summaryactiveholds', 'quizaccess_proctoring', $summary['activeholds'])) . '</li>';
         $html .= '<li>' . s(get_string('dailyreport:summaryevents', 'quizaccess_proctoring', $summary['events'])) . '</li>';
         $html .= '</ul>';
 

@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.21
+- Cleared all remaining Moodle coding-standard (PHPCS) issues from the Catalyst plugin review: reordered language strings alphabetically in all three language packs, added `@covers` coverage annotations and missing return types across the PHPUnit suite, and marked the test classes final.
+
 # v1.1.20
 - Added multilingual ID name matching so ID verification accepts romanized, legal, and alternate profile names when checking extracted document names.
 - Stabilized the external service authorization tests in CI with per-test process isolation and a Moodle 4.5 fixture fix.

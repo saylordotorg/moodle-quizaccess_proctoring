@@ -65,7 +65,6 @@ class delete_images_task extends scheduled_task {
                 $ids = [];
                 $attemptids = [];
                 foreach ($records as $record) {
-
                     $this->delete_file($fs, $record->webcampicture, 'quizaccess_proctoring', 'picture');
                     $faceparams = [
                         'parentid'    => $record->id,
@@ -83,8 +82,10 @@ class delete_images_task extends scheduled_task {
                          mtrace("No face image found for this picture.");
                     }
 
-                     $DB->delete_records('quizaccess_proctoring_face_images',
-                         ['parentid' => $record->id, 'parent_type' => 'camshot_image']);
+                     $DB->delete_records(
+                         'quizaccess_proctoring_face_images',
+                         ['parentid' => $record->id, 'parent_type' => 'camshot_image']
+                     );
                     $ids[] = $record->id;
                     if ((int)$record->status > 0) {
                         $attemptids[] = (int)$record->status;
@@ -92,7 +93,7 @@ class delete_images_task extends scheduled_task {
                 }
                 // Delete associated face images from the database after processing all records.
                 if (!empty($ids)) {
-                    list($insql, $params) = $DB->get_in_or_equal($ids);
+                    [$insql, $params] = $DB->get_in_or_equal($ids);
                     $attemptids = array_values(array_unique($attemptids));
 
                     $events = $DB->get_records_select(
@@ -103,7 +104,7 @@ class delete_images_task extends scheduled_task {
                         'id, screenshoturl'
                     );
                     if (!empty($attemptids)) {
-                        list($attemptsql, $attemptparams) = $DB->get_in_or_equal($attemptids);
+                        [$attemptsql, $attemptparams] = $DB->get_in_or_equal($attemptids);
                         $attemptevents = $DB->get_records_select(
                             'quizaccess_proctoring_events',
                             "attemptid $attemptsql",
@@ -176,7 +177,7 @@ class delete_images_task extends scheduled_task {
         }
 
         $ids = array_keys($records);
-        list($insql, $params) = $DB->get_in_or_equal($ids);
+        [$insql, $params] = $DB->get_in_or_equal($ids);
         $DB->set_field_select('quizaccess_proctoring_logs', 'deletionprogress', 1, "id $insql", $params);
         mtrace('Queued ' . count($ids) . ' expired proctoring image record(s) for deletion.');
     }
@@ -269,7 +270,7 @@ class delete_images_task extends scheduled_task {
 
                 if ($storedfile) {
                     $storedfile->delete();
-                    mtrace("Deleted file: " .$filearea. " " . $fileurl);
+                    mtrace("Deleted file: " . $filearea . " " . $fileurl);
                 } else {
                     mtrace("File not found: " . $fileurl);
                 }

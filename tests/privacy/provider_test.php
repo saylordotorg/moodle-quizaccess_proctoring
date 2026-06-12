@@ -29,13 +29,12 @@ use core_privacy\local\request\approved_contextlist;
 use core_privacy\local\request\userlist;
 use core_privacy\tests\provider_testcase;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Privacy provider tests for quizaccess_proctoring.
+ *
+ * @covers \quizaccess_proctoring\privacy\provider
  */
 final class provider_test extends provider_testcase {
-
     /**
      * Sensitive proctoring stores and external processors must be declared in privacy metadata.
      */
@@ -46,7 +45,8 @@ final class provider_test extends provider_testcase {
             $items[$item->get_name()] = $item;
         }
 
-        foreach ([
+        foreach (
+            [
             'quizaccess_proctoring_logs',
             'quizaccess_proctoring_events',
             'quizaccess_proctoring_risk_holds',
@@ -59,12 +59,14 @@ final class provider_test extends provider_testcase {
             'anthropic',
             'compatibleai',
             'sayloridverification',
-        ] as $itemname) {
+            ] as $itemname
+        ) {
             $this->assertArrayHasKey($itemname, $items);
         }
 
         $idvfields = $items['quizaccess_proctoring_idv']->get_privacy_fields();
-        foreach ([
+        foreach (
+            [
             'userid',
             'facescore',
             'namescore',
@@ -77,7 +79,8 @@ final class provider_test extends provider_testcase {
             'idbackimageurl',
             'liveimageurl',
             'errormessage',
-        ] as $fieldname) {
+            ] as $fieldname
+        ) {
             $this->assertArrayHasKey($fieldname, $idvfields);
         }
 
@@ -145,10 +148,16 @@ final class provider_test extends provider_testcase {
 
         $this->assertSame(0, (int)$DB->get_field('quizaccess_proctoring_logs', 'userid', ['id' => $studentdata['logid']]));
         $this->assertSame(0, (int)$DB->get_field('quizaccess_proctoring_events', 'userid', ['id' => $studentdata['eventid']]));
-        $this->assertSame(0, (int)$DB->get_field('quizaccess_proctoring_risk_holds', 'userid',
-            ['id' => $studentdata['holdid']]));
-        $this->assertSame(0, (int)$DB->get_field('quizaccess_proctoring_ai_reviews', 'userid',
-            ['id' => $studentdata['aireviewid']]));
+        $this->assertSame(0, (int)$DB->get_field(
+            'quizaccess_proctoring_risk_holds',
+            'userid',
+            ['id' => $studentdata['holdid']]
+        ));
+        $this->assertSame(0, (int)$DB->get_field(
+            'quizaccess_proctoring_ai_reviews',
+            'userid',
+            ['id' => $studentdata['aireviewid']]
+        ));
         $this->assertFalse($DB->record_exists('quizaccess_proctoring_idv', ['id' => $studentdata['idvid']]));
         $this->assertFalse($DB->record_exists('quizaccess_proctoring_user_images', ['id' => $studentdata['userimageid']]));
         $this->assertFalse($DB->record_exists('quizaccess_proctoring_face_images', ['parentid' => $studentdata['logid']]));
@@ -166,8 +175,11 @@ final class provider_test extends provider_testcase {
         $this->assert_area_file_count(\context_system::instance(), 'user_photo', (int)$student->id, 0);
         $this->assert_area_file_count(\context_system::instance(), 'face_image', (int)$student->id, 0);
 
-        $this->assertSame((int)$otherstudent->id, (int)$DB->get_field('quizaccess_proctoring_logs', 'userid',
-            ['id' => $otherdata['logid']]));
+        $this->assertSame((int)$otherstudent->id, (int)$DB->get_field(
+            'quizaccess_proctoring_logs',
+            'userid',
+            ['id' => $otherdata['logid']]
+        ));
         $this->assertTrue($DB->record_exists('quizaccess_proctoring_idv', ['id' => $otherdata['idvid']]));
         $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['id' => $otherdata['userimageid']]));
         $this->assert_area_file_count($context, 'picture', $otherdata['logid'], 1);

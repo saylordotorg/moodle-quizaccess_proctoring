@@ -32,6 +32,8 @@ use advanced_testcase;
  * @package    quizaccess_proctoring
  * @copyright  2020 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ *
+ * @coversNothing
  */
 final class practice_test extends advanced_testcase {
     public function test_empty(): array {

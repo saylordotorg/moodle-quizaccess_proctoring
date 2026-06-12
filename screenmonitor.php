@@ -27,7 +27,7 @@ require_once(__DIR__ . '/../../../../config.php');
 $cmid = required_param('cmid', PARAM_INT);
 $key = required_param('key', PARAM_ALPHANUMEXT);
 
-list($course, $cm) = get_course_and_cm_from_cmid($cmid, 'quiz');
+[$course, $cm] = get_course_and_cm_from_cmid($cmid, 'quiz');
 $context = context_module::instance($cmid, MUST_EXIST);
 require_login($course, true, $cm);
 
@@ -58,20 +58,26 @@ $config = [
 ];
 
 echo $OUTPUT->header();
-?>
+
+$titlestr = s(get_string('screenmonitor:title', 'quizaccess_proctoring'));
+$instructionsstr = s(get_string('screenmonitor:instructions', 'quizaccess_proctoring'));
+$sharestr = s(get_string('screenmonitor:share', 'quizaccess_proctoring'));
+
+echo <<<HTML
 <div class="proctoring-screen-monitor">
     <div class="proctoring-screen-monitor-titlebar">
-        <h3><?php echo s(get_string('screenmonitor:title', 'quizaccess_proctoring')); ?></h3>
+        <h3>{$titlestr}</h3>
     </div>
     <p class="proctoring-screen-monitor-instructions">
-        <?php echo s(get_string('screenmonitor:instructions', 'quizaccess_proctoring')); ?>
+        {$instructionsstr}
     </p>
     <div id="proctoring-screen-monitor-status" class="proctoring-screen-monitor-status"></div>
     <button id="proctoring-screen-monitor-share" class="btn btn-primary">
-        <?php echo s(get_string('screenmonitor:share', 'quizaccess_proctoring')); ?>
+        {$sharestr}
     </button>
 </div>
-<?php
+HTML;
+
 $js = <<<JS
 (function(config) {
     const markerGraceMs = 20000;
@@ -370,4 +376,3 @@ JS;
 
 echo html_writer::script(sprintf($js, json_encode($config)));
 echo $OUTPUT->footer();
-?>

@@ -23,8 +23,8 @@
  */
 
 require_once(__DIR__ . '/../../../../config.php');
-require_once($CFG->libdir.'/filelib.php');
-require_once(__DIR__ .'/lib.php');
+require_once($CFG->libdir . '/filelib.php');
+require_once(__DIR__ . '/lib.php');
 
 $studentid = required_param('studentid', PARAM_INT);
 $cmid = required_param('cmid', PARAM_INT);
@@ -37,7 +37,7 @@ if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 }
 require_sesskey();
 
-list($course, $cm) = get_course_and_cm_from_cmid($cmid, 'quiz');
+[$course, $cm] = get_course_and_cm_from_cmid($cmid, 'quiz');
 
 require_login($course, true, $cm);
 $courseid = (int)$course->id;
@@ -50,9 +50,11 @@ require_capability('quizaccess/proctoring:analyzeimages', $context);
 
 $report = $DB->get_record('quizaccess_proctoring_logs', ['id' => $reportid], '*', MUST_EXIST);
 $image = $DB->get_record('quizaccess_proctoring_logs', ['id' => $imgid], '*', MUST_EXIST);
-if ((int)$report->courseid !== (int)$courseid || (int)$report->quizid !== (int)$cmid ||
+if (
+    (int)$report->courseid !== (int)$courseid || (int)$report->quizid !== (int)$cmid ||
         (int)$report->userid !== (int)$studentid || (int)$image->courseid !== (int)$courseid ||
-        (int)$image->quizid !== (int)$cmid || (int)$image->userid !== (int)$studentid) {
+        (int)$image->quizid !== (int)$cmid || (int)$image->userid !== (int)$studentid
+) {
     throw new moodle_exception('invalidrequest', 'error');
 }
 if ((int)$report->status > 0 && (int)$image->status !== (int)$report->status) {

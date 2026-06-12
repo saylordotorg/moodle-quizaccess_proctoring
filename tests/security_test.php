@@ -36,9 +36,10 @@ require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
  * Security regression tests for file access hardening.
  */
 final class security_test extends advanced_testcase {
-
     /**
      * Pluginfile record checks must be scoped to the owning module.
+     *
+     * @covers ::quizaccess_proctoring_module_file_has_record
      */
     public function test_module_file_record_check_is_scoped_to_module(): void {
         $this->resetAfterTest();
@@ -69,6 +70,8 @@ final class security_test extends advanced_testcase {
 
     /**
      * Internal AI and face-match jobs should read pluginfile bytes without bypassing public pluginfile access checks.
+     *
+     * @covers ::quizaccess_proctoring_pluginfile_url_to_bytes
      */
     public function test_pluginfile_url_to_bytes_reads_from_file_storage(): void {
         $this->resetAfterTest();
@@ -81,6 +84,8 @@ final class security_test extends advanced_testcase {
 
     /**
      * Module files are available to the owner or a report viewer, but not another enrolled student.
+     *
+     * @covers ::quizaccess_proctoring_can_serve_pluginfile
      */
     public function test_pluginfile_access_requires_owner_or_report_capability(): void {
         $this->resetAfterTest();
@@ -129,6 +134,8 @@ final class security_test extends advanced_testcase {
 
     /**
      * ID verification pluginfile checks must be scoped to the owning module.
+     *
+     * @covers ::quizaccess_proctoring_module_file_has_record
      */
     public function test_id_verification_file_record_check_is_scoped_to_module(): void {
         $this->resetAfterTest();
@@ -167,6 +174,8 @@ final class security_test extends advanced_testcase {
 
     /**
      * Only a passing ID verification row should satisfy the preflight server-side gate.
+     *
+     * @covers ::quizaccess_proctoring_user_has_passed_id_verification
      */
     public function test_id_verification_pass_check_requires_pass_status(): void {
         global $DB;
@@ -207,6 +216,8 @@ final class security_test extends advanced_testcase {
 
     /**
      * Configured outbound AI endpoints must not point at localhost or private infrastructure.
+     *
+     * @covers ::quizaccess_proctoring_validate_outbound_endpoint
      */
     public function test_outbound_endpoint_validation_blocks_private_ranges(): void {
         $this->assertSame(
@@ -214,12 +225,14 @@ final class security_test extends advanced_testcase {
             \quizaccess_proctoring_validate_outbound_endpoint('https://8.8.8.8/v1/chat/completions')
         );
 
-        foreach ([
+        foreach (
+            [
             'http://localhost:8000/verify',
             'http://127.0.0.1/verify',
             'http://169.254.169.254/latest',
             'https://token@example.com/v1/chat/completions',
-        ] as $url) {
+            ] as $url
+        ) {
             try {
                 \quizaccess_proctoring_validate_outbound_endpoint($url);
                 $this->fail('Private or reserved endpoint was accepted: ' . $url);
@@ -231,6 +244,8 @@ final class security_test extends advanced_testcase {
 
     /**
      * Browser-submitted images must decode to real image bytes before storage or outbound AI processing.
+     *
+     * @covers ::quizaccess_proctoring_decode_base64_image_data
      */
     public function test_base64_image_decode_rejects_non_images(): void {
         $png = 'data:image/png;base64,' .
@@ -243,18 +258,22 @@ final class security_test extends advanced_testcase {
 
     /**
      * Capabilities that handle biometric or proctoring data should be marked as personal-data risks.
+     *
+     * @coversNothing
      */
     public function test_sensitive_capabilities_declare_personal_data_risk(): void {
         $capabilities = [];
         require(__DIR__ . '/../db/access.php');
 
-        foreach ([
+        foreach (
+            [
             'quizaccess/proctoring:sendcamshot',
             'quizaccess/proctoring:viewreport',
             'quizaccess/proctoring:deletecamshots',
             'quizaccess/proctoring:analyzeimages',
             'quizaccess/proctoring:reviewriskholds',
-        ] as $capability) {
+            ] as $capability
+        ) {
             $this->assertArrayHasKey($capability, $capabilities);
             $this->assertNotEmpty($capabilities[$capability]['riskbitmask'] & RISK_PERSONAL);
         }
@@ -264,6 +283,8 @@ final class security_test extends advanced_testcase {
 
     /**
      * External daily report addresses should require an explicit privacy-aware admin opt-in.
+     *
+     * @covers \quizaccess_proctoring\task\send_daily_report_task
      */
     public function test_daily_report_external_recipients_require_explicit_opt_in(): void {
         $this->resetAfterTest();
@@ -287,7 +308,7 @@ final class security_test extends advanced_testcase {
         ]);
         $this->assertCount(2, $recipients);
 
-        $external = array_values(array_filter($recipients, static function($recipient): bool {
+        $external = array_values(array_filter($recipients, static function ($recipient): bool {
             return !empty($recipient->quizaccessproctoringexternal);
         }));
         $this->assertCount(1, $external);
@@ -296,6 +317,8 @@ final class security_test extends advanced_testcase {
 
     /**
      * Moodle-user daily report recipients should only receive rows they can view.
+     *
+     * @covers \quizaccess_proctoring\task\send_daily_report_task
      */
     public function test_daily_report_rows_are_scoped_to_recipient_report_capability(): void {
         $this->resetAfterTest();

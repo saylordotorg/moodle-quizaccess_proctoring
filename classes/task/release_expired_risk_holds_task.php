@@ -16,8 +16,6 @@
 
 namespace quizaccess_proctoring\task;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Releases active risk review holds after the configured review window.
  *

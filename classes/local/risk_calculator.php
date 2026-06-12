@@ -24,13 +24,10 @@
 
 namespace quizaccess_proctoring\local;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Calculates proctoring risk scores and risk presentation data.
  */
 final class risk_calculator {
-
     /**
      * Determines whether an event detail JSON contains a specific shortcut.
      *
