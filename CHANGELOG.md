@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.20
+- Added multilingual ID name matching so ID verification accepts romanized, legal, and alternate profile names when checking extracted document names.
+- Stabilized the external service authorization tests in CI with per-test process isolation and a Moodle 4.5 fixture fix.
+
+# v1.1.19
+- Avoided shipping a large AMD JavaScript payload on the proctoring admin settings pages.
+- Added privacy provider regression tests covering metadata, context discovery, and per-user deletion.
+- Fixed the privacy provider context query for risk holds.
+
 # v1.1.18
 - Added top-level admin settings shortcuts for common proctoring gates and tabbed navigation for the main settings groups.
 
