@@ -26,9 +26,9 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-require_once(__DIR__.'/../../../../config.php');
-require_once($CFG->dirroot.'/mod/quiz/accessrule/proctoring/lib.php');
-require_once($CFG->libdir.'/tablelib.php');
+require_once(__DIR__ . '/../../../../config.php');
+require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+require_once($CFG->libdir . '/tablelib.php');
 
 // Parameters.
 $courseid = required_param('courseid', PARAM_INT);
@@ -53,7 +53,7 @@ $clearbuttontext = get_string('report_search_clear', 'quizaccess_proctoring');
 $context = context_module::instance($cmid, MUST_EXIST);
 require_capability('quizaccess/proctoring:viewreport', $context);
 
-list($course, $cm) = get_course_and_cm_from_cmid($cmid, 'quiz');
+[$course, $cm] = get_course_and_cm_from_cmid($cmid, 'quiz');
 require_login($course, true, $cm);
 $courseid = (int)$course->id;
 $cmid = (int)$cm->id;
@@ -149,7 +149,7 @@ $PAGE->set_pagelayout('course');
 $PAGE->set_title($coursedata->shortname . ': ' . get_string('pluginname', 'quizaccess_proctoring'));
 $PAGE->set_heading($coursedata->fullname . ': ' . get_string('pluginname', 'quizaccess_proctoring'));
 $PAGE->navbar->add(get_string('quizaccess_proctoring', 'quizaccess_proctoring'), $url);
-$PAGE->requires->js_call_amd('quizaccess_proctoring/lightbox2', 'init', [$fcmethod , [
+$PAGE->requires->js_call_amd('quizaccess_proctoring/lightbox2', 'init', [$fcmethod, [
     'analyzebtn' => $analyzebtn,
     'analyzebtnconfirm' => $analyzebtnconfirm,
     'sesskey' => sesskey(),
@@ -177,8 +177,10 @@ if (!empty($logaction)) {
     require_sesskey();
 
     $report = $DB->get_record('quizaccess_proctoring_logs', ['id' => $reportid], '*', MUST_EXIST);
-    if ((int)$report->courseid !== (int)$courseid || (int)$report->quizid !== (int)$cmid ||
-            (int)$report->userid !== (int)$studentid) {
+    if (
+        (int)$report->courseid !== (int)$courseid || (int)$report->quizid !== (int)$cmid ||
+            (int)$report->userid !== (int)$studentid
+    ) {
         throw new moodle_exception('invalidrequest', 'error');
     }
 
@@ -274,12 +276,15 @@ $backbutton = new moodle_url('/mod/quiz/view.php', ['id' => $cmid]);
 // Print report.
 if (
     has_capability('quizaccess/proctoring:viewreport', $context, $USER->id) &&
-    $cmid != null && $courseid != null) {
+    $cmid != null && $courseid != null
+) {
      // Show specific student report.
     if ($studentid != null && $cmid != null && $courseid != null && $reportid != null) {
          // Set backButton.
-        $backbutton = new moodle_url('/mod/quiz/accessrule/proctoring/report.php?',
-                    ['courseid' => $courseid , 'cmid' => $cmid ]);
+        $backbutton = new moodle_url(
+            '/mod/quiz/accessrule/proctoring/report.php?',
+            ['courseid' => $courseid, 'cmid' => $cmid ]
+        );
         // Report for this user.
         $sql = "SELECT
                     e.id AS reportid,
@@ -427,7 +432,7 @@ if (
     $rows = [];
     foreach ($sqlexecuted as $info) {
             $row = [];
-            $row['userlink'] = $CFG->wwwroot.'/user/view.php?id=' . $info->studentid . '&course=' . $courseid;
+            $row['userlink'] = $CFG->wwwroot . '/user/view.php?id=' . $info->studentid . '&course=' . $courseid;
             $row['fullname'] = $info->firstname . ' ' . $info->lastname;
             $row['email'] = $info->email;
             $row['timemodified'] = date('Y/M/d H:i:s', $info->timemodified);
@@ -454,10 +459,10 @@ if (
                 (int)$risk['attemptid'],
                 (int)$info->reportid
             );
-            if ($hold) {
-                $row['riskholdstatus'] = quizaccess_proctoring_get_risk_hold_status_label($hold);
-                $row['riskholdactive'] = (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
-            }
+        if ($hold) {
+            $row['riskholdstatus'] = quizaccess_proctoring_get_risk_hold_status_label($hold);
+            $row['riskholdactive'] = (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
+        }
             $aireview = quizaccess_proctoring_get_ai_review(
                 (int)$courseid,
                 (int)$cmid,
@@ -465,9 +470,9 @@ if (
                 (int)$risk['attemptid'],
                 (int)$info->reportid
             );
-            if ($aireview) {
-                $row['aireview'] = quizaccess_proctoring_format_ai_review_for_template($aireview);
-            }
+        if ($aireview) {
+            $row['aireview'] = quizaccess_proctoring_format_ai_review_for_template($aireview);
+        }
 
             $actionmenu = new action_menu();
             $actionmenu->set_kebab_trigger(get_string('actions'));
@@ -488,40 +493,42 @@ if (
             $actionmenu->add($viewaction);
 
             $deleteform = '';
-            if (has_capability('quizaccess/proctoring:deletecamshots', $context, $USER->id)) {
-                $deleteurl = new moodle_url('/mod/quiz/accessrule/proctoring/report.php');
-                $deleteparams = [
-                    'courseid' => $courseid,
-                    'cmid' => $cmid,
-                    'studentid' => $info->studentid,
-                    'reportid' => $info->reportid,
-                    'logaction' => 'delete',
-                    'sesskey' => sesskey(),
-                ];
-                $deleteform = html_writer::start_tag('form', [
-                    'method' => 'post',
-                    'action' => $deleteurl->out(false),
-                    'class' => 'd-inline ml-2',
+        if (has_capability('quizaccess/proctoring:deletecamshots', $context, $USER->id)) {
+            $deleteurl = new moodle_url('/mod/quiz/accessrule/proctoring/report.php');
+            $deleteparams = [
+                'courseid' => $courseid,
+                'cmid' => $cmid,
+                'studentid' => $info->studentid,
+                'reportid' => $info->reportid,
+                'logaction' => 'delete',
+                'sesskey' => sesskey(),
+            ];
+            $deleteform = html_writer::start_tag('form', [
+                'method' => 'post',
+                'action' => $deleteurl->out(false),
+                'class' => 'd-inline ml-2',
+            ]);
+            foreach ($deleteparams as $name => $value) {
+                $deleteform .= html_writer::empty_tag('input', [
+                    'type' => 'hidden',
+                    'name' => $name,
+                    'value' => $value,
                 ]);
-                foreach ($deleteparams as $name => $value) {
-                    $deleteform .= html_writer::empty_tag('input', [
-                        'type' => 'hidden',
-                        'name' => $name,
-                        'value' => $value,
-                    ]);
-                }
-                $deleteform .= html_writer::tag(
-                    'button',
-                    $OUTPUT->pix_icon('t/delete', '') . ' ' . get_string('delete'),
-                    [
-                        'type' => 'submit',
-                        'class' => 'btn btn-link text-danger p-0',
-                        'onclick' => 'return confirm(' . json_encode(get_string('areyousure_delete_record',
-                            'quizaccess_proctoring')) . ');',
-                    ]
-                );
-                $deleteform .= html_writer::end_tag('form');
             }
+            $deleteform .= html_writer::tag(
+                'button',
+                $OUTPUT->pix_icon('t/delete', '') . ' ' . get_string('delete'),
+                [
+                    'type' => 'submit',
+                    'class' => 'btn btn-link text-danger p-0',
+                    'onclick' => 'return confirm(' . json_encode(get_string(
+                        'areyousure_delete_record',
+                        'quizaccess_proctoring'
+                    )) . ');',
+                ]
+            );
+            $deleteform .= html_writer::end_tag('form');
+        }
 
             // Add rendered HTML to template context.
             $row['actionmenu'] = $OUTPUT->render($actionmenu) . $deleteform;
@@ -530,9 +537,9 @@ if (
     $templatecontext = (object)[
         'quizname'        => get_string('eprotroringreports', 'quizaccess_proctoring') . $quiz->name,
         'settingsbtn'     => $settingsbtn,
-        'settingspageurl'  => $CFG->wwwroot.'/mod/quiz/accessrule/proctoring/proctoringsummary.php?cmid='.$cmid,
+        'settingspageurl'  => $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/proctoringsummary.php?cmid=' . $cmid,
         'proctoringsummary' => get_string('eprotroringreportsdesc', 'quizaccess_proctoring'),
-        'url' => $CFG->wwwroot. '/mod/quiz/accessrule/proctoring/report.php',
+        'url' => $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/report.php',
         'courseid' => $courseid,
         'cmid' => $cmid,
         'searchkey' => ($submittype == "Clear") ? '' : $searchkey,
@@ -549,11 +556,11 @@ if (
     // Pagination added.
     $currenturl = new moodle_url(qualified_me());
     // If user search the  specific value.
-    if (!empty($searchkey) && empty($submittype) ) {
-        $currenturl->param('searchKey' , $searchkey);
-        $currenturl->param('submitType' , $submittype);
+    if (!empty($searchkey) && empty($submittype)) {
+        $currenturl->param('searchKey', $searchkey);
+        $currenturl->param('submitType', $submittype);
     }
-    $currenturl->param('page' , $page);
+    $currenturl->param('page', $page);
     $pagingbar = new paging_bar($totalrecords, $page, $perpage, $currenturl);
     echo $OUTPUT->render($pagingbar);
     // Print image results.
@@ -658,8 +665,10 @@ if (
                     userdate((int)$lockout['until'])
                 );
             }
-            if ((int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE &&
-                    has_capability('quizaccess/proctoring:reviewriskholds', $context, $USER->id)) {
+            if (
+                (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE &&
+                    has_capability('quizaccess/proctoring:reviewriskholds', $context, $USER->id)
+            ) {
                 $riskscore['canreleasehold'] = true;
                 $riskscore['releaseurl'] = (new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
                     'courseid' => $courseid,

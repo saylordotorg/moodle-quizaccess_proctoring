@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "name": "Mustache Lint on Save",
+  "description": "Runs Mustache template linting when a .mustache template file is saved to catch template errors.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "templates/*.mustache"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "npx grunt mustachelint",
+    "timeout": 60
+  }
+}

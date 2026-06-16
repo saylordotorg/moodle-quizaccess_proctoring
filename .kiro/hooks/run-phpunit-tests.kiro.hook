@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "name": "Run PHPUnit Tests on Save",
+  "description": "Runs the PHPUnit test suite for the quizaccess_proctoring plugin whenever a PHP file is edited, catching regressions immediately.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.php"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "php vendor/bin/phpunit --configuration mod/quiz/accessrule/proctoring/phpunit.xml --testsuite quizaccess_proctoring_testsuite",
+    "timeout": 120
+  }
+}

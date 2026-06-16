@@ -16,8 +16,6 @@
 
 namespace quizaccess_proctoring\task;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Processes queued AI image reviews for high-risk proctored attempts.
  *

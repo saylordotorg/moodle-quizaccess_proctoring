@@ -41,7 +41,11 @@ $durationminutes = max(1, optional_param('durationminutes', 60, PARAM_INT));
 $intervalseconds = max(1, optional_param('intervalseconds', $defaultinterval, PARAM_INT));
 $checkevery = max(1, optional_param('checkevery', $defaultcheckevery, PARAM_INT));
 $continuous = optional_param('continuous', (int)get_config('quizaccess_proctoring', 'continuousfacecheck'), PARAM_INT) ? 1 : 0;
-$includepreflight = optional_param('includepreflight', (int)get_config('quizaccess_proctoring', 'fcheckstartchk'), PARAM_INT) ? 1 : 0;
+$includepreflight = optional_param(
+    'includepreflight',
+    (int)get_config('quizaccess_proctoring', 'fcheckstartchk'),
+    PARAM_INT
+) ? 1 : 0;
 $unitcost = max(0, (float)optional_param('unitcost', $defaultunitcost, PARAM_RAW));
 
 $capturesperstudent = (int)ceil(($durationminutes * 60) / $intervalseconds);
@@ -65,8 +69,10 @@ echo html_writer::tag('legend', get_string('costestimate:formheading', 'quizacce
 
 $formrows = [
     ['students', get_string('costestimate:students', 'quizaccess_proctoring'), 'number', $students, ['min' => 1]],
-    ['durationminutes', get_string('costestimate:durationminutes', 'quizaccess_proctoring'), 'number', $durationminutes, ['min' => 1]],
-    ['intervalseconds', get_string('costestimate:intervalseconds', 'quizaccess_proctoring'), 'number', $intervalseconds, ['min' => 1]],
+    ['durationminutes',
+        get_string('costestimate:durationminutes', 'quizaccess_proctoring'), 'number', $durationminutes, ['min' => 1]],
+    ['intervalseconds',
+        get_string('costestimate:intervalseconds', 'quizaccess_proctoring'), 'number', $intervalseconds, ['min' => 1]],
     ['checkevery', get_string('setting:continuousfacecheckevery', 'quizaccess_proctoring'), 'number', $checkevery, ['min' => 1]],
     ['unitcost', get_string('costestimate:unitcost', 'quizaccess_proctoring'), 'text', sprintf('%.6F', $unitcost), []],
 ];

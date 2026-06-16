@@ -164,11 +164,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     private static function mobile_screen_share_mode() {
         $mode = get_config('quizaccess_proctoring', 'mobilescreensharemode');
 
-        if (in_array($mode, [
+        if (
+            in_array($mode, [
             self::MOBILE_SCREEN_SHARE_BYPASS,
             self::MOBILE_SCREEN_SHARE_REQUIRE,
             self::MOBILE_SCREEN_SHARE_BLOCK,
-        ], true)) {
+            ], true)
+        ) {
             return $mode;
         }
 
@@ -187,12 +189,14 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
         $mode = get_config('quizaccess_proctoring', 'multimonitormode');
 
-        if (in_array($mode, [
+        if (
+            in_array($mode, [
             self::MULTI_MONITOR_OFF,
             self::MULTI_MONITOR_LOG,
             self::MULTI_MONITOR_WARN,
             self::MULTI_MONITOR_BLOCK,
-        ], true)) {
+            ], true)
+        ) {
             return $mode;
         }
 
@@ -233,11 +237,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     private static function screen_share_persistence_mode(): string {
         $mode = get_config('quizaccess_proctoring', 'screensharepersistencemode');
 
-        if (in_array($mode, [
+        if (
+            in_array($mode, [
             self::SCREEN_SHARE_PERSISTENCE_AUTO,
             self::SCREEN_SHARE_PERSISTENCE_MAIN,
             self::SCREEN_SHARE_PERSISTENCE_HELPER,
-        ], true)) {
+            ], true)
+        ) {
             return $mode;
         }
 
@@ -615,8 +621,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         if ((int)get_config('quizaccess_proctoring', 'aireviewenabled') === 1) {
             $items[] = get_string('privacynotice:item_aireview', 'quizaccess_proctoring');
         }
-        if ((int)get_config('quizaccess_proctoring', 'riskreviewenabled') === 1 ||
-                (int)get_config('quizaccess_proctoring', 'cheatinglockoutenabled') === 1) {
+        if (
+            (int)get_config('quizaccess_proctoring', 'riskreviewenabled') === 1 ||
+                (int)get_config('quizaccess_proctoring', 'cheatinglockoutenabled') === 1
+        ) {
             $items[] = get_string('privacynotice:item_riskreview', 'quizaccess_proctoring');
         }
 
@@ -663,8 +671,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     private function get_current_user_cheating_lockout() {
         global $USER;
 
-        if (empty($USER->id) || empty($this->quiz->course) || empty($this->quiz->cmid) ||
-                $this->can_bypass_cheating_lockout()) {
+        if (
+            empty($USER->id) || empty($this->quiz->course) || empty($this->quiz->cmid) ||
+                $this->can_bypass_cheating_lockout()
+        ) {
             return false;
         }
 
@@ -939,7 +949,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 )
             );
             $mform->addElement('checkbox', 'proctoringprivacy', '', self::get_privacy_agreement_label());
-            $mform->addRule('proctoringprivacy', get_string('privacynotice:required', 'quizaccess_proctoring'), 'required', null, 'client');
+            $mform->addRule(
+                'proctoringprivacy',
+                get_string('privacynotice:required', 'quizaccess_proctoring'),
+                'required',
+                null,
+                'client'
+            );
             $mform->addElement('html', '</section>');
         }
 
@@ -996,7 +1012,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
 
         if ($idverificationrequired) {
-            $buildidcameracapture = static function(string $side): string {
+            $buildidcameracapture = static function (string $side): string {
                 $suffix = $side === 'back' ? '-back' : '';
                 $buttonsuffix = $side === 'back' ? 'back' : '';
 

@@ -122,8 +122,10 @@ class proctoring_observer {
             );
 
             $holdid = 0;
-            if ((!empty($risksettings['enabled']) || $risklockoutenabled) &&
-                    (int)$risk['score'] >= (int)$risksettings['threshold']) {
+            if (
+                (!empty($risksettings['enabled']) || $risklockoutenabled) &&
+                    (int)$risk['score'] >= (int)$risksettings['threshold']
+            ) {
                 $holdid = \quizaccess_proctoring_apply_risk_hold(
                     (int)$quiz->course,
                     (int)$cm->id,
@@ -151,5 +153,4 @@ class proctoring_observer {
             debugging('Unable to process Saylor Proctored Quiz submission risk review: ' . $e->getMessage(), DEBUG_DEVELOPER);
         }
     }
-
 }

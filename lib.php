@@ -92,8 +92,10 @@ function quizaccess_proctoring_pluginfile($course, $cm, $context, $filearea, $ar
         return false;
     }
 
-    if ($file->is_directory() ||
-            !quizaccess_proctoring_can_serve_pluginfile($course, $cm, $context, $filearea, (int)$itemid, $filename, $file)) {
+    if (
+        $file->is_directory() ||
+            !quizaccess_proctoring_can_serve_pluginfile($course, $cm, $context, $filearea, (int)$itemid, $filename, $file)
+    ) {
         return false;
     }
 
@@ -113,12 +115,20 @@ function quizaccess_proctoring_pluginfile($course, $cm, $context, $filearea, $ar
  * @param stored_file $file Stored file.
  * @return bool
  */
-function quizaccess_proctoring_can_serve_pluginfile($course, $cm, $context, string $filearea, int $itemid,
-        string $filename, stored_file $file): bool {
+function quizaccess_proctoring_can_serve_pluginfile(
+    $course,
+    $cm,
+    $context,
+    string $filearea,
+    int $itemid,
+    string $filename,
+    stored_file $file
+): bool {
     global $USER;
 
     if ($context->contextlevel === CONTEXT_MODULE) {
-        if (empty($course) || empty($cm) ||
+        if (
+            empty($course) || empty($cm) ||
                 !in_array($filearea, [
                     'picture',
                     'face_image',
@@ -126,7 +136,8 @@ function quizaccess_proctoring_can_serve_pluginfile($course, $cm, $context, stri
                     'id_document',
                     'id_back_document',
                     'id_live_image',
-                ], true)) {
+                ], true)
+        ) {
             return false;
         }
 
@@ -382,8 +393,14 @@ function quizaccess_proctoring_get_image_url($userid) {
         foreach ($files as $file) {
             if ($userid == $file->get_itemid() && $file->get_filename() != '.') {
                 $fileurl = moodle_url::make_pluginfile_url(
-                    $file->get_contextid(), $file->get_component(), $file->get_filearea(),
-                    $file->get_itemid(), $file->get_filepath(), $file->get_filename(), true);
+                    $file->get_contextid(),
+                    $file->get_component(),
+                    $file->get_filearea(),
+                    $file->get_itemid(),
+                    $file->get_filepath(),
+                    $file->get_filename(),
+                    true
+                );
                 return $fileurl->out(false); // Properly formatted URL without trailing slash.
             }
         }
@@ -411,10 +428,8 @@ function quizaccess_proctoring_get_image_file($userid) {
 
     $fs = get_file_storage();
     if ($files = $fs->get_area_files($context->id, 'quizaccess_proctoring', 'user_photo')) {
-
         foreach ($files as $file) {
             if ($userid == $file->get_itemid() && $file->get_filename() != '.') {
-
                 // Get the record ID from the database.
                 $recordid = $DB->get_field('quizaccess_proctoring_user_images', 'id', ['user_id' => $userid]);
 
@@ -2177,9 +2192,11 @@ function quizaccess_proctoring_call_anthropic_image_review(stdClass $review, arr
 
     $text = '';
     foreach ((array)($decoded['content'] ?? []) as $item) {
-        if (($item['type'] ?? '') === 'tool_use'
+        if (
+            ($item['type'] ?? '') === 'tool_use'
             && ($item['name'] ?? '') === 'record_proctoring_review'
-            && is_array($item['input'] ?? null)) {
+            && is_array($item['input'] ?? null)
+        ) {
             return $item['input'];
         }
         if (($item['type'] ?? '') === 'text' && isset($item['text']) && is_string($item['text'])) {
@@ -2280,8 +2297,8 @@ function quizaccess_proctoring_call_openai_compatible_image_review(
     if (!empty($decoded['error']) && is_string($decoded['error'])) {
         throw new moodle_exception('aireview:compatibleerror', 'quizaccess_proctoring', '', $decoded['error']);
     }
-    // vLLM and some other OpenAI-compatible servers return errors at the top level
-    // as {"object":"error","message":"...","type":"...","code":...}.
+    // Some OpenAI-compatible servers (for example vLLM) report errors at the top level
+    // using an object property set to error together with a message property.
     if (($decoded['object'] ?? '') === 'error' && !empty($decoded['message'])) {
         throw new moodle_exception('aireview:compatibleerror', 'quizaccess_proctoring', '', $decoded['message']);
     }
@@ -2337,7 +2354,8 @@ function quizaccess_proctoring_build_ai_review_prompt(stdClass $review, int $ima
             . "Copilot, ChatGPT, Claude, Perplexity, or similar tools, is open during the quiz and appears to show answers, "
             . "explanations, or question-related help. Also mark cheating likely for another person helping; unauthorized notes; "
             . "a phone used for answers; or the quiz being outside the shared screen controls. "
-            . "If a browser AI panel is visibly open but its text is unreadable, choose suspicious or inconclusive based on visible context. "
+            . "If a browser AI panel is visibly open but its text is unreadable, choose suspicious or inconclusive "
+            . "based on visible context. "
             . "If the screenshot only shows a focus-change event without visible unauthorized content, choose inconclusive. "
             . "Return a cautious review score from 0 to 100 where "
             . (int)$settings['decisionthreshold'] . "+ means strong visual evidence that needs escalation. "
@@ -2489,7 +2507,6 @@ function quizaccess_proctoring_log_facematch_task() {
 
     // Use Moodle's notification API for success messages.
     mtrace('Log success');
-
 }
 
 /**
@@ -2567,7 +2584,7 @@ function quizaccess_proctoring_log_specific_quiz($courseid, $cmid, $studentid) {
     }
 
     // Now fetch full data for those selected IDs.
-    list($insql, $inparams) = $DB->get_in_or_equal($selectedids, SQL_PARAMS_NAMED);
+    [$insql, $inparams] = $DB->get_in_or_equal($selectedids, SQL_PARAMS_NAMED);
     $finalsql = "SELECT id, webcampicture
                  FROM {quizaccess_proctoring_logs}
                  WHERE id $insql";
@@ -2983,8 +3000,11 @@ function quizaccess_proctoring_get_face_images($reportid, bool $redirectmissing 
  * @return void
  */
 function quizaccess_proctoring_extracted(
-    string $profileimageurl, string $targetimage,
-    int $reportid, ?string $redirecturl = null): void {
+    string $profileimageurl,
+    string $targetimage,
+    int $reportid,
+    ?string $redirecturl = null
+): void {
     $method = quizaccess_proctoring_get_proctoring_settings('fcmethod');
     $threshold = (float) quizaccess_proctoring_get_proctoring_settings('threshold');
     $similarity = 0;

@@ -24,13 +24,10 @@
 
 namespace quizaccess_proctoring\local;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Validates configured outbound API endpoints before proctoring data is sent.
  */
 final class outbound_endpoint_validator {
-
     /**
      * Normalize an OpenAI-compatible endpoint to the chat completions route when only the service root is configured.
      *
