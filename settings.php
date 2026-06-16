@@ -895,14 +895,6 @@ if ($hassiteconfig) {
         PARAM_INT
     ));
 
-    // Add an external page under quiz settings for the proctoring users list.
-    $ADMIN->add('modsettingsquizcat', new admin_externalpage(
-        'quizaccess_proctoring_page',
-        get_string('users_list', 'quizaccess_proctoring'),
-        new moodle_url('/mod/quiz/accessrule/proctoring/userslist.php'),
-        'moodle/site:config'
-    ));
-
     $pageurl = new moodle_url('/mod/quiz/accessrule/proctoring/trigger_delete.php', ['sesskey' => sesskey()]);
     $deletealllinktext = get_string('settingscontroll:deletealllinktext', 'quizaccess_proctoring');
 
@@ -934,8 +926,10 @@ if ($hassiteconfig) {
         ));
     }
 
+    // Build the "AI proctor settings" category with explicit clickable links for all sub-pages.
+    // This ensures all items are accessible even in themes that don't render category nodes as links.
     $proctoringcategory = 'quizaccess_proctoring_settings_category';
-    $settings->visiblename = get_string('mainsettingspagebtn', 'quizaccess_proctoring');
+    $settings->visiblename = get_string('settings', 'quizaccess_proctoring');
     $settings->hidden = true;
 
     $ADMIN->add('modsettingsquizcat', new quizaccess_proctoring_admin_category(
@@ -943,8 +937,10 @@ if ($hassiteconfig) {
         get_string('mainsettingspagebtn', 'quizaccess_proctoring')
     ));
 
+    // 1. Settings (main settings page).
     $ADMIN->add($proctoringcategory, $settings);
 
+    // 2. Review diagnostics.
     $ADMIN->add($proctoringcategory, new admin_externalpage(
         'quizaccess_proctoring_ai_diagnostics',
         get_string('aireviewdiagnostics', 'quizaccess_proctoring'),
@@ -952,10 +948,19 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
 
+    // 3. Cost estimate.
     $ADMIN->add($proctoringcategory, new admin_externalpage(
         'quizaccess_proctoring_cost_estimate',
         get_string('costestimate', 'quizaccess_proctoring'),
         new moodle_url('/mod/quiz/accessrule/proctoring/cost_estimate.php'),
+        'moodle/site:config'
+    ));
+
+    // 4. Saylor Proctored Quiz Users list.
+    $ADMIN->add($proctoringcategory, new admin_externalpage(
+        'quizaccess_proctoring_userslist',
+        get_string('users_list', 'quizaccess_proctoring'),
+        new moodle_url('/mod/quiz/accessrule/proctoring/userslist.php'),
         'moodle/site:config'
     ));
 

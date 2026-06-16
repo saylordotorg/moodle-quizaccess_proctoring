@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "name": "Build AMD on Save",
+  "description": "Builds AMD JavaScript modules using Grunt when any JS source file in the amd/src directory is saved.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "amd/src/*.js"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "npx grunt amd",
+    "timeout": 60
+  }
+}

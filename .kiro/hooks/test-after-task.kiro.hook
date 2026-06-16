@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "Run Tests After Task Completion",
+  "description": "Runs the plugin's PHPUnit test suite after a spec task is completed to verify the implementation doesn't break existing functionality.",
+  "version": "1",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "php vendor/bin/phpunit --configuration mod/quiz/accessrule/proctoring/phpunit.xml --testsuite quizaccess_proctoring_testsuite",
+    "timeout": 120
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "name": "PHP Syntax Check",
+  "description": "Runs PHP lint (syntax check) on any PHP file that is edited to catch syntax errors immediately.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.php"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "php -l ${file}",
+    "timeout": 30
+  }
+}

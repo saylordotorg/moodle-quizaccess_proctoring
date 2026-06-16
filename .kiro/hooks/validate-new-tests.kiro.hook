@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Validate New Test Files",
+  "description": "When a new test file is created, validates that it follows Moodle PHPUnit conventions (proper naming, namespace, and base class).",
+  "version": "1",
+  "when": {
+    "type": "fileCreated",
+    "patterns": [
+      "tests/*_test.php"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A new test file was created. Please verify it follows Moodle PHPUnit conventions: 1) Class name matches filename with _test suffix, 2) It extends \\advanced_testcase or \\basic_testcase, 3) Uses the correct namespace quizaccess_proctoring, 4) Has proper @package, @category, and @copyright annotations. If issues are found, fix them."
+  }
+}
