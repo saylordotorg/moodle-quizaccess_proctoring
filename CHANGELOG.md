@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.22
+- Fixed the desktop capture prompt reappearing on every quiz page when multiple monitors are blocked. In Auto screen-share persistence mode, the helper window is now used only when multiple monitors are allowed (keeping the verified share alive across navigation); when monitors are blocked, in-quiz desktop capture is skipped so students are no longer re-prompted on each page. Use "Always use helper window" to keep desktop capture active even when monitors are blocked.
+
 # v1.1.21
 - Cleared all remaining Moodle coding-standard (PHPCS) issues from the Catalyst plugin review: reordered language strings alphabetically in all three language packs, added `@covers` coverage annotations and missing return types across the PHPUnit suite, and marked the test classes final.
 
