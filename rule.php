@@ -253,10 +253,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     /**
      * Determine whether the persistent helper window should be used.
      *
-     * @param string $multimonitormode Effective multi-monitor mode.
      * @return bool True when the helper window should be used.
      */
-    private static function should_use_persistent_screen_monitor(string $multimonitormode): bool {
+    private static function should_use_persistent_screen_monitor(): bool {
         if (self::is_mobile_or_tablet()) {
             return false;
         }
@@ -269,7 +268,11 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             return false;
         }
 
-        return $multimonitormode !== self::MULTI_MONITOR_BLOCK;
+        // Auto mode: always prefer the helper window on desktop. A getDisplayMedia stream is bound to
+        // the page that requested it, so main-page sharing is torn down on every quiz navigation and the
+        // student is re-prompted to share their screen. The helper window keeps the stream alive across
+        // page loads regardless of the multi-monitor policy, removing that friction.
+        return true;
     }
 
     /**
@@ -855,7 +858,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $idverificationpassed = $idverificationrequired ? $this->current_user_has_passed_id_verification() : true;
         $idverificationrequireback = $idverificationrequired && self::id_verification_requires_back_image();
         $multimonitormode = self::multi_monitor_mode();
-        $usepersistentmonitor = self::should_use_persistent_screen_monitor($multimonitormode);
+        $usepersistentmonitor = self::should_use_persistent_screen_monitor();
         $screenmarkerrequired = $usepersistentmonitor || self::should_require_screen_marker($multimonitormode);
 
         // Prepare data for the JavaScript module.
@@ -1694,7 +1697,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->faceblurhits = max(1, min(10, $faceblurhits));
             $faceblurinitialgrace = (int)(get_config('quizaccess_proctoring', 'faceblurinitialgrace') ?: 10);
             $record->faceblurinitialgrace = max(0, min(60, $faceblurinitialgrace));
-            $usepersistentmonitor = self::should_use_persistent_screen_monitor($record->multimonitormode);
+            $usepersistentmonitor = self::should_use_persistent_screen_monitor();
             $record->screenmarkerrequired = ($usepersistentmonitor ||
                 self::should_require_screen_marker($record->multimonitormode)) ? 1 : 0;
             $screenmonitorkey = 'cm' . (int)$cmid . 'user' . (int)$USER->id;
