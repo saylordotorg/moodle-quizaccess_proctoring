@@ -124,8 +124,19 @@
                     {{^aireview}}<span class="text-muted">&mdash;</span>{{/aireview}}
                 </td>
                 <td>
-                    {{#hashold}}<span class="proctoring-risk-hold-status">{{holdlabel}}</span>{{/hashold}}
+                    {{#hashold}}<div class="proctoring-risk-hold-status">{{holdlabel}}</div>{{/hashold}}
                     {{^hashold}}<span class="text-muted">&mdash;</span>{{/hashold}}
+                    {{#canact}}
+                    <div class="proctoring-overall-hold-actions">
+                        <a class="btn btn-outline-success btn-sm" href="{{releaseurl}}">{{#str}}riskreview:releasebutton, quizaccess_proctoring{{/str}}</a>
+                        <a class="btn btn-outline-danger btn-sm" href="{{confirmurl}}"
+                           data-confirmation="modal"
+                           data-confirmation-type="delete"
+                           data-confirmation-title-str='["overallreport:confirmtitle", "quizaccess_proctoring"]'
+                           data-confirmation-content-str='["overallreport:confirmbody", "quizaccess_proctoring"]'
+                           data-confirmation-yes-button-str='["riskreview:confirmbutton", "quizaccess_proctoring"]'>{{#str}}riskreview:confirmbutton, quizaccess_proctoring{{/str}}</a>
+                    </div>
+                    {{/canact}}
                 </td>
                 <td><a class="btn btn-sm btn-secondary" href="{{viewurl}}">{{#str}}overallreport:view, quizaccess_proctoring{{/str}}</a></td>
             </tr>

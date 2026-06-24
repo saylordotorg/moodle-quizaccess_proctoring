@@ -1478,3 +1478,10 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
     color: #6c757d;
     font-size: 0.85rem;
 }
+
+.proctoring-overall-hold-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.35rem;
+}
