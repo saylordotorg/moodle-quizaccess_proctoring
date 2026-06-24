@@ -1586,34 +1586,44 @@ function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $deci
         return;
     }
 
-    $cm = get_coursemodule_from_id('quiz', $hold->quizid, $hold->courseid, false, IGNORE_MISSING);
-    $coursename = (string)$DB->get_field('course', 'fullname', ['id' => $hold->courseid]);
-    $a = (object)[
-        'quiz' => $cm ? format_string($cm->name) : '',
-        'course' => format_string($coursename),
-    ];
-
-    $subject = get_string('message:' . $decision . 'subject', 'quizaccess_proctoring', $a);
-    $body = get_string('message:' . $decision . 'body', 'quizaccess_proctoring', $a);
-
-    $message = new \core\message\message();
-    $message->component = 'quizaccess_proctoring';
-    $message->name = 'holddecision';
-    $message->courseid = (int)$hold->courseid;
-    $message->userfrom = \core_user::get_noreply_user();
-    $message->userto = $user;
-    $message->subject = $subject;
-    $message->fullmessage = $body;
-    $message->fullmessageformat = FORMAT_PLAIN;
-    $message->fullmessagehtml = text_to_html($body);
-    $message->smallmessage = $subject;
-    $message->notification = 1;
-    if ($cm) {
-        $message->contexturl = (new moodle_url('/mod/quiz/view.php', ['id' => $cm->id]))->out(false);
-        $message->contexturlname = $a->quiz;
-    }
-
+    // This also runs from the auto-release cron, where there is no page context. format_string()
+    // throws without an explicit context when $PAGE->context is unset, so pass one explicitly and
+    // wrap the whole body so a notification failure can never break the grade action or the task.
     try {
+        $cm = get_coursemodule_from_id('quiz', $hold->quizid, $hold->courseid, false, IGNORE_MISSING);
+        if ($cm) {
+            $context = context_module::instance($cm->id);
+        } else {
+            $context = context_course::instance((int)$hold->courseid, IGNORE_MISSING) ?: context_system::instance();
+        }
+        $stringoptions = ['context' => $context];
+
+        $coursename = (string)$DB->get_field('course', 'fullname', ['id' => $hold->courseid]);
+        $a = (object)[
+            'quiz' => $cm ? format_string($cm->name, true, $stringoptions) : '',
+            'course' => format_string($coursename, true, $stringoptions),
+        ];
+
+        $subject = get_string('message:' . $decision . 'subject', 'quizaccess_proctoring', $a);
+        $body = get_string('message:' . $decision . 'body', 'quizaccess_proctoring', $a);
+
+        $message = new \core\message\message();
+        $message->component = 'quizaccess_proctoring';
+        $message->name = 'holddecision';
+        $message->courseid = (int)$hold->courseid;
+        $message->userfrom = \core_user::get_noreply_user();
+        $message->userto = $user;
+        $message->subject = $subject;
+        $message->fullmessage = $body;
+        $message->fullmessageformat = FORMAT_PLAIN;
+        $message->fullmessagehtml = text_to_html($body);
+        $message->smallmessage = $subject;
+        $message->notification = 1;
+        if ($cm) {
+            $message->contexturl = (new moodle_url('/mod/quiz/view.php', ['id' => $cm->id]))->out(false);
+            $message->contexturlname = $a->quiz;
+        }
+
         message_send($message);
     } catch (\Throwable $e) {
         debugging(
