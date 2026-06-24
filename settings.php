@@ -951,7 +951,15 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
 
-    // 2. Review diagnostics.
+    // 2. Overall reports (site-wide aggregate monitoring dashboard).
+    $ADMIN->add($proctoringcategory, new admin_externalpage(
+        'quizaccess_proctoring_overall_reports',
+        get_string('overallreports', 'quizaccess_proctoring'),
+        new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'),
+        'moodle/site:config'
+    ));
+
+    // 3. Review diagnostics.
     $ADMIN->add($proctoringcategory, new admin_externalpage(
         'quizaccess_proctoring_ai_diagnostics',
         get_string('aireviewdiagnostics', 'quizaccess_proctoring'),
@@ -959,7 +967,7 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
 
-    // 3. Cost estimate.
+    // 4. Cost estimate.
     $ADMIN->add($proctoringcategory, new admin_externalpage(
         'quizaccess_proctoring_cost_estimate',
         get_string('costestimate', 'quizaccess_proctoring'),
@@ -967,7 +975,7 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
 
-    // 4. Saylor Proctored Quiz Users list.
+    // 5. Saylor Proctored Quiz Users list.
     $ADMIN->add($proctoringcategory, new admin_externalpage(
         'quizaccess_proctoring_userslist',
         get_string('users_list', 'quizaccess_proctoring'),
