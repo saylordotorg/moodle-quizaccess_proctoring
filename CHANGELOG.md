@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.25
+- Students are now notified (Moodle notification + email, per their messaging preferences) when a grade hold on their proctored attempt is released or confirmed. Added a new "Proctored quiz review decisions" message provider and two site settings: "Notify students of grade-hold decisions" (default on) and "Notify students of automatically released holds" (default on). Notifications fire from every path — the per-student report, the Overall reports dashboard, and the automatic review-window release task.
+
 # v1.1.24
 - Added inline "Release" and "Confirm violation" actions to the grade-hold column of the Overall reports dashboard, so reviewers can clear a hold (restoring the earned grade) or uphold it (setting the quiz grade to zero) without opening each student's report. Confirm shows a confirmation dialog, and both actions require the proctoring:reviewriskholds capability.
 

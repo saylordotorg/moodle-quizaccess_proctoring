@@ -731,6 +731,20 @@ if ($hassiteconfig) {
         PARAM_INT
     ));
 
+    $settings->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/holddecisionnotify',
+        get_string('setting:holddecisionnotify', 'quizaccess_proctoring'),
+        get_string('setting:holddecisionnotify_desc', 'quizaccess_proctoring'),
+        1
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/holddecisionnotifyautorelease',
+        get_string('setting:holddecisionnotifyautorelease', 'quizaccess_proctoring'),
+        get_string('setting:holddecisionnotifyautorelease_desc', 'quizaccess_proctoring'),
+        1
+    ));
+
     $settings->add(new admin_setting_heading(
         'quizaccess_proctoring_aireviewheading',
         get_string('setting:aireviewheading', 'quizaccess_proctoring'),

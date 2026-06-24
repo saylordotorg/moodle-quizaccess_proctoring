@@ -15,17 +15,21 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version information for the quizaccess_proctoring plugin.
+ * Message providers for the quizaccess_proctoring plugin.
  *
  * @package    quizaccess_proctoring
- * @copyright  2024 Saylor Academy
+ * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->component = 'quizaccess_proctoring';
-$plugin->release = '1.1.25';
-$plugin->version = 2026062402;
-$plugin->requires = 2024100700;
-$plugin->maturity = MATURITY_STABLE;
+$messageproviders = [
+    // Notifies a student when a grade hold on their proctored attempt is released or confirmed.
+    'holddecision' => [
+        'defaults' => [
+            'popup' => MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
+            'email' => MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
+        ],
+    ],
+];

@@ -1429,9 +1429,10 @@ function quizaccess_proctoring_apply_risk_hold(
  *
  * @param int $holdid Hold id.
  * @param int $reviewerid Reviewer user id.
+ * @param bool $isautorelease True when released automatically by the expiry task.
  * @return bool True when released.
  */
-function quizaccess_proctoring_release_risk_hold(int $holdid, int $reviewerid): bool {
+function quizaccess_proctoring_release_risk_hold(int $holdid, int $reviewerid, bool $isautorelease = false): bool {
     global $CFG, $DB;
 
     $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
@@ -1452,6 +1453,10 @@ function quizaccess_proctoring_release_risk_hold(int $holdid, int $reviewerid): 
     $hold->timereviewed = time();
     $hold->timemodified = $hold->timereviewed;
     $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
+
+    if (quizaccess_proctoring_should_notify_hold_decision($isautorelease)) {
+        quizaccess_proctoring_notify_hold_decision($hold, 'released');
+    }
 
     return true;
 }
@@ -1487,7 +1492,7 @@ function quizaccess_proctoring_auto_release_expired_risk_holds(int $limit = 100)
 
     $released = 0;
     foreach ($holds as $hold) {
-        if (quizaccess_proctoring_release_risk_hold((int)$hold->id, 0)) {
+        if (quizaccess_proctoring_release_risk_hold((int)$hold->id, 0, true)) {
             $released++;
         }
     }
@@ -1536,7 +1541,86 @@ function quizaccess_proctoring_confirm_risk_hold(int $holdid, int $reviewerid): 
     $hold->timemodified = $now;
     $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
 
+    if (quizaccess_proctoring_should_notify_hold_decision(false)) {
+        quizaccess_proctoring_notify_hold_decision($hold, 'confirmed');
+    }
+
     return true;
+}
+
+/**
+ * Determine whether students should be notified of a grade-hold decision.
+ *
+ * @param bool $isautorelease True when the decision is an automatic release.
+ * @return bool True when a student notification should be sent.
+ */
+function quizaccess_proctoring_should_notify_hold_decision(bool $isautorelease): bool {
+    $enabled = get_config('quizaccess_proctoring', 'holddecisionnotify');
+    $enabled = $enabled === false ? true : (int)$enabled === 1;
+    if (!$enabled) {
+        return false;
+    }
+    if ($isautorelease) {
+        $autoenabled = get_config('quizaccess_proctoring', 'holddecisionnotifyautorelease');
+        return $autoenabled === false ? true : (int)$autoenabled === 1;
+    }
+    return true;
+}
+
+/**
+ * Notify a student that the grade hold on their proctored attempt has been reviewed.
+ *
+ * @param stdClass $hold Risk hold record.
+ * @param string $decision Either 'released' or 'confirmed'.
+ * @return void
+ */
+function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $decision): void {
+    global $DB;
+
+    if (!in_array($decision, ['released', 'confirmed'], true)) {
+        return;
+    }
+
+    $user = \core_user::get_user((int)$hold->userid);
+    if (!$user || isguestuser($user) || !\core_user::is_real_user($user->id)) {
+        return;
+    }
+
+    $cm = get_coursemodule_from_id('quiz', $hold->quizid, $hold->courseid, false, IGNORE_MISSING);
+    $coursename = (string)$DB->get_field('course', 'fullname', ['id' => $hold->courseid]);
+    $a = (object)[
+        'quiz' => $cm ? format_string($cm->name) : '',
+        'course' => format_string($coursename),
+    ];
+
+    $subject = get_string('message:' . $decision . 'subject', 'quizaccess_proctoring', $a);
+    $body = get_string('message:' . $decision . 'body', 'quizaccess_proctoring', $a);
+
+    $message = new \core\message\message();
+    $message->component = 'quizaccess_proctoring';
+    $message->name = 'holddecision';
+    $message->courseid = (int)$hold->courseid;
+    $message->userfrom = \core_user::get_noreply_user();
+    $message->userto = $user;
+    $message->subject = $subject;
+    $message->fullmessage = $body;
+    $message->fullmessageformat = FORMAT_PLAIN;
+    $message->fullmessagehtml = text_to_html($body);
+    $message->smallmessage = $subject;
+    $message->notification = 1;
+    if ($cm) {
+        $message->contexturl = (new moodle_url('/mod/quiz/view.php', ['id' => $cm->id]))->out(false);
+        $message->contexturlname = $a->quiz;
+    }
+
+    try {
+        message_send($message);
+    } catch (\Throwable $e) {
+        debugging(
+            'Unable to send Saylor Proctored Quiz hold decision notification: ' . $e->getMessage(),
+            DEBUG_DEVELOPER
+        );
+    }
 }
 
 /**
