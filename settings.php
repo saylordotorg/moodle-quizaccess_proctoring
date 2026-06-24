@@ -932,13 +932,24 @@ if ($hassiteconfig) {
     $settings->visiblename = get_string('settings', 'quizaccess_proctoring');
     $settings->hidden = true;
 
-    $ADMIN->add('modsettingsquizcat', new quizaccess_proctoring_admin_category(
+    $proctoringcategoryobject = new quizaccess_proctoring_admin_category(
         $proctoringcategory,
         get_string('mainsettingspagebtn', 'quizaccess_proctoring')
-    ));
+    );
+    $ADMIN->add('modsettingsquizcat', $proctoringcategoryobject);
 
-    // 1. Settings (main settings page).
+    // 1. Settings (main settings page). The page itself is hidden (above) so it is not listed
+    // twice, but some themes do not render the category node as a link, which would leave the
+    // settings page unreachable from the navigation tree. Add an explicit, always-clickable
+    // external-page link to /admin/settings.php?section=modsettingsquizcatproctoring so the
+    // settings page is reachable in every theme.
     $ADMIN->add($proctoringcategory, $settings);
+    $ADMIN->add($proctoringcategory, new admin_externalpage(
+        'quizaccess_proctoring_settings_link',
+        get_string('settings', 'quizaccess_proctoring'),
+        $proctoringcategoryobject->get_settings_page_url(),
+        'moodle/site:config'
+    ));
 
     // 2. Review diagnostics.
     $ADMIN->add($proctoringcategory, new admin_externalpage(
