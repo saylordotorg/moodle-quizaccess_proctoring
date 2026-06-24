@@ -973,5 +973,27 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026060516, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026062403) {
+        // Grant the webcam-photo capability to existing teacher and editing-teacher roles so staff
+        // can take proctored quizzes for testing. New roles inherit it from the db/access.php archetypes.
+        // Overwrite is false, so any existing per-role override is left untouched.
+        $systemcontext = context_system::instance();
+        $staffroles = array_merge(
+            get_archetype_roles('editingteacher'),
+            get_archetype_roles('teacher')
+        );
+        foreach ($staffroles as $staffrole) {
+            assign_capability(
+                'quizaccess/proctoring:sendcamshot',
+                CAP_ALLOW,
+                $staffrole->id,
+                $systemcontext->id,
+                false
+            );
+        }
+
+        upgrade_plugin_savepoint(true, 2026062403, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

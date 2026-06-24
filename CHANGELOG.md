@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.26
+- Allowed teacher and editing-teacher roles to send webcam photos, so staff can take a proctored quiz for testing without hitting a "Proctoring send webcam photo" permission error. Granted to existing teacher/editing-teacher roles on upgrade (existing per-role overrides are preserved) and to new roles via the capability archetypes.
+
 # v1.1.25
 - Students are now notified (Moodle notification + email, per their messaging preferences) when a grade hold on their proctored attempt is released or confirmed. Added a new "Proctored quiz review decisions" message provider and two site settings: "Notify students of grade-hold decisions" (default on) and "Notify students of automatically released holds" (default on). Notifications fire from every path — the per-student report, the Overall reports dashboard, and the automatic review-window release task.
 
