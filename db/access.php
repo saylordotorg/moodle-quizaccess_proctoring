@@ -38,6 +38,8 @@ $capabilities = [
         'captype' => 'write',
         'contextlevel' => CONTEXT_MODULE,
         'archetypes' => [
+            'editingteacher' => CAP_ALLOW, // Editing teachers may send camshots when testing a proctored quiz.
+            'teacher' => CAP_ALLOW, // Non-editing teachers may send camshots when testing a proctored quiz.
             'student' => CAP_ALLOW, // Students are allowed to send camshot.
             'manager' => CAP_ALLOW, // Managers can also send camshot.
         ],
