@@ -1,7 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.24
+- Added inline "Release" and "Confirm violation" actions to the grade-hold column of the Overall reports dashboard, so reviewers can clear a hold (restoring the earned grade) or uphold it (setting the quiz grade to zero) without opening each student's report. Confirm shows a confirmation dialog, and both actions require the proctoring:reviewriskholds capability.
+
 # v1.1.23
+- Added a site-wide "Overall reports" dashboard under AI proctor settings: aggregates proctored attempts across all courses, with filters (course, period, minimum violations), sortable by violations or recency, plus summary cards.
 - Added a "Time taken" column to the proctoring report and the per-student summary, showing attempt duration (and the average time per question).
 - Added an optional risk factor that flags unusually fast completions. When enabled, an attempt whose average time per question falls below a configurable floor (default 15 seconds) adds to the risk score. Disabled by default.
 

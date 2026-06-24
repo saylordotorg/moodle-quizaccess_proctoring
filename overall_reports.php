@@ -37,6 +37,8 @@ $range = optional_param('range', '7days', PARAM_ALPHANUM);
 $minviolations = optional_param('minviolations', 0, PARAM_INT);
 $sort = optional_param('sort', 'violations', PARAM_ALPHA);
 $page = optional_param('page', 0, PARAM_INT);
+$action = optional_param('action', '', PARAM_ALPHA);
+$holdid = optional_param('holdid', 0, PARAM_INT);
 
 if (!array_key_exists($range, \quizaccess_proctoring\local\overall_report::range_seconds())) {
     $range = '7days';
@@ -45,6 +47,48 @@ if (!in_array($sort, ['violations', 'recent'], true)) {
     $sort = 'violations';
 }
 $minviolations = max(0, $minviolations);
+
+// Release or confirm a risk hold inline, then return to the same filtered view.
+if (($action === 'release' || $action === 'confirm') && $holdid > 0) {
+    require_sesskey();
+    $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
+    require_capability('quizaccess/proctoring:reviewriskholds', context_course::instance((int)$hold->courseid));
+
+    $returnurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', [
+        'courseid' => $courseid,
+        'range' => $range,
+        'minviolations' => $minviolations,
+        'sort' => $sort,
+        'page' => $page,
+    ]);
+
+    if ((int)$hold->status !== QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
+        redirect(
+            $returnurl,
+            get_string('overallreport:holdnotactive', 'quizaccess_proctoring'),
+            null,
+            \core\output\notification::NOTIFY_INFO
+        );
+    }
+
+    if ($action === 'release') {
+        quizaccess_proctoring_release_risk_hold($holdid, $USER->id);
+        redirect(
+            $returnurl,
+            get_string('riskreview:releasednotice', 'quizaccess_proctoring'),
+            null,
+            \core\output\notification::NOTIFY_SUCCESS
+        );
+    }
+
+    quizaccess_proctoring_confirm_risk_hold($holdid, $USER->id);
+    redirect(
+        $returnurl,
+        get_string('riskreview:confirmednotice', 'quizaccess_proctoring'),
+        null,
+        \core\output\notification::NOTIFY_SUCCESS
+    );
+}
 
 $data = \quizaccess_proctoring\local\overall_report::build($courseid, $range, $minviolations, $sort, $page);
 

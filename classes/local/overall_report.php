@@ -289,9 +289,18 @@ final class overall_report {
         $page = max(0, $page);
         $pagerows = array_slice($attempts, $page * self::PER_PAGE, self::PER_PAGE);
 
+        $canmanageholds = has_capability('quizaccess/proctoring:reviewriskholds', \context_system::instance());
+        $filterparams = [
+            'courseid' => $courseid,
+            'range' => $range,
+            'minviolations' => $minviolations,
+            'sort' => $sort,
+            'page' => $page,
+        ];
+
         return [
             'summary' => $summary,
-            'rows' => self::decorate_rows($pagerows),
+            'rows' => self::decorate_rows($pagerows, $canmanageholds, $filterparams),
             'hasrows' => !empty($pagerows),
             'truncated' => $truncated,
             'total' => $total,
@@ -354,9 +363,11 @@ final class overall_report {
      * Decorate the visible page of attempts with names, risk score, AI review, hold and links.
      *
      * @param array $pagerows Raw attempt rows for the current page.
+     * @param bool $canmanageholds Whether the viewer may release or confirm risk holds.
+     * @param array $filterparams Current filter params, echoed onto hold action URLs to return here.
      * @return array Template-ready row data.
      */
-    private static function decorate_rows(array $pagerows): array {
+    private static function decorate_rows(array $pagerows, bool $canmanageholds, array $filterparams): array {
         global $DB;
 
         if (empty($pagerows)) {
@@ -413,6 +424,21 @@ final class overall_report {
             ]);
             $userurl = new moodle_url('/user/view.php', ['id' => $a['userid'], 'course' => $a['courseid']]);
 
+            $holdactive = $hold && (int)$hold->status === \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
+            $canact = $holdactive && $canmanageholds;
+            $releaseurl = '';
+            $confirmurl = '';
+            if ($canact) {
+                $releaseurl = (new moodle_url(
+                    '/mod/quiz/accessrule/proctoring/overall_reports.php',
+                    $filterparams + ['action' => 'release', 'holdid' => (int)$hold->id, 'sesskey' => sesskey()]
+                ))->out(false);
+                $confirmurl = (new moodle_url(
+                    '/mod/quiz/accessrule/proctoring/overall_reports.php',
+                    $filterparams + ['action' => 'confirm', 'holdid' => (int)$hold->id, 'sesskey' => sesskey()]
+                ))->out(false);
+            }
+
             $rows[] = [
                 'fullname' => $user ? fullname($user) : get_string('overallreport:unknownuser', 'quizaccess_proctoring'),
                 'userurl' => $userurl->out(false),
@@ -432,6 +458,9 @@ final class overall_report {
                 'aireview' => $aidata,
                 'holdlabel' => $hold ? quizaccess_proctoring_get_risk_hold_status_label($hold) : '',
                 'hashold' => (bool)$hold,
+                'canact' => $canact,
+                'releaseurl' => $releaseurl,
+                'confirmurl' => $confirmurl,
                 'viewurl' => $viewurl->out(false),
             ];
         }
