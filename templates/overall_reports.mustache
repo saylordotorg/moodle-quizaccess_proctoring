@@ -1,0 +1,142 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+
+{{!
+    @template quizaccess_proctoring/overall_reports
+    Site-wide aggregate proctoring report.
+    Example context (json):
+    {
+        "formurl": "https://example.com/overall_reports.php",
+        "intro": "Monitor proctoring activity across all courses.",
+        "minviolations": 0,
+        "courseoptions": [{"value": 0, "label": "All courses", "selected": true}],
+        "rangeoptions": [{"value": "7days", "label": "Last 7 days", "selected": true}],
+        "sortoptions": [{"value": "violations", "label": "Most violations", "selected": true}],
+        "summary": {
+            "totalattempts": 12, "students": 9, "courses": 3,
+            "withviolations": 5, "activeholds": 2, "aiflagged": 1
+        },
+        "truncated": false,
+        "hasrows": true,
+        "rows": [
+            {
+                "fullname": "John Doe", "userurl": "https://example.com/user",
+                "course": "CS105", "quiz": "Final exam", "lastactivity": "1 Jan 2026, 10:00",
+                "riskscore": 85, "risklevel": "Critical", "riskbadgeclass": "proctoring-risk-badge",
+                "violations": 4, "eventcount": 3, "facemismatch": 1,
+                "aireview": {"badgeclass": "badge badge-danger", "compactlabel": "90/100 Highly suspicious"},
+                "hashold": true, "holdlabel": "On hold", "viewurl": "https://example.com/report"
+            }
+        ],
+        "pagingbar": "<nav></nav>"
+    }
+}}
+
+<div class="proctoring-overall-report">
+    <p class="text-muted">{{intro}}</p>
+
+    <form method="get" action="{{formurl}}" class="proctoring-overall-filters form-row align-items-end mb-3">
+        <div class="form-group col-md-3">
+            <label for="proctoring-overall-course">{{#str}}overallreport:filtercourse, quizaccess_proctoring{{/str}}</label>
+            <select class="custom-select" id="proctoring-overall-course" name="courseid">
+                {{#courseoptions}}
+                <option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>
+                {{/courseoptions}}
+            </select>
+        </div>
+        <div class="form-group col-md-2">
+            <label for="proctoring-overall-range">{{#str}}overallreport:filterrange, quizaccess_proctoring{{/str}}</label>
+            <select class="custom-select" id="proctoring-overall-range" name="range">
+                {{#rangeoptions}}
+                <option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>
+                {{/rangeoptions}}
+            </select>
+        </div>
+        <div class="form-group col-md-2">
+            <label for="proctoring-overall-sort">{{#str}}overallreport:filtersort, quizaccess_proctoring{{/str}}</label>
+            <select class="custom-select" id="proctoring-overall-sort" name="sort">
+                {{#sortoptions}}
+                <option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>
+                {{/sortoptions}}
+            </select>
+        </div>
+        <div class="form-group col-md-2">
+            <label for="proctoring-overall-minviolations">{{#str}}overallreport:filterminviolations, quizaccess_proctoring{{/str}}</label>
+            <input type="number" min="0" class="form-control" id="proctoring-overall-minviolations" name="minviolations" value="{{minviolations}}">
+        </div>
+        <div class="form-group col-md-2">
+            <button type="submit" class="btn btn-primary">{{#str}}overallreport:apply, quizaccess_proctoring{{/str}}</button>
+        </div>
+    </form>
+
+    <div class="proctoring-overall-stats row mb-3">
+        <div class="col-6 col-md-2"><div class="proctoring-overall-stat"><div class="proctoring-overall-stat-value">{{summary.totalattempts}}</div><div class="proctoring-overall-stat-label">{{#str}}overallreport:stat_attempts, quizaccess_proctoring{{/str}}</div></div></div>
+        <div class="col-6 col-md-2"><div class="proctoring-overall-stat"><div class="proctoring-overall-stat-value">{{summary.students}}</div><div class="proctoring-overall-stat-label">{{#str}}overallreport:stat_students, quizaccess_proctoring{{/str}}</div></div></div>
+        <div class="col-6 col-md-2"><div class="proctoring-overall-stat"><div class="proctoring-overall-stat-value">{{summary.withviolations}}</div><div class="proctoring-overall-stat-label">{{#str}}overallreport:stat_violations, quizaccess_proctoring{{/str}}</div></div></div>
+        <div class="col-6 col-md-2"><div class="proctoring-overall-stat"><div class="proctoring-overall-stat-value">{{summary.activeholds}}</div><div class="proctoring-overall-stat-label">{{#str}}overallreport:stat_holds, quizaccess_proctoring{{/str}}</div></div></div>
+        <div class="col-6 col-md-2"><div class="proctoring-overall-stat"><div class="proctoring-overall-stat-value">{{summary.aiflagged}}</div><div class="proctoring-overall-stat-label">{{#str}}overallreport:stat_aiflagged, quizaccess_proctoring{{/str}}</div></div></div>
+        <div class="col-6 col-md-2"><div class="proctoring-overall-stat"><div class="proctoring-overall-stat-value">{{summary.courses}}</div><div class="proctoring-overall-stat-label">{{#str}}overallreport:stat_courses, quizaccess_proctoring{{/str}}</div></div></div>
+    </div>
+
+    {{#truncated}}
+    <div class="alert alert-warning">{{truncatednotice}}</div>
+    {{/truncated}}
+
+    {{#hasrows}}
+    <div class="table-responsive">
+    <table class="table table-striped proctoring-overall-table">
+        <thead>
+            <tr>
+                <th>{{#str}}overallreport:col_student, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}overallreport:col_course, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}overallreport:col_quiz, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}overallreport:col_lastactivity, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}overallreport:col_risk, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}overallreport:col_violations, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}overallreport:col_aireview, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}overallreport:col_hold, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}overallreport:col_actions, quizaccess_proctoring{{/str}}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#rows}}
+            <tr>
+                <td><a href="{{userurl}}" target="_blank">{{fullname}}</a></td>
+                <td>{{course}}</td>
+                <td>{{quiz}}</td>
+                <td>{{lastactivity}}</td>
+                <td><span class="{{riskbadgeclass}}">{{riskscore}}/100 {{risklevel}}</span></td>
+                <td>
+                    <strong>{{violations}}</strong>
+                    <span class="text-muted">{{violationsbreakdown}}</span>
+                </td>
+                <td>
+                    {{#aireview}}<span class="{{badgeclass}}">{{compactlabel}}</span>{{/aireview}}
+                    {{^aireview}}<span class="text-muted">&mdash;</span>{{/aireview}}
+                </td>
+                <td>
+                    {{#hashold}}<span class="proctoring-risk-hold-status">{{holdlabel}}</span>{{/hashold}}
+                    {{^hashold}}<span class="text-muted">&mdash;</span>{{/hashold}}
+                </td>
+                <td><a class="btn btn-sm btn-secondary" href="{{viewurl}}">{{#str}}overallreport:view, quizaccess_proctoring{{/str}}</a></td>
+            </tr>
+            {{/rows}}
+        </tbody>
+    </table>
+    </div>
+    {{{pagingbar}}}
+    {{/hasrows}}
+
+    {{^hasrows}}
+    <div class="alert alert-info">{{#str}}overallreport:empty, quizaccess_proctoring{{/str}}</div>
+    {{/hasrows}}
+</div>

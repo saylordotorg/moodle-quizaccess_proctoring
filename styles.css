@@ -1455,3 +1455,26 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
     max-width: 100%;
     border: 1px solid #c8c8c8;
 }
+
+.proctoring-overall-filters .form-group {
+    margin-bottom: 0.5rem;
+}
+
+.proctoring-overall-stat {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    height: 100%;
+    padding: 0.75rem;
+    text-align: center;
+}
+
+.proctoring-overall-stat-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+}
+
+.proctoring-overall-stat-label {
+    color: #6c757d;
+    font-size: 0.85rem;
+}
