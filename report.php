@@ -452,6 +452,7 @@ if (
             $row['riskscore'] = $risk['score'];
             $row['risklevel'] = $risk['level'];
             $row['riskbadgeclass'] = $risk['badgeclass'];
+            $row['timetaken'] = $risk['durationformatted'];
             $hold = quizaccess_proctoring_get_risk_hold(
                 (int)$courseid,
                 (int)$cmid,
