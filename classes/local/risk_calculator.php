@@ -291,6 +291,39 @@ final class risk_calculator {
             ['face_missing', 'no_face_detected']
         );
 
+        // Attempt duration and the optional speed-based risk factor.
+        $speedenabled = (int)get_config('quizaccess_proctoring', 'speedreviewenabled') === 1;
+        $speedfloor = (int)get_config('quizaccess_proctoring', 'speedreviewminsecondsperquestion');
+        if ($speedfloor <= 0) {
+            $speedfloor = 15;
+        }
+        $durationseconds = 0;
+        $questioncount = 0;
+        $speedcount = 0;
+        if ($attemptid > 0) {
+            $attemptrecord = $DB->get_record(
+                'quiz_attempts',
+                ['id' => $attemptid],
+                'id, quiz, timestart, timefinish'
+            );
+            if (
+                $attemptrecord
+                && (int)$attemptrecord->timestart > 0
+                && (int)$attemptrecord->timefinish > (int)$attemptrecord->timestart
+            ) {
+                $durationseconds = (int)$attemptrecord->timefinish - (int)$attemptrecord->timestart;
+                static $slotcountcache = [];
+                $quizid = (int)$attemptrecord->quiz;
+                if (!array_key_exists($quizid, $slotcountcache)) {
+                    $slotcountcache[$quizid] = (int)$DB->count_records('quiz_slots', ['quizid' => $quizid]);
+                }
+                $questioncount = $slotcountcache[$quizid];
+                if ($speedenabled && $questioncount > 0 && ($durationseconds / $questioncount) < $speedfloor) {
+                    $speedcount = 1;
+                }
+            }
+        }
+
         $factors = [
             self::build_factor(
                 get_string('riskscore:facemismatch', 'quizaccess_proctoring'),
@@ -366,12 +399,34 @@ final class risk_calculator {
             ),
         ];
 
+        if ($speedenabled && $durationseconds > 0 && $questioncount > 0) {
+            $factors[] = self::build_factor(
+                get_string('riskscore:speed', 'quizaccess_proctoring'),
+                $speedcount,
+                25,
+                25
+            );
+        }
+
         $score = 0;
         foreach ($factors as $factor) {
             $score += (int)$factor['points'];
         }
         $score = min(100, $score);
         $level = self::get_level($score);
+
+        $secondsperquestion = $questioncount > 0 ? (int)round($durationseconds / $questioncount) : 0;
+        $durationformatted = $durationseconds > 0 ? format_time($durationseconds) : '';
+        $timetakenlabel = '';
+        if ($durationseconds > 0 && $questioncount > 0) {
+            $timetakenlabel = get_string('riskscore:timetakenlabel', 'quizaccess_proctoring', (object)[
+                'duration' => $durationformatted,
+                'perquestion' => $secondsperquestion,
+                'questions' => $questioncount,
+            ]);
+        } else if ($durationseconds > 0) {
+            $timetakenlabel = get_string('riskscore:timetakenshort', 'quizaccess_proctoring', $durationformatted);
+        }
 
         return [
             'score' => $score,
@@ -380,6 +435,11 @@ final class risk_calculator {
             'cardclass' => 'proctoring-risk-card ' . $level['class'],
             'factors' => $factors,
             'attemptid' => $attemptid,
+            'durationseconds' => $durationseconds,
+            'durationformatted' => $durationformatted,
+            'secondsperquestion' => $secondsperquestion,
+            'questioncount' => $questioncount,
+            'timetakenlabel' => $timetakenlabel,
         ];
     }
 }

@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.23
+- Added a "Time taken" column to the proctoring report and the per-student summary, showing attempt duration (and the average time per question).
+- Added an optional risk factor that flags unusually fast completions. When enabled, an attempt whose average time per question falls below a configurable floor (default 15 seconds) adds to the risk score. Disabled by default.
+
 # v1.1.22
 - Fixed the desktop capture prompt reappearing on every quiz page when multiple monitors are blocked. In Auto screen-share persistence mode, the helper window is now used only when multiple monitors are allowed (keeping the verified share alive across navigation); when monitors are blocked, in-quiz desktop capture is skipped so students are no longer re-prompted on each page. Use "Always use helper window" to keep desktop capture active even when monitors are blocked.
 

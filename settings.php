@@ -156,6 +156,10 @@ if ($hassiteconfig) {
             'label' => get_string('setting:quicktoggle_riskreview', 'quizaccess_proctoring'),
         ],
         [
+            'setting' => 'speedreviewenabled',
+            'label' => get_string('setting:quicktoggle_speedreview', 'quizaccess_proctoring'),
+        ],
+        [
             'setting' => 'studentholdnoticeenabled',
             'label' => get_string('setting:quicktoggle_studentnotice', 'quizaccess_proctoring'),
         ],
@@ -709,6 +713,21 @@ if ($hassiteconfig) {
         get_string('setting:cheatinglockoutdays', 'quizaccess_proctoring'),
         get_string('setting:cheatinglockoutdays_desc', 'quizaccess_proctoring'),
         7,
+        PARAM_INT
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/speedreviewenabled',
+        get_string('setting:speedreviewenabled', 'quizaccess_proctoring'),
+        get_string('setting:speedreviewenabled_desc', 'quizaccess_proctoring'),
+        0
+    ));
+
+    $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/speedreviewminsecondsperquestion',
+        get_string('setting:speedreviewminsecondsperquestion', 'quizaccess_proctoring'),
+        get_string('setting:speedreviewminsecondsperquestion_desc', 'quizaccess_proctoring'),
+        15,
         PARAM_INT
     ));
 
