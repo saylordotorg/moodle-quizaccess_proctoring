@@ -52,11 +52,25 @@ final class external_authorization_test extends advanced_testcase {
      * @covers \quizaccess_proctoring_external
      */
     public function test_log_event_requires_sendcamshot_capability(): void {
+        global $DB;
+
         $this->resetAfterTest();
 
         [$course, , $cm] = $this->create_quiz_fixture();
-        $teacher = $this->create_enrolled_user($course, 'teacher');
-        $this->setUser($teacher);
+        $user = $this->create_enrolled_user($course);
+
+        // Students, teachers, and managers all hold this capability by default, so prohibit it for
+        // the enrolled role in this course to exercise the access check on log_event().
+        $studentroleid = (int)$DB->get_field('role', 'id', ['shortname' => 'student'], MUST_EXIST);
+        assign_capability(
+            'quizaccess/proctoring:sendcamshot',
+            CAP_PROHIBIT,
+            $studentroleid,
+            \context_course::instance($course->id)->id,
+            true
+        );
+
+        $this->setUser($user);
 
         $this->expectException(required_capability_exception::class);
         \quizaccess_proctoring_external::log_event(
