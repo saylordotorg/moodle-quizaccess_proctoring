@@ -37,6 +37,22 @@ final class overall_report {
     const MAX_ATTEMPTS = 2000;
 
     /**
+     * Browser event types that count as violations, mirroring the events scored by the risk
+     * calculator. Routine recovery/informational events (tab_visible, focus_returned,
+     * mouse_returned_window, mouse_left_window, monitor_detection_unavailable) are excluded.
+     *
+     * @var string[]
+     */
+    const SUSPICIOUS_EVENT_TYPES = [
+        'focus_lost', 'tab_hidden', 'page_exit',
+        'clipboard_copy', 'clipboard_cut', 'clipboard_paste', 'contextmenu',
+        'screen_marker_missing', 'screen_share_stopped',
+        'multiple_monitors_detected', 'possible_ai_tool', 'shortcut',
+        'multiple_faces_detected', 'audio_detected',
+        'face_missing', 'no_face_detected',
+    ];
+
+    /**
      * Rolling date-range windows, mapping a filter key to its length in seconds (0 = all time).
      *
      * @return array<string, int> Range key to window length in seconds.
@@ -203,6 +219,11 @@ final class overall_report {
             $eventwhere .= ' AND e.timemodified >= :fromtime';
             $eventparams['fromtime'] = $fromtime;
         }
+        // Count only suspicious events as violations, mirroring the risk calculator; routine
+        // recovery events (tab_visible, focus_returned, mouse_returned_window) are excluded.
+        [$eventtypesql, $eventtypeparams] = $DB->get_in_or_equal(self::SUSPICIOUS_EVENT_TYPES, SQL_PARAMS_NAMED, 'evt');
+        $eventwhere .= " AND e.eventtype {$eventtypesql}";
+        $eventparams += $eventtypeparams;
         $eventsql = "SELECT e.courseid, e.quizid, e.userid, e.attemptid,
                             MIN(e.reportid) AS reportid,
                             MAX(e.timemodified) AS lastactivity,
@@ -251,22 +272,27 @@ final class overall_report {
         // Summary counters across the whole filtered set.
         $students = [];
         $courses = [];
+        $attemptids = [];
         $withviolations = 0;
         foreach ($attempts as $a) {
             $students[$a['userid']] = true;
             $courses[$a['courseid']] = true;
+            if ($a['attemptid'] > 0) {
+                $attemptids[$a['attemptid']] = true;
+            }
             if ($a['violations'] > 0) {
                 $withviolations++;
             }
         }
+        $attemptids = array_keys($attemptids);
 
         $summary = [
             'totalattempts' => count($attempts),
             'students' => count($students),
             'courses' => count($courses),
             'withviolations' => $withviolations,
-            'activeholds' => self::count_active_holds($courseid, $fromtime),
-            'aiflagged' => self::count_ai_flagged($courseid, $fromtime),
+            'activeholds' => self::count_active_holds($attemptids),
+            'aiflagged' => self::count_ai_flagged($attemptids),
         ];
 
         // Sort, then paginate.
@@ -310,53 +336,47 @@ final class overall_report {
     }
 
     /**
-     * Count active risk holds within the filter window.
+     * Count active risk holds among the given (already filtered) attempts.
      *
-     * @param int $courseid Course filter (0 for all).
-     * @param int $fromtime Inclusive lower bound on hold creation time (0 for all time).
+     * @param array $attemptids Quiz attempt ids in the current filtered result set.
      * @return int Active hold count.
      */
-    private static function count_active_holds(int $courseid, int $fromtime): int {
+    private static function count_active_holds(array $attemptids): int {
         global $DB;
 
-        $where = 'status = :status';
-        $params = ['status' => \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE];
-        if ($courseid > 0) {
-            $where .= ' AND courseid = :courseid';
-            $params['courseid'] = $courseid;
+        if (empty($attemptids)) {
+            return 0;
         }
-        if ($fromtime > 0) {
-            $where .= ' AND timecreated >= :fromtime';
-            $params['fromtime'] = $fromtime;
-        }
-        return $DB->count_records_select('quizaccess_proctoring_risk_holds', $where, $params);
+        [$insql, $params] = $DB->get_in_or_equal($attemptids, SQL_PARAMS_NAMED, 'att');
+        $params['status'] = \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
+        return $DB->count_records_select(
+            'quizaccess_proctoring_risk_holds',
+            "status = :status AND attemptid {$insql}",
+            $params
+        );
     }
 
     /**
-     * Count attempt-level AI reviews that flagged the attempt within the filter window.
+     * Count attempt-level AI reviews that flagged any of the given (already filtered) attempts.
      *
-     * @param int $courseid Course filter (0 for all).
-     * @param int $fromtime Inclusive lower bound on review creation time (0 for all time).
+     * @param array $attemptids Quiz attempt ids in the current filtered result set.
      * @return int Flagged AI review count.
      */
-    private static function count_ai_flagged(int $courseid, int $fromtime): int {
+    private static function count_ai_flagged(array $attemptids): int {
         global $DB;
 
-        $where = 'reviewtype = :reviewtype AND status = :status AND decision = :decision';
-        $params = [
-            'reviewtype' => 'attempt',
-            'status' => \QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE,
-            'decision' => 'highly_suspicious',
-        ];
-        if ($courseid > 0) {
-            $where .= ' AND courseid = :courseid';
-            $params['courseid'] = $courseid;
+        if (empty($attemptids)) {
+            return 0;
         }
-        if ($fromtime > 0) {
-            $where .= ' AND timecreated >= :fromtime';
-            $params['fromtime'] = $fromtime;
-        }
-        return $DB->count_records_select('quizaccess_proctoring_ai_reviews', $where, $params);
+        [$insql, $params] = $DB->get_in_or_equal($attemptids, SQL_PARAMS_NAMED, 'att');
+        $params['reviewtype'] = 'attempt';
+        $params['status'] = \QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE;
+        $params['decision'] = 'highly_suspicious';
+        return $DB->count_records_select(
+            'quizaccess_proctoring_ai_reviews',
+            "reviewtype = :reviewtype AND status = :status AND decision = :decision AND attemptid {$insql}",
+            $params
+        );
     }
 
     /**
