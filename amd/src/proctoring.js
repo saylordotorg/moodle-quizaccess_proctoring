@@ -1,5 +1,7 @@
 // @SuppressWarnings("javascript:S4144");
 let isCameraAllowed = false;
+// Module-scoped handle to the MediaStream acquired for the Pre-Check modal (Req 6.2).
+let precheckStream = null;
 
 define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proctoring/screenMonitorClient'],
     function($, Ajax, Notification, Str, ScreenMonitorClient) {
@@ -134,6 +136,51 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
             return navigator.mediaDevices.getUserMedia(getUserCameraConstraints())
                 .catch(() => navigator.mediaDevices.getUserMedia({video: true, audio: false}));
+        };
+
+        /**
+         * Acquire the webcam for the Pre-Check modal and bind it to the modal video element.
+         *
+         * The resulting MediaStream is tracked in the module-scoped precheckStream handle so it can
+         * be deterministically released later (Req 6.2). Acquisition is idempotent: if a live stream
+         * is already bound to the given video element, the existing stream is returned.
+         *
+         * @param {HTMLVideoElement} video The Pre-Check modal <video> element.
+         * @returns {Promise<MediaStream>} Resolves with the bound MediaStream.
+         */
+        const acquirePrecheckCamera = function(video) {
+            if (!video) {
+                return Promise.reject(new Error('precheck video element unavailable'));
+            }
+            if (precheckStream && video.srcObject === precheckStream) {
+                return Promise.resolve(precheckStream);
+            }
+            return requestUserCamera().then(function(stream) {
+                precheckStream = stream;
+                video.srcObject = stream;
+                video.play();
+                isCameraAllowed = true;
+                return stream;
+            });
+        };
+
+        /**
+         * Tear down the Pre-Check camera: stop every track, detach it from the video element, and
+         * clear the tracked stream/allowed flags (Req 6.3). Mirrors the stopIdDocumentStream()
+         * teardown pattern used in startAttempt.js. Safe to call repeatedly.
+         *
+         * @param {HTMLVideoElement} [video] The Pre-Check modal <video> element.
+         */
+        const teardownPrecheckCamera = function(video) {
+            if (precheckStream) {
+                precheckStream.getTracks().forEach((track) => track.stop());
+                precheckStream = null;
+            }
+            const target = video || document.getElementById('video');
+            if (target) {
+                target.srcObject = null;
+            }
+            isCameraAllowed = false;
         };
 
         // Function to draw image from the box data.
@@ -1096,8 +1143,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 window.addEventListener('blur', function() {
                     focusLostSince = Date.now();
                     logEvent('focus_lost', {
-                        reason: 'window_blur',
-                        note: 'Browser focus left the quiz. This can include another tab, another window, or a browser AI panel.'
+                        reason: 'window_blur'
                     });
                 }, true);
 
@@ -1540,25 +1586,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     photo = document.getElementById('photo');
 
                     if (video) {
-                        requestUserCamera()
-                            // eslint-disable-next-line promise/always-return
-                            .then(function(stream) {
-                                video.srcObject = stream;
-                                video.play();
-                                isCameraAllowed = true;
-
-                                Notification.addNotification({
-                                    message: props.cameraallow,
-                                    type: 'success' // Success notification type.
-                                });
-                            })
-                            .catch(function() {
-                                Notification.addNotification({
-                                    message: props.allowcamerawarning,
-                                    type: 'warning'
-                                });
-                                hideButtons();
-                            });
+                        // Camera acquisition is deferred until the Pre-Check modal is opened, so the
+                        // camera is never activated on activity page load (Req 6.1). Acquisition and
+                        // teardown are scoped to the modal lifecycle (Req 6.2, 6.3).
+                        bindPrecheckModalCamera(video);
 
                         video.addEventListener('canplay', function() {
                             if (!streaming) {
@@ -1645,6 +1676,98 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     } else {
                         clearphoto();
                     }
+                }
+
+                /**
+                 * Bind the Pre-Check camera lifecycle to the modal that hosts the webcam.
+                 *
+                 * The camera is only acquired once the Pre-Check modal becomes visible (Req 6.2) and
+                 * is released whenever the modal is hidden/cancelled, the student aborts/exits, or the
+                 * page is navigated away (Req 6.3). This keeps the camera off on activity page load
+                 * (Req 6.1). Mirrors the stopIdDocumentStream() teardown approach in startAttempt.js.
+                 *
+                 * @param {HTMLVideoElement} modalvideo The Pre-Check modal <video> element.
+                 */
+                function bindPrecheckModalCamera(modalvideo) {
+                    let acquiring = false;
+                    let acquireFailed = false;
+
+                    // The modal is considered open when its video element is laid out/visible.
+                    const isModalOpen = function() {
+                        return modalvideo.offsetParent !== null || modalvideo.getClientRects().length > 0;
+                    };
+
+                    const openCamera = function() {
+                        if (precheckStream || acquiring || acquireFailed) {
+                            return;
+                        }
+                        acquiring = true;
+                        acquirePrecheckCamera(modalvideo)
+                            // eslint-disable-next-line promise/always-return
+                            .then(function() {
+                                acquiring = false;
+                                Notification.addNotification({
+                                    message: props.cameraallow,
+                                    type: 'success' // Success notification type.
+                                });
+                            })
+                            .catch(function() {
+                                acquiring = false;
+                                acquireFailed = true;
+                                Notification.addNotification({
+                                    message: props.allowcamerawarning,
+                                    type: 'warning'
+                                });
+                                hideButtons();
+                            });
+                    };
+
+                    const closeCamera = function() {
+                        if (precheckStream) {
+                            teardownPrecheckCamera(modalvideo);
+                        }
+                        // Allow a fresh acquisition attempt the next time the modal is opened.
+                        acquireFailed = false;
+                    };
+
+                    const syncCameraWithModal = function() {
+                        if (isModalOpen()) {
+                            openCamera();
+                        } else {
+                            closeCamera();
+                        }
+                    };
+
+                    // React to the modal being inserted/removed or shown/hidden in the DOM.
+                    if (typeof MutationObserver === 'function') {
+                        const observer = new MutationObserver(syncCameraWithModal);
+                        observer.observe(document.body, {childList: true, subtree: true});
+                    }
+                    // Backstop poll for themes that toggle visibility without DOM mutations.
+                    window.setInterval(syncCameraWithModal, 750);
+                    // Evaluate the initial state without forcing acquisition on page load.
+                    syncCameraWithModal();
+
+                    // Release the device when the student explicitly cancels/aborts the Pre-Check modal.
+                    document.addEventListener('click', function(ev) {
+                        const target = ev.target;
+                        if (!target || typeof target.closest !== 'function') {
+                            return;
+                        }
+                        if (target.closest('.mod_quiz_preflight_popup .closebutton, ' +
+                                '.mod_quiz_preflight_popup [name="cancel"], ' +
+                                '.moodle-dialogue .closebutton')) {
+                            teardownPrecheckCamera(modalvideo);
+                        }
+                    }, true);
+
+                    // Release the device on navigation away from the activity (Req 6.3).
+                    window.addEventListener('beforeunload', function() {
+                        teardownPrecheckCamera(modalvideo);
+                    });
+                    window.addEventListener('pagehide', function() {
+                        teardownPrecheckCamera(modalvideo);
+                    });
                 }
 
                 await startup();

@@ -42,7 +42,10 @@ class release_expired_risk_holds_task extends \core\task\scheduled_task {
         global $CFG;
 
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
-        $released = quizaccess_proctoring_auto_release_expired_risk_holds();
+        $result = quizaccess_proctoring_auto_release_expired_risk_holds();
+        $released = (int)($result['released'] ?? 0);
+        $annotated = (int)($result['annotated'] ?? 0);
         mtrace("Released {$released} expired Saylor Proctored Quiz risk hold(s).");
+        mtrace("Retained and annotated {$annotated} ceiling-blocked Saylor Proctored Quiz risk hold(s) for review.");
     }
 }

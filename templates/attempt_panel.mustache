@@ -1,0 +1,119 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+
+{{!
+    @template quizaccess_proctoring/attempt_panel
+
+    Self-contained, read-only proctoring summary for a single quiz attempt. Designed to be
+    embedded on the quiz attempt-review page (Requirement 14) so a reviewer sees the risk score,
+    the resolved certificate label, the AI image-review status, and a plain-language summary
+    alongside the exam attempt. Decision controls (release/confirm) are intentionally omitted.
+
+    Example context (json):
+    {
+        "heading": "Proctoring summary",
+        "certificatelabel": "Certificate",
+        "sessionsummary": "This session was flagged for leaving the exam tab (3 times).",
+        "hassessionsummary": true,
+        "hascertificate": true,
+        "certificate": {
+            "state": "held",
+            "label": "Review required — grade/certificate held",
+            "class": "proctoring-cert-held"
+        },
+        "riskscore": {
+            "score": 45,
+            "level": "Moderate risk",
+            "cardclass": "proctoring-risk-card proctoring-risk-moderate",
+            "factors": [
+                { "label": "Left the exam tab", "count": 3, "points": 15 }
+            ]
+        },
+        "hasaireview": true,
+        "aireview": {
+            "statuslabel": "Completed",
+            "badgeclass": "badge badge-success",
+            "compactlabel": "20/100 Not suspicious",
+            "iscomplete": true,
+            "isfailed": false
+        }
+    }
+}}
+
+<section class="proctoring-attempt-panel card mt-3 mb-3" aria-label="{{heading}}">
+    <div class="card-body">
+        <h3 class="proctoring-attempt-panel-heading h5">{{heading}}</h3>
+
+        {{#hassessionsummary}}
+        <div class="proctoring-session-summary alert alert-info" role="note">
+            <p class="proctoring-session-summary-text mb-0">{{sessionsummary}}</p>
+        </div>
+        {{/hassessionsummary}}
+
+        {{#riskscore}}
+        <div class="{{cardclass}}">
+            <div>
+                <div class="proctoring-risk-title">{{#str}}riskscore:attemptscore, quizaccess_proctoring{{/str}}</div>
+                <div class="proctoring-risk-score">{{score}}/100</div>
+            </div>
+            <div class="proctoring-risk-level">{{level}}</div>
+        </div>
+        {{#timetakenlabel}}
+        <div class="proctoring-risk-duration">{{timetakenlabel}}</div>
+        {{/timetakenlabel}}
+        <div class="proctoring-risk-factor-container">
+            <table class="proctoring-risk-factor-table">
+                <thead>
+                    <tr>
+                        <th>{{#str}}riskscore:factor, quizaccess_proctoring{{/str}}</th>
+                        <th>{{#str}}riskscore:count, quizaccess_proctoring{{/str}}</th>
+                        <th>{{#str}}riskscore:points, quizaccess_proctoring{{/str}}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#factors}}
+                    <tr>
+                        <td>{{label}}</td>
+                        <td>{{count}}</td>
+                        <td>{{points}}</td>
+                    </tr>
+                    {{/factors}}
+                </tbody>
+            </table>
+        </div>
+        {{/riskscore}}
+
+        {{#hascertificate}}
+        {{#certificate}}
+        <div class="proctoring-attempt-panel-certificate mt-3">
+            <span class="proctoring-attempt-panel-certificate-label font-weight-bold">{{certificatelabel}}:</span>
+            <span class="{{class}}">{{label}}</span>
+        </div>
+        {{/certificate}}
+        {{/hascertificate}}
+
+        {{#hasaireview}}
+        {{#aireview}}
+        <div class="proctoring-attempt-panel-aireview mt-3">
+            <h4 class="h6">{{#str}}aireview:title, quizaccess_proctoring{{/str}}</h4>
+            <span class="{{badgeclass}}">{{compactlabel}}</span>
+            {{#isfailed}}
+            <div class="proctoring-ai-toolfailure small mt-1">{{toolfailurenotice}}</div>
+            {{/isfailed}}
+            {{#iscomplete}}
+                {{#summary}}<div class="small mt-1">{{summary}}</div>{{/summary}}
+            {{/iscomplete}}
+        </div>
+        {{/aireview}}
+        {{/hasaireview}}
+    </div>
+</section>

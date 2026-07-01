@@ -1,0 +1,77 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+
+{{!
+    @template quizaccess_proctoring/held_certificates
+    Cross-course held-certificate dashboard.
+    Example context (json):
+    {
+        "intro": "Every attempt whose certificate is currently held for review.",
+        "truncated": false,
+        "truncatednotice": "Showing up to 2000 held certificates.",
+        "hasrows": true,
+        "rows": [
+            {
+                "fullname": "John Doe", "userurl": "https://example.com/user",
+                "course": "CS105", "quiz": "Final exam", "heldsince": "1 Jan 2026, 10:00",
+                "riskscore": 85, "risklevel": "Critical", "riskbadgeclass": "proctoring-risk-badge",
+                "holdlabel": "On hold", "holdclass": "proctoring-cert-held",
+                "viewurl": "https://example.com/report"
+            }
+        ],
+        "pagingbar": "<nav></nav>"
+    }
+}}
+
+<div class="proctoring-held-certificates">
+    <p class="text-muted">{{intro}}</p>
+
+    {{#truncated}}
+    <div class="alert alert-warning">{{truncatednotice}}</div>
+    {{/truncated}}
+
+    {{#hasrows}}
+    <div class="table-responsive">
+    <table class="table table-striped proctoring-held-certificates-table">
+        <thead>
+            <tr>
+                <th>{{#str}}heldcertificates:colstudent, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}heldcertificates:colcourse, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}heldcertificates:colquiz, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}heldcertificates:colheldsince, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}heldcertificates:colrisk, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}heldcertificates:colcertificate, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}heldcertificates:colactions, quizaccess_proctoring{{/str}}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#rows}}
+            <tr>
+                <td><a href="{{userurl}}" target="_blank">{{fullname}}</a></td>
+                <td>{{course}}</td>
+                <td>{{quiz}}</td>
+                <td>{{heldsince}}</td>
+                <td><span class="{{riskbadgeclass}}">{{riskscore}}/100 {{risklevel}}</span></td>
+                <td><span class="{{holdclass}}">{{holdlabel}}</span></td>
+                <td><a class="btn btn-sm btn-secondary" href="{{viewurl}}">{{#str}}heldcertificates:view, quizaccess_proctoring{{/str}}</a></td>
+            </tr>
+            {{/rows}}
+        </tbody>
+    </table>
+    </div>
+    {{{pagingbar}}}
+    {{/hasrows}}
+
+    {{^hasrows}}
+    <div class="alert alert-info">{{#str}}heldcertificates:empty, quizaccess_proctoring{{/str}}</div>
+    {{/hasrows}}
+</div>

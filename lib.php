@@ -610,6 +610,17 @@ function quizaccess_proctoring_calculate_attempt_risk(int $courseid, int $cmid, 
 }
 
 /**
+ * Build a 1-3 sentence plain-language summary from risk factors and AI outcome.
+ *
+ * @param array $risk Result of quizaccess_proctoring_calculate_attempt_risk().
+ * @param stdClass|false $aireview AI review row or false.
+ * @return string One to three sentences; empty string only when there is genuinely nothing to report.
+ */
+function quizaccess_proctoring_build_session_summary(array $risk, $aireview): string {
+    return \quizaccess_proctoring\local\session_summary::build($risk, $aireview);
+}
+
+/**
  * Get effective risk review settings for a course-module quiz.
  *
  * @param int $cmid Quiz course-module id.
@@ -661,6 +672,39 @@ function quizaccess_proctoring_get_risk_review_auto_release_days(): int {
     $configured = get_config('quizaccess_proctoring', 'riskreviewautoreleasedays');
     $days = $configured === false ? 7 : (int)$configured;
     return max(0, min(365, $days));
+}
+
+/**
+ * Get the configured auto-release risk ceiling.
+ *
+ * Expired active risk holds whose risk score is at or above this ceiling are retained for human
+ * review instead of being automatically released. A value of 101 (or any value above 100) disables
+ * the ceiling so every expired hold is auto-released, preserving the prior behavior.
+ *
+ * @return int Ceiling from 0 to 101.
+ */
+function quizaccess_proctoring_get_risk_review_ceiling(): int {
+    $configured = get_config('quizaccess_proctoring', 'riskreviewceiling');
+    $ceiling = $configured === false ? 101 : (int)$configured;
+    return max(0, min(101, $ceiling));
+}
+
+/**
+ * Get the configured AI image review trigger mode.
+ *
+ * Selects when AI image review is enqueued at submission: "everyattempt" enqueues review for every
+ * proctored attempt (still requiring AI review to be configured and enabled), while "threshold"
+ * enqueues review only when the attempt risk score is at or above the AI image review trigger
+ * threshold.
+ *
+ * @return string One of 'everyattempt' or 'threshold'. Defaults to 'threshold'.
+ */
+function quizaccess_proctoring_get_ai_review_trigger_mode(): string {
+    $mode = (string)get_config('quizaccess_proctoring', 'aireviewtriggermode');
+    if (!in_array($mode, ['everyattempt', 'threshold'], true)) {
+        $mode = 'threshold';
+    }
+    return $mode;
 }
 
 /**
@@ -936,6 +980,9 @@ function quizaccess_proctoring_should_queue_event_ai_review(stdClass $event, arr
  * @param int $holdid Risk hold id, or zero if no hold was applied.
  * @param int $riskscore Risk score that triggered review.
  * @param int $triggerthreshold AI review trigger threshold.
+ * @param bool $force When true, bypass the risk-score threshold gate and enqueue regardless of
+ *      the score (used by the 'everyattempt' trigger mode). Defaults to false so existing callers
+ *      preserve the threshold-gating behavior ('threshold' mode).
  * @return int AI review id, or zero when not queued.
  */
 function quizaccess_proctoring_queue_ai_review(
@@ -946,12 +993,18 @@ function quizaccess_proctoring_queue_ai_review(
     int $reportid,
     int $holdid,
     int $riskscore,
-    int $triggerthreshold
+    int $triggerthreshold,
+    bool $force = false
 ): int {
     global $DB;
 
     $settings = quizaccess_proctoring_get_ai_review_settings();
-    if (!quizaccess_proctoring_ai_review_configured($settings) || $riskscore < $settings['triggerthreshold']) {
+    // Delegate the enqueue decision to the pure helper. When $force is true the effective trigger
+    // mode is 'everyattempt' (threshold gate bypassed); otherwise it is 'threshold' (score-gated),
+    // which preserves the prior behavior for existing callers.
+    $configured = quizaccess_proctoring_ai_review_configured($settings);
+    $mode = $force ? 'everyattempt' : 'threshold';
+    if (!quizaccess_proctoring_should_enqueue_ai_review($configured, $mode, $riskscore, (int)$settings['triggerthreshold'])) {
         return 0;
     }
     $model = quizaccess_proctoring_get_ai_review_model($settings);
@@ -1070,20 +1123,24 @@ function quizaccess_proctoring_queue_event_ai_review(int $eventid): int {
 /**
  * Get an AI review status label.
  *
+ * Once an AI review row exists, its status is presented as one of three variants:
+ * pending (QUEUED or PROCESSING), completed (COMPLETE), or tool-failure (FAILED).
+ * The "Not queued" presentation is reserved for attempts that have no AI review row
+ * at all, so it is intentionally never returned by this function.
+ *
  * @param int $status Review status.
  * @return string Status label.
  */
 function quizaccess_proctoring_get_ai_review_status_label(int $status): string {
     switch ($status) {
-        case QUIZACCESS_PROCTORING_AI_REVIEW_PROCESSING:
-            return get_string('aireview:statusprocessing', 'quizaccess_proctoring');
         case QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE:
             return get_string('aireview:statuscomplete', 'quizaccess_proctoring');
         case QUIZACCESS_PROCTORING_AI_REVIEW_FAILED:
-            return get_string('aireview:statusfailed', 'quizaccess_proctoring');
+            return get_string('aireview:statustoolfailure', 'quizaccess_proctoring');
         case QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED:
+        case QUIZACCESS_PROCTORING_AI_REVIEW_PROCESSING:
         default:
-            return get_string('aireview:statusqueued', 'quizaccess_proctoring');
+            return get_string('aireview:statuspending', 'quizaccess_proctoring');
     }
 }
 
@@ -1138,12 +1195,18 @@ function quizaccess_proctoring_format_ai_review_for_template(stdClass $aireview,
     if ($iscomplete) {
         $badgeclass = $isflagged ? 'badge badge-danger' : 'badge badge-success';
     } else if ($isfailed) {
-        $badgeclass = 'badge badge-danger';
+        // A tool failure is not student-attributable risk, so present it neutrally
+        // rather than with the danger styling reserved for flagged student risk.
+        $badgeclass = 'badge badge-secondary proctoring-ai-toolfailure';
     }
 
     return [
         'statuslabel' => $statuslabel,
         'badgeclass' => $badgeclass,
+        'toolfailureclass' => 'proctoring-ai-toolfailure',
+        'toolfailurenotice' => $isfailed
+            ? get_string('aireview:toolfailurenotice', 'quizaccess_proctoring')
+            : '',
         'provider' => strtoupper((string)$aireview->provider),
         'providerlabel' => quizaccess_proctoring_get_ai_review_provider_label((string)$aireview->provider),
         'model' => $aireview->model,
@@ -1448,6 +1511,49 @@ function quizaccess_proctoring_release_risk_hold(int $holdid, int $reviewerid, b
 
     quiz_update_grades($quiz, $hold->userid, false);
 
+    // Backdate the restored grade's dategraded to the exam completion date so that downstream
+    // grade-based certificate issuance reflects when the exam was actually completed rather than
+    // the (potentially much later) release date, regardless of the hold's duration
+    // (Requirements 5.1, 5.2). A failure to determine or apply the date must never block the
+    // release itself, so the whole operation is guarded and simply logged on error.
+    try {
+        $timefinish = 0;
+        $attempt = $DB->get_record('quiz_attempts', ['id' => $hold->attemptid], 'id, timefinish');
+        if ($attempt && (int)$attempt->timefinish > 0) {
+            $timefinish = (int)$attempt->timefinish;
+        }
+
+        // Fallback to the proctoring report log timemodified, then to the current time.
+        $fallback = 0;
+        if ((int)$hold->reportid > 0) {
+            $log = $DB->get_record('quizaccess_proctoring_logs', ['id' => $hold->reportid], 'id, timemodified');
+            if ($log && (int)$log->timemodified > 0) {
+                $fallback = (int)$log->timemodified;
+            }
+        }
+        if ($fallback <= 0) {
+            $fallback = time();
+        }
+
+        $dategraded = quizaccess_proctoring_certificate_date_for_release($timefinish, $fallback);
+
+        $grades = quiz_get_user_grades($quiz, $hold->userid);
+        if (!empty($grades)) {
+            foreach ($grades as $grade) {
+                $grade->dategraded = $dategraded;
+            }
+            quiz_grade_item_update($quiz, $grades);
+        }
+    } catch (\Throwable $e) {
+        // Never let a backdating failure block the release; log and proceed.
+        $message = 'quizaccess_proctoring: could not backdate released grade dategraded for hold '
+            . $holdid . ': ' . $e->getMessage();
+        debugging($message, DEBUG_DEVELOPER);
+        if (defined('CLI_SCRIPT') && CLI_SCRIPT) {
+            mtrace($message);
+        }
+    }
+
     $hold->status = QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED;
     $hold->reviewerid = $reviewerid;
     $hold->timereviewed = time();
@@ -1462,28 +1568,535 @@ function quizaccess_proctoring_release_risk_hold(int $holdid, int $reviewerid, b
 }
 
 /**
+ * Partition risk holds into those eligible for automatic release and those retained for review.
+ *
+ * A hold is placed in the "release" bucket if and only if all of the following hold:
+ *  - it is active (status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE);
+ *  - its review window has expired, i.e. it has a positive timecreated and the elapsed time
+ *    ($now - timecreated) exceeds $days converted to seconds;
+ *  - its risk score is strictly below $ceiling.
+ *
+ * When $ceiling is greater than 100 the ceiling is treated as disabled, so every expired active
+ * hold is released regardless of its risk score (preserving the prior auto-release behavior).
+ *
+ * Any hold that fails one of the release conditions is placed in the "retain" bucket. This helper
+ * performs no database access so it can be exercised directly by property and unit tests.
+ *
+ * @param array $holds List of hold records (stdClass or array) with at least the
+ *                      status, timecreated and riskscore fields.
+ * @param int $ceiling Risk score at/above which an expired active hold is retained; a value
+ *                     greater than 100 disables the ceiling and releases all expired active holds.
+ * @param int $now Current time as a unix timestamp used to measure the review window.
+ * @param int $days Review window length in days.
+ * @return array{release: array, retain: array} Holds partitioned into release and retain buckets.
+ */
+function quizaccess_proctoring_auto_release_selection(array $holds, int $ceiling, int $now, int $days): array {
+    $release = [];
+    $retain = [];
+
+    $window = $days * DAYSECS;
+
+    foreach ($holds as $hold) {
+        $status = (int)quizaccess_proctoring_hold_field($hold, 'status');
+        $timecreated = (int)quizaccess_proctoring_hold_field($hold, 'timecreated');
+        $riskscore = (int)quizaccess_proctoring_hold_field($hold, 'riskscore');
+
+        $isactive = ($status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE);
+        $isexpired = ($days > 0) && ($timecreated > 0) && (($now - $timecreated) > $window);
+        $belowceiling = ($ceiling > 100) || ($riskscore < $ceiling);
+
+        if ($isactive && $isexpired && $belowceiling) {
+            $release[] = $hold;
+        } else {
+            $retain[] = $hold;
+        }
+    }
+
+    return ['release' => $release, 'retain' => $retain];
+}
+
+/**
+ * Read a field from a hold record that may be a stdClass or an associative array.
+ *
+ * @param stdClass|array $hold Hold record.
+ * @param string $field Field name.
+ * @param mixed $default Value returned when the field is absent.
+ * @return mixed Field value or the supplied default.
+ */
+function quizaccess_proctoring_hold_field($hold, string $field, $default = 0) {
+    if (is_array($hold)) {
+        return array_key_exists($field, $hold) ? $hold[$field] : $default;
+    }
+    if (is_object($hold)) {
+        return isset($hold->{$field}) ? $hold->{$field} : $default;
+    }
+    return $default;
+}
+
+/**
+ * Derive the certificate state for an attempt from live hold and grade state.
+ *
+ * This is a pure function (no database access) so it can be exercised directly by property and
+ * unit tests. It is the single source of truth for the certificate label shown by the per-quiz
+ * report, the inline attempt-review panel and the cross-course dashboard, guaranteeing they agree.
+ *
+ * The state is derived by evaluating the inputs in the following order:
+ *  1. An active hold exists                  -> 'held'      (grade/certificate held pending review).
+ *  2. Otherwise a confirmed hold exists      -> 'withheld'  (violation confirmed, grade kept at zero).
+ *  3. Otherwise a released hold exists        -> 'released'  (hold cleared, grade restored).
+ *  4. Otherwise a non-null quiz grade exists  -> 'issued'    (certificate eligible/issued).
+ *  5. Otherwise                               -> 'none'.
+ *
+ * Because an active or confirmed hold is evaluated before the grade, and the grade only produces
+ * 'issued' when neither an active nor a confirmed hold exists, this function NEVER returns 'held'
+ * or 'withheld' once a grade is present and there is no active/confirmed hold (Requirement 2.2).
+ *
+ * @param bool $hasactive Whether an active hold exists for the attempt.
+ * @param bool $hasreleased Whether a released hold exists for the attempt.
+ * @param bool $hasconfirmed Whether a confirmed (withheld) hold exists for the attempt.
+ * @param bool $hasgrade Whether a non-null quiz grade exists for the attempt.
+ * @return string One of 'held', 'withheld', 'released', 'issued' or 'none'.
+ */
+function quizaccess_proctoring_certificate_state(
+    bool $hasactive,
+    bool $hasreleased,
+    bool $hasconfirmed,
+    bool $hasgrade
+): string {
+    if ($hasactive) {
+        return 'held';
+    }
+    if ($hasconfirmed) {
+        return 'withheld';
+    }
+    if ($hasreleased) {
+        return 'released';
+    }
+    if ($hasgrade) {
+        return 'issued';
+    }
+    return 'none';
+}
+
+/**
+ * Resolve the certificate label for an attempt from live hold and gradebook state.
+ *
+ * This is the single wiring point used by the per-quiz report and the cross-course dashboard so
+ * the displayed certificate label always reflects the actual state rather than a stale hold row
+ * (Requirements 2.1, 2.3) and never mislabels an issued certificate as withheld (Requirement 2.2).
+ *
+ * It gathers the live state defensively with read-only queries: any missing hold rows, missing
+ * grade or query failure is treated as absent so the resolver degrades to the safest state
+ * ('none') rather than raising. It then delegates the actual state derivation to the pure
+ * {@see quizaccess_proctoring_certificate_state()} helper and maps the resulting state to a
+ * localized label and CSS class.
+ *
+ * @param int $courseid Course id.
+ * @param int $cmid Quiz course-module id.
+ * @param int $userid User id.
+ * @param int $attemptid Quiz attempt id (0 when not known; falls back to the report id).
+ * @param int $reportid Proctoring report id (used when the attempt id is unknown).
+ * @return array{state:string,label:string,class:string} Resolved certificate state, label and CSS class.
+ */
+function quizaccess_proctoring_resolve_certificate_label(
+    int $courseid,
+    int $cmid,
+    int $userid,
+    int $attemptid,
+    int $reportid
+): array {
+    global $DB;
+
+    $hasactive = false;
+    $hasreleased = false;
+    $hasconfirmed = false;
+    $hasgrade = false;
+
+    // Gather the hold row(s) for the attempt defensively; a missing table/row means "absent".
+    try {
+        $where = 'courseid = :courseid AND quizid = :cmid AND userid = :userid';
+        $params = [
+            'courseid' => $courseid,
+            'cmid' => $cmid,
+            'userid' => $userid,
+        ];
+        if ($attemptid > 0) {
+            $where .= ' AND attemptid = :attemptid';
+            $params['attemptid'] = $attemptid;
+        } else if ($reportid > 0) {
+            $where .= ' AND reportid = :reportid';
+            $params['reportid'] = $reportid;
+        }
+
+        $holds = $DB->get_records_select('quizaccess_proctoring_risk_holds', $where, $params, 'status ASC, id DESC');
+        foreach ($holds as $hold) {
+            switch ((int)$hold->status) {
+                case QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE:
+                    $hasactive = true;
+                    break;
+                case QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED:
+                    $hasreleased = true;
+                    break;
+                case QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED:
+                    $hasconfirmed = true;
+                    break;
+            }
+        }
+    } catch (\Throwable $e) {
+        // Treat any lookup failure as "no holds"; never let the report fail on a read.
+        $hasactive = $hasreleased = $hasconfirmed = false;
+    }
+
+    // Reconcile against the gradebook: a non-null quiz grade means the certificate is issued/eligible.
+    $hasgrade = quizaccess_proctoring_attempt_has_grade($courseid, $cmid, $userid);
+
+    $state = quizaccess_proctoring_certificate_state($hasactive, $hasreleased, $hasconfirmed, $hasgrade);
+
+    return [
+        'state' => $state,
+        'label' => quizaccess_proctoring_certificate_state_label($state),
+        'class' => quizaccess_proctoring_certificate_state_class($state),
+    ];
+}
+
+/**
+ * Determine whether a non-null quiz grade exists for a user's attempt.
+ *
+ * Read-only and defensive: resolves the quiz instance from the course-module id and checks the
+ * quiz's stored final grade. Any missing course-module, missing grade or query failure is treated
+ * as "no grade" so callers never fail on a read.
+ *
+ * @param int $courseid Course id.
+ * @param int $cmid Quiz course-module id.
+ * @param int $userid User id.
+ * @return bool True when a non-null quiz grade exists.
+ */
+function quizaccess_proctoring_attempt_has_grade(int $courseid, int $cmid, int $userid): bool {
+    global $DB;
+
+    try {
+        $cm = get_coursemodule_from_id('quiz', $cmid, $courseid, false, IGNORE_MISSING);
+        if (!$cm) {
+            return false;
+        }
+        $grade = $DB->get_field(
+            'quiz_grades',
+            'grade',
+            ['quiz' => $cm->instance, 'userid' => $userid],
+            IGNORE_MULTIPLE
+        );
+        return $grade !== false && $grade !== null;
+    } catch (\Throwable $e) {
+        return false;
+    }
+}
+
+/**
+ * Map a resolved certificate state to a localized label.
+ *
+ * Returns an empty string for the 'none' state so callers can omit the label entirely.
+ *
+ * @param string $state One of 'held', 'withheld', 'released', 'issued' or 'none'.
+ * @return string Localized label, or '' for 'none'/unknown states.
+ */
+function quizaccess_proctoring_certificate_state_label(string $state): string {
+    switch ($state) {
+        case 'held':
+            return get_string('certificatestate:held', 'quizaccess_proctoring');
+        case 'withheld':
+            return get_string('certificatestate:withheld', 'quizaccess_proctoring');
+        case 'released':
+            return get_string('certificatestate:released', 'quizaccess_proctoring');
+        case 'issued':
+            return get_string('certificatestate:issued', 'quizaccess_proctoring');
+        default:
+            return '';
+    }
+}
+
+/**
+ * Map a resolved certificate state to a CSS class for the report/dashboard label.
+ *
+ * @param string $state One of 'held', 'withheld', 'released', 'issued' or 'none'.
+ * @return string CSS class, or '' for 'none'/unknown states.
+ */
+function quizaccess_proctoring_certificate_state_class(string $state): string {
+    switch ($state) {
+        case 'held':
+            return 'proctoring-certificate-held';
+        case 'withheld':
+            return 'proctoring-certificate-withheld';
+        case 'released':
+            return 'proctoring-certificate-released';
+        case 'issued':
+            return 'proctoring-certificate-issued';
+        default:
+            return '';
+    }
+}
+
+/**
+ * Decide whether AI image review should be enqueued for an attempt at submission.
+ *
+ * This is a pure (database-free) decision helper so it can be exercised directly by property
+ * tests and reused by the submission observer. AI review is only ever enqueued when it is
+ * configured and enabled. Given that, the configured trigger mode selects when to enqueue:
+ *  - 'everyattempt' -> enqueue for every proctored attempt regardless of the risk score
+ *                      (Requirement 3.2).
+ *  - 'threshold'    -> enqueue only when the attempt's risk score is at or above the AI-review
+ *                      trigger threshold (Requirement 3.3); leave it not enqueued when the score
+ *                      is below the threshold (Requirement 3.4).
+ *
+ * @param bool $configured Whether AI image review is configured and enabled.
+ * @param string $mode The configured trigger mode ('everyattempt' or 'threshold').
+ * @param int $score The attempt's computed risk score.
+ * @param int $triggerthreshold The AI-review trigger threshold.
+ * @return bool True when AI image review should be enqueued for the attempt.
+ */
+function quizaccess_proctoring_should_enqueue_ai_review(
+    bool $configured,
+    string $mode,
+    int $score,
+    int $triggerthreshold
+): bool {
+    return $configured && ($mode === 'everyattempt' || $score >= $triggerthreshold);
+}
+
+/**
+ * Choose the certificate/grade date for a released hold: always the exam completion date.
+ *
+ * This is a pure (database-free) decision helper so it can be exercised directly by property
+ * tests and reused by the hold-release path. When the attempt completion time is known
+ * (`$timefinish > 0`), that completion time is always chosen; otherwise the provided fallback
+ * (e.g. the report log timemodified) is used. The choice is independent of any delay between
+ * exam completion and hold release (Requirements 5.1, 5.2).
+ *
+ * @param int $timefinish Attempt completion time (unix ts), or 0 when unknown.
+ * @param int $fallback Fallback completion time (e.g. report timemodified), or 0.
+ * @return int Chosen date (unix ts).
+ */
+function quizaccess_proctoring_certificate_date_for_release(int $timefinish, int $fallback): int {
+    return $timefinish > 0 ? $timefinish : $fallback;
+}
+
+/**
+ * Map a requested sort key and direction to a safe ORDER BY fragment for the proctoring report.
+ *
+ * This is a pure (database-free) decision helper so it can be exercised directly by property
+ * tests and reused by the report. It NEVER interpolates raw user input into SQL: the requested
+ * sort key is looked up in a fixed allowlist of sortable report columns and the direction is
+ * normalised to one of two literals ('ASC' or 'DESC'). Any unrecognised sort key or direction
+ * falls back to the newest-first default (`timemodified DESC`), satisfying the "default newest to
+ * oldest" behaviour (Requirement 13.1) while the allowlist enables per-column sorting
+ * (Requirement 13.2).
+ *
+ * Allowlisted sort keys map to columns exposed by the per-quiz report query (see report.php):
+ *  - 'name'       -> student name (last name, then first name).
+ *  - 'date'       -> attempt/report activity time (`timemodified`).
+ *  - 'risk'       -> computed risk score (`riskscore`).
+ *  - 'violations' -> suspicious event count (`eventcount`).
+ *
+ * @param string $sort Requested sort key.
+ * @param string $dir Requested direction ('asc' or 'desc'); anything else defaults to descending.
+ * @return string Safe ORDER BY fragment drawn from a fixed allowlist (never raw user SQL).
+ */
+function quizaccess_proctoring_report_order_by(string $sort, string $dir): string {
+    // Fixed allowlist mapping a sort key to one or more real report columns. No user-supplied
+    // text ever reaches the returned fragment, so this cannot be used for SQL injection.
+    $columns = [
+        'name' => ['lastname', 'firstname'],
+        'date' => ['timemodified'],
+        'risk' => ['riskscore'],
+        'violations' => ['eventcount'],
+    ];
+
+    // Newest-first default used for unknown/blank sort keys (Requirement 13.1).
+    $default = 'timemodified DESC';
+
+    $sortkey = strtolower(trim($sort));
+    if (!isset($columns[$sortkey])) {
+        return $default;
+    }
+
+    // Only two literal directions are ever emitted; default to descending.
+    $direction = (strtolower(trim($dir)) === 'asc') ? 'ASC' : 'DESC';
+
+    $fragments = [];
+    foreach ($columns[$sortkey] as $column) {
+        $fragments[] = $column . ' ' . $direction;
+    }
+
+    return implode(', ', $fragments);
+}
+
+/**
+ * Whether a name matches the selected first-name/last-name initial filter.
+ *
+ * Pure decision helper backing the report's A–Z initial-bar filter (Requirement 13.3). It is kept
+ * database-free so it can be exercised directly by property tests. A blank initial means "all",
+ * so passing '' for both initials includes every name.
+ *
+ * Matching is case-insensitive and multibyte-safe: comparison uses \core_text::strtolower() and
+ * \core_text::substr() so non-Latin and mixed-case names (e.g. accented or CJK characters) are
+ * compared correctly rather than by raw byte prefix.
+ *
+ * @param string $firstname Student's first name.
+ * @param string $lastname Student's last name.
+ * @param string $firstinitial Selected first-name initial, or '' for all.
+ * @param string $lastinitial Selected last-name initial, or '' for all.
+ * @return bool True iff the first name matches the first initial (or it is blank) AND the last
+ *              name matches the last initial (or it is blank).
+ */
+function quizaccess_proctoring_name_matches_initials(
+    string $firstname, string $lastname, string $firstinitial, string $lastinitial): bool {
+
+    return quizaccess_proctoring_name_part_matches_initial($firstname, $firstinitial)
+        && quizaccess_proctoring_name_part_matches_initial($lastname, $lastinitial);
+}
+
+/**
+ * Whether a single name part matches a selected initial, case-insensitively and multibyte-safe.
+ *
+ * A blank initial ('' after trimming) matches everything ("all"). Otherwise the first character of
+ * the name is compared to the first character of the initial using lower-cased, multibyte-aware
+ * substrings so accented and non-Latin characters compare correctly.
+ *
+ * @param string $name The name part (first or last name).
+ * @param string $initial The selected initial, or '' for all.
+ * @return bool True iff the initial is blank or the name starts with it (case-insensitively).
+ */
+function quizaccess_proctoring_name_part_matches_initial(string $name, string $initial): bool {
+    // A blank initial means "all", so every name matches.
+    if (trim($initial) === '') {
+        return true;
+    }
+
+    // Compare the first character of each, lower-cased for case-insensitivity and using
+    // \core_text so multibyte (non-Latin/accented) characters are handled correctly.
+    $nameinitial = \core_text::strtolower(\core_text::substr($name, 0, 1));
+    $wanted = \core_text::strtolower(\core_text::substr($initial, 0, 1));
+
+    return $nameinitial === $wanted;
+}
+
+/**
+ * Map an identity/name-mismatch flag to the localized "Yes"/"No" string for the report.
+ *
+ * Pure decision helper backing the report's Identity Mismatch column (Requirement 18.2). It always
+ * returns exactly the localized core "Yes" (`get_string('yes')`) when a mismatch is present and
+ * exactly the localized core "No" (`get_string('no')`) otherwise — never a blank value and never a
+ * raw stored flag. The mismatch flag can arrive in many shapes (bool, int, float, numeric string,
+ * word such as 'yes'/'no', null or ''), so truthiness is decided by
+ * quizaccess_proctoring_mismatch_flag_is_present() rather than a naive cast.
+ *
+ * @param mixed $flag The identity/name-mismatch flag (any type/shape).
+ * @return string The localized "Yes" when a mismatch is present, otherwise the localized "No".
+ */
+function quizaccess_proctoring_identity_mismatch_label($flag): string {
+    return quizaccess_proctoring_mismatch_flag_is_present($flag)
+        ? get_string('yes')
+        : get_string('no');
+}
+
+/**
+ * Whether an identity/name-mismatch flag represents a mismatch being present.
+ *
+ * Decides truthiness across the mixed shapes the flag can take, so the report never treats a
+ * "not present" value (0, false, '', null, '0', 'no', 'false', 'n', 'off') as a mismatch and never
+ * treats a "present" value (1, true, '1', 'yes', 'true', 'y', 'on', any other non-empty token or
+ * non-zero number) as absent. Kept database-free so it can be exercised directly by property tests.
+ *
+ * @param mixed $flag The identity/name-mismatch flag (any type/shape).
+ * @return bool True iff the flag indicates a mismatch is present.
+ */
+function quizaccess_proctoring_mismatch_flag_is_present($flag): bool {
+    // Null and booleans map directly.
+    if ($flag === null) {
+        return false;
+    }
+    if (is_bool($flag)) {
+        return $flag;
+    }
+
+    // Numeric values: any non-zero number is a mismatch.
+    if (is_int($flag) || is_float($flag)) {
+        return (float) $flag !== 0.0;
+    }
+
+    if (is_string($flag)) {
+        $normalized = \core_text::strtolower(trim($flag));
+
+        // Blank means "not present".
+        if ($normalized === '') {
+            return false;
+        }
+
+        // Explicit "not present" tokens.
+        $falsy = ['0', 'no', 'false', 'n', 'off'];
+        if (in_array($normalized, $falsy, true)) {
+            return false;
+        }
+
+        // Numeric strings: zero is not present, anything else is.
+        if (is_numeric($normalized)) {
+            return (float) $normalized !== 0.0;
+        }
+
+        // Any other non-empty token (e.g. 'yes', 'true', 'y') indicates a mismatch.
+        return true;
+    }
+
+    // Arrays/objects/other shapes: treat a non-empty value as a mismatch.
+    return !empty($flag);
+}
+
+/**
  * Automatically release active risk holds whose review window has expired.
  *
+ * Expired active holds are only released when their risk score is strictly below the configured
+ * risk review ceiling (see {@see quizaccess_proctoring_get_risk_review_ceiling()}). When the
+ * ceiling is disabled (a value greater than 100) the score predicate is omitted so every expired
+ * active hold is released, preserving the prior behavior.
+ *
+ * Holds retained because their risk score is at or above the ceiling are annotated once with the
+ * risk score that blocked auto-release ({@see autoreleaseblockedscore}) and the reason
+ * ({@see autoreleaseblockedreason} = 'riskceiling'). The annotation pass is idempotent: a hold is
+ * only annotated while its reason is still unset, so repeated task runs do not overwrite an
+ * existing annotation.
+ *
  * @param int $limit Maximum holds to release in one task run.
- * @return int Number of holds released.
+ * @return array{released: int, annotated: int} Number of holds released and number of ceiling-blocked
+ *                                               holds newly annotated.
  */
-function quizaccess_proctoring_auto_release_expired_risk_holds(int $limit = 100): int {
+function quizaccess_proctoring_auto_release_expired_risk_holds(int $limit = 100): array {
     global $DB;
 
     $days = quizaccess_proctoring_get_risk_review_auto_release_days();
     if ($days <= 0) {
-        return 0;
+        return ['released' => 0, 'annotated' => 0];
     }
 
     $limit = max(1, min(500, $limit));
     $cutoff = time() - ($days * DAYSECS);
+    $ceiling = quizaccess_proctoring_get_risk_review_ceiling();
+    $ceilingenabled = ($ceiling <= 100);
+
+    // Select expired active holds to release. When the ceiling is enabled, only holds whose risk
+    // score is strictly below the ceiling are releasable; when disabled, the predicate is omitted.
+    $select = 'status = :status AND timecreated > 0 AND timecreated <= :cutoff';
+    $params = [
+        'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+        'cutoff' => $cutoff,
+    ];
+    if ($ceilingenabled) {
+        $select .= ' AND riskscore < :ceiling';
+        $params['ceiling'] = $ceiling;
+    }
+
     $holds = $DB->get_records_select(
         'quizaccess_proctoring_risk_holds',
-        'status = :status AND timecreated > 0 AND timecreated <= :cutoff',
-        [
-            'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
-            'cutoff' => $cutoff,
-        ],
+        $select,
+        $params,
         'timecreated ASC, id ASC',
         '*',
         0,
@@ -1497,7 +2110,39 @@ function quizaccess_proctoring_auto_release_expired_risk_holds(int $limit = 100)
         }
     }
 
-    return $released;
+    // Idempotent annotation pass: record why ceiling-blocked holds were retained. Only holds whose
+    // reason is still unset are annotated, so repeated task runs leave existing annotations intact.
+    $annotated = 0;
+    if ($ceilingenabled) {
+        $retained = $DB->get_records_select(
+            'quizaccess_proctoring_risk_holds',
+            'status = :status AND timecreated > 0 AND timecreated <= :cutoff AND riskscore >= :ceiling '
+                . 'AND (autoreleaseblockedreason IS NULL OR autoreleaseblockedreason = :empty)',
+            [
+                'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+                'cutoff' => $cutoff,
+                'ceiling' => $ceiling,
+                'empty' => '',
+            ],
+            'timecreated ASC, id ASC',
+            'id, riskscore, timemodified',
+            0,
+            $limit
+        );
+
+        $now = time();
+        foreach ($retained as $hold) {
+            $DB->update_record('quizaccess_proctoring_risk_holds', (object)[
+                'id' => $hold->id,
+                'autoreleaseblockedscore' => (int)$hold->riskscore,
+                'autoreleaseblockedreason' => 'riskceiling',
+                'timemodified' => $now,
+            ]);
+            $annotated++;
+        }
+    }
+
+    return ['released' => $released, 'annotated' => $annotated];
 }
 
 /**
@@ -3373,4 +4018,90 @@ function quizaccess_proctoring_geturl_of_faceimage(string $data, int $userid, st
         $record->filename,
         false
     );
+}
+
+/**
+ * Render the inline proctoring summary on the quiz attempt-review page.
+ *
+ * Seam rationale: the quiz access-rule base class exposes no review-page render hook, so the
+ * supported way to contribute output to the attempt-review page is the standard renderer callback
+ * {@see core_renderer::standard_after_main_region_html()}, which Moodle invokes for every plugin
+ * (including quizaccess plugins) via {@see get_plugins_with_function()}. The callback fires on every
+ * page, so it self-scopes to the quiz attempt-review page (pagetype `mod-quiz-review`) and returns
+ * an empty string everywhere else.
+ *
+ * When invoked on the review page it resolves the attempt being reviewed (its owner, quiz, course
+ * and module) from the `attempt` URL parameter, verifies the quiz is proctored, and — guarded by the
+ * existing review capabilities — renders the reusable, read-only per-attempt fragment (risk score,
+ * resolved certificate label, AI review status and plain-language summary) inline so exam and
+ * proctoring data appear together (Requirements 14.1, 14.2). This is a read/summary surface only;
+ * inline decision controls (release/confirm/notes) are intentionally deferred to Requirement 7 (P1).
+ *
+ * The whole body is defensive: any failure yields an empty string so the inline panel can never
+ * break the core review page.
+ *
+ * @return string Rendered proctoring fragment HTML, or an empty string when it should not be shown.
+ */
+function quizaccess_proctoring_standard_after_main_region_html(): string {
+    global $PAGE, $DB;
+
+    // Self-scope: only contribute output on the quiz attempt-review page.
+    if (!isset($PAGE) || $PAGE->pagetype !== 'mod-quiz-review') {
+        return '';
+    }
+
+    // The review page identifies the attempt being reviewed via the `attempt` parameter.
+    $attemptid = optional_param('attempt', 0, PARAM_INT);
+    if ($attemptid <= 0) {
+        return '';
+    }
+
+    try {
+        // Resolve the attempt being reviewed. The panel is keyed on the attempt owner, not the viewer.
+        $attempt = $DB->get_record('quiz_attempts', ['id' => $attemptid], 'id, quiz, userid', IGNORE_MISSING);
+        if (!$attempt || (int)$attempt->userid <= 0) {
+            return '';
+        }
+
+        // Prefer the page's course module; fall back to resolving it from the quiz instance.
+        $cm = (isset($PAGE->cm) && $PAGE->cm && $PAGE->cm->modname === 'quiz'
+                && (int)$PAGE->cm->instance === (int)$attempt->quiz)
+            ? $PAGE->cm
+            : get_coursemodule_from_instance('quiz', (int)$attempt->quiz, 0, false, IGNORE_MISSING);
+        if (!$cm) {
+            return '';
+        }
+
+        // Only surface the panel for quizzes that actually require proctoring.
+        if (!$DB->record_exists('quizaccess_proctoring', ['quizid' => (int)$attempt->quiz, 'proctoringrequired' => 1])) {
+            return '';
+        }
+
+        $context = context_module::instance((int)$cm->id, IGNORE_MISSING);
+        if (!$context) {
+            return '';
+        }
+
+        // Guard visibility with the existing review capabilities (read/summary only).
+        if (!has_any_capability(
+            ['quizaccess/proctoring:reviewriskholds', 'quizaccess/proctoring:viewreport'],
+            $context
+        )) {
+            return '';
+        }
+
+        return \quizaccess_proctoring\local\attempt_panel::render(
+            (int)$cm->course,
+            (int)$cm->id,
+            (int)$attempt->userid,
+            (int)$attempt->id
+        );
+    } catch (\Throwable $e) {
+        // Never let the inline panel break the core attempt-review page.
+        debugging(
+            'quizaccess_proctoring inline attempt-review panel failed: ' . $e->getMessage(),
+            DEBUG_DEVELOPER
+        );
+        return '';
+    }
 }

@@ -69,6 +69,13 @@
 <div class="tab-content proctoring-report-tab-content" id="proctoring-report-tabs-content">
 <div class="tab-pane fade show active" id="proctoring-report-summary" role="tabpanel" aria-labelledby="proctoring-report-summary-tab">
 
+{{#hassessionsummary}}
+<div class="proctoring-session-summary alert alert-info mt-4" role="note">
+    <h3 class="proctoring-session-summary-heading">{{#str}}sessionsummary:heading, quizaccess_proctoring{{/str}}</h3>
+    <p class="proctoring-session-summary-text mb-0">{{sessionsummary}}</p>
+</div>
+{{/hassessionsummary}}
+
 {{#riskscore}}
 <h3>{{#str}}riskscore, quizaccess_proctoring{{/str}}</h3>
 <div class="{{cardclass}}">
@@ -293,7 +300,15 @@
         <tr>
             <td>{{timemodified}}</td>
             <td>{{eventtype}}</td>
-            <td>{{eventdetail}}</td>
+            <td>
+                {{#eventdetail}}
+                    <details class="proctoring-raw-details">
+                        <summary>{{#str}}rawdetails, quizaccess_proctoring{{/str}}</summary>
+                        <div class="proctoring-raw-details-body">{{eventdetail}}</div>
+                    </details>
+                {{/eventdetail}}
+                {{^eventdetail}}-{{/eventdetail}}
+            </td>
             <td>{{pagevisibility}}</td>
             <td>
                 {{#hasscreenshot}}

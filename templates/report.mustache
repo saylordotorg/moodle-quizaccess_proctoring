@@ -34,7 +34,7 @@
                 "fullname": "John Doe",
                 "email": "john.doe@example.com",
                 "timemodified": "2024-01-01",
-                "warningicon": true,
+                "identitymismatch": "No",
                 "eventwarning": true,
                 "eventcount": 2,
                 "riskbadgeclass": "badge badge-warning",
@@ -87,16 +87,59 @@
         </div>
     </div>
 
+{{#showfilters}}
+<div class="proctoring-initial-bars mb-2">
+    <div class="proctoring-initial-bar d-flex flex-wrap align-items-center mb-1">
+        <span class="mr-2 font-weight-bold">{{firstinitiallabel}}:</span>
+        {{#firstinitialbar}}
+            <a href="{{url}}" class="btn btn-sm {{#active}}btn-primary{{/active}}{{^active}}btn-link{{/active}} p-1">{{label}}</a>
+        {{/firstinitialbar}}
+    </div>
+    <div class="proctoring-initial-bar d-flex flex-wrap align-items-center">
+        <span class="mr-2 font-weight-bold">{{lastinitiallabel}}:</span>
+        {{#lastinitialbar}}
+            <a href="{{url}}" class="btn btn-sm {{#active}}btn-primary{{/active}}{{^active}}btn-link{{/active}} p-1">{{label}}</a>
+        {{/lastinitialbar}}
+    </div>
+</div>
+{{/showfilters}}
+
 {{#checkrow}}
 <table class="table">
 <thead>
         <tr class="table-info">
+            {{#showfilters}}
+            <th>
+                <a href="{{sortheaders.name.url}}" title="{{#str}}report_sort_by,quizaccess_proctoring,{{sortheaders.name.label}}{{/str}}">
+                    {{sortheaders.name.label}}{{#sortheaders.name.asc}} &#9650;{{/sortheaders.name.asc}}{{#sortheaders.name.desc}} &#9660;{{/sortheaders.name.desc}}
+                </a>
+            </th>
+            <th>{{#str}}email,quizaccess_proctoring{{/str}}</th>
+            <th>
+                <a href="{{sortheaders.date.url}}" title="{{#str}}report_sort_by,quizaccess_proctoring,{{sortheaders.date.label}}{{/str}}">
+                    {{sortheaders.date.label}}{{#sortheaders.date.asc}} &#9650;{{/sortheaders.date.asc}}{{#sortheaders.date.desc}} &#9660;{{/sortheaders.date.desc}}
+                </a>
+            </th>
+            <th>{{#str}}identity_mismatch_label,quizaccess_proctoring{{/str}}</th>
+            <th>
+                <a href="{{sortheaders.violations.url}}" title="{{#str}}report_sort_by,quizaccess_proctoring,{{sortheaders.violations.label}}{{/str}}">
+                    {{sortheaders.violations.label}}{{#sortheaders.violations.asc}} &#9650;{{/sortheaders.violations.asc}}{{#sortheaders.violations.desc}} &#9660;{{/sortheaders.violations.desc}}
+                </a>
+            </th>
+            <th>
+                <a href="{{sortheaders.risk.url}}" title="{{#str}}report_sort_by,quizaccess_proctoring,{{sortheaders.risk.label}}{{/str}}">
+                    {{sortheaders.risk.label}}{{#sortheaders.risk.asc}} &#9650;{{/sortheaders.risk.asc}}{{#sortheaders.risk.desc}} &#9660;{{/sortheaders.risk.desc}}
+                </a>
+            </th>
+            {{/showfilters}}
+            {{^showfilters}}
             <th>{{#str}}user,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}email,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}dateverified,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}identity_mismatch_label,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}suspiciousactivity,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}riskscore,quizaccess_proctoring{{/str}}</th>
+            {{/showfilters}}
             <th>{{#str}}riskscore:timetaken,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}aireview:shorttitle,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}actions,quizaccess_proctoring{{/str}}</th>
@@ -109,12 +152,7 @@
         <td>{{email}}</td>
         <td>{{timemodified}}</td>
         <td>
-            {{#warningicon}}
-                {{#str}}notfoundtext,quizaccess_proctoring{{/str}}         
-            {{/warningicon}}
-             {{^warningicon}}
-                ⚠️ {{#str}}foundtext,quizaccess_proctoring{{/str}}        
-            {{/warningicon}}
+            {{identitymismatch}}
         </td>
         <td>
             {{#eventwarning}}⚠️ {{/eventwarning}}{{eventcount}}
@@ -130,9 +168,14 @@
         </td>
         <td>
             {{#aireview}}
-                <span class="proctoring-ai-review-list-status {{#isflagged}}proctoring-ai-review-list-flagged{{/isflagged}} {{#isfailed}}proctoring-ai-review-list-failed{{/isfailed}}">
-                    {{compactlabel}}
-                </span>
+                {{#isfailed}}
+                    <span class="proctoring-ai-toolfailure">{{toolfailurenotice}}</span>
+                {{/isfailed}}
+                {{^isfailed}}
+                    <span class="proctoring-ai-review-list-status {{#isflagged}}proctoring-ai-review-list-flagged{{/isflagged}}">
+                        {{compactlabel}}
+                    </span>
+                {{/isfailed}}
                 <div class="proctoring-ai-review-meta">{{providerlabel}}</div>
             {{/aireview}}
             {{^aireview}}
