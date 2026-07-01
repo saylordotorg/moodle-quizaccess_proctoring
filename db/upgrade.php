@@ -995,5 +995,41 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026062403, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026062405) {
+        // Add auto-release ceiling annotation fields to the risk holds table so retained holds can
+        // record the risk score and reason they were not auto-released.
+        $table = new xmldb_table('quizaccess_proctoring_risk_holds');
+
+        $scorefield = new xmldb_field(
+            'autoreleaseblockedscore',
+            XMLDB_TYPE_INTEGER,
+            '10',
+            null,
+            XMLDB_NOTNULL,
+            null,
+            '0',
+            'timereviewed'
+        );
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $scorefield)) {
+            $dbman->add_field($table, $scorefield);
+        }
+
+        $reasonfield = new xmldb_field(
+            'autoreleaseblockedreason',
+            XMLDB_TYPE_CHAR,
+            '40',
+            null,
+            null,
+            null,
+            null,
+            'autoreleaseblockedscore'
+        );
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $reasonfield)) {
+            $dbman->add_field($table, $reasonfield);
+        }
+
+        upgrade_plugin_savepoint(true, 2026062405, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

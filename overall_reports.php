@@ -39,6 +39,14 @@ $sort = optional_param('sort', 'violations', PARAM_ALPHA);
 $page = optional_param('page', 0, PARAM_INT);
 $action = optional_param('action', '', PARAM_ALPHA);
 $holdid = optional_param('holdid', 0, PARAM_INT);
+$view = optional_param('view', 'attempts', PARAM_ALPHA);
+
+// The cross-course held-certificate dashboard is a site-wide review surface, so it is guarded by
+// the review capability at the system context. Reviewers without it never see the toggle or view.
+$canviewheld = has_capability('quizaccess/proctoring:reviewriskholds', context_system::instance());
+if (!in_array($view, ['attempts', 'held'], true) || ($view === 'held' && !$canviewheld)) {
+    $view = 'attempts';
+}
 
 if (!array_key_exists($range, \quizaccess_proctoring\local\overall_report::range_seconds())) {
     $range = '7days';
@@ -90,6 +98,60 @@ if (($action === 'release' || $action === 'confirm') && $holdid > 0) {
     );
 }
 
+// Build a two-tab view toggle (attempts report vs held-certificate dashboard). The held tab is
+// only offered to reviewers holding the system-context review capability.
+$viewtoggle = '';
+if ($canviewheld) {
+    $attemptsurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', [
+        'courseid' => $courseid,
+        'range' => $range,
+        'minviolations' => $minviolations,
+        'sort' => $sort,
+        'view' => 'attempts',
+    ]);
+    $heldurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', ['view' => 'held']);
+    $tabs = [
+        new tabobject(
+            'attempts',
+            $attemptsurl->out(false),
+            get_string('heldcertificates:attemptsviewtoggle', 'quizaccess_proctoring')
+        ),
+        new tabobject(
+            'held',
+            $heldurl->out(false),
+            get_string('heldcertificates:viewtoggle', 'quizaccess_proctoring')
+        ),
+    ];
+    $viewtoggle = $OUTPUT->tabtree($tabs, $view);
+}
+
+if ($view === 'held') {
+    $data = \quizaccess_proctoring\local\overall_report::held_certificates($page);
+
+    $baseurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', ['view' => 'held']);
+    $pagingbar = $OUTPUT->paging_bar($data['total'], $data['page'], $data['perpage'], $baseurl);
+
+    $templatecontext = [
+        'intro' => get_string('heldcertificates:intro', 'quizaccess_proctoring'),
+        'rows' => $data['rows'],
+        'hasrows' => $data['hasrows'],
+        'truncated' => $data['truncated'],
+        'truncatednotice' => get_string(
+            'heldcertificates:truncated',
+            'quizaccess_proctoring',
+            \quizaccess_proctoring\local\overall_report::MAX_ATTEMPTS
+        ),
+        'pagingbar' => $pagingbar,
+    ];
+
+    echo $OUTPUT->header();
+    echo $OUTPUT->heading(get_string('heldcertificates:heading', 'quizaccess_proctoring'));
+    echo $viewtoggle;
+    echo $OUTPUT->render_from_template('quizaccess_proctoring/held_certificates', $templatecontext);
+    echo $OUTPUT->footer();
+    return;
+}
+
 $data = \quizaccess_proctoring\local\overall_report::build($courseid, $range, $minviolations, $sort, $page);
 
 $baseurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', [
@@ -121,5 +183,6 @@ $templatecontext = [
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('overallreport:heading', 'quizaccess_proctoring'));
+echo $viewtoggle;
 echo $OUTPUT->render_from_template('quizaccess_proctoring/overall_reports', $templatecontext);
 echo $OUTPUT->footer();

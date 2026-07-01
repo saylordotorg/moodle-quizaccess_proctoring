@@ -701,6 +701,14 @@ if ($hassiteconfig) {
         PARAM_INT
     ));
 
+    $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/riskreviewceiling',
+        get_string('setting:riskreviewceiling', 'quizaccess_proctoring'),
+        get_string('setting:riskreviewceiling_desc', 'quizaccess_proctoring'),
+        101,
+        PARAM_INT
+    ));
+
     $settings->add(new admin_setting_configcheckbox(
         'quizaccess_proctoring/cheatinglockoutenabled',
         get_string('setting:cheatinglockoutenabled', 'quizaccess_proctoring'),
@@ -846,6 +854,17 @@ if ($hassiteconfig) {
         get_string('setting:aireviewtriggerthreshold_desc', 'quizaccess_proctoring'),
         80,
         PARAM_INT
+    ));
+
+    $settings->add(new admin_setting_configselect(
+        'quizaccess_proctoring/aireviewtriggermode',
+        get_string('setting:aireviewtriggermode', 'quizaccess_proctoring'),
+        get_string('setting:aireviewtriggermode_desc', 'quizaccess_proctoring'),
+        'threshold',
+        [
+            'everyattempt' => get_string('setting:aireviewtriggermode_everyattempt', 'quizaccess_proctoring'),
+            'threshold' => get_string('setting:aireviewtriggermode_threshold', 'quizaccess_proctoring'),
+        ]
     ));
 
     $settings->add(new admin_setting_configtext(

@@ -41,6 +41,12 @@ $logaction = optional_param('logaction', null, PARAM_TEXT);
 $riskaction = optional_param('riskaction', null, PARAM_ALPHA);
 $holdid = optional_param('holdid', 0, PARAM_INT);
 $page = optional_param('page', 0, PARAM_INT);
+// Sort and filter parameters (Requirement 13). Sort keys are validated by
+// quizaccess_proctoring_report_order_by(); initial filters by quizaccess_proctoring_name_matches_initials().
+$sort = optional_param('sort', '', PARAM_ALPHA);
+$dir = optional_param('dir', '', PARAM_ALPHA);
+$firstnameinitial = optional_param('firstnameinitial', '', PARAM_ALPHA);
+$lastnameinitial = optional_param('lastnameinitial', '', PARAM_ALPHA);
 
 $analyzebtn = get_string('analyzbtn', 'quizaccess_proctoring');
 $analyzebtnconfirm = get_string('analyzbtnconfirm', 'quizaccess_proctoring');
@@ -399,23 +405,6 @@ if (
                 'quizid1' => $cmid,
                 'quizid2' => $cmid,
                 'quizid3' => $cmid];
-
-        // Calculate total records for pagination.
-        $totalrecordssql = "SELECT COUNT(DISTINCT e.userid)
-                            FROM {quizaccess_proctoring_logs} e
-                            INNER JOIN {user} u ON u.id = e.userid
-                            LEFT JOIN {quizaccess_proctoring_fm_warnings} pfw
-                            ON e.courseid = pfw.courseid AND e.quizid = pfw.quizid AND e.userid = pfw.userid
-                            WHERE (e.courseid = :courseid1 AND e.quizid = :quizid1 AND
-                            " . $DB->sql_like('u.firstname', ':firstnamelike', false) . ")
-                            OR (e.courseid = :courseid2 AND e.quizid = :quizid2 AND
-                            " . $DB->sql_like('u.email', ':emaillike', false) . ")
-                            OR (e.courseid = :courseid3 AND e.quizid = :quizid3 AND "
-                            . $DB->sql_like('u.lastname', ':lastnamelike', false) . ")";
-        $totalrecords = $DB->count_records_sql($totalrecordssql, $params);
-
-        // Fetch paginated results.
-        $sqlexecuted = $DB->get_records_sql($sql, $params, $offset, $perpage);
     } else {
         $params = [
             'courseid' => $courseid,
@@ -423,20 +412,45 @@ if (
             'studentid' => $studentid,
             'reportid' => $reportid,
         ];
-        $totalrecordssql = "SELECT COUNT(1) FROM ({$sql}) as subquery";
-        $totalrecords = $DB->count_records_sql($totalrecordssql, $params);
-        $sqlexecuted = $DB->get_records_sql($sql, $params, $offset, $perpage);
     }
 
+    // Default newest-first ordering at the SQL level (Requirement 13.1). The final ordering is
+    // applied in PHP below because the risk score and violation counts are computed per row in PHP
+    // (not available as SQL columns), so a single consistent PHP sort is used for every sort key.
+    $sql .= ' ORDER BY timemodified DESC';
+
+    // Fetch every matching record; filtering (name initials), sorting (selected column), and
+    // pagination are all applied in PHP so they operate over the full result set consistently.
+    $sqlexecuted = $DB->get_records_sql($sql, $params);
+
        // Print report.
+    $islistview = ($studentid == null);
     $rows = [];
     foreach ($sqlexecuted as $info) {
+            // Apply the A–Z name-initial filter on the all-users list view (Requirement 13.3).
+            if ($islistview && !quizaccess_proctoring_name_matches_initials(
+                (string)$info->firstname,
+                (string)$info->lastname,
+                $firstnameinitial,
+                $lastnameinitial
+            )) {
+                continue;
+            }
             $row = [];
             $row['userlink'] = $CFG->wwwroot . '/user/view.php?id=' . $info->studentid . '&course=' . $courseid;
             $row['fullname'] = $info->firstname . ' ' . $info->lastname;
             $row['email'] = $info->email;
-            $row['timemodified'] = date('Y/M/d H:i:s', $info->timemodified);
+            // Use Moodle's locale/timezone-aware date formatting so the proctoring report matches
+            // the quiz results report (Requirement 18.1).
+            $row['timemodified'] = userdate((int)$info->timemodified);
+            // Raw values used only for the PHP-side column sort (Requirement 13.2); harmless in the template.
+            $row['sortlastname'] = \core_text::strtolower((string)$info->lastname);
+            $row['sortfirstname'] = \core_text::strtolower((string)$info->firstname);
+            $row['sorttimemodified'] = (int)$info->timemodified;
             $row['warningicon'] = ($info->warningid == '') ? true : false;
+            // Identity Mismatch rendered as a localized Yes/No (Requirement 18.2). A present
+            // face-match warning row (non-empty warningid) means the identity did not match.
+            $row['identitymismatch'] = quizaccess_proctoring_identity_mismatch_label($info->warningid);
             $row['eventcount'] = $DB->count_records('quizaccess_proctoring_events', [
                 'courseid' => $courseid,
                 'quizid' => $cmid,
@@ -453,6 +467,9 @@ if (
             $row['risklevel'] = $risk['level'];
             $row['riskbadgeclass'] = $risk['badgeclass'];
             $row['timetaken'] = $risk['durationformatted'];
+            // Raw values used only for the PHP-side column sort (Requirement 13.2).
+            $row['sortriskscore'] = (int)$risk['score'];
+            $row['sorteventcount'] = (int)$row['eventcount'];
             $hold = quizaccess_proctoring_get_risk_hold(
                 (int)$courseid,
                 (int)$cmid,
@@ -461,8 +478,17 @@ if (
                 (int)$info->reportid
             );
         if ($hold) {
-            $row['riskholdstatus'] = quizaccess_proctoring_get_risk_hold_status_label($hold);
-            $row['riskholdactive'] = (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
+            $cert = quizaccess_proctoring_resolve_certificate_label(
+                (int)$courseid,
+                (int)$cmid,
+                (int)$info->studentid,
+                (int)$risk['attemptid'],
+                (int)$info->reportid
+            );
+            if ($cert['label'] !== '') {
+                $row['riskholdstatus'] = $cert['label'];
+                $row['riskholdactive'] = $cert['state'] === 'held';
+            }
         }
             $aireview = quizaccess_proctoring_get_ai_review(
                 (int)$courseid,
@@ -475,9 +501,6 @@ if (
             $row['aireview'] = quizaccess_proctoring_format_ai_review_for_template($aireview);
         }
 
-            $actionmenu = new action_menu();
-            $actionmenu->set_kebab_trigger(get_string('actions'));
-
             $viewurl = new moodle_url($PAGE->url, [
                 'courseid' => $courseid,
                 'quizid' => $cmid,
@@ -486,12 +509,17 @@ if (
                 'reportid' => $info->reportid,
             ]);
 
-            $viewaction = new action_menu_link_secondary(
+            // View images is the primary, emphasized action (Requirement 18.3): rendered as a
+            // prominent primary button rather than hidden inside the kebab menu.
+            $viewbutton = html_writer::link(
                 $viewurl,
-                new pix_icon('e/insert_edit_image', get_string('viewimages', 'quizaccess_proctoring'), 'moodle'),
-                get_string('viewimages', 'quizaccess_proctoring')
+                $OUTPUT->pix_icon('e/insert_edit_image', '', 'moodle') . ' '
+                    . get_string('viewimages', 'quizaccess_proctoring'),
+                [
+                    'class' => 'btn btn-primary btn-sm',
+                    'role' => 'button',
+                ]
             );
-            $actionmenu->add($viewaction);
 
             $deleteform = '';
         if (has_capability('quizaccess/proctoring:deletecamshots', $context, $USER->id)) {
@@ -521,7 +549,9 @@ if (
                 $OUTPUT->pix_icon('t/delete', '') . ' ' . get_string('delete'),
                 [
                     'type' => 'submit',
-                    'class' => 'btn btn-link text-danger p-0',
+                    // De-emphasized (Requirement 18.3): a muted link, not a prominent/danger button.
+                    // The destructive confirm() guard is retained.
+                    'class' => 'btn btn-link btn-sm text-muted p-0',
                     'onclick' => 'return confirm(' . json_encode(get_string(
                         'areyousure_delete_record',
                         'quizaccess_proctoring'
@@ -531,10 +561,127 @@ if (
             $deleteform .= html_writer::end_tag('form');
         }
 
-            // Add rendered HTML to template context.
-            $row['actionmenu'] = $OUTPUT->render($actionmenu) . $deleteform;
+            // Add rendered HTML to template context: View images primary/emphasized first, Delete
+            // de-emphasized after it (Requirement 18.3).
+            $row['actionmenu'] = $viewbutton . $deleteform;
             $rows[] = $row;
     }
+
+    // Apply the selected column sort over the full result set (Requirement 13.2). The safe
+    // ORDER BY fragment comes from the allowlist helper and is translated into an in-PHP sort so
+    // that PHP-computed columns (risk score, violation count) sort consistently with SQL columns
+    // (name, date). Unknown/blank sort keys fall back to newest-first (Requirement 13.1).
+    $orderby = quizaccess_proctoring_report_order_by($sort, $dir);
+    $sortfieldmap = [
+        'lastname' => 'sortlastname',
+        'firstname' => 'sortfirstname',
+        'timemodified' => 'sorttimemodified',
+        'riskscore' => 'sortriskscore',
+        'eventcount' => 'sorteventcount',
+    ];
+    $sortpairs = [];
+    foreach (explode(',', $orderby) as $fragment) {
+        $bits = preg_split('/\s+/', trim($fragment));
+        if (empty($bits[0]) || !isset($sortfieldmap[$bits[0]])) {
+            continue;
+        }
+        $direction = (isset($bits[1]) && strtoupper($bits[1]) === 'ASC') ? 'ASC' : 'DESC';
+        $sortpairs[] = [$sortfieldmap[$bits[0]], $direction];
+    }
+    if (!empty($sortpairs)) {
+        usort($rows, function ($a, $b) use ($sortpairs) {
+            foreach ($sortpairs as [$key, $direction]) {
+                $avalue = $a[$key] ?? null;
+                $bvalue = $b[$key] ?? null;
+                if (is_string($avalue) || is_string($bvalue)) {
+                    $cmp = strcmp((string)$avalue, (string)$bvalue);
+                } else {
+                    $cmp = $avalue <=> $bvalue;
+                }
+                if ($cmp !== 0) {
+                    return $direction === 'ASC' ? $cmp : -$cmp;
+                }
+            }
+            return 0;
+        });
+    }
+
+    // Paginate in PHP over the filtered/sorted rows.
+    $totalrecords = count($rows);
+    $rows = array_slice($rows, $offset, $perpage);
+
+    // Build column-sort headers and the A–Z initial bars for the list view.
+    $sortkey = strtolower(trim($sort));
+    $currentdir = (strtolower(trim($dir)) === 'asc') ? 'asc' : 'desc';
+    $preserve = ['courseid' => $courseid, 'cmid' => $cmid];
+    if ($submittype === 'Search' && !empty($searchkey)) {
+        $preserve['searchKey'] = $searchkey;
+        $preserve['submitType'] = 'Search';
+    }
+    if ($firstnameinitial !== '') {
+        $preserve['firstnameinitial'] = $firstnameinitial;
+    }
+    if ($lastnameinitial !== '') {
+        $preserve['lastnameinitial'] = $lastnameinitial;
+    }
+
+    $makesortheader = function (string $key, string $labelkey) use ($url, $preserve, $sortkey, $currentdir) {
+        $isactive = ($sortkey === $key);
+        // Toggle direction when re-clicking the active column, otherwise start ascending.
+        $nextdir = ($isactive && $currentdir === 'asc') ? 'desc' : 'asc';
+        $sorturl = new moodle_url($url, $preserve + ['sort' => $key, 'dir' => $nextdir, 'page' => 0]);
+        return [
+            'label' => get_string($labelkey, 'quizaccess_proctoring'),
+            'url' => $sorturl->out(false),
+            'active' => $isactive,
+            'asc' => $isactive && $currentdir === 'asc',
+            'desc' => $isactive && $currentdir === 'desc',
+        ];
+    };
+
+    $sortheaders = [
+        'name' => $makesortheader('name', 'user'),
+        'date' => $makesortheader('date', 'dateverified'),
+        'violations' => $makesortheader('violations', 'suspiciousactivity'),
+        'risk' => $makesortheader('risk', 'riskscore'),
+    ];
+
+    // A–Z initial bars (Requirement 13.3): one for first name, one for last name.
+    $initialbarparams = ['courseid' => $courseid, 'cmid' => $cmid];
+    if ($submittype === 'Search' && !empty($searchkey)) {
+        $initialbarparams['searchKey'] = $searchkey;
+        $initialbarparams['submitType'] = 'Search';
+    }
+    if ($sortkey !== '') {
+        $initialbarparams['sort'] = $sortkey;
+        $initialbarparams['dir'] = $currentdir;
+    }
+
+    $makeinitialbar = function (string $param, string $selected, array $otherparam)
+            use ($url, $initialbarparams) {
+        $items = [];
+        // "All" resets this initial while preserving the other one.
+        $allparams = $initialbarparams + $otherparam;
+        $items[] = [
+            'label' => get_string('report_filter_all', 'quizaccess_proctoring'),
+            'url' => (new moodle_url($url, $allparams + ['page' => 0]))->out(false),
+            'active' => ($selected === ''),
+        ];
+        foreach (range('A', 'Z') as $letter) {
+            $isactive = (strtoupper($selected) === $letter);
+            $letterparams = $initialbarparams + $otherparam + [$param => $letter, 'page' => 0];
+            $items[] = [
+                'label' => $letter,
+                'url' => (new moodle_url($url, $letterparams))->out(false),
+                'active' => $isactive,
+            ];
+        }
+        return $items;
+    };
+
+    $firstinitialother = ($lastnameinitial !== '') ? ['lastnameinitial' => $lastnameinitial] : [];
+    $lastinitialother = ($firstnameinitial !== '') ? ['firstnameinitial' => $firstnameinitial] : [];
+
     $templatecontext = (object)[
         'quizname'        => get_string('eprotroringreports', 'quizaccess_proctoring') . $quiz->name,
         'settingsbtn'     => $settingsbtn,
@@ -548,8 +695,14 @@ if (
         'searchbuttontext' => $searchbuttontext,
         'clearbuttontext' => $clearbuttontext,
         'showclearbutton' => $showclearbutton,
-        'checkrow' => (!empty($row)) ? true : false,
+        'checkrow' => (!empty($rows)) ? true : false,
         'rows' => $rows,
+        'showfilters' => $islistview,
+        'sortheaders' => $sortheaders,
+        'firstinitialbar' => $makeinitialbar('firstnameinitial', $firstnameinitial, $firstinitialother),
+        'lastinitialbar' => $makeinitialbar('lastnameinitial', $lastnameinitial, $lastinitialother),
+        'firstinitiallabel' => get_string('report_filter_firstname', 'quizaccess_proctoring'),
+        'lastinitiallabel' => get_string('report_filter_lastname', 'quizaccess_proctoring'),
         'backbutton' => preg_replace('/&amp;/', '&', $backbutton),
     ];
     echo $OUTPUT->render_from_template('quizaccess_proctoring/report', $templatecontext);
@@ -705,6 +858,10 @@ if (
             $aireviewdata = quizaccess_proctoring_format_ai_review_for_template($aireview);
         }
 
+        // Plain-language session summary (Requirement 15.1): a short, telemetry-free
+        // description a reviewer can read without parsing raw event detail.
+        $sessionsummary = quizaccess_proctoring_build_session_summary($riskscore, $aireview ?: false);
+
         $overviewcounts = [
             'focus' => $DB->count_records_select(
                 'quizaccess_proctoring_events',
@@ -780,7 +937,7 @@ if (
         foreach ($eventrecords as $event) {
             $eventreview = $eventreviews[(int)$event->id] ?? null;
             $events[] = [
-                'timemodified' => date('Y/M/d H:i:s', $event->timemodified),
+                'timemodified' => userdate((int)$event->timemodified),
                 'eventtype' => quizaccess_proctoring_get_event_label($event->eventtype),
                 'eventdetail' => quizaccess_proctoring_format_event_detail($event->eventdetail),
                 'pagevisibility' => $event->pagevisibility,
@@ -843,6 +1000,8 @@ if (
             'analyzereportid' => $reportid,
             'sesskey' => sesskey(),
             'riskscore' => $riskscore,
+            'sessionsummary' => $sessionsummary,
+            'hassessionsummary' => ($sessionsummary !== ''),
             'aireview' => $aireviewdata,
             'overviewrows' => $overviewrows,
             'events' => $events,

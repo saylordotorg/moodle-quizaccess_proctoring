@@ -137,7 +137,12 @@ class proctoring_observer {
                 );
             }
 
-            if ($aireviewenabled && (int)$risk['score'] >= (int)$aireviewsettings['triggerthreshold']) {
+            if ($aireviewenabled) {
+                // The configured trigger mode selects when AI image review is enqueued at
+                // submission: 'everyattempt' forces enqueue regardless of the risk score
+                // (Requirement 3.2), while 'threshold' keeps the score gate (Requirements 3.3, 3.4).
+                // Both remain gated by AI review being configured and enabled ($aireviewenabled).
+                $forceaireview = \quizaccess_proctoring_get_ai_review_trigger_mode() === 'everyattempt';
                 \quizaccess_proctoring_queue_ai_review(
                     (int)$quiz->course,
                     (int)$cm->id,
@@ -146,7 +151,8 @@ class proctoring_observer {
                     (int)$report->id,
                     $holdid,
                     (int)$risk['score'],
-                    (int)$aireviewsettings['triggerthreshold']
+                    (int)$aireviewsettings['triggerthreshold'],
+                    $forceaireview
                 );
             }
         } catch (\Throwable $e) {

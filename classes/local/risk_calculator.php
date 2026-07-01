@@ -26,6 +26,61 @@ namespace quizaccess_proctoring\local;
 
 /**
  * Calculates proctoring risk scores and risk presentation data.
+ *
+ * Risk-Scoring Model
+ * ------------------
+ * The attempt risk score is the clamped sum of independent factors. Each factor scores a
+ * distinct class of student-attributable evidence as `min(cap, count * pointsperevent)` via
+ * {@see risk_calculator::build_factor()}, all factor points are summed, and the total is
+ * clamped to a maximum of 100. Factors never subtract, so adding suspicious evidence can only
+ * hold the score steady or raise it (monotonicity — Requirement 16.2).
+ *
+ * The canonical table below mirrors the factors built in {@see risk_calculator::calculate_attempt()}:
+ *
+ * | Factor                     | Points/event | Cap | Evidence source                                                   |
+ * |----------------------------|-------------:|----:|-------------------------------------------------------------------|
+ * | Face mismatch              |           35 |  35 | logs with awsflag = 2 and awsscore < threshold                    |
+ * | Multiple faces             |           30 |  30 | events: multiple_faces_detected                                   |
+ * | No face (images/events)    |            8 |  24 | max(no-face face_images, awsflag = 3 logs) + face_missing/no_face_detected events |
+ * | Screen-share issues        |           18 |  36 | events: screen_marker_missing, screen_share_stopped               |
+ * | Multiple monitors          |           25 |  25 | events: multiple_monitors_detected                                |
+ * | Possible AI tool           |           20 |  30 | events: possible_ai_tool                                          |
+ * | AI tool w/ screenshot      |           15 |  30 | events: possible_ai_tool having a desktop screenshot              |
+ * | Clipboard/context menu     |            8 |  24 | events: clipboard_copy, clipboard_cut, clipboard_paste, contextmenu |
+ * | Tab/focus activity         |            5 |  20 | events: focus_lost, tab_hidden, page_exit                         |
+ * | F12                        |           15 |  15 | shortcut events whose detail resolves to F12                      |
+ * | Other keyboard shortcuts   |            8 |  24 | shortcut events that are NOT F12 (Alt+Tab, Ctrl+T/N/W/R/A/L, Ctrl+Shift+I/J/C, Ctrl+C/X/V) |
+ * | Audio                      |            6 |  18 | events: audio_detected                                            |
+ * | Webcam missing             |           15 |  15 | attempt has no stored webcam capture                              |
+ * | Speed (optional)           |           25 |  25 | enabled + seconds-per-question below the configured floor         |
+ *
+ * Reconciliation with {@see overall_report::SUSPICIOUS_EVENT_TYPES} (Requirement 16.2)
+ * -----------------------------------------------------------------------------------
+ * Every browser event type that `overall_report` counts as a violation maps to a scoring factor
+ * here, so there is no "counts as a violation but scores nothing" gap:
+ *
+ * - focus_lost, tab_hidden, page_exit                          -> Tab/focus activity factor
+ * - clipboard_copy, clipboard_cut, clipboard_paste, contextmenu -> Clipboard/context menu factor
+ * - screen_marker_missing, screen_share_stopped                -> Screen-share issues factor
+ * - multiple_monitors_detected                                 -> Multiple monitors factor
+ * - possible_ai_tool                                           -> Possible AI tool (+ AI tool w/ screenshot) factors
+ * - shortcut                                                   -> F12 factor (F12 detail) and Other keyboard shortcuts factor (non-F12 detail)
+ * - multiple_faces_detected                                    -> Multiple faces factor
+ * - audio_detected                                             -> Audio factor
+ * - face_missing, no_face_detected                             -> No face factor
+ *
+ * The `shortcut` event type is the only one that previously mapped to a single sub-case (F12).
+ * Non-F12 monitored shortcuts were counted as violations by `overall_report` but scored nothing;
+ * the "Other keyboard shortcuts" factor closes that gap. F12 shortcut rows are excluded from that
+ * factor (they are already scored by the F12 factor) so no shortcut row is scored twice. The
+ * clipboard factor scores the distinct clipboard_* / contextmenu event rows, not shortcut rows, so
+ * the two factors count disjoint event types just as `overall_report` treats them as separate
+ * violations.
+ *
+ * AI review is NEVER a scoring input. The scoring factors above are functions of
+ * student-attributable proctoring events only. The outcome of AI_Image_Review (including a
+ * "nothing found" or a tool-failure result) is reported alongside the score but is never summed
+ * into it, so an AI result cannot inflate the score (Requirement 16.2).
  */
 final class risk_calculator {
     /**
@@ -275,6 +330,13 @@ final class risk_calculator {
             true
         );
         $f12count = self::count_shortcuts($eventwhere, $eventparams, 'F12');
+        // Non-F12 monitored shortcuts (Alt+Tab, Ctrl+T/N/W/R/A/L, Ctrl+Shift+I/J/C, Ctrl+C/X/V).
+        // overall_report counts every 'shortcut' event as a violation, but only F12 was scored; the
+        // remaining shortcut rows are scored here. F12 rows are excluded so no row is scored twice.
+        $othershortcutcount = max(
+            0,
+            self::count_events($eventwhere, $eventparams, ['shortcut']) - $f12count
+        );
         $multiplefacescount = self::count_events(
             $eventwhere,
             $eventparams,
@@ -384,6 +446,12 @@ final class risk_calculator {
                 $f12count,
                 15,
                 15
+            ),
+            self::build_factor(
+                get_string('riskscore:shortcut', 'quizaccess_proctoring'),
+                $othershortcutcount,
+                8,
+                24
             ),
             self::build_factor(
                 get_string('riskscore:audio', 'quizaccess_proctoring'),

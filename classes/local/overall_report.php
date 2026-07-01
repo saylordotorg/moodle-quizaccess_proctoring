@@ -459,6 +459,16 @@ final class overall_report {
                 ))->out(false);
             }
 
+            // Derive the certificate label from live hold + gradebook state so it never shows a
+            // stale "held" label after a release/grade (Requirements 2.1, 2.2, 2.3).
+            $cert = quizaccess_proctoring_resolve_certificate_label(
+                (int)$a['courseid'],
+                (int)$a['cmid'],
+                (int)$a['userid'],
+                (int)$a['attemptid'],
+                (int)$a['reportid']
+            );
+
             $rows[] = [
                 'fullname' => $user ? fullname($user) : get_string('overallreport:unknownuser', 'quizaccess_proctoring'),
                 'userurl' => $userurl->out(false),
@@ -476,11 +486,153 @@ final class overall_report {
                     'face' => $a['facemismatch'],
                 ]),
                 'aireview' => $aidata,
-                'holdlabel' => $hold ? quizaccess_proctoring_get_risk_hold_status_label($hold) : '',
+                'holdlabel' => $hold ? $cert['label'] : '',
                 'hashold' => (bool)$hold,
                 'canact' => $canact,
                 'releaseurl' => $releaseurl,
                 'confirmurl' => $confirmurl,
+                'viewurl' => $viewurl->out(false),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Build the cross-course held-certificate dashboard.
+     *
+     * Lists every attempt whose certificate label currently resolves to "held" across all courses.
+     * Because the label is derived live from the hold + gradebook state on each render (via C2's
+     * {@see quizaccess_proctoring_resolve_certificate_label()}), the dashboard always reflects the
+     * current state whenever a hold is created or its status changes in any course
+     * (Requirements 17.1, 17.2).
+     *
+     * @param int $page Zero-based page number.
+     * @return array Template-ready dashboard data.
+     */
+    public static function held_certificates(int $page = 0): array {
+        global $CFG, $DB;
+
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+
+        // Pull active holds across every course, newest-first, bounded by MAX_ATTEMPTS to cap load.
+        $holds = $DB->get_records(
+            'quizaccess_proctoring_risk_holds',
+            ['status' => \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE],
+            'timecreated DESC, id DESC',
+            'id, courseid, quizid, quizinstance, userid, attemptid, reportid, riskscore, status, timecreated',
+            0,
+            self::MAX_ATTEMPTS
+        );
+        $truncated = count($holds) >= self::MAX_ATTEMPTS;
+
+        // Keep only attempts whose certificate label currently resolves to "held". The resolver
+        // reconciles the live hold + gradebook state, so a released/graded attempt is excluded even
+        // if a stale hold row remains.
+        $held = [];
+        foreach ($holds as $hold) {
+            $cert = quizaccess_proctoring_resolve_certificate_label(
+                (int)$hold->courseid,
+                (int)$hold->quizid,
+                (int)$hold->userid,
+                (int)$hold->attemptid,
+                (int)$hold->reportid
+            );
+            if ($cert['state'] !== 'held') {
+                continue;
+            }
+            $held[] = [
+                'courseid' => (int)$hold->courseid,
+                'cmid' => (int)$hold->quizid,
+                'userid' => (int)$hold->userid,
+                'attemptid' => (int)$hold->attemptid,
+                'reportid' => (int)$hold->reportid,
+                'riskscore' => (int)$hold->riskscore,
+                'timecreated' => (int)$hold->timecreated,
+                'cert' => $cert,
+            ];
+        }
+
+        // Paginate the filtered set (already newest-first from the query order).
+        $total = count($held);
+        $totalpages = (int)ceil($total / self::PER_PAGE);
+        if ($totalpages > 0 && $page > $totalpages - 1) {
+            $page = $totalpages - 1;
+        }
+        $page = max(0, $page);
+        $pagerows = array_slice($held, $page * self::PER_PAGE, self::PER_PAGE);
+
+        return [
+            'rows' => self::decorate_held_rows($pagerows),
+            'hasrows' => !empty($pagerows),
+            'total' => $total,
+            'page' => $page,
+            'perpage' => self::PER_PAGE,
+            'truncated' => $truncated,
+        ];
+    }
+
+    /**
+     * Decorate the visible page of held certificates with names, risk score, label and links.
+     *
+     * Mirrors {@see self::decorate_rows()}: batch-loads user records and caches course/quiz names,
+     * computes the live risk score and links each row to the per-attempt report.
+     *
+     * @param array $pagerows Raw held-certificate rows for the current page.
+     * @return array Template-ready row data.
+     */
+    private static function decorate_held_rows(array $pagerows): array {
+        global $DB;
+
+        if (empty($pagerows)) {
+            return [];
+        }
+
+        $userids = array_values(array_unique(array_map(function ($a) {
+            return $a['userid'];
+        }, $pagerows)));
+        $users = $DB->get_records_list('user', 'id', $userids);
+        $coursecache = [];
+        $quizcache = [];
+        $rows = [];
+
+        foreach ($pagerows as $a) {
+            $user = $users[$a['userid']] ?? null;
+            if (!isset($coursecache[$a['courseid']])) {
+                $shortname = $DB->get_field('course', 'shortname', ['id' => $a['courseid']]);
+                $coursecache[$a['courseid']] = $shortname ? format_string($shortname) : ('#' . $a['courseid']);
+            }
+            if (!isset($quizcache[$a['cmid']])) {
+                $cm = get_coursemodule_from_id('quiz', $a['cmid'], 0, false, IGNORE_MISSING);
+                $quizcache[$a['cmid']] = $cm ? format_string($cm->name) : ('#' . $a['cmid']);
+            }
+
+            $risk = quizaccess_proctoring_calculate_attempt_risk(
+                $a['courseid'],
+                $a['cmid'],
+                $a['userid'],
+                $a['reportid']
+            );
+
+            $viewurl = new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
+                'courseid' => $a['courseid'],
+                'cmid' => $a['cmid'],
+                'studentid' => $a['userid'],
+                'reportid' => $a['reportid'],
+            ]);
+            $userurl = new moodle_url('/user/view.php', ['id' => $a['userid'], 'course' => $a['courseid']]);
+
+            $rows[] = [
+                'fullname' => $user ? fullname($user) : get_string('overallreport:unknownuser', 'quizaccess_proctoring'),
+                'userurl' => $userurl->out(false),
+                'course' => $coursecache[$a['courseid']],
+                'quiz' => $quizcache[$a['cmid']],
+                'heldsince' => $a['timecreated'] > 0 ? userdate($a['timecreated']) : '',
+                'riskscore' => $risk['score'],
+                'risklevel' => $risk['level'],
+                'riskbadgeclass' => $risk['badgeclass'],
+                'holdlabel' => $a['cert']['label'],
+                'holdclass' => $a['cert']['class'],
                 'viewurl' => $viewurl->out(false),
             ];
         }
