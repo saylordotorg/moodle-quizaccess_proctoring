@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026062405"
+<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026062406"
        COMMENT="XMLDB file for Moodle mod/quiz/accessrule/proctoring"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:noNamespaceSchemaLocation="../../../../../lib/xmldb/xmldb.xsd"
@@ -324,6 +324,79 @@
             <KEYS>
                 <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
             </KEYS>
+        </TABLE>
+
+        <TABLE NAME="quizaccess_proctoring_overrides" COMMENT="Per-student proctoring requirement overrides">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="true"/>
+                <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Course context the override was created in"/>
+                <FIELD NAME="quizid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Target quiz id; 0 means course-scoped."/>
+                <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Target student"/>
+                <FIELD NAME="captchastate" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="-1"
+                       SEQUENCE="false" COMMENT="Tri-state -1 inherit / 0 disabled / 1 enabled"/>
+                <FIELD NAME="webcamstate" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="-1"
+                       SEQUENCE="false" COMMENT="Tri-state -1 inherit / 0 disabled / 1 enabled"/>
+                <FIELD NAME="idverificationstate" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="-1"
+                       SEQUENCE="false" COMMENT="Tri-state -1 inherit / 0 disabled / 1 enabled"/>
+                <FIELD NAME="screensharestate" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="-1"
+                       SEQUENCE="false" COMMENT="Tri-state -1 inherit / 0 disabled / 1 enabled"/>
+                <FIELD NAME="multimonitorstate" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="-1"
+                       SEQUENCE="false" COMMENT="Tri-state -1 inherit / 0 disabled / 1 enabled"/>
+                <FIELD NAME="justification" TYPE="text" NOTNULL="true" SEQUENCE="false"
+                       COMMENT="Reviewer justification for the override"/>
+                <FIELD NAME="expiry" TYPE="int" LENGTH="10" NOTNULL="false" UNSIGNED="false" SEQUENCE="false"
+                       COMMENT="Unix timestamp; NULL means no expiry (until revoked)"/>
+                <FIELD NAME="revoked" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="0 active, 1 revoked"/>
+                <FIELD NAME="revokedby" TYPE="int" LENGTH="10" NOTNULL="false" UNSIGNED="false" SEQUENCE="false"
+                       COMMENT="Actor who revoked"/>
+                <FIELD NAME="timerevoked" TYPE="int" LENGTH="10" NOTNULL="false" UNSIGNED="false" SEQUENCE="false"
+                       COMMENT="Revocation timestamp"/>
+                <FIELD NAME="grantedby" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Immutable: granting reviewer"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Immutable: creation timestamp"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Last edit/revoke timestamp"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="coursequizuser" UNIQUE="false" FIELDS="courseid, quizid, userid"/>
+                <INDEX NAME="useridcourse" UNIQUE="false" FIELDS="userid, courseid"/>
+                <INDEX NAME="revoked" UNIQUE="false" FIELDS="revoked"/>
+            </INDEXES>
+        </TABLE>
+
+        <TABLE NAME="quizaccess_proctoring_override_audit" COMMENT="Append-only audit trail for proctoring overrides">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="true"/>
+                <FIELD NAME="overrideid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Foreign key to quizaccess_proctoring_overrides.id"/>
+                <FIELD NAME="actorid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Acting reviewer"/>
+                <FIELD NAME="action" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="create"
+                       SEQUENCE="false" COMMENT="create / edit / revoke"/>
+                <FIELD NAME="fieldname" TYPE="char" LENGTH="40" NOTNULL="false" SEQUENCE="false"
+                       COMMENT="Changed field (edit only); NULL for create/revoke"/>
+                <FIELD NAME="oldvalue" TYPE="text" NOTNULL="false" SEQUENCE="false"
+                       COMMENT="Previous value (edit only)"/>
+                <FIELD NAME="newvalue" TYPE="text" NOTNULL="false" SEQUENCE="false"
+                       COMMENT="New value (edit only)"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Action timestamp"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="overrideid" UNIQUE="false" FIELDS="overrideid"/>
+                <INDEX NAME="actorid" UNIQUE="false" FIELDS="actorid"/>
+            </INDEXES>
         </TABLE>
 
     </TABLES>
