@@ -76,6 +76,10 @@ final class upgrade_override_tables_test extends advanced_testcase {
         $this->assertFalse($dbman->table_exists($overrides));
         $this->assertFalse($dbman->table_exists($audit));
 
+        // The plugin upgrade function calls upgrade_plugin_savepoint(), which lives in
+        // lib/upgradelib.php; that library is loaded during a real upgrade but not under PHPUnit,
+        // so require it explicitly before invoking the upgrade step.
+        require_once($CFG->libdir . '/upgradelib.php');
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/db/upgrade.php');
 
         // Running the upgrade from just below the target version executes only the
