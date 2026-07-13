@@ -82,6 +82,13 @@ final class upgrade_override_tables_test extends advanced_testcase {
         require_once($CFG->libdir . '/upgradelib.php');
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/db/upgrade.php');
 
+        // The upgrade block ends with upgrade_plugin_savepoint(true, 2026062406, ...), which
+        // rejects a savepoint that is not strictly newer than the plugin's currently recorded
+        // version. In the test site the plugin is already installed at the target version, so we
+        // roll the recorded version back to just below the target before each invocation to make
+        // the savepoint a legitimate upgrade step rather than a same-version "downgrade".
+        set_config('version', self::OVERRIDE_TABLES_VERSION - 1, 'quizaccess_proctoring');
+
         // Running the upgrade from just below the target version executes only the
         // 2026062406 block, which must create both tables. Output buffering swallows the
         // savepoint progress markers the upgrade API emits.
@@ -95,7 +102,9 @@ final class upgrade_override_tables_test extends advanced_testcase {
             'Upgrade step should create the override audit table.');
 
         // Re-running the same step must be a no-op: the table_exists guards prevent a
-        // "table already exists" failure, proving the step is idempotent.
+        // "table already exists" failure, proving the step is idempotent. Reset the recorded
+        // version again so the savepoint on this second run is likewise a valid upgrade.
+        set_config('version', self::OVERRIDE_TABLES_VERSION - 1, 'quizaccess_proctoring');
         ob_start();
         xmldb_quizaccess_proctoring_upgrade(self::OVERRIDE_TABLES_VERSION - 1);
         ob_end_clean();
