@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.32
+- Removed the yes/no "Overview" table from the per-student report. Every row duplicated a count already shown (with points) in the risk score details table, which also covers seven more evidence types; the plain-language session summary serves the quick-read purpose. Also drops the extra event-count queries that only fed this table.
+
 # v1.1.31
 - Added a "Cap attempt risk score at 100" option (default on) to the Risk factor scoring admin page. When disabled, the attempt risk score is the raw sum of all factor points and can exceed 100; thresholds, level boundaries, and the auto-release ceiling compare against the uncapped value. Reports keep the "score/100" label.
 

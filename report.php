@@ -130,25 +130,6 @@ function quizaccess_proctoring_format_event_detail(string $eventdetail): string 
     return implode('; ', $parts);
 }
 
-/**
- * Builds one overview row for the student report.
- *
- * @param string $label Report row label.
- * @param int $count Number of matching events.
- * @return array Template row data.
- */
-function quizaccess_proctoring_build_overview_row(string $label, int $count): array {
-    return [
-        'label' => $label,
-        'status' => $count > 0
-            ? get_string('reportoverview:logfound', 'quizaccess_proctoring', $count)
-            : get_string('reportoverview:nologfound', 'quizaccess_proctoring'),
-        'statusclass' => $count > 0
-            ? 'proctoring-overview-status proctoring-overview-status-warning'
-            : 'proctoring-overview-status proctoring-overview-status-ok',
-    ];
-}
-
 // Page setup.
 $PAGE->set_url($url);
 $PAGE->set_pagelayout('course');
@@ -862,48 +843,6 @@ if (
         // description a reviewer can read without parsing raw event detail.
         $sessionsummary = quizaccess_proctoring_build_session_summary($riskscore, $aireview ?: false);
 
-        $overviewcounts = [
-            'focus' => $DB->count_records_select(
-                'quizaccess_proctoring_events',
-                $eventwhere . " AND eventtype IN ('focus_lost', 'tab_hidden', 'page_exit')",
-                $eventparams
-            ),
-            'screen' => $DB->count_records_select(
-                'quizaccess_proctoring_events',
-                $eventwhere . " AND eventtype IN ('screen_marker_missing', 'screen_share_stopped')",
-                $eventparams
-            ),
-            'multimonitor' => $DB->count_records_select(
-                'quizaccess_proctoring_events',
-                $eventwhere . ' AND eventtype = :eventtype_multimonitor',
-                $eventparams + ['eventtype_multimonitor' => 'multiple_monitors_detected']
-            ),
-            'clipboard' => $DB->count_records_select(
-                'quizaccess_proctoring_events',
-                $eventwhere . " AND eventtype IN ('clipboard_copy', 'clipboard_cut', 'clipboard_paste', 'contextmenu')",
-                $eventparams
-            ),
-            'f12' => 0,
-            'aitool' => $DB->count_records_select(
-                'quizaccess_proctoring_events',
-                $eventwhere . ' AND eventtype = :eventtype_aitool',
-                $eventparams + ['eventtype_aitool' => 'possible_ai_tool']
-            ),
-        ];
-
-        $shortcutrecords = $DB->get_records_select(
-            'quizaccess_proctoring_events',
-            $eventwhere . ' AND eventtype = :eventtype_shortcut',
-            $eventparams + ['eventtype_shortcut' => 'shortcut'],
-            '',
-            'id, eventdetail'
-        );
-        foreach ($shortcutrecords as $shortcutrecord) {
-            if (quizaccess_proctoring_event_has_shortcut($shortcutrecord->eventdetail, 'F12')) {
-                $overviewcounts['f12']++;
-            }
-        }
-
         $eventrecords = $DB->get_records_select(
             'quizaccess_proctoring_events',
             $eventwhere,
@@ -948,37 +887,6 @@ if (
                 'haseventaireview' => !empty($eventreview),
             ];
         }
-        $overviewrows = [
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:webcamenabled', 'quizaccess_proctoring'),
-                count($studentdata) > 0 ? 0 : 1
-            ),
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:screenfocuslost', 'quizaccess_proctoring'),
-                $overviewcounts['focus']
-            ),
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:screenshareissue', 'quizaccess_proctoring'),
-                $overviewcounts['screen']
-            ),
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:multimonitor', 'quizaccess_proctoring'),
-                $overviewcounts['multimonitor']
-            ),
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:clipboardactivity', 'quizaccess_proctoring'),
-                $overviewcounts['clipboard']
-            ),
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:f12pressed', 'quizaccess_proctoring'),
-                $overviewcounts['f12']
-            ),
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:possibleaitool', 'quizaccess_proctoring'),
-                $overviewcounts['aitool']
-            ),
-        ];
-
         $analyzeurl = new moodle_url('/mod/quiz/accessrule/proctoring/analyzeimage.php');
         $userimageurl = quizaccess_proctoring_get_image_url($user->id);
         if (!$userimageurl) {
@@ -1003,7 +911,6 @@ if (
             'sessionsummary' => $sessionsummary,
             'hassessionsummary' => ($sessionsummary !== ''),
             'aireview' => $aireviewdata,
-            'overviewrows' => $overviewrows,
             'events' => $events,
             'hasevents' => !empty($events),
         ];
