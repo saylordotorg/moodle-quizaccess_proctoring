@@ -32,8 +32,16 @@ namespace quizaccess_proctoring\local;
  * The attempt risk score is the clamped sum of independent factors. Each factor scores a
  * distinct class of student-attributable evidence as `min(cap, count * pointsperevent)` via
  * {@see risk_calculator::build_factor()}, all factor points are summed, and the total is
- * clamped to a maximum of 100. Factors never subtract, so adding suspicious evidence can only
- * hold the score steady or raise it (monotonicity — Requirement 16.2).
+ * clamped to a maximum of 100. The clamp can be disabled site-wide ("Cap attempt risk score
+ * at 100" on the Risk factor scoring admin page, config `riskscorecapenabled`), in which case
+ * the score is the raw factor sum. Factors never subtract, so adding suspicious evidence can
+ * only hold the score steady or raise it (monotonicity — Requirement 16.2).
+ *
+ * Each factor's points-per-event and cap are site-configurable, and each factor can be disabled
+ * outright, on the "Risk factor scoring" admin page (config keys `riskfactor_{key}_enabled`,
+ * `riskfactor_{key}_points`, `riskfactor_{key}_cap`; see {@see risk_calculator::FACTOR_DEFAULTS}).
+ * A disabled factor contributes nothing and is omitted from the risk score details. The values in
+ * the canonical table below are the shipped defaults, used whenever no override is configured.
  *
  * The canonical table below mirrors the factors built in {@see risk_calculator::calculate_attempt()}:
  *
@@ -83,6 +91,117 @@ namespace quizaccess_proctoring\local;
  * into it, so an AI result cannot inflate the score (Requirement 16.2).
  */
 final class risk_calculator {
+    /**
+     * Default points-per-event and cap for every scoring factor, keyed by factor key.
+     *
+     * The factor key doubles as the suffix of the report label lang string
+     * (`riskscore:{key}`) and of the admin override config names
+     * (`riskfactor_{key}_enabled` / `_points` / `_cap`). Order here is the display
+     * order of the factors on the admin page and in risk score details.
+     */
+    public const FACTOR_DEFAULTS = [
+        'facemismatch' => ['points' => 35, 'cap' => 35],
+        'multiplefaces' => ['points' => 30, 'cap' => 30],
+        'noface' => ['points' => 8, 'cap' => 24],
+        'screenshare' => ['points' => 18, 'cap' => 36],
+        'multimonitor' => ['points' => 25, 'cap' => 25],
+        'aitool' => ['points' => 20, 'cap' => 30],
+        'aitoolscreenshot' => ['points' => 15, 'cap' => 30],
+        'clipboard' => ['points' => 8, 'cap' => 24],
+        'tabactivity' => ['points' => 5, 'cap' => 20],
+        'f12' => ['points' => 15, 'cap' => 15],
+        'shortcut' => ['points' => 8, 'cap' => 24],
+        'audio' => ['points' => 6, 'cap' => 18],
+        'webcammissing' => ['points' => 15, 'cap' => 15],
+        'speed' => ['points' => 25, 'cap' => 25],
+    ];
+
+    /**
+     * Determine whether the attempt risk score is capped at 100 (the default).
+     *
+     * @return bool True when the summed factor points are clamped to 100.
+     */
+    public static function score_cap_enabled(): bool {
+        $value = get_config('quizaccess_proctoring', 'riskscorecapenabled');
+        if ($value === false || $value === null || $value === '') {
+            return true;
+        }
+
+        return (int)$value === 1;
+    }
+
+    /**
+     * Determine whether a scoring factor is enabled (factors default to enabled).
+     *
+     * @param string $key Factor key from {@see self::FACTOR_DEFAULTS}.
+     * @return bool True when the factor should score evidence.
+     */
+    public static function factor_enabled(string $key): bool {
+        $value = get_config('quizaccess_proctoring', 'riskfactor_' . $key . '_enabled');
+        if ($value === false || $value === null || $value === '') {
+            return true;
+        }
+
+        return (int)$value === 1;
+    }
+
+    /**
+     * Get the configured points-per-event for a scoring factor.
+     *
+     * @param string $key Factor key from {@see self::FACTOR_DEFAULTS}.
+     * @return int Points per event, clamped to 0-100.
+     */
+    public static function factor_points(string $key): int {
+        return self::factor_value($key, 'points');
+    }
+
+    /**
+     * Get the configured maximum points (cap) for a scoring factor.
+     *
+     * @param string $key Factor key from {@see self::FACTOR_DEFAULTS}.
+     * @return int Factor cap, clamped to 0-100.
+     */
+    public static function factor_cap(string $key): int {
+        return self::factor_value($key, 'cap');
+    }
+
+    /**
+     * Resolve a configured factor value with fallback to the shipped default.
+     *
+     * @param string $key Factor key from {@see self::FACTOR_DEFAULTS}.
+     * @param string $field Either 'points' or 'cap'.
+     * @return int Configured value clamped to 0-100, or the default when unset/invalid.
+     */
+    private static function factor_value(string $key, string $field): int {
+        $default = self::FACTOR_DEFAULTS[$key][$field] ?? 0;
+        $value = get_config('quizaccess_proctoring', 'riskfactor_' . $key . '_' . $field);
+        if ($value === false || $value === null || $value === '' || !is_numeric($value)) {
+            return $default;
+        }
+
+        return max(0, min(100, (int)$value));
+    }
+
+    /**
+     * Build a factor using its configured points and cap, or null when the factor is disabled.
+     *
+     * @param string $key Factor key from {@see self::FACTOR_DEFAULTS}.
+     * @param int $count Evidence count.
+     * @return array|null Factor data, or null when the factor is disabled or unknown.
+     */
+    public static function build_configured_factor(string $key, int $count): ?array {
+        if (!isset(self::FACTOR_DEFAULTS[$key]) || !self::factor_enabled($key)) {
+            return null;
+        }
+
+        return self::build_factor(
+            get_string('riskscore:' . $key, 'quizaccess_proctoring'),
+            $count,
+            self::factor_points($key),
+            self::factor_cap($key)
+        );
+    }
+
     /**
      * Determines whether an event detail JSON contains a specific shortcut.
      *
@@ -179,25 +298,48 @@ final class risk_calculator {
     }
 
     /**
+     * Resolve a configured risk-level boundary with fallback to its default.
+     *
+     * @param string $name Config name (risklevelmoderate, risklevelhigh, risklevelcritical).
+     * @param int $default Default boundary score.
+     * @return int Boundary clamped to 1-100.
+     */
+    private static function level_boundary(string $name, int $default): int {
+        $value = get_config('quizaccess_proctoring', $name);
+        if ($value === false || $value === null || $value === '' || !is_numeric($value)) {
+            return $default;
+        }
+
+        return max(1, min(100, (int)$value));
+    }
+
+    /**
      * Get risk-level presentation details for a score.
+     *
+     * Boundaries are site-configurable (defaults: Moderate 20, High 50, Critical 80) and are
+     * clamped so they never invert: High never exceeds Critical and Moderate never exceeds High.
      *
      * @param int $score Score from 0 to 100.
      * @return array Risk-level template data.
      */
     public static function get_level(int $score): array {
-        if ($score >= 80) {
+        $critical = self::level_boundary('risklevelcritical', 80);
+        $high = min(self::level_boundary('risklevelhigh', 50), $critical);
+        $moderate = min(self::level_boundary('risklevelmoderate', 20), $high);
+
+        if ($score >= $critical) {
             return [
                 'label' => get_string('riskscore:critical', 'quizaccess_proctoring'),
                 'class' => 'proctoring-risk-critical',
             ];
         }
-        if ($score >= 50) {
+        if ($score >= $high) {
             return [
                 'label' => get_string('riskscore:high', 'quizaccess_proctoring'),
                 'class' => 'proctoring-risk-high',
             ];
         }
-        if ($score >= 20) {
+        if ($score >= $moderate) {
             return [
                 'label' => get_string('riskscore:moderate', 'quizaccess_proctoring'),
                 'class' => 'proctoring-risk-moderate',
@@ -269,89 +411,106 @@ final class risk_calculator {
             $faceimageparams['riskfacereportid'] = $reportid;
         }
 
-        $webcamcount = $DB->count_records_select(
-            'quizaccess_proctoring_logs',
-            $logwhere . " AND COALESCE(webcampicture, '') <> ''",
-            $logparams
-        );
+        // Evidence counts are only queried for enabled factors; a disabled factor scores nothing,
+        // so its count query would be wasted work.
+        $webcamcount = 0;
+        if (self::factor_enabled('webcammissing')) {
+            $webcamcount = $DB->count_records_select(
+                'quizaccess_proctoring_logs',
+                $logwhere . " AND COALESCE(webcampicture, '') <> ''",
+                $logparams
+            );
+        }
 
-        $facemismatchcount = $DB->count_records_select(
-            'quizaccess_proctoring_logs',
-            $logwhere . ' AND awsflag = :riskawschecked AND awsscore < :riskthreshold',
-            $logparams + [
-                'riskawschecked' => 2,
-                'riskthreshold' => $threshold,
-            ]
-        );
-        $facefailedcount = $DB->count_records_select(
-            'quizaccess_proctoring_logs',
-            $logwhere . ' AND awsflag = :riskawsfailed',
-            $logparams + ['riskawsfailed' => 3]
-        );
+        $facemismatchcount = 0;
+        if (self::factor_enabled('facemismatch')) {
+            $facemismatchcount = $DB->count_records_select(
+                'quizaccess_proctoring_logs',
+                $logwhere . ' AND awsflag = :riskawschecked AND awsscore < :riskthreshold',
+                $logparams + [
+                    'riskawschecked' => 2,
+                    'riskthreshold' => $threshold,
+                ]
+            );
+        }
 
-        $nofaceimagecount = $DB->count_records_sql(
-            "SELECT COUNT(1)
-               FROM {quizaccess_proctoring_face_images} fi
-               JOIN {quizaccess_proctoring_logs} l ON l.id = fi.parentid
-              WHERE {$faceimagewhere}
-                AND fi.facefound <> :riskfacefound",
-            $faceimageparams
-        );
+        $facefailedcount = 0;
+        $nofaceimagecount = 0;
+        $nofaceeventcount = 0;
+        if (self::factor_enabled('noface')) {
+            $facefailedcount = $DB->count_records_select(
+                'quizaccess_proctoring_logs',
+                $logwhere . ' AND awsflag = :riskawsfailed',
+                $logparams + ['riskawsfailed' => 3]
+            );
+            $nofaceimagecount = $DB->count_records_sql(
+                "SELECT COUNT(1)
+                   FROM {quizaccess_proctoring_face_images} fi
+                   JOIN {quizaccess_proctoring_logs} l ON l.id = fi.parentid
+                  WHERE {$faceimagewhere}
+                    AND fi.facefound <> :riskfacefound",
+                $faceimageparams
+            );
+            $nofaceeventcount = self::count_events(
+                $eventwhere,
+                $eventparams,
+                ['face_missing', 'no_face_detected']
+            );
+        }
 
-        $tabactivitycount = self::count_events(
+        $tabactivitycount = self::factor_enabled('tabactivity') ? self::count_events(
             $eventwhere,
             $eventparams,
             ['focus_lost', 'tab_hidden', 'page_exit']
-        );
-        $clipboardcount = self::count_events(
+        ) : 0;
+        $clipboardcount = self::factor_enabled('clipboard') ? self::count_events(
             $eventwhere,
             $eventparams,
             ['clipboard_copy', 'clipboard_cut', 'clipboard_paste', 'contextmenu']
-        );
-        $screenissuecount = self::count_events(
+        ) : 0;
+        $screenissuecount = self::factor_enabled('screenshare') ? self::count_events(
             $eventwhere,
             $eventparams,
             ['screen_marker_missing', 'screen_share_stopped']
-        );
-        $multimonitorcount = self::count_events(
+        ) : 0;
+        $multimonitorcount = self::factor_enabled('multimonitor') ? self::count_events(
             $eventwhere,
             $eventparams,
             ['multiple_monitors_detected']
-        );
-        $aitoolcount = self::count_events(
+        ) : 0;
+        $aitoolcount = self::factor_enabled('aitool') ? self::count_events(
             $eventwhere,
             $eventparams,
             ['possible_ai_tool']
-        );
-        $aitoolscreenshotcount = self::count_events(
+        ) : 0;
+        $aitoolscreenshotcount = self::factor_enabled('aitoolscreenshot') ? self::count_events(
             $eventwhere,
             $eventparams,
             ['possible_ai_tool'],
             true
-        );
-        $f12count = self::count_shortcuts($eventwhere, $eventparams, 'F12');
+        ) : 0;
+        // The F12 count also feeds the other-shortcuts subtraction below, so it is needed whenever
+        // either shortcut factor is enabled. Disabling the F12 factor does not move F12 presses
+        // into the other-shortcuts factor: each factor scores its own evidence or nothing.
+        $f12count = (self::factor_enabled('f12') || self::factor_enabled('shortcut'))
+            ? self::count_shortcuts($eventwhere, $eventparams, 'F12') : 0;
         // Non-F12 monitored shortcuts (Alt+Tab, Ctrl+T/N/W/R/A/L, Ctrl+Shift+I/J/C, Ctrl+C/X/V).
         // overall_report counts every 'shortcut' event as a violation, but only F12 was scored; the
         // remaining shortcut rows are scored here. F12 rows are excluded so no row is scored twice.
-        $othershortcutcount = max(
+        $othershortcutcount = self::factor_enabled('shortcut') ? max(
             0,
             self::count_events($eventwhere, $eventparams, ['shortcut']) - $f12count
-        );
-        $multiplefacescount = self::count_events(
+        ) : 0;
+        $multiplefacescount = self::factor_enabled('multiplefaces') ? self::count_events(
             $eventwhere,
             $eventparams,
             ['multiple_faces_detected']
-        );
-        $audioactivitycount = self::count_events(
+        ) : 0;
+        $audioactivitycount = self::factor_enabled('audio') ? self::count_events(
             $eventwhere,
             $eventparams,
             ['audio_detected']
-        );
-        $nofaceeventcount = self::count_events(
-            $eventwhere,
-            $eventparams,
-            ['face_missing', 'no_face_detected']
-        );
+        ) : 0;
 
         // Attempt duration and the optional speed-based risk factor.
         $speedenabled = (int)get_config('quizaccess_proctoring', 'speedreviewenabled') === 1;
@@ -386,101 +545,44 @@ final class risk_calculator {
             }
         }
 
-        $factors = [
-            self::build_factor(
-                get_string('riskscore:facemismatch', 'quizaccess_proctoring'),
-                $facemismatchcount,
-                35,
-                35
-            ),
-            self::build_factor(
-                get_string('riskscore:multiplefaces', 'quizaccess_proctoring'),
-                $multiplefacescount,
-                30,
-                30
-            ),
-            self::build_factor(
-                get_string('riskscore:noface', 'quizaccess_proctoring'),
-                max($nofaceimagecount, $facefailedcount) + $nofaceeventcount,
-                8,
-                24
-            ),
-            self::build_factor(
-                get_string('riskscore:screenshare', 'quizaccess_proctoring'),
-                $screenissuecount,
-                18,
-                36
-            ),
-            self::build_factor(
-                get_string('riskscore:multimonitor', 'quizaccess_proctoring'),
-                $multimonitorcount,
-                25,
-                25
-            ),
-            self::build_factor(
-                get_string('riskscore:aitool', 'quizaccess_proctoring'),
-                $aitoolcount,
-                20,
-                30
-            ),
-            self::build_factor(
-                get_string('riskscore:aitoolscreenshot', 'quizaccess_proctoring'),
-                $aitoolscreenshotcount,
-                15,
-                30
-            ),
-            self::build_factor(
-                get_string('riskscore:clipboard', 'quizaccess_proctoring'),
-                $clipboardcount,
-                8,
-                24
-            ),
-            self::build_factor(
-                get_string('riskscore:tabactivity', 'quizaccess_proctoring'),
-                $tabactivitycount,
-                5,
-                20
-            ),
-            self::build_factor(
-                get_string('riskscore:f12', 'quizaccess_proctoring'),
-                $f12count,
-                15,
-                15
-            ),
-            self::build_factor(
-                get_string('riskscore:shortcut', 'quizaccess_proctoring'),
-                $othershortcutcount,
-                8,
-                24
-            ),
-            self::build_factor(
-                get_string('riskscore:audio', 'quizaccess_proctoring'),
-                $audioactivitycount,
-                6,
-                18
-            ),
-            self::build_factor(
-                get_string('riskscore:webcammissing', 'quizaccess_proctoring'),
-                $webcamcount > 0 ? 0 : 1,
-                15,
-                15
-            ),
+        $factorcounts = [
+            'facemismatch' => $facemismatchcount,
+            'multiplefaces' => $multiplefacescount,
+            'noface' => max($nofaceimagecount, $facefailedcount) + $nofaceeventcount,
+            'screenshare' => $screenissuecount,
+            'multimonitor' => $multimonitorcount,
+            'aitool' => $aitoolcount,
+            'aitoolscreenshot' => $aitoolscreenshotcount,
+            'clipboard' => $clipboardcount,
+            'tabactivity' => $tabactivitycount,
+            'f12' => $f12count,
+            'shortcut' => $othershortcutcount,
+            'audio' => $audioactivitycount,
+            'webcammissing' => $webcamcount > 0 ? 0 : 1,
         ];
 
+        $factors = [];
+        foreach ($factorcounts as $factorkey => $factorcount) {
+            $factor = self::build_configured_factor($factorkey, $factorcount);
+            if ($factor !== null) {
+                $factors[] = $factor;
+            }
+        }
+
         if ($speedenabled && $durationseconds > 0 && $questioncount > 0) {
-            $factors[] = self::build_factor(
-                get_string('riskscore:speed', 'quizaccess_proctoring'),
-                $speedcount,
-                25,
-                25
-            );
+            $factor = self::build_configured_factor('speed', $speedcount);
+            if ($factor !== null) {
+                $factors[] = $factor;
+            }
         }
 
         $score = 0;
         foreach ($factors as $factor) {
             $score += (int)$factor['points'];
         }
-        $score = min(100, $score);
+        if (self::score_cap_enabled()) {
+            $score = min(100, $score);
+        }
         $level = self::get_level($score);
 
         $secondsperquestion = $questioncount > 0 ? (int)round($durationseconds / $questioncount) : 0;

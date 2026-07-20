@@ -1012,7 +1012,80 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
 
-    // 3. Review diagnostics.
+    // 3. Risk factor scoring (per-factor enable/points/cap and risk level boundaries).
+    $riskfactorspage = new admin_settingpage(
+        'quizaccess_proctoring_riskfactors',
+        get_string('riskfactorspage', 'quizaccess_proctoring'),
+        'moodle/site:config'
+    );
+
+    $riskfactorspage->add(new admin_setting_heading(
+        'quizaccess_proctoring_riskfactorsheading',
+        get_string('setting:riskfactorsheading', 'quizaccess_proctoring'),
+        get_string('setting:riskfactorsheading_desc', 'quizaccess_proctoring')
+    ));
+
+    $riskfactorspage->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/riskscorecapenabled',
+        get_string('setting:riskscorecapenabled', 'quizaccess_proctoring'),
+        get_string('setting:riskscorecapenabled_desc', 'quizaccess_proctoring'),
+        1
+    ));
+
+    foreach (\quizaccess_proctoring\local\risk_calculator::FACTOR_DEFAULTS as $factorkey => $factordefaults) {
+        $factorlabel = get_string('riskscore:' . $factorkey, 'quizaccess_proctoring');
+        $riskfactorspage->add(new admin_setting_configcheckbox(
+            'quizaccess_proctoring/riskfactor_' . $factorkey . '_enabled',
+            get_string('setting:riskfactorenabled', 'quizaccess_proctoring', $factorlabel),
+            get_string('setting:riskfactorenabled_desc', 'quizaccess_proctoring'),
+            1
+        ));
+        $riskfactorspage->add(new admin_setting_configtext(
+            'quizaccess_proctoring/riskfactor_' . $factorkey . '_points',
+            get_string('setting:riskfactorpoints', 'quizaccess_proctoring', $factorlabel),
+            get_string('setting:riskfactorpoints_desc', 'quizaccess_proctoring', $factordefaults['points']),
+            $factordefaults['points'],
+            PARAM_INT
+        ));
+        $riskfactorspage->add(new admin_setting_configtext(
+            'quizaccess_proctoring/riskfactor_' . $factorkey . '_cap',
+            get_string('setting:riskfactorcap', 'quizaccess_proctoring', $factorlabel),
+            get_string('setting:riskfactorcap_desc', 'quizaccess_proctoring', $factordefaults['cap']),
+            $factordefaults['cap'],
+            PARAM_INT
+        ));
+    }
+
+    $riskfactorspage->add(new admin_setting_heading(
+        'quizaccess_proctoring_risklevelsheading',
+        get_string('setting:risklevelsheading', 'quizaccess_proctoring'),
+        get_string('setting:risklevelsheading_desc', 'quizaccess_proctoring')
+    ));
+    $riskfactorspage->add(new admin_setting_configtext(
+        'quizaccess_proctoring/risklevelmoderate',
+        get_string('setting:risklevelmoderate', 'quizaccess_proctoring'),
+        get_string('setting:risklevelmoderate_desc', 'quizaccess_proctoring'),
+        20,
+        PARAM_INT
+    ));
+    $riskfactorspage->add(new admin_setting_configtext(
+        'quizaccess_proctoring/risklevelhigh',
+        get_string('setting:risklevelhigh', 'quizaccess_proctoring'),
+        get_string('setting:risklevelhigh_desc', 'quizaccess_proctoring'),
+        50,
+        PARAM_INT
+    ));
+    $riskfactorspage->add(new admin_setting_configtext(
+        'quizaccess_proctoring/risklevelcritical',
+        get_string('setting:risklevelcritical', 'quizaccess_proctoring'),
+        get_string('setting:risklevelcritical_desc', 'quizaccess_proctoring'),
+        80,
+        PARAM_INT
+    ));
+
+    $ADMIN->add($proctoringcategory, $riskfactorspage);
+
+    // 4. Review diagnostics.
     $ADMIN->add($proctoringcategory, new admin_externalpage(
         'quizaccess_proctoring_ai_diagnostics',
         get_string('aireviewdiagnostics', 'quizaccess_proctoring'),
@@ -1020,7 +1093,7 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
 
-    // 4. Cost estimate.
+    // 5. Cost estimate.
     $ADMIN->add($proctoringcategory, new admin_externalpage(
         'quizaccess_proctoring_cost_estimate',
         get_string('costestimate', 'quizaccess_proctoring'),
@@ -1028,7 +1101,7 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
 
-    // 5. Saylor Proctored Quiz Users list.
+    // 6. Saylor Proctored Quiz Users list.
     $ADMIN->add($proctoringcategory, new admin_externalpage(
         'quizaccess_proctoring_userslist',
         get_string('users_list', 'quizaccess_proctoring'),

@@ -253,10 +253,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     /**
      * Determine whether the persistent helper window should be used.
      *
-     * @param string $multimonitormode Effective multi-monitor mode.
      * @return bool True when the helper window should be used.
      */
-    private static function should_use_persistent_screen_monitor(string $multimonitormode): bool {
+    private static function should_use_persistent_screen_monitor(): bool {
         if (self::is_mobile_or_tablet()) {
             return false;
         }
@@ -269,13 +268,12 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             return false;
         }
 
-        // Auto mode: a getDisplayMedia stream is bound to the page that requested it, so main-page sharing
-        // is torn down on every quiz navigation and the student is re-prompted on each page. The helper
-        // window keeps the stream alive across page loads. When multiple monitors are blocked the student
-        // is already confined to a single enforced screen, so the screen-share marker is unnecessary and
-        // the persistent helper window is not used; otherwise the helper window keeps the verified share
-        // alive across navigation without re-prompting.
-        return $multimonitormode !== self::MULTI_MONITOR_BLOCK;
+        // Auto mode: always prefer the helper window on desktop. A getDisplayMedia stream is bound to
+        // the page that requested it, so main-page sharing is torn down on every quiz navigation and the
+        // student is re-prompted to share their screen. The helper window keeps the stream alive across
+        // page loads regardless of the multi-monitor policy, so desktop capture stays available for
+        // violation screenshots without re-prompting.
+        return true;
     }
 
     /**
@@ -343,14 +341,6 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
 
         if (self::is_mobile_or_tablet() && self::mobile_screen_share_mode() === self::MOBILE_SCREEN_SHARE_BYPASS) {
-            return false;
-        }
-
-        // When multiple monitors are blocked the persistent helper window is not used, and a main-page
-        // screen share cannot survive quiz navigation without re-prompting the student on every page.
-        // The student is already confined to a single enforced screen, so skip in-quiz desktop capture
-        // to avoid that repeated prompt.
-        if (self::multi_monitor_mode() === self::MULTI_MONITOR_BLOCK) {
             return false;
         }
 
@@ -907,7 +897,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $registerface = ((string)$faceidcheck === '1' && !$hasreferenceimage);
         $idverificationpassed = $idverificationrequired ? $this->current_user_has_passed_id_verification() : true;
         $idverificationrequireback = $idverificationrequired && self::id_verification_requires_back_image();
-        $usepersistentmonitor = self::should_use_persistent_screen_monitor($multimonitormode);
+        $usepersistentmonitor = self::should_use_persistent_screen_monitor();
         $screenmarkerrequired = $usepersistentmonitor || self::should_require_screen_marker($multimonitormode);
 
         // Prepare data for the JavaScript module.
@@ -1751,7 +1741,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->faceblurhits = max(1, min(10, $faceblurhits));
             $faceblurinitialgrace = (int)(get_config('quizaccess_proctoring', 'faceblurinitialgrace') ?: 10);
             $record->faceblurinitialgrace = max(0, min(60, $faceblurinitialgrace));
-            $usepersistentmonitor = self::should_use_persistent_screen_monitor($record->multimonitormode);
+            $usepersistentmonitor = self::should_use_persistent_screen_monitor();
             $record->screenmarkerrequired = ($usepersistentmonitor ||
                 self::should_require_screen_marker($record->multimonitormode)) ? 1 : 0;
             $screenmonitorkey = 'cm' . (int)$cmid . 'user' . (int)$USER->id;

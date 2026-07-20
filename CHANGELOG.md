@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.31
+- Added a "Cap attempt risk score at 100" option (default on) to the Risk factor scoring admin page. When disabled, the attempt risk score is the raw sum of all factor points and can exceed 100; thresholds, level boundaries, and the auto-release ceiling compare against the uncapped value. Reports keep the "score/100" label.
+
+# v1.1.30
+- Added a "Risk factor scoring" admin page (AI proctor settings, between Overall reports and Review diagnostics). Every risk factor can now be enabled/disabled and its points-per-event and maximum points configured; disabled factors score nothing and are hidden from risk score details. Also made the Low/Moderate/High/Critical risk-level boundaries configurable (defaults 20/50/80, clamped so they never invert). Shipped defaults match the previous hardcoded model, so scores are unchanged until an admin edits them. Because scores are recalculated from stored evidence on view, changes also affect scores displayed for past attempts; existing grade holds keep their recorded score.
+
+# v1.1.29
+- Desktop violation screenshots are now captured regardless of the multi-monitor policy. v1.1.22 skipped in-quiz desktop capture when multiple monitors were blocked (to avoid re-prompting for the screen share on every quiz page), which also silently stopped attaching desktop screenshots to violation events in the quiz report. Auto screen-share persistence mode now always uses the helper window on desktop, so the verified share survives page navigation and violation screenshots are recorded in every multi-monitor mode.
+
 # v1.1.27
 - Overall reports: the "violations" count now counts only suspicious browser events (matching the risk calculator) and ignores routine recovery events such as tab_visible, focus_returned, and mouse_returned_window, so totals and sorting are no longer inflated.
 - Overall reports: the active-hold and AI-flagged summary cards now reflect the current filter (course, period, and minimum violations) instead of the whole window, so they no longer show counts for attempts outside the filtered result set.
