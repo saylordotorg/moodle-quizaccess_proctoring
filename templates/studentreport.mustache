@@ -126,6 +126,9 @@
             {{#lockoutuntil}}
                 <div class="mt-2">{{lockoutuntil}}</div>
             {{/lockoutuntil}}
+            {{#fpholdreleasehint}}
+                <div class="mt-2 proctoring-fp-holdhint">{{fpholdreleasehint}}</div>
+            {{/fpholdreleasehint}}
         </div>
     </div>
     {{/holdstatus}}
@@ -156,12 +159,19 @@
         </div>
         {{/hastimeline}}
         {{#findings}}
-        <div class="proctoring-finding-card">
+        <div class="proctoring-finding-card {{#isfalsepositive}}proctoring-finding-dismissed{{/isfalsepositive}}">
             <div class="proctoring-finding-head">
                 <span class="proctoring-finding-dot {{colorclass}}"></span>
                 <div class="proctoring-finding-title">{{title}}</div>
-                <div class="proctoring-finding-badge">{{badge}}</div>
+                <div class="proctoring-finding-badge {{#isfalsepositive}}proctoring-finding-badge-dismissed{{/isfalsepositive}}">{{badge}}</div>
+                {{#markurl}}
+                <a class="proctoring-finding-fpaction" href="{{markurl}}">{{#str}}findingreview:markbutton, quizaccess_proctoring{{/str}}</a>
+                {{/markurl}}
+                {{#undourl}}
+                <a class="proctoring-finding-fpaction" href="{{undourl}}">{{#str}}findingreview:undobutton, quizaccess_proctoring{{/str}}</a>
+                {{/undourl}}
             </div>
+            {{#fpbyline}}<div class="proctoring-finding-fpbyline">{{fpbyline}}</div>{{/fpbyline}}
             <div class="proctoring-finding-desc">{{desc}}</div>
             {{#hascaptures}}
             <div class="proctoring-finding-captures">

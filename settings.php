@@ -1098,6 +1098,58 @@ if ($hassiteconfig) {
         PARAM_INT
     ));
 
+    // False-positive review data: per-factor counts of active reviewer marks, so the factor
+    // points and detection thresholds above can be tuned from evidence.
+    if ($DB->get_manager()->table_exists('quizaccess_proctoring_finding_reviews')) {
+        $fprows = $DB->get_records_sql(
+            "SELECT factorkey, COUNT(1) AS marks, MAX(timecreated) AS lastmark
+               FROM {quizaccess_proctoring_finding_reviews}
+              WHERE revoked = 0 AND verdict = 'false_positive'
+           GROUP BY factorkey
+           ORDER BY COUNT(1) DESC"
+        );
+        if (empty($fprows)) {
+            $fpanalyticshtml = html_writer::tag(
+                'p',
+                get_string('findingreview:analyticsempty', 'quizaccess_proctoring')
+            );
+        } else {
+            $fprowshtml = '';
+            foreach ($fprows as $fprow) {
+                $fpfactorlabel = get_string_manager()->string_exists(
+                    'riskscore:' . $fprow->factorkey,
+                    'quizaccess_proctoring'
+                )
+                    ? get_string('riskscore:' . $fprow->factorkey, 'quizaccess_proctoring')
+                    : (string)$fprow->factorkey;
+                $fprowshtml .= html_writer::tag(
+                    'tr',
+                    html_writer::tag('td', s($fpfactorlabel))
+                        . html_writer::tag('td', (int)$fprow->marks)
+                        . html_writer::tag('td', userdate((int)$fprow->lastmark))
+                );
+            }
+            $fpanalyticshtml = html_writer::tag(
+                'table',
+                html_writer::tag('thead', html_writer::tag(
+                    'tr',
+                    html_writer::tag('th', get_string('riskscore:factor', 'quizaccess_proctoring'))
+                        . html_writer::tag('th', get_string('findingreview:analyticsmarks', 'quizaccess_proctoring'))
+                        . html_writer::tag('th', get_string('findingreview:analyticslast', 'quizaccess_proctoring'))
+                )) . html_writer::tag('tbody', $fprowshtml),
+                ['class' => 'generaltable']
+            );
+        }
+        $riskfactorspage->add(new admin_setting_description(
+            'quizaccess_proctoring/fpanalytics',
+            get_string('setting:fpanalytics', 'quizaccess_proctoring'),
+            html_writer::div(
+                html_writer::tag('p', get_string('setting:fpanalytics_desc', 'quizaccess_proctoring'))
+                    . $fpanalyticshtml
+            )
+        ));
+    }
+
     $ADMIN->add($proctoringcategory, $riskfactorspage);
 
     // 4. Review diagnostics.

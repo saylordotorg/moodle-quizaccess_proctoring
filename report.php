@@ -40,6 +40,9 @@ $reportid = optional_param('reportid', null, PARAM_INT);
 $logaction = optional_param('logaction', null, PARAM_TEXT);
 $riskaction = optional_param('riskaction', null, PARAM_ALPHA);
 $holdid = optional_param('holdid', 0, PARAM_INT);
+$fpaction = optional_param('fpaction', null, PARAM_ALPHA);
+$fpfactorkey = optional_param('factorkey', '', PARAM_ALPHANUMEXT);
+$fpid = optional_param('fpid', 0, PARAM_INT);
 $page = optional_param('page', 0, PARAM_INT);
 // Sort and filter parameters (Requirement 13). Sort keys are validated by
 // quizaccess_proctoring_report_order_by(); initial filters by quizaccess_proctoring_name_matches_initials().
@@ -319,6 +322,74 @@ if ($riskaction === 'confirm' && $holdid > 0) {
         'studentid' => $studentid ?: $hold->userid,
         'reportid' => $reportid ?: $hold->reportid,
     ]), get_string('riskreview:confirmednotice', 'quizaccess_proctoring'), null, \core\output\notification::NOTIFY_SUCCESS);
+}
+
+if ($fpaction === 'mark' && $studentid && $reportid && $fpfactorkey !== '') {
+    require_sesskey();
+    require_capability('quizaccess/proctoring:reviewriskholds', $context);
+
+    if (!array_key_exists($fpfactorkey, \quizaccess_proctoring\local\risk_calculator::FACTOR_DEFAULTS)) {
+        throw new moodle_exception('invalidrequest', 'error');
+    }
+
+    $fpattemptid = (int)$DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]);
+    $fpwhere = 'courseid = :courseid AND quizid = :cmid AND userid = :studentid
+        AND factorkey = :factorkey AND revoked = 0';
+    $fpparams = [
+        'courseid' => (int)$courseid,
+        'cmid' => (int)$cmid,
+        'studentid' => (int)$studentid,
+        'factorkey' => $fpfactorkey,
+    ];
+    if ($fpattemptid > 0) {
+        $fpwhere .= ' AND attemptid = :attemptid';
+        $fpparams['attemptid'] = $fpattemptid;
+    } else {
+        $fpwhere .= ' AND reportid = :reportid';
+        $fpparams['reportid'] = (int)$reportid;
+    }
+    if (!$DB->record_exists_select('quizaccess_proctoring_finding_reviews', $fpwhere, $fpparams)) {
+        $DB->insert_record('quizaccess_proctoring_finding_reviews', (object)[
+            'courseid' => (int)$courseid,
+            'quizid' => (int)$cmid,
+            'userid' => (int)$studentid,
+            'attemptid' => $fpattemptid,
+            'reportid' => (int)$reportid,
+            'factorkey' => $fpfactorkey,
+            'verdict' => 'false_positive',
+            'reviewerid' => (int)$USER->id,
+            'timecreated' => time(),
+        ]);
+    }
+
+    redirect(new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
+        'courseid' => $courseid,
+        'cmid' => $cmid,
+        'studentid' => $studentid,
+        'reportid' => $reportid,
+    ]), get_string('findingreview:marked', 'quizaccess_proctoring'), null, \core\output\notification::NOTIFY_SUCCESS);
+}
+
+if ($fpaction === 'undo' && $fpid > 0) {
+    require_sesskey();
+    require_capability('quizaccess/proctoring:reviewriskholds', $context);
+
+    $fpmark = $DB->get_record('quizaccess_proctoring_finding_reviews', ['id' => $fpid], '*', MUST_EXIST);
+    if ((int)$fpmark->courseid !== (int)$courseid || (int)$fpmark->quizid !== (int)$cmid) {
+        throw new moodle_exception('invalidrequest', 'error');
+    }
+
+    $fpmark->revoked = 1;
+    $fpmark->revokedby = (int)$USER->id;
+    $fpmark->timerevoked = time();
+    $DB->update_record('quizaccess_proctoring_finding_reviews', $fpmark);
+
+    redirect(new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
+        'courseid' => $courseid,
+        'cmid' => $cmid,
+        'studentid' => $studentid ?: $fpmark->userid,
+        'reportid' => $reportid ?: $fpmark->reportid,
+    ]), get_string('findingreview:undone', 'quizaccess_proctoring'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
 echo $OUTPUT->header();
@@ -852,6 +923,11 @@ if (
             $riskscore['holdstatus'] = quizaccess_proctoring_get_risk_hold_status_label($hold);
             $riskscore['holdactive'] = (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
             $riskscore['thresholdlabel'] = get_string('riskreview:thresholdlabel', 'quizaccess_proctoring', $hold->threshold);
+            if ($riskscore['holdactive'] && (int)$riskscore['score'] < (int)$hold->threshold) {
+                // False-positive review (or a settings change) has pushed the recomputed score
+                // below the threshold that created this hold.
+                $riskscore['fpholdreleasehint'] = get_string('findingreview:holdreleasehint', 'quizaccess_proctoring');
+            }
             $lockout = quizaccess_proctoring_get_active_cheating_lockout(
                 (int)$courseid,
                 (int)$cmid,
@@ -1005,6 +1081,22 @@ if (
             }
         }
 
+        $fpmarks = \quizaccess_proctoring\local\risk_calculator::get_false_positive_marks(
+            (int)$courseid,
+            (int)$cmid,
+            (int)$studentid,
+            (int)$riskscore['attemptid'],
+            (int)$reportid
+        );
+        $canreviewfindings = has_capability('quizaccess/proctoring:reviewriskholds', $context, $USER->id);
+        $fpbaseurlparams = [
+            'courseid' => $courseid,
+            'cmid' => $cmid,
+            'studentid' => $studentid,
+            'reportid' => $reportid,
+            'sesskey' => sesskey(),
+        ];
+
         $timeformat = get_string('strftimetime', 'langconfig');
         $findings = [];
         $passedchecks = [];
@@ -1015,7 +1107,8 @@ if (
                 continue;
             }
             $monitoredkeys[] = $factorkey;
-            if (empty($factor['haspoints'])) {
+            $isfalsepositive = !empty($factor['falsepositive']);
+            if (empty($factor['haspoints']) && !$isfalsepositive) {
                 $passedchecks[] = ['label' => get_string('riskfactorpassed:' . $factorkey, 'quizaccess_proctoring')];
                 continue;
             }
@@ -1030,21 +1123,49 @@ if (
                     'note' => quizaccess_proctoring_get_event_label((string)$eventrecord->eventtype),
                 ];
             }
-            $findings[] = [
-                'title' => $factor['label'],
-                'colorclass' => quizaccess_proctoring_factor_color_class($factorkey),
-                'badge' => (int)$factor['count'] === 1
+            if ($isfalsepositive) {
+                $badge = (int)$factor['count'] === 1
+                    ? get_string('findingreview:badgeexcluded_one', 'quizaccess_proctoring')
+                    : get_string('findingreview:badgeexcluded', 'quizaccess_proctoring', (int)$factor['count']);
+            } else {
+                $badge = (int)$factor['count'] === 1
                     ? get_string('verdict:findingbadge_one', 'quizaccess_proctoring', (int)$factor['points'])
                     : get_string('verdict:findingbadge', 'quizaccess_proctoring', (object)[
                         'count' => (int)$factor['count'],
                         'points' => (int)$factor['points'],
-                    ]),
+                    ]);
+            }
+            $finding = [
+                'title' => $factor['label'],
+                'colorclass' => quizaccess_proctoring_factor_color_class($factorkey),
+                'badge' => $badge,
                 'desc' => get_string('riskfactordesc:' . $factorkey, 'quizaccess_proctoring'),
                 'captures' => $captures,
                 'hascaptures' => !empty($captures),
-                'points' => (int)$factor['points'],
+                'points' => (int)($factor['excludedpoints'] ?? $factor['points']),
                 'factorkey' => $factorkey,
+                'isfalsepositive' => $isfalsepositive,
             ];
+            if ($isfalsepositive && isset($fpmarks[$factorkey])) {
+                $fpmark = $fpmarks[$factorkey];
+                $fpreviewer = core_user::get_user((int)$fpmark->reviewerid);
+                $finding['fpbyline'] = get_string('findingreview:byline', 'quizaccess_proctoring', (object)[
+                    'name' => $fpreviewer ? fullname($fpreviewer) : (string)$fpmark->reviewerid,
+                    'date' => userdate((int)$fpmark->timecreated),
+                ]);
+                if ($canreviewfindings) {
+                    $finding['undourl'] = (new moodle_url(
+                        '/mod/quiz/accessrule/proctoring/report.php',
+                        $fpbaseurlparams + ['fpaction' => 'undo', 'fpid' => (int)$fpmark->id]
+                    ))->out(false);
+                }
+            } else if ($canreviewfindings) {
+                $finding['markurl'] = (new moodle_url(
+                    '/mod/quiz/accessrule/proctoring/report.php',
+                    $fpbaseurlparams + ['fpaction' => 'mark', 'factorkey' => $factorkey]
+                ))->out(false);
+            }
+            $findings[] = $finding;
         }
         usort($findings, static function (array $a, array $b): int {
             return $b['points'] <=> $a['points'];
@@ -1057,6 +1178,9 @@ if (
         $timelinespan = $attemptfinish - $attemptstart;
         if ($attemptstart > 0 && $timelinespan > 0) {
             foreach ($findings as $finding) {
+                if (!empty($finding['isfalsepositive'])) {
+                    continue;
+                }
                 foreach ($factorevents[$finding['factorkey']] ?? [] as $eventrecord) {
                     if (count($timelinedots) >= 60) {
                         break 2;
@@ -1118,9 +1242,12 @@ if (
         $riskscore['ctatab'] = $ctatab;
         $riskscore['findings'] = $findings;
         $riskscore['hasfindings'] = !empty($findings);
-        $riskscore['needsreviewlabel'] = count($findings) === 1
+        $activefindingcount = count(array_filter($findings, static function (array $finding): bool {
+            return empty($finding['isfalsepositive']);
+        }));
+        $riskscore['needsreviewlabel'] = $activefindingcount === 1
             ? get_string('verdict:needsreview_one', 'quizaccess_proctoring')
-            : get_string('verdict:needsreview', 'quizaccess_proctoring', count($findings));
+            : get_string('verdict:needsreview', 'quizaccess_proctoring', $activefindingcount);
         $riskscore['hastimeline'] = !empty($timelinedots);
         $riskscore['timelinedots'] = $timelinedots;
         $riskscore['timelinelegend'] = $timelinelegend;

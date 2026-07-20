@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.35
+- Reviewers can now mark a risk finding as a false positive directly on the per-student report (requires the review-risk-holds capability). A marked finding stops adding risk points immediately — the attempt score recomputes everywhere it is displayed — and stays visible as a muted "excluded from score" card with the reviewer's name and date and an Undo action; its events leave the flag timeline and the "Needs review" count. When the corrected score falls below an active hold's threshold, the hold banner suggests releasing it. Marks are stored with a full who/when audit (undo revokes rather than deletes).
+- Added a "False-positive review data" section to the Risk factor scoring admin page: active marks per factor with the most recent mark date, so factor points, caps, and detection thresholds can be tuned from evidence rather than guesswork.
+
 # v1.1.34
 - Added optional webcam phone detection (default off; site setting "Detect phones in webcam images"). When enabled, the attempt page runs TensorFlow.js COCO-SSD object detection on the live webcam feed in the student's browser; a phone-like object must stay visible across three consecutive checks (with a configurable confidence threshold and a 90-second cooldown) before one "Phone detected" event is logged with the webcam frame attached as evidence. Events score through a new "Phone visible in webcam" risk factor (12 points, capped at 24 — tunable on the Risk factor scoring page), appear on the report's finding cards/timeline with the frame inline, and route through AI image review with a phone-specific prompt. Detection can be waived per student via a new Manage overrides requirement, the privacy notice discloses it automatically, and the feature stays silently off until the object-detection libraries are vendored into thirdpartylibs/objectdetect (see the README there).
 

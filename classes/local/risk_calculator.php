@@ -304,6 +304,62 @@ final class risk_calculator {
     }
 
     /**
+     * Get the active false-positive marks for one attempt, keyed by factor key.
+     *
+     * Reviewer false-positive verdicts exclude a factor's evidence from the recomputed risk
+     * score. Scope matches the evidence queries in {@see self::calculate_attempt()}: by
+     * attempt id when known, otherwise by the originating report id.
+     *
+     * @param int $courseid Course id.
+     * @param int $cmid Quiz course-module id.
+     * @param int $studentid Student id.
+     * @param int $attemptid Quiz attempt id (0 when unknown).
+     * @param int $reportid Proctoring log id used as the fallback scope.
+     * @return array<string, \stdClass> Active mark records keyed by factor key.
+     */
+    public static function get_false_positive_marks(
+        int $courseid,
+        int $cmid,
+        int $studentid,
+        int $attemptid,
+        int $reportid
+    ): array {
+        global $DB;
+
+        // The table ships in 2026072007; guard so score calculation never breaks mid-upgrade.
+        static $tableexists = null;
+        if ($tableexists === null) {
+            $tableexists = $DB->get_manager()->table_exists('quizaccess_proctoring_finding_reviews');
+        }
+        if (!$tableexists) {
+            return [];
+        }
+
+        $where = 'courseid = :fpcourseid AND quizid = :fpcmid AND userid = :fpstudentid
+            AND verdict = :fpverdict AND revoked = 0';
+        $params = [
+            'fpcourseid' => $courseid,
+            'fpcmid' => $cmid,
+            'fpstudentid' => $studentid,
+            'fpverdict' => 'false_positive',
+        ];
+        if ($attemptid > 0) {
+            $where .= ' AND attemptid = :fpattemptid';
+            $params['fpattemptid'] = $attemptid;
+        } else if ($reportid > 0) {
+            $where .= ' AND reportid = :fpreportid';
+            $params['fpreportid'] = $reportid;
+        }
+
+        $marks = [];
+        foreach ($DB->get_records_select('quizaccess_proctoring_finding_reviews', $where, $params, 'id ASC') as $record) {
+            $marks[(string)$record->factorkey] = $record;
+        }
+
+        return $marks;
+    }
+
+    /**
      * Resolve a configured risk-level boundary with fallback to its default.
      *
      * @param string $name Config name (risklevelmoderate, risklevelhigh, risklevelcritical).
@@ -609,6 +665,20 @@ final class risk_calculator {
             if ($factor !== null) {
                 $factors[] = $factor;
             }
+        }
+
+        // Reviewer false-positive marks: a marked factor keeps its evidence count for display
+        // but contributes no points, so the score recomputes without the dismissed evidence.
+        $fpmarks = self::get_false_positive_marks($courseid, $cmid, $studentid, $attemptid, $reportid);
+        foreach ($factors as $index => $factor) {
+            $factorkey = (string)($factor['key'] ?? '');
+            if ($factorkey === '' || empty($fpmarks[$factorkey])) {
+                continue;
+            }
+            $factors[$index]['excludedpoints'] = (int)$factor['points'];
+            $factors[$index]['points'] = 0;
+            $factors[$index]['haspoints'] = false;
+            $factors[$index]['falsepositive'] = true;
         }
 
         $score = 0;

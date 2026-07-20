@@ -401,5 +401,44 @@
             </INDEXES>
         </TABLE>
 
+        <TABLE NAME="quizaccess_proctoring_finding_reviews" COMMENT="Reviewer false-positive verdicts on risk score findings">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="true"/>
+                <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Course id"/>
+                <FIELD NAME="quizid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Quiz course-module id (matches quizaccess_proctoring_events.quizid)"/>
+                <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Student whose finding was reviewed"/>
+                <FIELD NAME="attemptid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Quiz attempt id, 0 when unknown"/>
+                <FIELD NAME="reportid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="quizaccess_proctoring_logs id the report was opened with"/>
+                <FIELD NAME="factorkey" TYPE="char" LENGTH="30" NOTNULL="true" DEFAULT=""
+                       SEQUENCE="false" COMMENT="Risk factor key from risk_calculator::FACTOR_DEFAULTS"/>
+                <FIELD NAME="verdict" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="false_positive"
+                       SEQUENCE="false" COMMENT="Reviewer verdict"/>
+                <FIELD NAME="note" TYPE="text" NOTNULL="false" SEQUENCE="false"
+                       COMMENT="Optional reviewer note"/>
+                <FIELD NAME="reviewerid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Marking reviewer"/>
+                <FIELD NAME="revoked" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="0 active, 1 undone"/>
+                <FIELD NAME="revokedby" TYPE="int" LENGTH="10" NOTNULL="false" UNSIGNED="false" SEQUENCE="false"
+                       COMMENT="Actor who undid the mark"/>
+                <FIELD NAME="timerevoked" TYPE="int" LENGTH="10" NOTNULL="false" UNSIGNED="false" SEQUENCE="false"
+                       COMMENT="Undo timestamp"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Mark timestamp"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="coursequizuser" UNIQUE="false" FIELDS="courseid, quizid, userid"/>
+                <INDEX NAME="factorkey" UNIQUE="false" FIELDS="factorkey"/>
+            </INDEXES>
+        </TABLE>
+
     </TABLES>
 </XMLDB>
