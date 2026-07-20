@@ -157,6 +157,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * Determine whether webcam phone detection is enabled site-wide.
+     *
+     * @return bool True when phone detection is enabled.
+     */
+    private static function site_detects_phone(): bool {
+        return (int)get_config('quizaccess_proctoring', 'detectphone') === 1;
+    }
+
+    /**
      * Get the mobile/tablet desktop screen-share policy.
      *
      * @return string One of the MOBILE_SCREEN_SHARE_* constants.
@@ -603,6 +612,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
         if ((string)$faceidcheck === '1') {
             $items[] = get_string('privacynotice:item_webcam', 'quizaccess_proctoring');
+        }
+        if (self::site_detects_phone()) {
+            $items[] = get_string('privacynotice:item_phonedetection', 'quizaccess_proctoring');
         }
         if ((int)$requireentirescreen === 1 || (int)get_config('quizaccess_proctoring', 'captureviolationdesktop') === 1) {
             $items[] = get_string('privacynotice:item_desktop', 'quizaccess_proctoring');
@@ -1741,6 +1753,44 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->faceblurhits = max(1, min(10, $faceblurhits));
             $faceblurinitialgrace = (int)(get_config('quizaccess_proctoring', 'faceblurinitialgrace') ?: 10);
             $record->faceblurinitialgrace = max(0, min(60, $faceblurinitialgrace));
+
+            // Webcam phone detection: only requested when the site monitor is on, the student has
+            // no waiving per-student override, and the object-detection libraries are vendored.
+            // Monitoring is resolved live (not gate-snapshotted), so an override granted mid-course
+            // takes effect on the student's next attempt page load.
+            $record->detectphone = 0;
+            $record->detectphoneminscore = 0.6;
+            $record->phonedetectliburl = '';
+            if (self::site_detects_phone()) {
+                $resolver = '\quizaccess_proctoring\local\override_resolver';
+                $resolved = $resolver::resolve_all(
+                    (int)$COURSE->id,
+                    (int)$contextquiz->instance,
+                    (int)$USER->id,
+                    time(),
+                    [$resolver::REQ_PHONEDETECTION => true]
+                );
+                $phonelibdir = $CFG->dirroot . '/mod/quiz/accessrule/proctoring/thirdpartylibs/objectdetect';
+                $phonelibsready = file_exists($phonelibdir . '/tf.min.js')
+                    && file_exists($phonelibdir . '/coco-ssd.min.js')
+                    && file_exists($phonelibdir . '/model/model.json');
+                if (!$phonelibsready) {
+                    debugging(
+                        'quizaccess_proctoring: phone detection is enabled but the object-detection'
+                            . ' libraries are missing from thirdpartylibs/objectdetect; see the README'
+                            . ' in that directory.',
+                        DEBUG_DEVELOPER
+                    );
+                }
+                if ($resolved[$resolver::REQ_PHONEDETECTION] && $phonelibsready) {
+                    $minscore = (int)(get_config('quizaccess_proctoring', 'detectphoneminscore') ?: 60);
+                    $record->detectphone = 1;
+                    $record->detectphoneminscore = max(20, min(95, $minscore)) / 100;
+                    $record->phonedetectliburl = $CFG->wwwroot
+                        . '/mod/quiz/accessrule/proctoring/thirdpartylibs/objectdetect';
+                }
+            }
+
             $usepersistentmonitor = self::should_use_persistent_screen_monitor();
             $record->screenmarkerrequired = ($usepersistentmonitor ||
                 self::should_require_screen_marker($record->multimonitormode)) ? 1 : 0;

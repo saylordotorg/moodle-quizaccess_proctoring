@@ -251,6 +251,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     window.matchMedia('(pointer: coarse) and (max-width: 1024px)').matches);
             const monitorMouseActivity = parseInt(props.monitormouseactivity || 0, 10) === 1 &&
                 desktopPointerEnvironment;
+            const detectPhone = parseInt(props.detectphone || 0, 10) === 1 && !!props.phonedetectliburl;
+            const phoneMinScore = Math.min(0.95, Math.max(0.20, parseFloat(props.detectphoneminscore) || 0.60));
+            // Defensive cadence: a phone must stay visible across consecutive checks before one
+            // event (with the webcam frame attached) is logged, then a cooldown applies.
+            const phoneCheckIntervalMs = 4000;
+            const phoneRequiredFrames = 3;
+            const phoneCooldownMs = 90000;
             const screenMarkerRequired = parseInt(
                 props.screenmarkerrequired === undefined ? 1 : props.screenmarkerrequired,
                 10
@@ -307,6 +314,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let latestDesktopFrame = '';
             let multiMonitorLastState = '';
             let focusLostSince = 0;
+            let phoneModel = null;
+            let phoneCanvas = null;
+            let phoneConsecutive = 0;
+            let phoneLastLogged = 0;
+            let phoneEvidenceFrame = '';
             const activeAttemptWarnings = {};
             const attemptWarningTimers = {};
             const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -815,6 +827,92 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 startMarkerChecks();
             };
 
+            const loadExternalScript = function(src) {
+                return new Promise(function(resolve, reject) {
+                    const script = document.createElement('script');
+                    script.src = src;
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+            };
+
+            const capturePhoneEvidenceFrame = function(video) {
+                if (!phoneCanvas) {
+                    phoneCanvas = document.createElement('canvas');
+                }
+                const targetWidth = Math.min(640, video.videoWidth);
+                const targetHeight = Math.round(video.videoHeight * (targetWidth / video.videoWidth));
+                phoneCanvas.width = targetWidth;
+                phoneCanvas.height = targetHeight;
+                phoneCanvas.getContext('2d').drawImage(video, 0, 0, targetWidth, targetHeight);
+
+                return phoneCanvas.toDataURL('image/jpeg', 0.8);
+            };
+
+            const checkPhoneFrame = async function() {
+                const video = document.getElementById('video');
+                if (!phoneModel || !video || !video.videoWidth || !video.videoHeight ||
+                        document.visibilityState === 'hidden') {
+                    return;
+                }
+
+                let predictions = [];
+                try {
+                    predictions = await phoneModel.detect(video) || [];
+                } catch (error) {
+                    return;
+                }
+
+                const hit = predictions.find(function(prediction) {
+                    return prediction.class === 'cell phone' && prediction.score >= phoneMinScore;
+                });
+                if (!hit) {
+                    phoneConsecutive = 0;
+                    return;
+                }
+
+                phoneConsecutive++;
+                if (phoneConsecutive < phoneRequiredFrames || Date.now() - phoneLastLogged < phoneCooldownMs) {
+                    return;
+                }
+
+                phoneLastLogged = Date.now();
+                phoneConsecutive = 0;
+                phoneEvidenceFrame = capturePhoneEvidenceFrame(video);
+                logEvent('phone_detected', {
+                    confidence: Math.round(hit.score * 100) / 100,
+                    frames: phoneRequiredFrames,
+                    note: 'A phone-like object stayed visible in the webcam across consecutive checks.'
+                });
+                phoneEvidenceFrame = '';
+            };
+
+            const initPhoneDetection = async function() {
+                if (!detectPhone) {
+                    return;
+                }
+
+                try {
+                    if (!window.tf) {
+                        await loadExternalScript(props.phonedetectliburl + '/tf.min.js');
+                    }
+                    if (!window.cocoSsd) {
+                        await loadExternalScript(props.phonedetectliburl + '/coco-ssd.min.js');
+                    }
+                    phoneModel = await window.cocoSsd.load({
+                        modelUrl: props.phonedetectliburl + '/model/model.json'
+                    });
+                } catch (error) {
+                    // Phone detection is best-effort: never interrupt the attempt when the
+                    // libraries or model are unavailable.
+                    window.console.debug('quizaccess_proctoring: phone detection unavailable', error);
+                    return;
+                }
+
+                window.setInterval(checkPhoneFrame, phoneCheckIntervalMs);
+            };
+
             const initScreenShareGate = function() {
                 if (!captureDesktop || document.getElementById('proctoring-screen-share-gate')) {
                     return;
@@ -931,7 +1029,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (!monitorActivity && !(blockClipboard && clipboardEvents.includes(eventType)) &&
                         !(captureDesktop && screenShareEvents.includes(eventType)) &&
                         !(monitorDetectionEnabled && multiMonitorEvents.includes(eventType)) &&
-                        !(monitorMouseActivity && mouseEvents.includes(eventType))) {
+                        !(monitorMouseActivity && mouseEvents.includes(eventType)) &&
+                        !(detectPhone && eventType === 'phone_detected')) {
                     return;
                 }
 
@@ -953,7 +1052,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     eventdetail: detailText,
                     pagevisibility: document.visibilityState || '',
                     currenturl: window.location.href,
-                    screenshot: captureDesktopFrame(eventType)
+                    screenshot: eventType === 'phone_detected' ? phoneEvidenceFrame : captureDesktopFrame(eventType)
                 };
 
                 Ajax.call([{
@@ -1117,6 +1216,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             };
 
             initScreenShareGate();
+            initPhoneDetection();
             checkMultiMonitorSetup();
             if (monitorDetectionEnabled) {
                 window.setInterval(checkMultiMonitorSetup, 60000);
@@ -1306,6 +1406,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         parseInt(props.monitormouseactivity || 0, 10) === 1 ||
                         parseInt(props.captureviolationdesktop, 10) === 1 ||
                         parseInt(props.blurquizwithmultiplemonitors || 0, 10) === 1 ||
+                        parseInt(props.detectphone || 0, 10) === 1 ||
                         ['log', 'warn', 'block'].includes(props.multimonitormode)) {
                     initSuspiciousActivityMonitoring(props, strings);
                 }

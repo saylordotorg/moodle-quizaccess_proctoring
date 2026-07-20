@@ -209,6 +209,7 @@ $requirementcolumns = [
     'idverificationstate' => get_string('override_idverificationstate', $component),
     'screensharestate' => get_string('override_screensharestate', $component),
     'multimonitorstate' => get_string('override_multimonitorstate', $component),
+    'phonedetectionstate' => get_string('override_phonedetectionstate', $component),
 ];
 
 // All quiz instance ids in the course, used for course-scoped native-override checks.
@@ -274,6 +275,7 @@ $table->head = [
     get_string('override_idverificationstate', $component),
     get_string('override_screensharestate', $component),
     get_string('override_multimonitorstate', $component),
+    get_string('override_phonedetectionstate', $component),
     get_string('override_expiry', $component),
     get_string('override_status', $component),
     get_string('override_actions', $component),
@@ -335,6 +337,7 @@ foreach ($overrides as $override) {
         $statecell($override->idverificationstate),
         $statecell($override->screensharestate),
         $statecell($override->multimonitorstate),
+        $statecell($override->phonedetectionstate),
         $expirycell,
         $status,
         $actions,

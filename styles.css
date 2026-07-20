@@ -1732,6 +1732,10 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
     background: #a04f8a;
 }
 
+.proctoring-flag-brown {
+    background: #8a6d3b;
+}
+
 .proctoring-flag-slate {
     background: #5a6b7c;
 }

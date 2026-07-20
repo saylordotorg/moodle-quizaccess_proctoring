@@ -161,6 +161,7 @@ function quizaccess_proctoring_event_factor_key(string $eventtype, string $event
         'audio_detected' => 'audio',
         'face_missing' => 'noface',
         'no_face_detected' => 'noface',
+        'phone_detected' => 'phonedetected',
     ];
 
     return $map[$eventtype] ?? '';
@@ -187,6 +188,7 @@ function quizaccess_proctoring_factor_color_class(string $key): string {
         'noface' => 'teal',
         'webcammissing' => 'teal',
         'audio' => 'magenta',
+        'phonedetected' => 'brown',
         'speed' => 'slate',
     ];
 

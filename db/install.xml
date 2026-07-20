@@ -345,6 +345,8 @@
                        SEQUENCE="false" COMMENT="Tri-state -1 inherit / 0 disabled / 1 enabled"/>
                 <FIELD NAME="multimonitorstate" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="-1"
                        SEQUENCE="false" COMMENT="Tri-state -1 inherit / 0 disabled / 1 enabled"/>
+                <FIELD NAME="phonedetectionstate" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="-1"
+                       SEQUENCE="false" COMMENT="Tri-state -1 inherit / 0 disabled / 1 enabled"/>
                 <FIELD NAME="justification" TYPE="text" NOTNULL="true" SEQUENCE="false"
                        COMMENT="Reviewer justification for the override"/>
                 <FIELD NAME="expiry" TYPE="int" LENGTH="10" NOTNULL="false" UNSIGNED="false" SEQUENCE="false"

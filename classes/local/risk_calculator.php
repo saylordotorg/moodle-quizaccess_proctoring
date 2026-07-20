@@ -50,6 +50,7 @@ namespace quizaccess_proctoring\local;
  * | Face mismatch              |           35 |  35 | logs with awsflag = 2 and awsscore < threshold                    |
  * | Multiple faces             |           30 |  30 | events: multiple_faces_detected                                   |
  * | No face (images/events)    |            8 |  24 | max(no-face face_images, awsflag = 3 logs) + face_missing/no_face_detected events |
+ * | Phone detected             |           12 |  24 | events: phone_detected (factor shown only when webcam phone detection is enabled or evidence exists) |
  * | Screen-share issues        |           18 |  36 | events: screen_marker_missing, screen_share_stopped               |
  * | Multiple monitors          |           25 |  25 | events: multiple_monitors_detected                                |
  * | Possible AI tool           |           20 |  30 | events: possible_ai_tool                                          |
@@ -76,6 +77,7 @@ namespace quizaccess_proctoring\local;
  * - multiple_faces_detected                                    -> Multiple faces factor
  * - audio_detected                                             -> Audio factor
  * - face_missing, no_face_detected                             -> No face factor
+ * - phone_detected                                             -> Phone detected factor
  *
  * The `shortcut` event type is the only one that previously mapped to a single sub-case (F12).
  * Non-F12 monitored shortcuts were counted as violations by `overall_report` but scored nothing;
@@ -103,6 +105,7 @@ final class risk_calculator {
         'facemismatch' => ['points' => 35, 'cap' => 35],
         'multiplefaces' => ['points' => 30, 'cap' => 30],
         'noface' => ['points' => 8, 'cap' => 24],
+        'phonedetected' => ['points' => 12, 'cap' => 24],
         'screenshare' => ['points' => 18, 'cap' => 36],
         'multimonitor' => ['points' => 25, 'cap' => 25],
         'aitool' => ['points' => 20, 'cap' => 30],
@@ -529,6 +532,11 @@ final class risk_calculator {
             $eventparams,
             ['audio_detected']
         ) : 0;
+        $phonedetectedcount = self::factor_enabled('phonedetected') ? self::count_events(
+            $eventwhere,
+            $eventparams,
+            ['phone_detected']
+        ) : 0;
 
         // Attempt duration and the optional speed-based risk factor.
         $speedenabled = (int)get_config('quizaccess_proctoring', 'speedreviewenabled') === 1;
@@ -567,6 +575,7 @@ final class risk_calculator {
             'facemismatch' => $facemismatchcount,
             'multiplefaces' => $multiplefacescount,
             'noface' => max($nofaceimagecount, $facefailedcount) + $nofaceeventcount,
+            'phonedetected' => $phonedetectedcount,
             'screenshare' => $screenissuecount,
             'multimonitor' => $multimonitorcount,
             'aitool' => $aitoolcount,
@@ -578,6 +587,14 @@ final class risk_calculator {
             'audio' => $audioactivitycount,
             'webcammissing' => $webcamcount > 0 ? 0 : 1,
         ];
+
+        // Phone detection is an opt-in monitor: when it is switched off and the attempt has no
+        // phone evidence, the factor is omitted entirely so reports list it as "not monitored"
+        // rather than "passed". Existing evidence keeps scoring even after the monitor is
+        // switched off.
+        if ((int)get_config('quizaccess_proctoring', 'detectphone') !== 1 && $phonedetectedcount === 0) {
+            unset($factorcounts['phonedetected']);
+        }
 
         $factors = [];
         foreach ($factorcounts as $factorkey => $factorcount) {

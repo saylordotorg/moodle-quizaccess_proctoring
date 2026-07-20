@@ -661,6 +661,21 @@ if ($hassiteconfig) {
         PARAM_INT
     ));
 
+    $settings->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/detectphone',
+        get_string('setting:detectphone', 'quizaccess_proctoring'),
+        get_string('setting:detectphone_desc', 'quizaccess_proctoring'),
+        0
+    ));
+
+    $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/detectphoneminscore',
+        get_string('setting:detectphoneminscore', 'quizaccess_proctoring'),
+        get_string('setting:detectphoneminscore_desc', 'quizaccess_proctoring'),
+        60,
+        PARAM_INT
+    ));
+
     $settings->add(new admin_setting_heading(
         'quizaccess_proctoring_riskheading',
         get_string('setting:riskheading', 'quizaccess_proctoring'),

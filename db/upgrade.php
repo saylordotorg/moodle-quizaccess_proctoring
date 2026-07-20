@@ -1096,5 +1096,26 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072000, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026072006) {
+        // Webcam phone detection: add the per-student override tri-state for the new
+        // phone-detection requirement (default -1 = inherit the site/quiz state).
+        $table = new xmldb_table('quizaccess_proctoring_overrides');
+        $field = new xmldb_field(
+            'phonedetectionstate',
+            XMLDB_TYPE_INTEGER,
+            '2',
+            null,
+            XMLDB_NOTNULL,
+            null,
+            '-1',
+            'multimonitorstate'
+        );
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_plugin_savepoint(true, 2026072006, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
