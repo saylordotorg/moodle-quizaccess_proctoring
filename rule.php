@@ -860,15 +860,53 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         // Fetch image width configuration.
         $imagewidth = get_config('quizaccess_proctoring', 'autoreconfigureimagewidth') ?? '';
         $hasreferenceimage = $DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $USER->id]);
-        $registerface = ($faceidcheck === '1' && !$hasreferenceimage);
-        $requireentirescreen = $this->requires_entire_screen() ? 1 : 0;
         $privacyrequired = self::privacy_notice_required();
         $honorrequired = self::honor_statement_required();
+
+        // Compute the five base (site-default -> per-quiz) requirement states. Per-student overrides
+        // are layered on top of these below, at the new-attempt gate only.
+        $requireentirescreen = $this->requires_entire_screen() ? 1 : 0;
         $captcharequired = $this->should_require_captcha($attemptid);
         $idverificationrequired = $this->should_require_id_verification($attemptid);
+        $multimonitormode = self::multi_monitor_mode();
+
+        // Per-student override resolution runs only at the new-attempt gate ($attemptid empty), so an
+        // in-progress attempt keeps the requirement state snapshotted when its attempt started. When no
+        // applicable override exists, resolve_all() returns the base states unchanged.
+        if (empty($attemptid)) {
+            $resolver = '\quizaccess_proctoring\local\override_resolver';
+            $basestates = [
+                $resolver::REQ_CAPTCHA => (bool)$captcharequired,
+                $resolver::REQ_WEBCAM => ((string)$faceidcheck === '1'),
+                $resolver::REQ_IDVERIFICATION => (bool)$idverificationrequired,
+                $resolver::REQ_SCREENSHARE => ((int)$requireentirescreen === 1),
+                $resolver::REQ_MULTIMONITOR => ($multimonitormode !== self::MULTI_MONITOR_OFF),
+            ];
+
+            $resolved = $resolver::resolve_all(
+                (int)$coursedata['courseid'],
+                (int)$coursedata['quizid'],
+                (int)$USER->id,
+                time(),
+                $basestates
+            );
+
+            // Write the resolved booleans back into the config flags consumed by startAttempt.js.
+            $captcharequired = $resolved[$resolver::REQ_CAPTCHA];
+            $idverificationrequired = $resolved[$resolver::REQ_IDVERIFICATION];
+            $requireentirescreen = $resolved[$resolver::REQ_SCREENSHARE] ? 1 : 0;
+            $faceidcheck = $resolved[$resolver::REQ_WEBCAM] ? '1' : '0';
+
+            // A disabled effective multi-monitor state forces the mode OFF.
+            if (!$resolved[$resolver::REQ_MULTIMONITOR]) {
+                $multimonitormode = self::MULTI_MONITOR_OFF;
+            }
+        }
+
+        // Derive the values that depend on the (possibly overridden) requirement states.
+        $registerface = ((string)$faceidcheck === '1' && !$hasreferenceimage);
         $idverificationpassed = $idverificationrequired ? $this->current_user_has_passed_id_verification() : true;
         $idverificationrequireback = $idverificationrequired && self::id_verification_requires_back_image();
-        $multimonitormode = self::multi_monitor_mode();
         $usepersistentmonitor = self::should_use_persistent_screen_monitor($multimonitormode);
         $screenmarkerrequired = $usepersistentmonitor || self::should_require_screen_marker($multimonitormode);
 

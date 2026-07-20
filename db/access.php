@@ -90,4 +90,15 @@ $capabilities = [
             'manager' => CAP_ALLOW,
         ],
     ],
+
+    // This capability allows editing teachers and managers to grant, edit, and revoke per-student proctoring overrides.
+    'quizaccess/proctoring:manageoverrides' => [
+        'riskbitmask' => RISK_PERSONAL, // Justifications may contain personal accommodation data.
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_MODULE,
+        'archetypes' => [
+            'editingteacher' => CAP_ALLOW, // Editing teachers can manage per-student overrides.
+            'manager' => CAP_ALLOW, // Managers can manage per-student overrides.
+        ],
+    ],
 ];

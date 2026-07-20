@@ -1031,5 +1031,64 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026062405, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026062406) {
+        // Add the per-student proctoring override tables: the overrides themselves and the
+        // append-only audit trail. Both creations are guarded by table_exists so the step is
+        // idempotent and safe to co-exist with install.xml on fresh installs.
+        $table = new xmldb_table('quizaccess_proctoring_overrides');
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('quizid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('captchastate', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '-1');
+            $table->add_field('webcamstate', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '-1');
+            $table->add_field('idverificationstate', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '-1');
+            $table->add_field('screensharestate', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '-1');
+            $table->add_field('multimonitorstate', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '-1');
+            $table->add_field('justification', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+            $table->add_field('expiry', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+            $table->add_field('revoked', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('revokedby', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+            $table->add_field('timerevoked', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+            $table->add_field('grantedby', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_index('coursequizuser', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'quizid', 'userid']);
+            $table->add_index('useridcourse', XMLDB_INDEX_NOTUNIQUE, ['userid', 'courseid']);
+            $table->add_index('revoked', XMLDB_INDEX_NOTUNIQUE, ['revoked']);
+
+            $dbman->create_table($table);
+        }
+
+        $audittable = new xmldb_table('quizaccess_proctoring_override_audit');
+        if (!$dbman->table_exists($audittable)) {
+            $audittable->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $audittable->add_field('overrideid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $audittable->add_field('actorid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $audittable->add_field('action', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'create');
+            $audittable->add_field('fieldname', XMLDB_TYPE_CHAR, '40', null, null, null, null);
+            $audittable->add_field('oldvalue', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $audittable->add_field('newvalue', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $audittable->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+            $audittable->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $audittable->add_index('overrideid', XMLDB_INDEX_NOTUNIQUE, ['overrideid']);
+            $audittable->add_index('actorid', XMLDB_INDEX_NOTUNIQUE, ['actorid']);
+
+            $dbman->create_table($audittable);
+        }
+
+        // No legacy exemption data to migrate. The proctoring-feedback-improvements spec's
+        // Requirement 9 webcam/ID "Override_Exemption" was never implemented (its task plan
+        // shipped only P0 and P2 items), so there is no prior storage or rule.php consultation
+        // path to migrate from or retire. This per-student overrides layer therefore supersedes
+        // that concept from the outset: quizaccess_proctoring_overrides is the single source of
+        // truth for per-student waivers, resolved exclusively through override_resolver.
+        upgrade_plugin_savepoint(true, 2026062406, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
