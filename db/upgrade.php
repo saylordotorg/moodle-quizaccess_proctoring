@@ -1090,5 +1090,11 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026062406, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026072000) {
+        // No schema changes. Adds the automatic-failure high-risk action while preserving the
+        // existing 0 (disabled) and 1 (hold for review) configuration values.
+        upgrade_plugin_savepoint(true, 2026072000, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

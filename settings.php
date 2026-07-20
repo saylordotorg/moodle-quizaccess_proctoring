@@ -152,10 +152,6 @@ if ($hassiteconfig) {
             'label' => get_string('setting:quicktoggle_aireview', 'quizaccess_proctoring'),
         ],
         [
-            'setting' => 'riskreviewenabled',
-            'label' => get_string('setting:quicktoggle_riskreview', 'quizaccess_proctoring'),
-        ],
-        [
             'setting' => 'speedreviewenabled',
             'label' => get_string('setting:quicktoggle_speedreview', 'quizaccess_proctoring'),
         ],
@@ -671,11 +667,16 @@ if ($hassiteconfig) {
         get_string('setting:riskheading_desc', 'quizaccess_proctoring')
     ));
 
-    $settings->add(new admin_setting_configcheckbox(
+    $settings->add(new admin_setting_configselect(
         'quizaccess_proctoring/riskreviewenabled',
         get_string('setting:riskreviewenabled', 'quizaccess_proctoring'),
         get_string('setting:riskreviewenabled_desc', 'quizaccess_proctoring'),
-        0
+        0,
+        [
+            0 => get_string('setting:riskreviewenabled_disabled', 'quizaccess_proctoring'),
+            1 => get_string('setting:riskreviewenabled_hold', 'quizaccess_proctoring'),
+            2 => get_string('setting:riskreviewenabled_autofail', 'quizaccess_proctoring'),
+        ]
     ));
 
     $settings->add(new admin_setting_configtext(

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026062406"
+<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026072000"
        COMMENT="XMLDB file for Moodle mod/quiz/accessrule/proctoring"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:noNamespaceSchemaLocation="../../../../../lib/xmldb/xmldb.xsd"
@@ -17,7 +17,7 @@
                        SEQUENCE="false" COMMENT="If 1 this quiz requires entire screen share before start; if 0 it does not; if -1 it inherits the site setting."
                        PREVIOUS="proctoringrequired" NEXT="riskreviewmode"/>
                 <FIELD NAME="riskreviewmode" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="-1"
-                       SEQUENCE="false" COMMENT="If 1 hold high-risk attempts for review; if 0 do not; if -1 inherit the site setting."
+                       SEQUENCE="false" COMMENT="If 2 automatically fail high-risk attempts; if 1 hold them for review; if 0 take no grade action; if -1 inherit the site setting."
                        PREVIOUS="requireentirescreen" NEXT="riskreviewthreshold"/>
                 <FIELD NAME="riskreviewthreshold" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="-1"
                        SEQUENCE="false" COMMENT="Risk score threshold for this quiz; -1 inherits the site setting."
@@ -132,7 +132,7 @@
             </INDEXES>
         </TABLE>
 
-        <TABLE NAME="quizaccess_proctoring_risk_holds" COMMENT="Stores proctoring risk score grade holds awaiting review">
+        <TABLE NAME="quizaccess_proctoring_risk_holds" COMMENT="Stores proctoring risk actions, grade holds, and automatic failures">
             <FIELDS>
                 <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="true" NEXT="courseid"/>
                 <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
@@ -154,7 +154,7 @@
                 <FIELD NAME="originalgrade" TYPE="number" LENGTH="10" DECIMALS="5" NOTNULL="false"
                        SEQUENCE="false" COMMENT="Quiz grade before the hold was applied" PREVIOUS="threshold" NEXT="status"/>
                 <FIELD NAME="status" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
-                       SEQUENCE="false" COMMENT="0 active, 1 released, 2 confirmed violation" PREVIOUS="originalgrade" NEXT="reviewerid"/>
+                       SEQUENCE="false" COMMENT="0 active, 1 released, 2 confirmed violation, 3 automatically failed" PREVIOUS="originalgrade" NEXT="reviewerid"/>
                 <FIELD NAME="reviewerid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
                        SEQUENCE="false" COMMENT="Reviewer user id" PREVIOUS="status" NEXT="timecreated"/>
                 <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" DEFAULT="0"

@@ -636,7 +636,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $items[] = get_string('privacynotice:item_aireview', 'quizaccess_proctoring');
         }
         if (
-            (int)get_config('quizaccess_proctoring', 'riskreviewenabled') === 1 ||
+            (int)get_config('quizaccess_proctoring', 'riskreviewenabled') > 0 ||
                 (int)get_config('quizaccess_proctoring', 'cheatinglockoutenabled') === 1
         ) {
             $items[] = get_string('privacynotice:item_riskreview', 'quizaccess_proctoring');
@@ -1561,6 +1561,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             [
                 -1 => get_string('riskreviewmode_inherit', 'quizaccess_proctoring'),
                 1 => get_string('riskreviewmode_enabled', 'quizaccess_proctoring'),
+                2 => get_string('riskreviewmode_autofail', 'quizaccess_proctoring'),
                 0 => get_string('riskreviewmode_disabled', 'quizaccess_proctoring'),
             ]
         );
@@ -1596,6 +1597,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             // Remove any existing proctoring settings if not required.
             $DB->delete_records('quizaccess_proctoring', ['quizid' => $quiz->id]);
         } else {
+            $riskreviewmode = isset($quiz->riskreviewmode) ? (int)$quiz->riskreviewmode : -1;
+            if (!in_array($riskreviewmode, [-1, 0, 1, 2], true)) {
+                $riskreviewmode = -1;
+            }
             $riskreviewthreshold = isset($quiz->riskreviewthreshold) ? (int)$quiz->riskreviewthreshold : -1;
             if ($riskreviewthreshold !== -1) {
                 $riskreviewthreshold = max(1, min(100, $riskreviewthreshold));
@@ -1606,7 +1611,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 'proctoringrequired' => 1,
                 'requireentirescreen' => isset($quiz->requireentirescreen) ? (int)$quiz->requireentirescreen : -1,
                 'captchamode' => isset($quiz->captchamode) ? (int)$quiz->captchamode : -1,
-                'riskreviewmode' => isset($quiz->riskreviewmode) ? (int)$quiz->riskreviewmode : -1,
+                'riskreviewmode' => $riskreviewmode,
                 'riskreviewthreshold' => $riskreviewthreshold,
             ];
 
@@ -1814,13 +1819,17 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $cmid,
             (int)$USER->id,
             $attemptid,
-            $report ? (int)$report->id : 0,
-            true
+            $report ? (int)$report->id : 0
         );
-        if ($hold) {
+        if ($hold && (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
             \core\notification::add(
                 quizaccess_proctoring_get_student_risk_hold_notice_html($hold),
                 \core\output\notification::NOTIFY_WARNING
+            );
+        } else if ($hold && (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED) {
+            \core\notification::add(
+                quizaccess_proctoring_get_student_risk_failure_notice_html($hold),
+                \core\output\notification::NOTIFY_ERROR
             );
         }
 

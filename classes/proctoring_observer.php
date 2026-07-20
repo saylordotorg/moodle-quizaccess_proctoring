@@ -50,7 +50,7 @@ class proctoring_observer {
     /**
      * Handle the event when a quiz attempt is submitted.
      *
-     * This method calculates the proctoring risk score and applies a grade hold when configured.
+     * This method calculates the proctoring risk score and applies the configured high-risk action.
      *
      * @param \mod_quiz\event\attempt_submitted $event The event object representing the quiz attempt submission.
      * @return void
@@ -87,10 +87,11 @@ class proctoring_observer {
             }
 
             $risksettings = \quizaccess_proctoring_get_effective_risk_review_settings((int)$cm->id);
+            $riskaction = (int)$risksettings['action'];
             $aireviewsettings = \quizaccess_proctoring_get_ai_review_settings();
             $aireviewenabled = \quizaccess_proctoring_ai_review_configured($aireviewsettings);
             $risklockoutenabled = \quizaccess_proctoring_get_cheating_lockout_days() > 0 &&
-                (int)$risksettings['mode'] !== 0;
+                (int)$risksettings['mode'] !== \QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED;
             if (empty($risksettings['enabled']) && !$risklockoutenabled && !$aireviewenabled) {
                 return;
             }
@@ -126,15 +127,27 @@ class proctoring_observer {
                 (!empty($risksettings['enabled']) || $risklockoutenabled) &&
                     (int)$risk['score'] >= (int)$risksettings['threshold']
             ) {
-                $holdid = \quizaccess_proctoring_apply_risk_hold(
-                    (int)$quiz->course,
-                    (int)$cm->id,
-                    (int)$attempt->userid,
-                    $attemptid,
-                    (int)$report->id,
-                    (int)$risk['score'],
-                    (int)$risksettings['threshold']
-                );
+                if ($riskaction === \QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL) {
+                    $holdid = \quizaccess_proctoring_fail_high_risk_attempt(
+                        (int)$quiz->course,
+                        (int)$cm->id,
+                        (int)$attempt->userid,
+                        $attemptid,
+                        (int)$report->id,
+                        (int)$risk['score'],
+                        (int)$risksettings['threshold']
+                    );
+                } else {
+                    $holdid = \quizaccess_proctoring_apply_risk_hold(
+                        (int)$quiz->course,
+                        (int)$cm->id,
+                        (int)$attempt->userid,
+                        $attemptid,
+                        (int)$report->id,
+                        (int)$risk['score'],
+                        (int)$risksettings['threshold']
+                    );
+                }
             }
 
             if ($aireviewenabled) {

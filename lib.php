@@ -32,6 +32,14 @@ defined('QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED') ||
     define('QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED', 1);
 defined('QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED') ||
     define('QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED', 2);
+defined('QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED') ||
+    define('QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED', 3);
+defined('QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED') ||
+    define('QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED', 0);
+defined('QUIZACCESS_PROCTORING_RISK_ACTION_HOLD') ||
+    define('QUIZACCESS_PROCTORING_RISK_ACTION_HOLD', 1);
+defined('QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL') ||
+    define('QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL', 2);
 defined('QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED') ||
     define('QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED', 0);
 defined('QUIZACCESS_PROCTORING_AI_REVIEW_PROCESSING') ||
@@ -629,7 +637,15 @@ function quizaccess_proctoring_build_session_summary(array $risk, $aireview): st
 function quizaccess_proctoring_get_effective_risk_review_settings(int $cmid): array {
     global $DB;
 
-    $siteenabled = (int)get_config('quizaccess_proctoring', 'riskreviewenabled');
+    $validactions = [
+        QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED,
+        QUIZACCESS_PROCTORING_RISK_ACTION_HOLD,
+        QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL,
+    ];
+    $siteaction = (int)get_config('quizaccess_proctoring', 'riskreviewenabled');
+    if (!in_array($siteaction, $validactions, true)) {
+        $siteaction = QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED;
+    }
     $sitethreshold = (int)get_config('quizaccess_proctoring', 'riskreviewthreshold');
     if ($sitethreshold <= 0) {
         $sitethreshold = 80;
@@ -642,12 +658,17 @@ function quizaccess_proctoring_get_effective_risk_review_settings(int $cmid): ar
     }
     $quizsetting = $quizid > 0 ? $DB->get_record('quizaccess_proctoring', ['quizid' => $quizid]) : false;
     $mode = isset($quizsetting->riskreviewmode) ? (int)$quizsetting->riskreviewmode : -1;
+    if (!in_array($mode, array_merge([-1], $validactions), true)) {
+        $mode = -1;
+    }
+    $action = $mode === -1 ? $siteaction : $mode;
     $threshold = isset($quizsetting->riskreviewthreshold) && (int)$quizsetting->riskreviewthreshold > 0
         ? max(1, min(100, (int)$quizsetting->riskreviewthreshold))
         : $sitethreshold;
 
     return [
-        'enabled' => $mode === -1 ? $siteenabled === 1 : $mode === 1,
+        'enabled' => $action !== QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED,
+        'action' => $action,
         'threshold' => $threshold,
         'mode' => $mode,
     ];
@@ -1236,7 +1257,7 @@ function quizaccess_proctoring_format_ai_review_for_template(stdClass $aireview,
 }
 
 /**
- * Get the active or latest risk hold for an attempt.
+ * Get the effective risk record for an attempt, prioritizing terminal automatic failure.
  *
  * @param int $courseid Course id.
  * @param int $cmid Quiz course-module id.
@@ -1271,11 +1292,41 @@ function quizaccess_proctoring_get_risk_hold(
     }
     if ($activeonly) {
         $where .= ' AND status = :status';
-        $params['status'] = 0;
+        $params['status'] = QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
+        $records = $DB->get_records_select(
+            'quizaccess_proctoring_risk_holds',
+            $where,
+            $params,
+            'id DESC',
+            '*',
+            0,
+            1
+        );
+        return $records ? reset($records) : false;
     }
 
-    $records = $DB->get_records_select('quizaccess_proctoring_risk_holds', $where, $params, 'status ASC, id DESC', '*', 0, 1);
-    return $records ? reset($records) : false;
+    $records = $DB->get_records_select('quizaccess_proctoring_risk_holds', $where, $params, 'id DESC');
+    if (!$records) {
+        return false;
+    }
+
+    // A terminal automatic-failure decision wins over any duplicate active or released history.
+    // Otherwise retain the historical active -> confirmed -> released display precedence.
+    $statuspriority = [
+        QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
+        QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+        QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED,
+        QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED,
+    ];
+    foreach ($statuspriority as $preferredstatus) {
+        foreach ($records as $record) {
+            if ((int)$record->status === $preferredstatus) {
+                return $record;
+            }
+        }
+    }
+
+    return reset($records);
 }
 
 /**
@@ -1286,6 +1337,8 @@ function quizaccess_proctoring_get_risk_hold(
  */
 function quizaccess_proctoring_get_risk_hold_status_label(stdClass $hold): string {
     switch ((int)$hold->status) {
+        case QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED:
+            return get_string('riskreview:autofailed', 'quizaccess_proctoring');
         case QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED:
             return get_string('riskreview:confirmed', 'quizaccess_proctoring');
         case QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED:
@@ -1335,6 +1388,30 @@ function quizaccess_proctoring_get_student_risk_hold_notice_html(stdClass $hold)
 }
 
 /**
+ * Build the student-facing notice for an automatically failed high-risk attempt.
+ *
+ * @param stdClass $hold Automatic-failure risk record.
+ * @return string Rendered Bootstrap alert HTML.
+ */
+function quizaccess_proctoring_get_student_risk_failure_notice_html(stdClass $hold): string {
+    $message = get_string('riskreview:autofailstudentbody', 'quizaccess_proctoring', (object)[
+        'score' => (int)$hold->riskscore,
+        'threshold' => (int)$hold->threshold,
+    ]);
+    $title = html_writer::tag(
+        'strong',
+        s(get_string('riskreview:autofailstudenttitle', 'quizaccess_proctoring')),
+        ['class' => 'd-block mb-1']
+    );
+
+    return html_writer::tag(
+        'div',
+        $title . html_writer::tag('div', s($message)),
+        ['class' => 'alert alert-danger quizaccess-proctoring-risk-failure-notice', 'role' => 'alert']
+    );
+}
+
+/**
  * Get the configured high-risk attempt lockout length in days.
  *
  * @return int Number of days to block retakes. Zero means disabled.
@@ -1353,8 +1430,8 @@ function quizaccess_proctoring_get_cheating_lockout_days(): int {
  *
  * Pending high-risk holds block retakes immediately so students cannot use failed
  * or throwaway attempts to test the proctoring system. Releasing a hold clears
- * the lockout. Confirmed holds continue to block until the same high-risk window
- * expires.
+ * the lockout. Confirmed and automatically failed attempts continue to block until
+ * the same high-risk window expires.
  *
  * @param int $courseid Course id.
  * @param int $cmid Quiz course-module id.
@@ -1379,13 +1456,14 @@ function quizaccess_proctoring_get_active_cheating_lockout(
     $records = $DB->get_records_select(
         'quizaccess_proctoring_risk_holds',
         'courseid = :courseid AND quizid = :cmid AND userid = :userid
-            AND (status = :activestatus OR status = :confirmedstatus)',
+            AND (status = :activestatus OR status = :confirmedstatus OR status = :autofailedstatus)',
         [
             'courseid' => $courseid,
             'cmid' => $cmid,
             'userid' => $userid,
             'activestatus' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
             'confirmedstatus' => QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED,
+            'autofailedstatus' => QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
         ],
         'timecreated DESC, id DESC'
     );
@@ -1488,6 +1566,134 @@ function quizaccess_proctoring_apply_risk_hold(
 }
 
 /**
+ * Automatically fail a submitted high-risk attempt and prevent certificate release.
+ *
+ * The submitted attempt score and Moodle's stored quiz grade are set to zero. The gradebook is
+ * then explicitly set to zero so grading methods such as "highest attempt" cannot leave a passing
+ * grade visible for an automatically failed submission. A terminal risk record is retained so the
+ * release task cannot restore the grade or certificate eligibility.
+ *
+ * @param int $courseid Course id.
+ * @param int $cmid Quiz course-module id.
+ * @param int $userid User id.
+ * @param int $attemptid Quiz attempt id.
+ * @param int $reportid Proctoring report id.
+ * @param int $riskscore Risk score.
+ * @param int $threshold Configured threshold.
+ * @return int Risk record id.
+ */
+function quizaccess_proctoring_fail_high_risk_attempt(
+    int $courseid,
+    int $cmid,
+    int $userid,
+    int $attemptid,
+    int $reportid,
+    int $riskscore,
+    int $threshold
+): int {
+    global $CFG, $DB;
+
+    require_once($CFG->dirroot . '/mod/quiz/lib.php');
+    require_once($CFG->dirroot . '/mod/quiz/locallib.php');
+
+    $cm = get_coursemodule_from_id('quiz', $cmid, $courseid, false, MUST_EXIST);
+    $quiz = $DB->get_record('quiz', ['id' => $cm->instance], '*', MUST_EXIST);
+    $attempt = $DB->get_record('quiz_attempts', ['id' => $attemptid], '*', MUST_EXIST);
+    if (
+        (int)$attempt->quiz !== (int)$quiz->id ||
+        (int)$attempt->userid !== $userid ||
+        (string)$attempt->state !== 'finished'
+    ) {
+        throw new coding_exception('Automatic proctoring failure requires the submitted user quiz attempt.');
+    }
+
+    $quiz->cmidnumber = $cm->idnumber;
+    $quiz->visible = $cm->visible;
+    $transaction = $DB->start_delegated_transaction();
+
+    $hold = $DB->get_record('quizaccess_proctoring_risk_holds', [
+        'courseid' => $courseid,
+        'quizid' => $cmid,
+        'userid' => $userid,
+        'attemptid' => $attemptid,
+        'status' => QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
+    ], '*', IGNORE_MULTIPLE);
+    if (!$hold) {
+        $hold = quizaccess_proctoring_get_risk_hold($courseid, $cmid, $userid, $attemptid, $reportid);
+    }
+    if (!$hold) {
+        $holdid = quizaccess_proctoring_apply_risk_hold(
+            $courseid,
+            $cmid,
+            $userid,
+            $attemptid,
+            $reportid,
+            $riskscore,
+            $threshold
+        );
+        $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
+    } else {
+        $holdid = (int)$hold->id;
+    }
+
+    if ($attempt->sumgrades === null || (float)$attempt->sumgrades !== 0.0) {
+        $DB->set_field('quiz_attempts', 'sumgrades', 0, ['id' => $attemptid]);
+    }
+    quiz_save_best_grade($quiz, $userid);
+
+    // Keep Moodle's quiz-grade source of truth at zero as well as the submitted attempt. Without
+    // this, a later quiz_update_grades() could republish a previous passing best grade.
+    $now = time();
+    $quizgrade = $DB->get_record('quiz_grades', ['quiz' => $quiz->id, 'userid' => $userid]);
+    if ($quizgrade) {
+        $quizgrade->grade = 0;
+        $quizgrade->timemodified = $now;
+        $DB->update_record('quiz_grades', $quizgrade);
+    } else {
+        $DB->insert_record('quiz_grades', (object)[
+            'quiz' => $quiz->id,
+            'userid' => $userid,
+            'grade' => 0,
+            'timemodified' => $now,
+        ]);
+    }
+
+    $grade = (object)[
+        'userid' => $userid,
+        'rawgrade' => 0,
+        'feedback' => get_string('riskreview:autofailgradefeedback', 'quizaccess_proctoring', $riskscore),
+        'feedbackformat' => FORMAT_PLAIN,
+        'usermodified' => 0,
+        'dategraded' => $now,
+    ];
+    $gradeupdateresult = quiz_grade_item_update($quiz, $grade);
+    if ($gradeupdateresult !== GRADE_UPDATE_OK) {
+        debugging(
+            'Unable to update the gradebook for automatically failed proctored attempt ' . $attemptid .
+                '; grade update result: ' . $gradeupdateresult,
+            DEBUG_DEVELOPER
+        );
+    }
+
+    $shouldnotify = (int)$hold->status !== QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED;
+    $hold->riskscore = $riskscore;
+    $hold->threshold = $threshold;
+    $hold->status = QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED;
+    $hold->reviewerid = 0;
+    $hold->timereviewed = $now;
+    $hold->timemodified = $now;
+    $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
+
+    $transaction->allow_commit();
+
+    if ($shouldnotify && quizaccess_proctoring_should_notify_hold_decision(false)) {
+        quizaccess_proctoring_notify_hold_decision($hold, 'autofailed');
+    }
+
+    return $holdid;
+}
+
+/**
  * Release a risk hold and restore the quiz gradebook grade from Moodle quiz data.
  *
  * @param int $holdid Hold id.
@@ -1501,6 +1707,19 @@ function quizaccess_proctoring_release_risk_hold(int $holdid, int $reviewerid, b
     $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
     if ((int)$hold->status !== QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
         return (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED;
+    }
+
+    // Never restore a sibling active row when the same attempt has a terminal automatic-failure
+    // decision. This also protects legacy/concurrent duplicate rows from the auto-release task.
+    $autofailconditions = [
+        'courseid' => $hold->courseid,
+        'quizid' => $hold->quizid,
+        'userid' => $hold->userid,
+        'attemptid' => $hold->attemptid,
+        'status' => QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
+    ];
+    if ($DB->record_exists('quizaccess_proctoring_risk_holds', $autofailconditions)) {
+        return false;
     }
 
     require_once($CFG->dirroot . '/mod/quiz/lib.php');
@@ -1737,6 +1956,7 @@ function quizaccess_proctoring_resolve_certificate_label(
                 case QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED:
                     $hasreleased = true;
                     break;
+                case QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED:
                 case QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED:
                     $hasconfirmed = true;
                     break;
@@ -2216,13 +2436,13 @@ function quizaccess_proctoring_should_notify_hold_decision(bool $isautorelease):
  * Notify a student that the grade hold on their proctored attempt has been reviewed.
  *
  * @param stdClass $hold Risk hold record.
- * @param string $decision Either 'released' or 'confirmed'.
+ * @param string $decision Either 'released', 'confirmed' or 'autofailed'.
  * @return void
  */
 function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $decision): void {
     global $DB;
 
-    if (!in_array($decision, ['released', 'confirmed'], true)) {
+    if (!in_array($decision, ['released', 'confirmed', 'autofailed'], true)) {
         return;
     }
 
