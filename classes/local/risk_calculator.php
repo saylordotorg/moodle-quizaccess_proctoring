@@ -194,12 +194,15 @@ final class risk_calculator {
             return null;
         }
 
-        return self::build_factor(
+        $factor = self::build_factor(
             get_string('riskscore:' . $key, 'quizaccess_proctoring'),
             $count,
             self::factor_points($key),
             self::factor_cap($key)
         );
+        $factor['key'] = $key;
+
+        return $factor;
     }
 
     /**
@@ -314,41 +317,56 @@ final class risk_calculator {
     }
 
     /**
-     * Get risk-level presentation details for a score.
+     * Get the resolved risk-level boundaries.
      *
      * Boundaries are site-configurable (defaults: Moderate 20, High 50, Critical 80) and are
      * clamped so they never invert: High never exceeds Critical and Moderate never exceeds High.
+     *
+     * @return array ['moderate' => int, 'high' => int, 'critical' => int]
+     */
+    public static function get_level_boundaries(): array {
+        $critical = self::level_boundary('risklevelcritical', 80);
+        $high = min(self::level_boundary('risklevelhigh', 50), $critical);
+        $moderate = min(self::level_boundary('risklevelmoderate', 20), $high);
+
+        return ['moderate' => $moderate, 'high' => $high, 'critical' => $critical];
+    }
+
+    /**
+     * Get risk-level presentation details for a score.
      *
      * @param int $score Score from 0 to 100.
      * @return array Risk-level template data.
      */
     public static function get_level(int $score): array {
-        $critical = self::level_boundary('risklevelcritical', 80);
-        $high = min(self::level_boundary('risklevelhigh', 50), $critical);
-        $moderate = min(self::level_boundary('risklevelmoderate', 20), $high);
+        ['moderate' => $moderate, 'high' => $high, 'critical' => $critical] = self::get_level_boundaries();
 
         if ($score >= $critical) {
             return [
                 'label' => get_string('riskscore:critical', 'quizaccess_proctoring'),
                 'class' => 'proctoring-risk-critical',
+                'levelkey' => 'critical',
             ];
         }
         if ($score >= $high) {
             return [
                 'label' => get_string('riskscore:high', 'quizaccess_proctoring'),
                 'class' => 'proctoring-risk-high',
+                'levelkey' => 'high',
             ];
         }
         if ($score >= $moderate) {
             return [
                 'label' => get_string('riskscore:moderate', 'quizaccess_proctoring'),
                 'class' => 'proctoring-risk-moderate',
+                'levelkey' => 'moderate',
             ];
         }
 
         return [
             'label' => get_string('riskscore:low', 'quizaccess_proctoring'),
             'class' => 'proctoring-risk-low',
+            'levelkey' => 'low',
         ];
     }
 
@@ -601,6 +619,7 @@ final class risk_calculator {
         return [
             'score' => $score,
             'level' => $level['label'],
+            'levelkey' => $level['levelkey'],
             'badgeclass' => 'proctoring-risk-badge ' . $level['class'],
             'cardclass' => 'proctoring-risk-card ' . $level['class'],
             'factors' => $factors,

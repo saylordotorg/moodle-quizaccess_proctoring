@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.33
+- Redesigned the Summary tab of the per-student proctoring report. A verdict banner now leads with the score, risk-level pill, plain-language session summary, and a "Review captures" shortcut; below it a score meter shows where the attempt sits against the configured level boundaries. Flagged factors render as "Needs review" finding cards with event counts, points, an explanation of what the evidence means, and inline desktop-capture thumbnails; a flag timeline places each event between attempt start and submission. Checks that recorded nothing are collapsed into a "Passed" list, disabled factors are listed as "not monitored", and the raw per-factor scoring table is kept under a collapsed "Scoring details" section.
+
 # v1.1.32
 - Removed the yes/no "Overview" table from the per-student report. Every row duplicated a count already shown (with points) in the risk score details table, which also covers seven more evidence types; the plain-language session summary serves the quick-read purpose. Also drops the extra event-count queries that only fed this table.
 
