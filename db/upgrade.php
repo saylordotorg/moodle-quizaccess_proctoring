@@ -1096,5 +1096,56 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072000, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026072006) {
+        // Webcam phone detection: add the per-student override tri-state for the new
+        // phone-detection requirement (default -1 = inherit the site/quiz state).
+        $table = new xmldb_table('quizaccess_proctoring_overrides');
+        $field = new xmldb_field(
+            'phonedetectionstate',
+            XMLDB_TYPE_INTEGER,
+            '2',
+            null,
+            XMLDB_NOTNULL,
+            null,
+            '-1',
+            'multimonitorstate'
+        );
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_plugin_savepoint(true, 2026072006, 'quizaccess', 'proctoring');
+    }
+
+    if ($oldversion < 2026072007) {
+        // False-positive finding reviews: reviewer verdicts that exclude a risk factor's
+        // evidence from an attempt's recomputed risk score.
+        $table = new xmldb_table('quizaccess_proctoring_finding_reviews');
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('quizid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('attemptid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('reportid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('factorkey', XMLDB_TYPE_CHAR, '30', null, XMLDB_NOTNULL, null, '');
+            $table->add_field('verdict', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'false_positive');
+            $table->add_field('note', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('reviewerid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('revoked', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('revokedby', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+            $table->add_field('timerevoked', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_index('coursequizuser', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'quizid', 'userid']);
+            $table->add_index('factorkey', XMLDB_INDEX_NOTUNIQUE, ['factorkey']);
+
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026072007, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

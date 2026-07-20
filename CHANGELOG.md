@@ -1,6 +1,28 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.35
+- Reviewers can now mark a risk finding as a false positive directly on the per-student report (requires the review-risk-holds capability). A marked finding stops adding risk points immediately — the attempt score recomputes everywhere it is displayed — and stays visible as a muted "excluded from score" card with the reviewer's name and date and an Undo action; its events leave the flag timeline and the "Needs review" count. When the corrected score falls below an active hold's threshold, the hold banner suggests releasing it. Marks are stored with a full who/when audit (undo revokes rather than deletes).
+- Added a "False-positive review data" section to the Risk factor scoring admin page: active marks per factor with the most recent mark date, so factor points, caps, and detection thresholds can be tuned from evidence rather than guesswork.
+
+# v1.1.34
+- Added optional webcam phone detection (default off; site setting "Detect phones in webcam images"). When enabled, the attempt page runs TensorFlow.js COCO-SSD object detection on the live webcam feed in the student's browser; a phone-like object must stay visible across three consecutive checks (with a configurable confidence threshold and a 90-second cooldown) before one "Phone detected" event is logged with the webcam frame attached as evidence. Events score through a new "Phone visible in webcam" risk factor (12 points, capped at 24 — tunable on the Risk factor scoring page), appear on the report's finding cards/timeline with the frame inline, and route through AI image review with a phone-specific prompt. Detection can be waived per student via a new Manage overrides requirement, the privacy notice discloses it automatically, and the feature stays silently off until the object-detection libraries are vendored into thirdpartylibs/objectdetect (see the README there).
+
+# v1.1.33
+- Redesigned the Summary tab of the per-student proctoring report. A verdict banner now leads with the score, risk-level pill, plain-language session summary, and a "Review captures" shortcut; below it a score meter shows where the attempt sits against the configured level boundaries. Flagged factors render as "Needs review" finding cards with event counts, points, an explanation of what the evidence means, and inline desktop-capture thumbnails; a flag timeline places each event between attempt start and submission. Checks that recorded nothing are collapsed into a "Passed" list, disabled factors are listed as "not monitored", and the raw per-factor scoring table is kept under a collapsed "Scoring details" section.
+
+# v1.1.32
+- Removed the yes/no "Overview" table from the per-student report. Every row duplicated a count already shown (with points) in the risk score details table, which also covers seven more evidence types; the plain-language session summary serves the quick-read purpose. Also drops the extra event-count queries that only fed this table.
+
+# v1.1.31
+- Added a "Cap attempt risk score at 100" option (default on) to the Risk factor scoring admin page. When disabled, the attempt risk score is the raw sum of all factor points and can exceed 100; thresholds, level boundaries, and the auto-release ceiling compare against the uncapped value. Reports keep the "score/100" label.
+
+# v1.1.30
+- Added a "Risk factor scoring" admin page (AI proctor settings, between Overall reports and Review diagnostics). Every risk factor can now be enabled/disabled and its points-per-event and maximum points configured; disabled factors score nothing and are hidden from risk score details. Also made the Low/Moderate/High/Critical risk-level boundaries configurable (defaults 20/50/80, clamped so they never invert). Shipped defaults match the previous hardcoded model, so scores are unchanged until an admin edits them. Because scores are recalculated from stored evidence on view, changes also affect scores displayed for past attempts; existing grade holds keep their recorded score.
+
+# v1.1.29
+- Desktop violation screenshots are now captured regardless of the multi-monitor policy. v1.1.22 skipped in-quiz desktop capture when multiple monitors were blocked (to avoid re-prompting for the screen share on every quiz page), which also silently stopped attaching desktop screenshots to violation events in the quiz report. Auto screen-share persistence mode now always uses the helper window on desktop, so the verified share survives page navigation and violation screenshots are recorded in every multi-monitor mode.
+
 # v1.1.27
 - Overall reports: the "violations" count now counts only suspicious browser events (matching the risk calculator) and ignores routine recovery events such as tab_visible, focus_returned, and mouse_returned_window, so totals and sorting are no longer inflated.
 - Overall reports: the active-hold and AI-flagged summary cards now reflect the current filter (course, period, and minimum violations) instead of the whole window, so they no longer show counts for attempts outside the filtered result set.

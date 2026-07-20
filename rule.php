@@ -157,6 +157,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * Determine whether webcam phone detection is enabled site-wide.
+     *
+     * @return bool True when phone detection is enabled.
+     */
+    private static function site_detects_phone(): bool {
+        return (int)get_config('quizaccess_proctoring', 'detectphone') === 1;
+    }
+
+    /**
      * Get the mobile/tablet desktop screen-share policy.
      *
      * @return string One of the MOBILE_SCREEN_SHARE_* constants.
@@ -253,10 +262,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     /**
      * Determine whether the persistent helper window should be used.
      *
-     * @param string $multimonitormode Effective multi-monitor mode.
      * @return bool True when the helper window should be used.
      */
-    private static function should_use_persistent_screen_monitor(string $multimonitormode): bool {
+    private static function should_use_persistent_screen_monitor(): bool {
         if (self::is_mobile_or_tablet()) {
             return false;
         }
@@ -269,13 +277,12 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             return false;
         }
 
-        // Auto mode: a getDisplayMedia stream is bound to the page that requested it, so main-page sharing
-        // is torn down on every quiz navigation and the student is re-prompted on each page. The helper
-        // window keeps the stream alive across page loads. When multiple monitors are blocked the student
-        // is already confined to a single enforced screen, so the screen-share marker is unnecessary and
-        // the persistent helper window is not used; otherwise the helper window keeps the verified share
-        // alive across navigation without re-prompting.
-        return $multimonitormode !== self::MULTI_MONITOR_BLOCK;
+        // Auto mode: always prefer the helper window on desktop. A getDisplayMedia stream is bound to
+        // the page that requested it, so main-page sharing is torn down on every quiz navigation and the
+        // student is re-prompted to share their screen. The helper window keeps the stream alive across
+        // page loads regardless of the multi-monitor policy, so desktop capture stays available for
+        // violation screenshots without re-prompting.
+        return true;
     }
 
     /**
@@ -343,14 +350,6 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
 
         if (self::is_mobile_or_tablet() && self::mobile_screen_share_mode() === self::MOBILE_SCREEN_SHARE_BYPASS) {
-            return false;
-        }
-
-        // When multiple monitors are blocked the persistent helper window is not used, and a main-page
-        // screen share cannot survive quiz navigation without re-prompting the student on every page.
-        // The student is already confined to a single enforced screen, so skip in-quiz desktop capture
-        // to avoid that repeated prompt.
-        if (self::multi_monitor_mode() === self::MULTI_MONITOR_BLOCK) {
             return false;
         }
 
@@ -613,6 +612,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
         if ((string)$faceidcheck === '1') {
             $items[] = get_string('privacynotice:item_webcam', 'quizaccess_proctoring');
+        }
+        if (self::site_detects_phone()) {
+            $items[] = get_string('privacynotice:item_phonedetection', 'quizaccess_proctoring');
         }
         if ((int)$requireentirescreen === 1 || (int)get_config('quizaccess_proctoring', 'captureviolationdesktop') === 1) {
             $items[] = get_string('privacynotice:item_desktop', 'quizaccess_proctoring');
@@ -907,7 +909,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $registerface = ((string)$faceidcheck === '1' && !$hasreferenceimage);
         $idverificationpassed = $idverificationrequired ? $this->current_user_has_passed_id_verification() : true;
         $idverificationrequireback = $idverificationrequired && self::id_verification_requires_back_image();
-        $usepersistentmonitor = self::should_use_persistent_screen_monitor($multimonitormode);
+        $usepersistentmonitor = self::should_use_persistent_screen_monitor();
         $screenmarkerrequired = $usepersistentmonitor || self::should_require_screen_marker($multimonitormode);
 
         // Prepare data for the JavaScript module.
@@ -1751,7 +1753,45 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->faceblurhits = max(1, min(10, $faceblurhits));
             $faceblurinitialgrace = (int)(get_config('quizaccess_proctoring', 'faceblurinitialgrace') ?: 10);
             $record->faceblurinitialgrace = max(0, min(60, $faceblurinitialgrace));
-            $usepersistentmonitor = self::should_use_persistent_screen_monitor($record->multimonitormode);
+
+            // Webcam phone detection: only requested when the site monitor is on, the student has
+            // no waiving per-student override, and the object-detection libraries are vendored.
+            // Monitoring is resolved live (not gate-snapshotted), so an override granted mid-course
+            // takes effect on the student's next attempt page load.
+            $record->detectphone = 0;
+            $record->detectphoneminscore = 0.6;
+            $record->phonedetectliburl = '';
+            if (self::site_detects_phone()) {
+                $resolver = '\quizaccess_proctoring\local\override_resolver';
+                $resolved = $resolver::resolve_all(
+                    (int)$COURSE->id,
+                    (int)$contextquiz->instance,
+                    (int)$USER->id,
+                    time(),
+                    [$resolver::REQ_PHONEDETECTION => true]
+                );
+                $phonelibdir = $CFG->dirroot . '/mod/quiz/accessrule/proctoring/thirdpartylibs/objectdetect';
+                $phonelibsready = file_exists($phonelibdir . '/tf.min.js')
+                    && file_exists($phonelibdir . '/coco-ssd.min.js')
+                    && file_exists($phonelibdir . '/model/model.json');
+                if (!$phonelibsready) {
+                    debugging(
+                        'quizaccess_proctoring: phone detection is enabled but the object-detection'
+                            . ' libraries are missing from thirdpartylibs/objectdetect; see the README'
+                            . ' in that directory.',
+                        DEBUG_DEVELOPER
+                    );
+                }
+                if ($resolved[$resolver::REQ_PHONEDETECTION] && $phonelibsready) {
+                    $minscore = (int)(get_config('quizaccess_proctoring', 'detectphoneminscore') ?: 60);
+                    $record->detectphone = 1;
+                    $record->detectphoneminscore = max(20, min(95, $minscore)) / 100;
+                    $record->phonedetectliburl = $CFG->wwwroot
+                        . '/mod/quiz/accessrule/proctoring/thirdpartylibs/objectdetect';
+                }
+            }
+
+            $usepersistentmonitor = self::should_use_persistent_screen_monitor();
             $record->screenmarkerrequired = ($usepersistentmonitor ||
                 self::should_require_screen_marker($record->multimonitormode)) ? 1 : 0;
             $screenmonitorkey = 'cm' . (int)$cmid . 'user' . (int)$USER->id;

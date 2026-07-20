@@ -69,62 +69,184 @@
 <div class="tab-content proctoring-report-tab-content" id="proctoring-report-tabs-content">
 <div class="tab-pane fade show active" id="proctoring-report-summary" role="tabpanel" aria-labelledby="proctoring-report-summary-tab">
 
-{{#hassessionsummary}}
-<div class="proctoring-session-summary alert alert-info mt-4" role="note">
-    <h3 class="proctoring-session-summary-heading">{{#str}}sessionsummary:heading, quizaccess_proctoring{{/str}}</h3>
-    <p class="proctoring-session-summary-text mb-0">{{sessionsummary}}</p>
-</div>
-{{/hassessionsummary}}
-
 {{#riskscore}}
-<h3>{{#str}}riskscore, quizaccess_proctoring{{/str}}</h3>
-<div class="{{cardclass}}">
-    <div>
-        <div class="proctoring-risk-title">{{#str}}riskscore:attemptscore, quizaccess_proctoring{{/str}}</div>
-        <div class="proctoring-risk-score">{{score}}/100</div>
-        {{#thresholdlabel}}
-            <div class="proctoring-risk-threshold">{{thresholdlabel}}</div>
-        {{/thresholdlabel}}
+<div class="proctoring-verdict-card">
+
+    {{! Verdict banner: score, level, plain-language headline, review CTA. }}
+    <div class="proctoring-verdict-banner">
+        <div class="proctoring-verdict-band proctoring-band-{{levelkey}}"></div>
+        <div class="proctoring-verdict-body">
+            <div class="proctoring-verdict-scorecol">
+                <div class="proctoring-verdict-kicker">{{#str}}riskscore:attemptscore, quizaccess_proctoring{{/str}}</div>
+                <div class="proctoring-verdict-scorerow">
+                    <span class="proctoring-verdict-score">{{score}}</span>
+                    <span class="proctoring-verdict-denom">/ 100</span>
+                </div>
+                <div class="proctoring-verdict-pill proctoring-pill-{{levelkey}}">{{level}}</div>
+            </div>
+            <div class="proctoring-verdict-textcol">
+                <div class="proctoring-verdict-headline">{{verdictheadline}}</div>
+                {{#timetakenlabel}}<div class="proctoring-verdict-sub">{{timetakenlabel}}</div>{{/timetakenlabel}}
+                {{#thresholdlabel}}<div class="proctoring-verdict-sub">{{thresholdlabel}}</div>{{/thresholdlabel}}
+            </div>
+            <div class="proctoring-verdict-actioncol">
+                {{#ctalabel}}
+                <a href="#" class="proctoring-verdict-cta" data-proctoring-tab-jump="{{ctatab}}">{{ctalabel}}</a>
+                {{/ctalabel}}
+                <div class="proctoring-verdict-meta">{{verdictmeta}}</div>
+            </div>
+        </div>
     </div>
-    <div class="proctoring-risk-level">{{level}}</div>
+
+    {{! Score meter with the configured level boundaries. }}
+    <div class="proctoring-verdict-meter">
+        <div class="proctoring-meter-track">
+            {{#meterzones}}
+            <div class="proctoring-meter-zone proctoring-zone-{{zoneclass}}" style="width: {{widthpct}}%;"></div>
+            {{/meterzones}}
+            <div class="proctoring-meter-marker" style="left: {{markerleft}}%;"></div>
+        </div>
+        <div class="proctoring-meter-labels">
+            {{#meterzones}}
+            <span class="proctoring-meter-label proctoring-zonelabel-{{zoneclass}}" style="width: {{widthpct}}%;">{{label}}</span>
+            {{/meterzones}}
+        </div>
+    </div>
+
+    {{#holdstatus}}
+    <div class="proctoring-verdict-section">
+        <div class="proctoring-risk-hold-banner {{#holdactive}}proctoring-risk-hold-active{{/holdactive}}">
+            <strong>{{holdstatus}}</strong>
+            {{#canreleasehold}}
+                <a class="btn btn-primary btn-sm ml-2" href="{{releaseurl}}">{{#str}}riskreview:releasebutton, quizaccess_proctoring{{/str}}</a>
+            {{/canreleasehold}}
+            {{#canconfirmhold}}
+                <a class="btn btn-danger btn-sm ml-2" href="{{confirmurl}}">{{#str}}riskreview:confirmbutton, quizaccess_proctoring{{/str}}</a>
+            {{/canconfirmhold}}
+            {{#lockoutuntil}}
+                <div class="mt-2">{{lockoutuntil}}</div>
+            {{/lockoutuntil}}
+            {{#fpholdreleasehint}}
+                <div class="mt-2 proctoring-fp-holdhint">{{fpholdreleasehint}}</div>
+            {{/fpholdreleasehint}}
+        </div>
+    </div>
+    {{/holdstatus}}
+
+    {{! Flagged findings with capture evidence and the flag timeline. }}
+    {{#hasfindings}}
+    <div class="proctoring-verdict-section">
+        <div class="proctoring-verdict-sectionlabel proctoring-verdict-flaggedlabel">{{needsreviewlabel}}</div>
+        {{#hastimeline}}
+        <div class="proctoring-verdict-timeline">
+            <div class="proctoring-timeline-title">{{#str}}verdict:timeline, quizaccess_proctoring{{/str}}</div>
+            <div class="proctoring-timeline-track">
+                {{#timelinedots}}
+                <div class="proctoring-timeline-dot {{colorclass}}" style="left: {{leftpct}}%;" title="{{label}}"></div>
+                {{/timelinedots}}
+            </div>
+            <div class="proctoring-timeline-ends">
+                <span>{{timelinestartlabel}}</span>
+                <span>{{timelineendlabel}}</span>
+            </div>
+            <div class="proctoring-timeline-legend">
+                {{#timelinelegend}}
+                <div class="proctoring-timeline-legenditem">
+                    <span class="proctoring-legend-swatch {{colorclass}}"></span><span>{{label}}</span>
+                </div>
+                {{/timelinelegend}}
+            </div>
+        </div>
+        {{/hastimeline}}
+        {{#findings}}
+        <div class="proctoring-finding-card {{#isfalsepositive}}proctoring-finding-dismissed{{/isfalsepositive}}">
+            <div class="proctoring-finding-head">
+                <span class="proctoring-finding-dot {{colorclass}}"></span>
+                <div class="proctoring-finding-title">{{title}}</div>
+                <div class="proctoring-finding-badge {{#isfalsepositive}}proctoring-finding-badge-dismissed{{/isfalsepositive}}">{{badge}}</div>
+                {{#markurl}}
+                <a class="proctoring-finding-fpaction" href="{{markurl}}">{{#str}}findingreview:markbutton, quizaccess_proctoring{{/str}}</a>
+                {{/markurl}}
+                {{#undourl}}
+                <a class="proctoring-finding-fpaction" href="{{undourl}}">{{#str}}findingreview:undobutton, quizaccess_proctoring{{/str}}</a>
+                {{/undourl}}
+            </div>
+            {{#fpbyline}}<div class="proctoring-finding-fpbyline">{{fpbyline}}</div>{{/fpbyline}}
+            <div class="proctoring-finding-desc">{{desc}}</div>
+            {{#hascaptures}}
+            <div class="proctoring-finding-captures">
+                {{#captures}}
+                <div class="proctoring-finding-capture">
+                    <a href="{{url}}" data-lightbox="proc-finding-captures" data-title="{{note}} · {{time}}">
+                        <img src="{{url}}" alt="{{note}}">
+                    </a>
+                    <div class="proctoring-finding-capturemeta">{{time}} <span>· {{note}}</span></div>
+                </div>
+                {{/captures}}
+            </div>
+            {{/hascaptures}}
+        </div>
+        {{/findings}}
+    </div>
+    {{/hasfindings}}
+
+    {{! Collapsible list of checks that recorded no suspicious activity. }}
+    {{#haspassed}}
+    <div class="proctoring-verdict-section">
+        <details class="proctoring-passed">
+            <summary class="proctoring-passed-summary">
+                <span class="proctoring-verdict-sectionlabel proctoring-verdict-passedlabel">{{passedlabel}}</span>
+                <span class="proctoring-passed-note">{{#str}}verdict:passednote, quizaccess_proctoring{{/str}}</span>
+                <span class="proctoring-passed-toggle">{{#str}}verdict:showall, quizaccess_proctoring{{/str}}</span>
+            </summary>
+            <div class="proctoring-passed-grid">
+                {{#passedchecks}}
+                <div class="proctoring-passed-item"><span class="proctoring-passed-check">✓</span><span>{{label}}</span></div>
+                {{/passedchecks}}
+            </div>
+        </details>
+    </div>
+    {{/haspassed}}
+
+    {{#hasnotmonitored}}
+    <div class="proctoring-verdict-section proctoring-verdict-notmonitored">
+        <span class="proctoring-notmonitored-icon">–</span>
+        <div class="proctoring-notmonitored-text">
+            <strong>{{#str}}verdict:notmonitored, quizaccess_proctoring{{/str}}</strong>
+            {{notmonitoredlist}}. {{#str}}verdict:notmonitorednote, quizaccess_proctoring{{/str}}
+        </div>
+    </div>
+    {{/hasnotmonitored}}
+
+    {{! Raw per-factor scoring table, collapsed for auditing the score arithmetic. }}
+    <div class="proctoring-verdict-section">
+        <details class="proctoring-scoring-details">
+            <summary>{{#str}}verdict:scoringdetails, quizaccess_proctoring{{/str}}</summary>
+            <div class="proctoring-risk-factor-container">
+                <table class="proctoring-risk-factor-table">
+                    <thead>
+                        <tr>
+                            <th>{{#str}}riskscore:factor, quizaccess_proctoring{{/str}}</th>
+                            <th>{{#str}}riskscore:count, quizaccess_proctoring{{/str}}</th>
+                            <th>{{#str}}riskscore:points, quizaccess_proctoring{{/str}}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#factors}}
+                        <tr>
+                            <td>{{label}}</td>
+                            <td>{{count}}</td>
+                            <td>{{points}}</td>
+                        </tr>
+                        {{/factors}}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    </div>
+
 </div>
-{{#timetakenlabel}}
-<div class="proctoring-risk-duration">{{timetakenlabel}}</div>
-{{/timetakenlabel}}
-{{#holdstatus}}
-<div class="proctoring-risk-hold-banner {{#holdactive}}proctoring-risk-hold-active{{/holdactive}}">
-    <strong>{{holdstatus}}</strong>
-    {{#canreleasehold}}
-        <a class="btn btn-primary btn-sm ml-2" href="{{releaseurl}}">{{#str}}riskreview:releasebutton, quizaccess_proctoring{{/str}}</a>
-    {{/canreleasehold}}
-    {{#canconfirmhold}}
-        <a class="btn btn-danger btn-sm ml-2" href="{{confirmurl}}">{{#str}}riskreview:confirmbutton, quizaccess_proctoring{{/str}}</a>
-    {{/canconfirmhold}}
-    {{#lockoutuntil}}
-        <div class="mt-2">{{lockoutuntil}}</div>
-    {{/lockoutuntil}}
-</div>
-{{/holdstatus}}
-<div class="proctoring-risk-factor-container">
-    <table class="proctoring-risk-factor-table">
-        <thead>
-            <tr>
-                <th>{{#str}}riskscore:factor, quizaccess_proctoring{{/str}}</th>
-                <th>{{#str}}riskscore:count, quizaccess_proctoring{{/str}}</th>
-                <th>{{#str}}riskscore:points, quizaccess_proctoring{{/str}}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {{#factors}}
-            <tr>
-                <td>{{label}}</td>
-                <td>{{count}}</td>
-                <td>{{points}}</td>
-            </tr>
-            {{/factors}}
-        </tbody>
-    </table>
-</div>
+<div class="proctoring-verdict-footnote">{{#str}}verdict:disclaimer, quizaccess_proctoring{{/str}}</div>
 {{/riskscore}}
 
 {{#aireview}}
@@ -176,26 +298,6 @@
     <div class="proctoring-ai-review-disclaimer">{{#str}}aireview:disclaimer, quizaccess_proctoring{{/str}}</div>
 </div>
 {{/aireview}}
-
-<h3 class="mt-4">{{#str}}reportoverview, quizaccess_proctoring{{/str}}</h3>
-<div class="proctoring-overview-container">
-    <table class="proctoring-overview-table">
-        <thead>
-            <tr>
-                <th>{{#str}}reportoverview:overview, quizaccess_proctoring{{/str}}</th>
-                <th>{{#str}}reportoverview:status, quizaccess_proctoring{{/str}}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {{#overviewrows}}
-            <tr>
-                <td>{{label}}</td>
-                <td><span class="{{statusclass}}">{{status}}</span></td>
-            </tr>
-            {{/overviewrows}}
-        </tbody>
-    </table>
-</div>
 
 </div>
 
@@ -339,3 +441,15 @@
 
 </div>
 </div>
+
+{{#js}}
+require(['jquery'], function($) {
+    $('[data-proctoring-tab-jump]').on('click', function(e) {
+        e.preventDefault();
+        var tab = document.getElementById($(this).attr('data-proctoring-tab-jump'));
+        if (tab) {
+            tab.click();
+        }
+    });
+});
+{{/js}}

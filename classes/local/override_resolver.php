@@ -49,13 +49,14 @@ namespace quizaccess_proctoring\local;
  * Each requirement key maps to a dedicated tri-state column on
  * `quizaccess_proctoring_overrides`:
  *
- * | Requirement key                                  | Column                |
- * |--------------------------------------------------|-----------------------|
- * | {@see override_resolver::REQ_CAPTCHA}            | `captchastate`        |
- * | {@see override_resolver::REQ_WEBCAM}             | `webcamstate`         |
- * | {@see override_resolver::REQ_IDVERIFICATION}     | `idverificationstate` |
- * | {@see override_resolver::REQ_SCREENSHARE}        | `screensharestate`    |
- * | {@see override_resolver::REQ_MULTIMONITOR}       | `multimonitorstate`   |
+ * | Requirement key                                  | Column                 |
+ * |--------------------------------------------------|------------------------|
+ * | {@see override_resolver::REQ_CAPTCHA}            | `captchastate`         |
+ * | {@see override_resolver::REQ_WEBCAM}             | `webcamstate`          |
+ * | {@see override_resolver::REQ_IDVERIFICATION}     | `idverificationstate`  |
+ * | {@see override_resolver::REQ_SCREENSHARE}        | `screensharestate`     |
+ * | {@see override_resolver::REQ_MULTIMONITOR}       | `multimonitorstate`    |
+ * | {@see override_resolver::REQ_PHONEDETECTION}     | `phonedetectionstate`  |
  */
 class override_resolver {
     /** @var string CAPTCHA (security check) requirement key. */
@@ -72,6 +73,9 @@ class override_resolver {
 
     /** @var string Multi-monitor check requirement key. */
     const REQ_MULTIMONITOR = 'multimonitor';
+
+    /** @var string Webcam phone-detection requirement key. */
+    const REQ_PHONEDETECTION = 'phonedetection';
 
     /** @var int Inherit: no override influence; base state stands. */
     const STATE_INHERIT = -1;
@@ -93,12 +97,13 @@ class override_resolver {
         self::REQ_IDVERIFICATION => 'idverificationstate',
         self::REQ_SCREENSHARE => 'screensharestate',
         self::REQ_MULTIMONITOR => 'multimonitorstate',
+        self::REQ_PHONEDETECTION => 'phonedetectionstate',
     ];
 
     /**
      * The full, ordered set of in-scope requirement keys.
      *
-     * @return string[] The five requirement keys.
+     * @return string[] The in-scope requirement keys.
      */
     public static function requirement_keys(): array {
         return array_keys(self::STATE_COLUMNS);

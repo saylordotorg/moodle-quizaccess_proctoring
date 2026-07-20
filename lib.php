@@ -3304,6 +3304,24 @@ function quizaccess_proctoring_build_ai_review_prompt(stdClass $review, int $ima
         $eventtype = $event ? quizaccess_proctoring_get_readable_ai_event_type((string)$event->eventtype) : 'Desktop event';
         $eventdetail = $event ? quizaccess_proctoring_format_ai_event_detail((string)$event->eventdetail) : '';
 
+        if ($event && (string)$event->eventtype === 'phone_detected') {
+            return "You are reviewing one webcam frame captured during an online proctored quiz, at the moment "
+                . "automatic object detection flagged a possible mobile phone in view. "
+                . "Use only visible evidence in the image and the event metadata below. "
+                . "Do not identify the student or infer intent from protected traits. "
+                . "Mark cheating likely only when a phone or similar device is clearly visible and appears to be "
+                . "in active use (held up, looked at, or interacted with) during the quiz. "
+                . "Objects that merely resemble a phone (calculator, remote control, glasses case, mug) or a phone "
+                . "lying face-down and untouched should be rated suspicious or inconclusive, not cheating likely. "
+                . "If no phone-like object is visible at all, say so: the detector may have misfired. "
+                . "Return a cautious review score from 0 to 100 where "
+                . (int)$settings['decisionthreshold'] . "+ means strong visual evidence that needs escalation. "
+                . "This is advisory for a human reviewer, not an automatic misconduct finding.\n\n"
+                . "Event type: " . $eventtype . "\n"
+                . "Event details: " . $eventdetail . "\n"
+                . "Images provided: " . $imagecount;
+        }
+
         return "You are reviewing one desktop screenshot captured during an online quiz proctoring event. "
             . "Use only visible evidence in the screenshot and the event metadata below. "
             . "Inspect the entire screenshot, including browser tabs, browser side panels, right-side assistant panels, "

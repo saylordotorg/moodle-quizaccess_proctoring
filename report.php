@@ -40,6 +40,9 @@ $reportid = optional_param('reportid', null, PARAM_INT);
 $logaction = optional_param('logaction', null, PARAM_TEXT);
 $riskaction = optional_param('riskaction', null, PARAM_ALPHA);
 $holdid = optional_param('holdid', 0, PARAM_INT);
+$fpaction = optional_param('fpaction', null, PARAM_ALPHA);
+$fpfactorkey = optional_param('factorkey', '', PARAM_ALPHANUMEXT);
+$fpid = optional_param('fpid', 0, PARAM_INT);
 $page = optional_param('page', 0, PARAM_INT);
 // Sort and filter parameters (Requirement 13). Sort keys are validated by
 // quizaccess_proctoring_report_order_by(); initial filters by quizaccess_proctoring_name_matches_initials().
@@ -131,22 +134,68 @@ function quizaccess_proctoring_format_event_detail(string $eventdetail): string 
 }
 
 /**
- * Builds one overview row for the student report.
+ * Map a proctoring event type to the risk factor key that scores it.
  *
- * @param string $label Report row label.
- * @param int $count Number of matching events.
- * @return array Template row data.
+ * Mirrors the event-to-factor mapping in \quizaccess_proctoring\local\risk_calculator.
+ * Recovery events (tab_visible, focus_returned, mouse movement) map to no factor.
+ *
+ * @param string $eventtype Raw event type.
+ * @param string $eventdetail JSON event detail (used to split F12 from other shortcuts).
+ * @return string Factor key, or '' when the event is not scored.
  */
-function quizaccess_proctoring_build_overview_row(string $label, int $count): array {
-    return [
-        'label' => $label,
-        'status' => $count > 0
-            ? get_string('reportoverview:logfound', 'quizaccess_proctoring', $count)
-            : get_string('reportoverview:nologfound', 'quizaccess_proctoring'),
-        'statusclass' => $count > 0
-            ? 'proctoring-overview-status proctoring-overview-status-warning'
-            : 'proctoring-overview-status proctoring-overview-status-ok',
+function quizaccess_proctoring_event_factor_key(string $eventtype, string $eventdetail): string {
+    if ($eventtype === 'shortcut') {
+        return quizaccess_proctoring_event_has_shortcut($eventdetail, 'F12') ? 'f12' : 'shortcut';
+    }
+
+    $map = [
+        'focus_lost' => 'tabactivity',
+        'tab_hidden' => 'tabactivity',
+        'page_exit' => 'tabactivity',
+        'clipboard_copy' => 'clipboard',
+        'clipboard_cut' => 'clipboard',
+        'clipboard_paste' => 'clipboard',
+        'contextmenu' => 'clipboard',
+        'screen_marker_missing' => 'screenshare',
+        'screen_share_stopped' => 'screenshare',
+        'multiple_monitors_detected' => 'multimonitor',
+        'possible_ai_tool' => 'aitool',
+        'multiple_faces_detected' => 'multiplefaces',
+        'audio_detected' => 'audio',
+        'face_missing' => 'noface',
+        'no_face_detected' => 'noface',
+        'phone_detected' => 'phonedetected',
     ];
+
+    return $map[$eventtype] ?? '';
+}
+
+/**
+ * Accent color class used for a risk factor's finding card, timeline dot, and legend swatch.
+ *
+ * @param string $key Risk factor key.
+ * @return string CSS class name.
+ */
+function quizaccess_proctoring_factor_color_class(string $key): string {
+    $map = [
+        'aitool' => 'red',
+        'aitoolscreenshot' => 'red',
+        'tabactivity' => 'orange',
+        'clipboard' => 'purple',
+        'f12' => 'purple',
+        'shortcut' => 'purple',
+        'screenshare' => 'blue',
+        'multimonitor' => 'blue',
+        'facemismatch' => 'teal',
+        'multiplefaces' => 'teal',
+        'noface' => 'teal',
+        'webcammissing' => 'teal',
+        'audio' => 'magenta',
+        'phonedetected' => 'brown',
+        'speed' => 'slate',
+    ];
+
+    return 'proctoring-flag-' . ($map[$key] ?? 'slate');
 }
 
 // Page setup.
@@ -273,6 +322,74 @@ if ($riskaction === 'confirm' && $holdid > 0) {
         'studentid' => $studentid ?: $hold->userid,
         'reportid' => $reportid ?: $hold->reportid,
     ]), get_string('riskreview:confirmednotice', 'quizaccess_proctoring'), null, \core\output\notification::NOTIFY_SUCCESS);
+}
+
+if ($fpaction === 'mark' && $studentid && $reportid && $fpfactorkey !== '') {
+    require_sesskey();
+    require_capability('quizaccess/proctoring:reviewriskholds', $context);
+
+    if (!array_key_exists($fpfactorkey, \quizaccess_proctoring\local\risk_calculator::FACTOR_DEFAULTS)) {
+        throw new moodle_exception('invalidrequest', 'error');
+    }
+
+    $fpattemptid = (int)$DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]);
+    $fpwhere = 'courseid = :courseid AND quizid = :cmid AND userid = :studentid
+        AND factorkey = :factorkey AND revoked = 0';
+    $fpparams = [
+        'courseid' => (int)$courseid,
+        'cmid' => (int)$cmid,
+        'studentid' => (int)$studentid,
+        'factorkey' => $fpfactorkey,
+    ];
+    if ($fpattemptid > 0) {
+        $fpwhere .= ' AND attemptid = :attemptid';
+        $fpparams['attemptid'] = $fpattemptid;
+    } else {
+        $fpwhere .= ' AND reportid = :reportid';
+        $fpparams['reportid'] = (int)$reportid;
+    }
+    if (!$DB->record_exists_select('quizaccess_proctoring_finding_reviews', $fpwhere, $fpparams)) {
+        $DB->insert_record('quizaccess_proctoring_finding_reviews', (object)[
+            'courseid' => (int)$courseid,
+            'quizid' => (int)$cmid,
+            'userid' => (int)$studentid,
+            'attemptid' => $fpattemptid,
+            'reportid' => (int)$reportid,
+            'factorkey' => $fpfactorkey,
+            'verdict' => 'false_positive',
+            'reviewerid' => (int)$USER->id,
+            'timecreated' => time(),
+        ]);
+    }
+
+    redirect(new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
+        'courseid' => $courseid,
+        'cmid' => $cmid,
+        'studentid' => $studentid,
+        'reportid' => $reportid,
+    ]), get_string('findingreview:marked', 'quizaccess_proctoring'), null, \core\output\notification::NOTIFY_SUCCESS);
+}
+
+if ($fpaction === 'undo' && $fpid > 0) {
+    require_sesskey();
+    require_capability('quizaccess/proctoring:reviewriskholds', $context);
+
+    $fpmark = $DB->get_record('quizaccess_proctoring_finding_reviews', ['id' => $fpid], '*', MUST_EXIST);
+    if ((int)$fpmark->courseid !== (int)$courseid || (int)$fpmark->quizid !== (int)$cmid) {
+        throw new moodle_exception('invalidrequest', 'error');
+    }
+
+    $fpmark->revoked = 1;
+    $fpmark->revokedby = (int)$USER->id;
+    $fpmark->timerevoked = time();
+    $DB->update_record('quizaccess_proctoring_finding_reviews', $fpmark);
+
+    redirect(new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
+        'courseid' => $courseid,
+        'cmid' => $cmid,
+        'studentid' => $studentid ?: $fpmark->userid,
+        'reportid' => $reportid ?: $fpmark->reportid,
+    ]), get_string('findingreview:undone', 'quizaccess_proctoring'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
 echo $OUTPUT->header();
@@ -806,6 +923,11 @@ if (
             $riskscore['holdstatus'] = quizaccess_proctoring_get_risk_hold_status_label($hold);
             $riskscore['holdactive'] = (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
             $riskscore['thresholdlabel'] = get_string('riskreview:thresholdlabel', 'quizaccess_proctoring', $hold->threshold);
+            if ($riskscore['holdactive'] && (int)$riskscore['score'] < (int)$hold->threshold) {
+                // False-positive review (or a settings change) has pushed the recomputed score
+                // below the threshold that created this hold.
+                $riskscore['fpholdreleasehint'] = get_string('findingreview:holdreleasehint', 'quizaccess_proctoring');
+            }
             $lockout = quizaccess_proctoring_get_active_cheating_lockout(
                 (int)$courseid,
                 (int)$cmid,
@@ -862,48 +984,6 @@ if (
         // description a reviewer can read without parsing raw event detail.
         $sessionsummary = quizaccess_proctoring_build_session_summary($riskscore, $aireview ?: false);
 
-        $overviewcounts = [
-            'focus' => $DB->count_records_select(
-                'quizaccess_proctoring_events',
-                $eventwhere . " AND eventtype IN ('focus_lost', 'tab_hidden', 'page_exit')",
-                $eventparams
-            ),
-            'screen' => $DB->count_records_select(
-                'quizaccess_proctoring_events',
-                $eventwhere . " AND eventtype IN ('screen_marker_missing', 'screen_share_stopped')",
-                $eventparams
-            ),
-            'multimonitor' => $DB->count_records_select(
-                'quizaccess_proctoring_events',
-                $eventwhere . ' AND eventtype = :eventtype_multimonitor',
-                $eventparams + ['eventtype_multimonitor' => 'multiple_monitors_detected']
-            ),
-            'clipboard' => $DB->count_records_select(
-                'quizaccess_proctoring_events',
-                $eventwhere . " AND eventtype IN ('clipboard_copy', 'clipboard_cut', 'clipboard_paste', 'contextmenu')",
-                $eventparams
-            ),
-            'f12' => 0,
-            'aitool' => $DB->count_records_select(
-                'quizaccess_proctoring_events',
-                $eventwhere . ' AND eventtype = :eventtype_aitool',
-                $eventparams + ['eventtype_aitool' => 'possible_ai_tool']
-            ),
-        ];
-
-        $shortcutrecords = $DB->get_records_select(
-            'quizaccess_proctoring_events',
-            $eventwhere . ' AND eventtype = :eventtype_shortcut',
-            $eventparams + ['eventtype_shortcut' => 'shortcut'],
-            '',
-            'id, eventdetail'
-        );
-        foreach ($shortcutrecords as $shortcutrecord) {
-            if (quizaccess_proctoring_event_has_shortcut($shortcutrecord->eventdetail, 'F12')) {
-                $overviewcounts['f12']++;
-            }
-        }
-
         $eventrecords = $DB->get_records_select(
             'quizaccess_proctoring_events',
             $eventwhere,
@@ -948,36 +1028,242 @@ if (
                 'haseventaireview' => !empty($eventreview),
             ];
         }
-        $overviewrows = [
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:webcamenabled', 'quizaccess_proctoring'),
-                count($studentdata) > 0 ? 0 : 1
-            ),
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:screenfocuslost', 'quizaccess_proctoring'),
-                $overviewcounts['focus']
-            ),
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:screenshareissue', 'quizaccess_proctoring'),
-                $overviewcounts['screen']
-            ),
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:multimonitor', 'quizaccess_proctoring'),
-                $overviewcounts['multimonitor']
-            ),
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:clipboardactivity', 'quizaccess_proctoring'),
-                $overviewcounts['clipboard']
-            ),
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:f12pressed', 'quizaccess_proctoring'),
-                $overviewcounts['f12']
-            ),
-            quizaccess_proctoring_build_overview_row(
-                get_string('reportoverview:possibleaitool', 'quizaccess_proctoring'),
-                $overviewcounts['aitool']
-            ),
+        // Verdict banner, score meter, finding cards, and passed checks for the summary redesign.
+        $attemptstart = 0;
+        $attemptfinish = 0;
+        if ((int)$riskscore['attemptid'] > 0) {
+            $attemptrow = $DB->get_record(
+                'quiz_attempts',
+                ['id' => (int)$riskscore['attemptid']],
+                'id, timestart, timefinish'
+            );
+            if ($attemptrow) {
+                $attemptstart = (int)$attemptrow->timestart;
+                $attemptfinish = (int)$attemptrow->timefinish;
+            }
+        }
+
+        $boundaries = \quizaccess_proctoring\local\risk_calculator::get_level_boundaries();
+        $zonedefs = [
+            ['zone' => 'low', 'from' => 0, 'to' => $boundaries['moderate'],
+                'label' => get_string('riskscore:low', 'quizaccess_proctoring')],
+            ['zone' => 'moderate', 'from' => $boundaries['moderate'], 'to' => $boundaries['high'],
+                'label' => get_string('riskscore:moderate', 'quizaccess_proctoring')],
+            ['zone' => 'high', 'from' => $boundaries['high'], 'to' => $boundaries['critical'],
+                'label' => get_string('riskscore:high', 'quizaccess_proctoring')],
+            ['zone' => 'critical', 'from' => $boundaries['critical'], 'to' => 100,
+                'label' => get_string('riskscore:critical', 'quizaccess_proctoring')],
         ];
+        $meterzones = [];
+        foreach ($zonedefs as $zonedef) {
+            $width = max(0, $zonedef['to'] - $zonedef['from']);
+            if ($width <= 0) {
+                continue;
+            }
+            $rangeend = $zonedef['zone'] === 'critical' ? 100 : $zonedef['to'] - 1;
+            $meterzones[] = [
+                'zoneclass' => $zonedef['zone'],
+                'widthpct' => $width,
+                'label' => $zonedef['label'] . ' ' . $zonedef['from'] . '–' . $rangeend,
+            ];
+        }
+
+        // Group scored events chronologically by the factor that scores them, for the finding
+        // cards' capture thumbnails and the flag timeline.
+        $factorevents = [];
+        foreach (array_reverse($eventrecords) as $eventrecord) {
+            $factorkey = quizaccess_proctoring_event_factor_key(
+                (string)$eventrecord->eventtype,
+                (string)$eventrecord->eventdetail
+            );
+            if ($factorkey !== '') {
+                $factorevents[$factorkey][] = $eventrecord;
+            }
+        }
+
+        $fpmarks = \quizaccess_proctoring\local\risk_calculator::get_false_positive_marks(
+            (int)$courseid,
+            (int)$cmid,
+            (int)$studentid,
+            (int)$riskscore['attemptid'],
+            (int)$reportid
+        );
+        $canreviewfindings = has_capability('quizaccess/proctoring:reviewriskholds', $context, $USER->id);
+        $fpbaseurlparams = [
+            'courseid' => $courseid,
+            'cmid' => $cmid,
+            'studentid' => $studentid,
+            'reportid' => $reportid,
+            'sesskey' => sesskey(),
+        ];
+
+        $timeformat = get_string('strftimetime', 'langconfig');
+        $findings = [];
+        $passedchecks = [];
+        $monitoredkeys = [];
+        foreach ($riskscore['factors'] as $factor) {
+            $factorkey = (string)($factor['key'] ?? '');
+            if ($factorkey === '') {
+                continue;
+            }
+            $monitoredkeys[] = $factorkey;
+            $isfalsepositive = !empty($factor['falsepositive']);
+            if (empty($factor['haspoints']) && !$isfalsepositive) {
+                $passedchecks[] = ['label' => get_string('riskfactorpassed:' . $factorkey, 'quizaccess_proctoring')];
+                continue;
+            }
+            $captures = [];
+            foreach ($factorevents[$factorkey] ?? [] as $eventrecord) {
+                if (empty($eventrecord->screenshoturl) || count($captures) >= 4) {
+                    continue;
+                }
+                $captures[] = [
+                    'url' => $eventrecord->screenshoturl,
+                    'time' => userdate((int)$eventrecord->timemodified, $timeformat),
+                    'note' => quizaccess_proctoring_get_event_label((string)$eventrecord->eventtype),
+                ];
+            }
+            if ($isfalsepositive) {
+                $badge = (int)$factor['count'] === 1
+                    ? get_string('findingreview:badgeexcluded_one', 'quizaccess_proctoring')
+                    : get_string('findingreview:badgeexcluded', 'quizaccess_proctoring', (int)$factor['count']);
+            } else {
+                $badge = (int)$factor['count'] === 1
+                    ? get_string('verdict:findingbadge_one', 'quizaccess_proctoring', (int)$factor['points'])
+                    : get_string('verdict:findingbadge', 'quizaccess_proctoring', (object)[
+                        'count' => (int)$factor['count'],
+                        'points' => (int)$factor['points'],
+                    ]);
+            }
+            $finding = [
+                'title' => $factor['label'],
+                'colorclass' => quizaccess_proctoring_factor_color_class($factorkey),
+                'badge' => $badge,
+                'desc' => get_string('riskfactordesc:' . $factorkey, 'quizaccess_proctoring'),
+                'captures' => $captures,
+                'hascaptures' => !empty($captures),
+                'points' => (int)($factor['excludedpoints'] ?? $factor['points']),
+                'factorkey' => $factorkey,
+                'isfalsepositive' => $isfalsepositive,
+            ];
+            if ($isfalsepositive && isset($fpmarks[$factorkey])) {
+                $fpmark = $fpmarks[$factorkey];
+                $fpreviewer = core_user::get_user((int)$fpmark->reviewerid);
+                $finding['fpbyline'] = get_string('findingreview:byline', 'quizaccess_proctoring', (object)[
+                    'name' => $fpreviewer ? fullname($fpreviewer) : (string)$fpmark->reviewerid,
+                    'date' => userdate((int)$fpmark->timecreated),
+                ]);
+                if ($canreviewfindings) {
+                    $finding['undourl'] = (new moodle_url(
+                        '/mod/quiz/accessrule/proctoring/report.php',
+                        $fpbaseurlparams + ['fpaction' => 'undo', 'fpid' => (int)$fpmark->id]
+                    ))->out(false);
+                }
+            } else if ($canreviewfindings) {
+                $finding['markurl'] = (new moodle_url(
+                    '/mod/quiz/accessrule/proctoring/report.php',
+                    $fpbaseurlparams + ['fpaction' => 'mark', 'factorkey' => $factorkey]
+                ))->out(false);
+            }
+            $findings[] = $finding;
+        }
+        usort($findings, static function (array $a, array $b): int {
+            return $b['points'] <=> $a['points'];
+        });
+
+        // Flag timeline: scored events positioned between attempt start and submission.
+        $timelinedots = [];
+        $timelinelegend = [];
+        $dotkeys = [];
+        $timelinespan = $attemptfinish - $attemptstart;
+        if ($attemptstart > 0 && $timelinespan > 0) {
+            foreach ($findings as $finding) {
+                if (!empty($finding['isfalsepositive'])) {
+                    continue;
+                }
+                foreach ($factorevents[$finding['factorkey']] ?? [] as $eventrecord) {
+                    if (count($timelinedots) >= 60) {
+                        break 2;
+                    }
+                    $eventtime = (int)$eventrecord->timemodified;
+                    if ($eventtime < $attemptstart || $eventtime > $attemptfinish + MINSECS) {
+                        continue;
+                    }
+                    $left = ($eventtime - $attemptstart) / $timelinespan * 100;
+                    $timelinedots[] = [
+                        'leftpct' => round(min(99, max(1, $left)), 2),
+                        'colorclass' => $finding['colorclass'],
+                        'label' => quizaccess_proctoring_get_event_label((string)$eventrecord->eventtype)
+                            . ' · ' . userdate($eventtime, $timeformat),
+                    ];
+                    $dotkeys[$finding['factorkey']] = true;
+                }
+            }
+            foreach ($findings as $finding) {
+                if (!empty($dotkeys[$finding['factorkey']])) {
+                    $timelinelegend[] = ['colorclass' => $finding['colorclass'], 'label' => $finding['title']];
+                }
+            }
+        }
+
+        // Factors absent from the scoring output were disabled or not applicable: not monitored.
+        $notmonitored = [];
+        foreach (array_keys(\quizaccess_proctoring\local\risk_calculator::FACTOR_DEFAULTS) as $factorkey) {
+            if (!in_array($factorkey, $monitoredkeys, true)) {
+                $notmonitored[] = get_string('riskscore:' . $factorkey, 'quizaccess_proctoring');
+            }
+        }
+
+        $desktopcapturecount = 0;
+        foreach ($eventrecords as $eventrecord) {
+            if (!empty($eventrecord->screenshoturl)) {
+                $desktopcapturecount++;
+            }
+        }
+        $ctalabel = '';
+        $ctatab = '';
+        if ($desktopcapturecount > 0) {
+            $ctalabel = $desktopcapturecount === 1
+                ? get_string('verdict:reviewcaptures_one', 'quizaccess_proctoring')
+                : get_string('verdict:reviewcaptures', 'quizaccess_proctoring', $desktopcapturecount);
+            $ctatab = 'proctoring-report-activity-tab';
+        } else if (!empty($studentdata)) {
+            $ctalabel = get_string('verdict:viewwebcamcaptures', 'quizaccess_proctoring');
+            $ctatab = 'proctoring-report-captures-tab';
+        }
+
+        $riskscore['markerleft'] = min(100, max(0, (int)$riskscore['score']));
+        $riskscore['meterzones'] = $meterzones;
+        $riskscore['verdictheadline'] = $sessionsummary !== ''
+            ? $sessionsummary
+            : get_string('verdict:noflagsheadline', 'quizaccess_proctoring');
+        $riskscore['verdictmeta'] = fullname($user) . ($attemptstart > 0 ? ' · ' . userdate($attemptstart) : '');
+        $riskscore['ctalabel'] = $ctalabel;
+        $riskscore['ctatab'] = $ctatab;
+        $riskscore['findings'] = $findings;
+        $riskscore['hasfindings'] = !empty($findings);
+        $activefindingcount = count(array_filter($findings, static function (array $finding): bool {
+            return empty($finding['isfalsepositive']);
+        }));
+        $riskscore['needsreviewlabel'] = $activefindingcount === 1
+            ? get_string('verdict:needsreview_one', 'quizaccess_proctoring')
+            : get_string('verdict:needsreview', 'quizaccess_proctoring', $activefindingcount);
+        $riskscore['hastimeline'] = !empty($timelinedots);
+        $riskscore['timelinedots'] = $timelinedots;
+        $riskscore['timelinelegend'] = $timelinelegend;
+        $riskscore['timelinestartlabel'] = $attemptstart > 0
+            ? get_string('verdict:timelinestart', 'quizaccess_proctoring', userdate($attemptstart, $timeformat))
+            : '';
+        $riskscore['timelineendlabel'] = $attemptfinish > 0
+            ? get_string('verdict:timelineend', 'quizaccess_proctoring', userdate($attemptfinish, $timeformat))
+            : '';
+        $riskscore['passedchecks'] = $passedchecks;
+        $riskscore['haspassed'] = !empty($passedchecks);
+        $riskscore['passedlabel'] = count($passedchecks) === 1
+            ? get_string('verdict:passed_one', 'quizaccess_proctoring')
+            : get_string('verdict:passed', 'quizaccess_proctoring', count($passedchecks));
+        $riskscore['notmonitoredlist'] = implode(', ', $notmonitored);
+        $riskscore['hasnotmonitored'] = !empty($notmonitored);
 
         $analyzeurl = new moodle_url('/mod/quiz/accessrule/proctoring/analyzeimage.php');
         $userimageurl = quizaccess_proctoring_get_image_url($user->id);
@@ -1003,7 +1289,6 @@ if (
             'sessionsummary' => $sessionsummary,
             'hassessionsummary' => ($sessionsummary !== ''),
             'aireview' => $aireviewdata,
-            'overviewrows' => $overviewrows,
             'events' => $events,
             'hasevents' => !empty($events),
         ];
