@@ -157,13 +157,14 @@ final class legacy_exemption_migration_test extends advanced_testcase {
     public function test_webcam_and_id_resolve_only_through_overrides_layer(): void {
         $this->setUser($this->student);
 
-        // Base: webcam and ID both required; the other three arbitrary but fixed.
+        // Base: webcam and ID both required; the other requirements arbitrary but fixed.
         $basestates = [
             override_resolver::REQ_CAPTCHA => true,
             override_resolver::REQ_WEBCAM => true,
             override_resolver::REQ_IDVERIFICATION => true,
             override_resolver::REQ_SCREENSHARE => true,
             override_resolver::REQ_MULTIMONITOR => true,
+            override_resolver::REQ_PHONEDETECTION => true,
         ];
 
         // With no override, resolve_all() returns the base states unchanged — no legacy path
