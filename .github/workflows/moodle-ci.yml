@@ -10,6 +10,9 @@ on:
 jobs:
   # Environment-independent checks run exactly once: their result is identical on every
   # Moodle/PHP/DB combination, so repeating them across the PHPUnit matrix is pure waste.
+  # The job is pinned to the MINIMUM supported environment (Moodle 4.05 / PHP 8.1) so that
+  # phplint rejects syntax that is invalid on the oldest supported PHP - PHPUnit lanes only
+  # parse the files they load, so an unexercised file must be caught here.
   static:
     name: Static checks (lint / validate / savepoints / mustache / codechecker)
     runs-on: ubuntu-22.04
@@ -37,7 +40,7 @@ jobs:
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: '8.1'
           extensions: mysqli, pgsql, zip, gd, intl, soap
           ini-values: max_input_vars=5000
           coverage: none
@@ -54,30 +57,30 @@ jobs:
         env:
           DB: pgsql
           DB_USER: postgres
-          MOODLE_BRANCH: MOODLE_502_STABLE
+          MOODLE_BRANCH: MOODLE_405_STABLE
 
       - name: PHP lint
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci phplint ./moodle/public/mod/quiz/accessrule/proctoring
+        run: moodle-plugin-ci phplint ./moodle/mod/quiz/accessrule/proctoring
 
       - name: Validate plugin
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci validate ./moodle/public/mod/quiz/accessrule/proctoring
+        run: moodle-plugin-ci validate ./moodle/mod/quiz/accessrule/proctoring
 
       - name: Check upgrade savepoints
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci savepoints ./moodle/public/mod/quiz/accessrule/proctoring
+        run: moodle-plugin-ci savepoints ./moodle/mod/quiz/accessrule/proctoring
 
       - name: Mustache lint
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci mustache ./moodle/public/mod/quiz/accessrule/proctoring
+        run: moodle-plugin-ci mustache ./moodle/mod/quiz/accessrule/proctoring
 
       # Informational for now: pre-1.1.28 code carries coding-style debt, so style findings
       # report without blocking the pipeline. Make this blocking once the backlog is cleared.
       - name: Moodle code checker (informational)
         if: ${{ !cancelled() }}
         continue-on-error: true
-        run: moodle-plugin-ci codechecker ./moodle/public/mod/quiz/accessrule/proctoring
+        run: moodle-plugin-ci codechecker ./moodle/mod/quiz/accessrule/proctoring
 
   # PHPUnit runs on a trimmed matrix: the production series (405) gets the full database
   # spread; the latest stable series covers the newest PHP; one experimental lane tracks
