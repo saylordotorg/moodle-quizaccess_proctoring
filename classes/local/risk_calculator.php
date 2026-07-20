@@ -134,6 +134,32 @@ final class risk_calculator {
     }
 
     /**
+     * Get the maximum achievable attempt risk score under the current configuration.
+     *
+     * With the score cap enabled (the default) this is 100. With the cap disabled the score is
+     * the raw factor sum, so the maximum is the sum of the configured caps of every enabled
+     * factor. Factors whose monitors are switched off are still counted: historical evidence can
+     * keep scoring after a monitor is disabled, and overestimating errs on the safe side for
+     * consumers such as the auto-release ceiling (a hold is retained rather than released).
+     *
+     * @return int Maximum achievable score.
+     */
+    public static function max_possible_score(): int {
+        if (self::score_cap_enabled()) {
+            return 100;
+        }
+
+        $max = 0;
+        foreach (array_keys(self::FACTOR_DEFAULTS) as $key) {
+            if (self::factor_enabled($key)) {
+                $max += self::factor_cap($key);
+            }
+        }
+
+        return $max;
+    }
+
+    /**
      * Determine whether a scoring factor is enabled (factors default to enabled).
      *
      * @param string $key Factor key from {@see self::FACTOR_DEFAULTS}.

@@ -699,15 +699,19 @@ function quizaccess_proctoring_get_risk_review_auto_release_days(): int {
  * Get the configured auto-release risk ceiling.
  *
  * Expired active risk holds whose risk score is at or above this ceiling are retained for human
- * review instead of being automatically released. A value of 101 (or any value above 100) disables
- * the ceiling so every expired hold is auto-released, preserving the prior behavior.
+ * review instead of being automatically released. Any value above the maximum achievable score
+ * disables the ceiling so every expired hold is auto-released. With the 100-point score cap
+ * enabled (the default) the maximum is 100, so the historical "101 disables" behavior is
+ * preserved; with the cap disabled the maximum is the sum of the enabled factors' caps, so
+ * ceilings above 100 remain genuine ceilings for uncapped scores.
  *
- * @return int Ceiling from 0 to 101.
+ * @return int Ceiling from 0 to one above the maximum achievable score.
  */
 function quizaccess_proctoring_get_risk_review_ceiling(): int {
+    $maxscore = \quizaccess_proctoring\local\risk_calculator::max_possible_score();
     $configured = get_config('quizaccess_proctoring', 'riskreviewceiling');
-    $ceiling = $configured === false ? 101 : (int)$configured;
-    return max(0, min(101, $ceiling));
+    $ceiling = $configured === false ? $maxscore + 1 : (int)$configured;
+    return max(0, min($maxscore + 1, $ceiling));
 }
 
 /**
@@ -2299,7 +2303,10 @@ function quizaccess_proctoring_auto_release_expired_risk_holds(int $limit = 100)
     $limit = max(1, min(500, $limit));
     $cutoff = time() - ($days * DAYSECS);
     $ceiling = quizaccess_proctoring_get_risk_review_ceiling();
-    $ceilingenabled = ($ceiling <= 100);
+    // The ceiling is disabled only when no achievable score can reach it. With the score cap
+    // disabled, stored scores can exceed 100, so the comparison uses the configuration-aware
+    // maximum rather than a hardcoded 100.
+    $ceilingenabled = ($ceiling <= \quizaccess_proctoring\local\risk_calculator::max_possible_score());
 
     // Select expired active holds to release. When the ceiling is enabled, only holds whose risk
     // score is strictly below the ceiling are releasable; when disabled, the predicate is omitted.

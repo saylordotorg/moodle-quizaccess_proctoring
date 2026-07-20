@@ -108,6 +108,25 @@ class provider implements
             'privacy:metadata:quizaccess_proctoring_risk_holds'
         );
 
+        $quizaccessproctoringfindingreviews = [
+            'courseid' => 'privacy:metadata:courseid',
+            'quizid' => 'privacy:metadata:quizid',
+            'userid' => 'privacy:metadata:userid',
+            'attemptid' => 'privacy:metadata:attemptid',
+            'reportid' => 'privacy:metadata:reportid',
+            'factorkey' => 'privacy:metadata:factorkey',
+            'verdict' => 'privacy:metadata:findingverdict',
+            'note' => 'privacy:metadata:findingnote',
+            'reviewerid' => 'privacy:metadata:reviewerid',
+            'timecreated' => 'privacy:metadata:timecreated',
+        ];
+
+        $collection->add_database_table(
+            'quizaccess_proctoring_finding_reviews',
+            $quizaccessproctoringfindingreviews,
+            'privacy:metadata:quizaccess_proctoring_finding_reviews'
+        );
+
         $quizaccessproctoringaireviews = [
             'courseid' => 'privacy:metadata:courseid',
             'quizid' => 'privacy:metadata:quizid',
@@ -265,6 +284,14 @@ class provider implements
         $riskholdparams['reviewerid'] = $userid;
         $contextlist->add_from_sql($sql, $riskholdparams);
         $sql = "SELECT DISTINCT c.id
+                  FROM {quizaccess_proctoring_finding_reviews} qpfr
+                  JOIN {context} c ON c.instanceid = qpfr.quizid AND c.contextlevel = :context
+                 WHERE qpfr.userid = :userid OR qpfr.reviewerid = :reviewerid
+              GROUP BY c.id";
+        $findingreviewparams = $params;
+        $findingreviewparams['reviewerid'] = $userid;
+        $contextlist->add_from_sql($sql, $findingreviewparams);
+        $sql = "SELECT DISTINCT c.id
                   FROM {quizaccess_proctoring_ai_reviews} qpar
                   JOIN {context} c ON c.instanceid = qpar.quizid AND c.contextlevel = :context
                  WHERE qpar.userid = :userid
@@ -363,6 +390,16 @@ class provider implements
         $sql = "SELECT DISTINCT qprh.reviewerid AS userid
                   FROM {quizaccess_proctoring_risk_holds} qprh
                  WHERE qprh.quizid = ? AND qprh.reviewerid <> 0";
+        $userlist->add_from_sql('userid', $sql, $params);
+
+        $sql = "SELECT DISTINCT qpfr.userid AS userid
+                  FROM {quizaccess_proctoring_finding_reviews} qpfr
+                 WHERE qpfr.quizid = ?";
+        $userlist->add_from_sql('userid', $sql, $params);
+
+        $sql = "SELECT DISTINCT qpfr.reviewerid AS userid
+                  FROM {quizaccess_proctoring_finding_reviews} qpfr
+                 WHERE qpfr.quizid = ? AND qpfr.reviewerid <> 0";
         $userlist->add_from_sql('userid', $sql, $params);
 
         $sql = "SELECT DISTINCT qpar.userid AS userid
@@ -527,10 +564,13 @@ class provider implements
 
                 $riskholdfields = 'id, courseid, quizid, quizinstance, userid, attemptid, reportid, riskscore, ' .
                     'threshold, originalgrade, status, reviewerid, timecreated, timemodified, timereviewed';
+                $participantparams = $inparams;
+                $participantparams['participantid'] = $contextlist->get_user()->id;
+                $participantparams['reviewerid'] = $contextlist->get_user()->id;
                 $riskholds = $DB->get_records_select(
                     'quizaccess_proctoring_risk_holds',
-                    "quizid $insql AND (userid = :userid OR reviewerid = :userid)",
-                    $params,
+                    "quizid $insql AND (userid = :participantid OR reviewerid = :reviewerid)",
+                    $participantparams,
                     '',
                     $riskholdfields
                 );
@@ -560,6 +600,44 @@ class provider implements
                         'timecreated' => transform::datetime($riskhold->timecreated),
                         'timemodified' => transform::datetime($riskhold->timemodified),
                         'timereviewed' => transform::datetime($riskhold->timereviewed),
+                    ];
+
+                    writer::with_context($context)->export_data($subcontext, $data);
+                }
+
+                $findingreviewfields = 'id, courseid, quizid, userid, attemptid, reportid, factorkey, verdict, ' .
+                    'note, reviewerid, revoked, timerevoked, timecreated';
+                $findingreviews = $DB->get_records_select(
+                    'quizaccess_proctoring_finding_reviews',
+                    "quizid $insql AND (userid = :participantid OR reviewerid = :reviewerid)",
+                    $participantparams,
+                    '',
+                    $findingreviewfields
+                );
+
+                $index = 0;
+                foreach ($findingreviews as $findingreview) {
+                    $index++;
+                    $subcontext = [
+                        get_string('quizaccess_proctoring', 'quizaccess_proctoring'),
+                        'proctoring_finding_reviews',
+                        $index,
+                    ];
+
+                    $data = (object)[
+                        'id' => $findingreview->id,
+                        'courseid' => $findingreview->courseid,
+                        'quizid' => $findingreview->quizid,
+                        'userid' => $findingreview->userid,
+                        'attemptid' => $findingreview->attemptid,
+                        'reportid' => $findingreview->reportid,
+                        'factorkey' => $findingreview->factorkey,
+                        'verdict' => $findingreview->verdict,
+                        'note' => $findingreview->note,
+                        'reviewerid' => $findingreview->reviewerid,
+                        'revoked' => $findingreview->revoked,
+                        'timerevoked' => $findingreview->timerevoked ? transform::datetime($findingreview->timerevoked) : null,
+                        'timecreated' => transform::datetime($findingreview->timecreated),
                     ];
 
                     writer::with_context($context)->export_data($subcontext, $data);
@@ -743,6 +821,15 @@ class provider implements
             $DB->set_field_select('quizaccess_proctoring_risk_holds', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
             $DB->set_field_select('quizaccess_proctoring_risk_holds', 'reviewerid', 0, "quizid = :cmid", ['cmid' => $cmid]);
             $DB->set_field_select('quizaccess_proctoring_ai_reviews', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
+            $DB->set_field_select('quizaccess_proctoring_finding_reviews', 'note', '', "quizid = :cmid", ['cmid' => $cmid]);
+            $DB->set_field_select('quizaccess_proctoring_finding_reviews', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
+            $DB->set_field_select(
+                'quizaccess_proctoring_finding_reviews',
+                'reviewerid',
+                0,
+                "quizid = :cmid",
+                ['cmid' => $cmid]
+            );
             $DB->delete_records('quizaccess_proctoring_idv', ['quizid' => $cmid]);
 
             $fs = get_file_storage();
@@ -854,6 +941,29 @@ class provider implements
             'userid',
             0,
             "quizid = :cmid AND userid {$insql}",
+            $params
+        );
+        // Blank the reviewer note before anonymizing the student id: the note describes the
+        // student's evidence, so it goes with the student's data.
+        $DB->set_field_select(
+            'quizaccess_proctoring_finding_reviews',
+            'note',
+            '',
+            "quizid = :cmid AND userid {$insql}",
+            $params
+        );
+        $DB->set_field_select(
+            'quizaccess_proctoring_finding_reviews',
+            'userid',
+            0,
+            "quizid = :cmid AND userid {$insql}",
+            $params
+        );
+        $DB->set_field_select(
+            'quizaccess_proctoring_finding_reviews',
+            'reviewerid',
+            0,
+            "quizid = :cmid AND reviewerid {$insql}",
             $params
         );
 
