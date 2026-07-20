@@ -2,6 +2,7 @@
 All notable changes to this project will be documented in this file.
 
 # v1.1.35
+- CI: restructured the Moodle Plugin CI workflow from 39 jobs to 7. Environment-independent checks (phplint, validate, savepoints, mustache) now run once in a dedicated static job that also runs the Moodle code checker informationally; PHPUnit runs on a trimmed matrix - full database spread on the production series (4.05), min/max PHP on the latest stable (5.02), and one non-blocking experimental lane against Moodle main. Fixed the finding-reviews schema declaring an empty-string default on a NOT NULL CHAR column, which XMLDB rejects with a debugging message that failed the CI install step.
 - Reviewers can now mark a risk finding as a false positive directly on the per-student report (requires the review-risk-holds capability). A marked finding stops adding risk points immediately — the attempt score recomputes everywhere it is displayed — and stays visible as a muted "excluded from score" card with the reviewer's name and date and an Undo action; its events leave the flag timeline and the "Needs review" count. When the corrected score falls below an active hold's threshold, the hold banner suggests releasing it. Marks are stored with a full who/when audit (undo revokes rather than deletes).
 - Added a "False-positive review data" section to the Risk factor scoring admin page: active marks per factor with the most recent mark date, so factor points, caps, and detection thresholds can be tuned from evidence rather than guesswork.
 
