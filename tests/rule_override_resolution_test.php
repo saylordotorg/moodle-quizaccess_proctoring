@@ -226,7 +226,9 @@ final class rule_override_resolution_test extends advanced_testcase {
         $this->assertSame($expectedbase, $basestates,
             'Base states should match the configured site proctoring settings.');
 
-        // No overrides exist, so resolve_all() must return the base states unchanged.
+        // No overrides exist, so resolve_all() must return the base states unchanged. The
+        // preflight gate resolves five requirements; phone detection is resolved separately on
+        // the attempt page, so resolve_all() reports it as false when no base state is passed.
         $resolved = override_resolver::resolve_all(
             (int)$this->course->id,
             (int)$this->quiz->id,
@@ -235,7 +237,9 @@ final class rule_override_resolution_test extends advanced_testcase {
             $basestates
         );
 
-        $this->assertSame($basestates, $resolved,
+        $expectedresolved = $basestates;
+        $expectedresolved[override_resolver::REQ_PHONEDETECTION] = false;
+        $this->assertSame($expectedresolved, $resolved,
             'With no override, the resolved config flags must equal the base resolution.');
     }
 

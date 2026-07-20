@@ -8,120 +8,25 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
-    name: Moodle ${{ matrix.moodle.version }} / PHP ${{ matrix.moodle.php }} / ${{ matrix.database.name }}
+  # Environment-independent checks run exactly once: their result is identical on every
+  # Moodle/PHP/DB combination, so repeating them across the PHPUnit matrix is pure waste.
+  # The job is pinned to the MINIMUM supported environment (Moodle 4.05 / PHP 8.1) so that
+  # phplint rejects syntax that is invalid on the oldest supported PHP - PHPUnit lanes only
+  # parse the files they load, so an unexercised file must be caught here.
+  static:
+    name: Static checks (lint / validate / savepoints / mustache / codechecker)
     runs-on: ubuntu-22.04
-    continue-on-error: ${{ matrix.moodle.experimental }}
-
-    strategy:
-      fail-fast: false
-      max-parallel: 15
-      matrix:
-        moodle:
-          - version: '405'
-            branch: MOODLE_405_STABLE
-            php: '8.1'
-            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
-            experimental: false
-          - version: '405'
-            branch: MOODLE_405_STABLE
-            php: '8.2'
-            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
-            experimental: false
-          - version: '405'
-            branch: MOODLE_405_STABLE
-            php: '8.3'
-            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
-            experimental: false
-          - version: '500'
-            branch: MOODLE_500_STABLE
-            php: '8.2'
-            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
-            experimental: false
-          - version: '500'
-            branch: MOODLE_500_STABLE
-            php: '8.3'
-            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
-            experimental: false
-          - version: '500'
-            branch: MOODLE_500_STABLE
-            php: '8.4'
-            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
-            experimental: false
-          - version: '501'
-            branch: MOODLE_501_STABLE
-            php: '8.2'
-            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
-            experimental: false
-          - version: '501'
-            branch: MOODLE_501_STABLE
-            php: '8.3'
-            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
-            experimental: false
-          - version: '501'
-            branch: MOODLE_501_STABLE
-            php: '8.4'
-            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
-            experimental: false
-          - version: '502'
-            branch: MOODLE_502_STABLE
-            php: '8.3'
-            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
-            experimental: false
-          - version: '502'
-            branch: MOODLE_502_STABLE
-            php: '8.4'
-            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
-            experimental: false
-          # Moodle 5.3 does not have a MOODLE_503_STABLE branch yet.
-          # Run the 503 lane against main for early compatibility signal without blocking stable CI.
-          - version: '503'
-            branch: main
-            php: '8.3'
-            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
-            experimental: true
-          - version: '503'
-            branch: main
-            php: '8.4'
-            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
-            experimental: true
-        database:
-          - name: PostgreSQL 16
-            type: pgsql
-            image: postgres:16
-            port: 5432
-            containerport: 5432
-            user: postgres
-            healthcmd: pg_isready -U postgres
-          - name: MySQL 8.4
-            type: mysqli
-            image: mysql:8.4
-            port: 3306
-            containerport: 3306
-            user: root
-            healthcmd: mysqladmin ping -uroot
-          - name: MariaDB 10.11
-            type: mariadb
-            image: mariadb:10.11
-            port: 3306
-            containerport: 3306
-            user: root
-            healthcmd: mysqladmin ping -uroot
 
     services:
       database:
-        image: ${{ matrix.database.image }}
+        image: postgres:16
         env:
           POSTGRES_USER: postgres
           POSTGRES_HOST_AUTH_METHOD: trust
-          MYSQL_ALLOW_EMPTY_PASSWORD: 'true'
-          MYSQL_ROOT_HOST: '%'
-          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: 'true'
-          MARIADB_ROOT_HOST: '%'
         ports:
-          - "${{ matrix.database.port }}:${{ matrix.database.containerport }}"
+          - "5432:5432"
         options: >-
-          --health-cmd="${{ matrix.database.healthcmd }}"
+          --health-cmd="pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 3
@@ -135,7 +40,7 @@ jobs:
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: ${{ matrix.moodle.php }}
+          php-version: '8.1'
           extensions: mysqli, pgsql, zip, gd, intl, soap
           ini-values: max_input_vars=5000
           coverage: none
@@ -148,28 +53,163 @@ jobs:
           sudo locale-gen en_AU.UTF-8
 
       - name: Install Moodle test site
-        run: moodle-plugin-ci install --plugin ./plugin --db-host=127.0.0.1 --db-port=${{ matrix.database.port }}
+        run: moodle-plugin-ci install --plugin ./plugin --db-host=127.0.0.1 --db-port=5432 --no-init
         env:
-          DB: ${{ matrix.database.type }}
-          DB_USER: ${{ matrix.database.user }}
-          MOODLE_BRANCH: ${{ matrix.moodle.branch }}
+          DB: pgsql
+          DB_USER: postgres
+          MOODLE_BRANCH: MOODLE_405_STABLE
 
       - name: PHP lint
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci phplint ${{ matrix.moodle.pluginpath }}
+        run: moodle-plugin-ci phplint ./moodle/mod/quiz/accessrule/proctoring
 
       - name: Validate plugin
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci validate ${{ matrix.moodle.pluginpath }}
+        run: moodle-plugin-ci validate ./moodle/mod/quiz/accessrule/proctoring
 
       - name: Check upgrade savepoints
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci savepoints ${{ matrix.moodle.pluginpath }}
+        run: moodle-plugin-ci savepoints ./moodle/mod/quiz/accessrule/proctoring
 
       - name: Mustache lint
         if: ${{ !cancelled() }}
-        run: moodle-plugin-ci mustache ${{ matrix.moodle.pluginpath }}
+        run: moodle-plugin-ci mustache ./moodle/mod/quiz/accessrule/proctoring
+
+      # Informational for now: pre-1.1.28 code carries coding-style debt, so style findings
+      # report without blocking the pipeline. Make this blocking once the backlog is cleared.
+      - name: Moodle code checker (informational)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: moodle-plugin-ci codechecker ./moodle/mod/quiz/accessrule/proctoring
+
+  # PHPUnit runs on a trimmed matrix: the production series (405) gets the full database
+  # spread; the latest stable series covers the newest PHP; one experimental lane tracks
+  # Moodle main for an early compatibility signal. Intermediate Moodle series and middle
+  # PHP versions are bracketed by these lanes and add no practical signal.
+  test:
+    name: PHPUnit Moodle ${{ matrix.version }} / PHP ${{ matrix.php }} / ${{ matrix.dbname }}
+    runs-on: ubuntu-22.04
+    continue-on-error: ${{ matrix.experimental }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Production series: full database spread.
+          - version: '405'
+            branch: MOODLE_405_STABLE
+            php: '8.1'
+            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
+            experimental: false
+            dbname: MariaDB 10.11
+            dbtype: mariadb
+            dbimage: mariadb:10.11
+            dbport: 3306
+            dbuser: root
+            dbhealthcmd: mysqladmin ping -uroot
+          - version: '405'
+            branch: MOODLE_405_STABLE
+            php: '8.3'
+            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
+            experimental: false
+            dbname: MySQL 8.4
+            dbtype: mysqli
+            dbimage: mysql:8.4
+            dbport: 3306
+            dbuser: root
+            dbhealthcmd: mysqladmin ping -uroot
+          - version: '405'
+            branch: MOODLE_405_STABLE
+            php: '8.3'
+            pluginpath: ./moodle/mod/quiz/accessrule/proctoring
+            experimental: false
+            dbname: PostgreSQL 16
+            dbtype: pgsql
+            dbimage: postgres:16
+            dbport: 5432
+            dbuser: postgres
+            dbhealthcmd: pg_isready -U postgres
+          # Latest stable series: min/max supported PHP across two databases.
+          - version: '502'
+            branch: MOODLE_502_STABLE
+            php: '8.3'
+            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
+            experimental: false
+            dbname: MySQL 8.4
+            dbtype: mysqli
+            dbimage: mysql:8.4
+            dbport: 3306
+            dbuser: root
+            dbhealthcmd: mysqladmin ping -uroot
+          - version: '502'
+            branch: MOODLE_502_STABLE
+            php: '8.4'
+            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
+            experimental: false
+            dbname: PostgreSQL 16
+            dbtype: pgsql
+            dbimage: postgres:16
+            dbport: 5432
+            dbuser: postgres
+            dbhealthcmd: pg_isready -U postgres
+          # Early compatibility signal against Moodle main; never blocks the pipeline.
+          - version: '503 (main)'
+            branch: main
+            php: '8.4'
+            pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
+            experimental: true
+            dbname: PostgreSQL 16
+            dbtype: pgsql
+            dbimage: postgres:16
+            dbport: 5432
+            dbuser: postgres
+            dbhealthcmd: pg_isready -U postgres
+
+    services:
+      database:
+        image: ${{ matrix.dbimage }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'true'
+          MYSQL_ROOT_HOST: '%'
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: 'true'
+          MARIADB_ROOT_HOST: '%'
+        ports:
+          - "${{ matrix.dbport }}:${{ matrix.dbport }}"
+        options: >-
+          --health-cmd="${{ matrix.dbhealthcmd }}"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
+
+    steps:
+      - name: Check out plugin
+        uses: actions/checkout@v6
+        with:
+          path: plugin
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mysqli, pgsql, zip, gd, intl, soap
+          ini-values: max_input_vars=5000
+          coverage: none
+
+      - name: Install moodle-plugin-ci
+        run: |
+          composer create-project -n --no-dev --prefer-dist moodlehq/moodle-plugin-ci ci ^4
+          echo "$(pwd)/ci/bin" >> "$GITHUB_PATH"
+          echo "$(pwd)/ci/vendor/bin" >> "$GITHUB_PATH"
+          sudo locale-gen en_AU.UTF-8
+
+      - name: Install Moodle test site
+        run: moodle-plugin-ci install --plugin ./plugin --db-host=127.0.0.1 --db-port=${{ matrix.dbport }}
+        env:
+          DB: ${{ matrix.dbtype }}
+          DB_USER: ${{ matrix.dbuser }}
+          MOODLE_BRANCH: ${{ matrix.branch }}
 
       - name: PHPUnit
-        if: ${{ !cancelled() }}
-        run: moodle-plugin-ci phpunit ${{ matrix.moodle.pluginpath }}
+        run: moodle-plugin-ci phpunit ${{ matrix.pluginpath }}

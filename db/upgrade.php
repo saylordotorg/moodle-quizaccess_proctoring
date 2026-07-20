@@ -1128,7 +1128,7 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
             $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
             $table->add_field('attemptid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
             $table->add_field('reportid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
-            $table->add_field('factorkey', XMLDB_TYPE_CHAR, '30', null, XMLDB_NOTNULL, null, '');
+            $table->add_field('factorkey', XMLDB_TYPE_CHAR, '30', null, XMLDB_NOTNULL, null, null);
             $table->add_field('verdict', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'false_positive');
             $table->add_field('note', XMLDB_TYPE_TEXT, null, null, null, null, null);
             $table->add_field('reviewerid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');

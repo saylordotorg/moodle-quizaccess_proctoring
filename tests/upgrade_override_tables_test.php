@@ -173,7 +173,9 @@ final class upgrade_override_tables_test extends advanced_testcase {
 
         $this->assertSame($versionphp, $installxmlversion,
             'version.php and install.xml VERSION must agree.');
-        $this->assertSame((string) self::OVERRIDE_TABLES_VERSION, $versionphp,
-            'The plugin version should be the override-tables version.');
+        // The plugin version moves forward with every release; the invariant is that it never
+        // falls behind the override-tables upgrade savepoint, not that it equals it.
+        $this->assertGreaterThanOrEqual((int) self::OVERRIDE_TABLES_VERSION, (int) $versionphp,
+            'The plugin version must not be older than the override-tables upgrade savepoint.');
     }
 }
