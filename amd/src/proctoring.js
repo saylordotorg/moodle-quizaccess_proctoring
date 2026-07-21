@@ -1369,6 +1369,62 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                 }, true);
 
+                // Browser-native AI side panels (Gemini in Chrome, Copilot in Edge)
+                // live outside the page DOM, so clicks inside them are invisible to
+                // the label check above. Opening one has a detectable geometry
+                // signature instead: the viewport narrows sharply while the window
+                // keeps its size and the zoom level stays the same.
+                const sidePanelMinShrink = 220;
+                let sidePanelBaseline = {
+                    inner: window.innerWidth || 0,
+                    outer: window.outerWidth || 0,
+                    dpr: window.devicePixelRatio || 1
+                };
+                let sidePanelResizeTimer = null;
+                let sidePanelLastLogged = 0;
+
+                const evaluateSidePanel = function() {
+                    const inner = window.innerWidth || 0;
+                    const outer = window.outerWidth || 0;
+                    const dpr = window.devicePixelRatio || 1;
+                    const zoomChanged = Math.abs(dpr - sidePanelBaseline.dpr) > 0.001;
+                    const innerShrink = sidePanelBaseline.inner - inner;
+                    const outerDelta = Math.abs(outer - sidePanelBaseline.outer);
+                    const cooldownOver = Date.now() - sidePanelLastLogged > 90000;
+
+                    if (!zoomChanged && cooldownOver && innerShrink >= sidePanelMinShrink && outerDelta <= 40) {
+                        sidePanelLastLogged = Date.now();
+                        logEvent('possible_ai_tool', {
+                            reason: 'browser_side_panel_opened',
+                            innerwidth: inner,
+                            previousinnerwidth: sidePanelBaseline.inner,
+                            outerwidth: outer
+                        });
+                    }
+
+                    sidePanelBaseline = {inner: inner, outer: outer, dpr: dpr};
+                };
+
+                window.addEventListener('resize', function() {
+                    if (sidePanelResizeTimer) {
+                        window.clearTimeout(sidePanelResizeTimer);
+                    }
+                    sidePanelResizeTimer = window.setTimeout(evaluateSidePanel, 500);
+                }, true);
+
+                // A panel opened before the attempt page loaded never fires a resize
+                // event; a large window-vs-viewport width gap betrays it instead. Only
+                // checked at integer zoom levels, where the two are directly comparable.
+                if (Math.abs((window.devicePixelRatio || 1) - Math.round(window.devicePixelRatio || 1)) < 0.01 &&
+                        (window.outerWidth || 0) > 0 &&
+                        (window.outerWidth - window.innerWidth) >= 300) {
+                    logEvent('possible_ai_tool', {
+                        reason: 'browser_side_panel_present',
+                        innerwidth: window.innerWidth || 0,
+                        outerwidth: window.outerWidth || 0
+                    });
+                }
+
                 window.addEventListener('pagehide', function() {
                     logEvent('page_exit', {
                         reason: 'pagehide'

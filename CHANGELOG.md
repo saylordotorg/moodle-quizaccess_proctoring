@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.6.2
+- Browser-native AI side panels (Gemini in Chrome, Copilot in Edge) are now detected. The old check only fired when a student clicked an AI-named link inside the quiz page itself, so panels living in the browser's own UI were invisible to it. Opening one now triggers a "Possible AI tool interaction" event (with the usual desktop capture) via its geometry signature — the page viewport narrows sharply (220px+) while the window keeps its size and the zoom level stays constant, which filters out window resizes, snapping, and zooming. A panel already open when the attempt page loads is caught by the window-vs-viewport width gap at integer zoom levels. 90-second cooldown between detections.
+
 # v1.6.1
 - Exception emails now sign off as Saylor University with the postal address (1041 SE 17th Street, Suite 100, Fort Lauderdale, Florida 33316) in the footer, in both the HTML and plain-text parts.
 - The Start attempt stepper no longer shows the quiz's own verbose "Time limit" heading and paragraph below the card — it duplicated the footer's compact "Time limit: N — cannot be paused" line. Only the core time-limit heading and message are hidden, and only when the compact line is present.
