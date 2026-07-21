@@ -1147,11 +1147,11 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072007, 'quizaccess', 'proctoring');
     }
 
-    if ($oldversion < 2026072104) {
-        // No schema changes (Risk factor scoring and Overall reports redesigns are UI-only). This
-        // no-op savepoint advances the stored plugin version for sites upgrading from an earlier
-        // release so the plugin is not left reported as pending upgrade.
-        upgrade_plugin_savepoint(true, 2026072104, 'quizaccess', 'proctoring');
+    if ($oldversion < 2026072105) {
+        // No schema changes (settings-page heading removal only). This no-op savepoint advances
+        // the stored plugin version for sites upgrading from an earlier release so the plugin is
+        // not left reported as pending upgrade.
+        upgrade_plugin_savepoint(true, 2026072105, 'quizaccess', 'proctoring');
     }
 
     return true;

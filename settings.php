@@ -156,23 +156,10 @@ if ($hassiteconfig) {
         'aria-atomic' => 'true',
     ]);
 
+    // The page heading/intro banner is intentionally omitted: it duplicated the Moodle settings
+    // page heading, so the header now carries only the settings search box.
     $headerhtml = html_writer::div(
-        html_writer::div(
-            html_writer::div(
-                get_string('setting:adminpage_eyebrow', 'quizaccess_proctoring'),
-                'quizaccess-proctoring-admin-eyebrow'
-            ) .
-            html_writer::tag(
-                'h2',
-                get_string('setting:adminpage_title', 'quizaccess_proctoring'),
-                ['class' => 'quizaccess-proctoring-admin-title']
-            ) .
-            html_writer::div(
-                get_string('setting:adminpage_intro', 'quizaccess_proctoring'),
-                'quizaccess-proctoring-admin-intro'
-            ),
-            'quizaccess-proctoring-admin-heading'
-        ) . html_writer::div($searchhtml, 'quizaccess-proctoring-admin-search-wrap'),
+        html_writer::div($searchhtml, 'quizaccess-proctoring-admin-search-wrap'),
         'quizaccess-proctoring-admin-header'
     );
 

@@ -1,6 +1,8 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.42
+- Removed the redundant heading banner from the top of the Proctoring settings page (the "Site-wide exam supervision / Proctoring settings / Choose how exams are supervised…" block), which duplicated the Moodle settings page heading. The settings search box is kept.
 # v1.1.41
 - Redesigned the Overall reports page into an "Exam integrity review" queue matching the approved mockup. It now leads with clickable pulse cards (waiting for review, proctored attempts, clean, escalated), review-queue view pills (Needs review / All attempts / Reviewed), and expandable attempt cards that show the score with its risk band, a plain-language signal summary, the detected signals, the score breakdown, and per-attempt actions. The review queue maps onto the existing risk-hold lifecycle — an active hold needs review, a released hold is reviewed, and a confirmed/auto-failed hold is escalated — so "Mark reviewed — no concern" and "Escalate to integrity case" reuse the existing release/confirm actions with no new data model. Only actionable (held) attempts enter the Needs review queue; an unheld attempt that still has violations is shown as "Flagged" under All attempts rather than parked in the queue with no available action. Course/period/sort filters are preserved.
 
