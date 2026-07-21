@@ -1,7 +1,8 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-# v1.1.44
+# v1.2.0
+Starts the 1.2 series, bundling the admin/report redesign work from the 1.1.40–1.1.43 entries below (settings page, Exam integrity review queue, Risk factor scoring cards) with their follow-up fixes. Going forward, minor versions mark feature releases and patch versions mark fixes.
 - Risk factor scoring page: Moodle validation feedback is no longer hidden with the original settings rows. When a save is rejected (e.g. a non-integer risk level or factor cap), the error message rendered in the original (now hidden) row is relocated next to the relocated input inside its card, so the reason the save failed stays visible.
 
 # v1.1.43
