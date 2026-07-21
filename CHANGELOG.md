@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.6.1
+- Exception emails now sign off as Saylor University with the postal address (1041 SE 17th Street, Suite 100, Fort Lauderdale, Florida 33316) in the footer, in both the HTML and plain-text parts.
+- The Start attempt stepper no longer shows the quiz's own verbose "Time limit" heading and paragraph below the card — it duplicated the footer's compact "Time limit: N — cannot be paused" line. Only the core time-limit heading and message are hidden, and only when the compact line is present.
+
 # v1.6.0
 ID exception requests now have a full email lifecycle (Claude Design: "ID Exception Request Email").
 - The staff notification is redesigned as a branded HTML email matching the approved design: Saylor logo header, accent card with a "Proctoring · Action needed" eyebrow, a details panel (student, course, exam, requested time), and a "Review on Manage overrides" button — with a plain-text alternative for text-only clients. All exception emails share this shell (new exemption_email class).

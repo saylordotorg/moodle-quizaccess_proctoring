@@ -1729,6 +1729,22 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     if (timelimit) {
                         timelimit.style.display = '';
                         footer.appendChild(timelimit);
+                        // The footer line makes quizaccess_timelimit's own "Time limit"
+                        // header + paragraph in the same form redundant. Hide only its
+                        // message row and heading, not the whole fieldset, in case any
+                        // other rule's fields render inside it.
+                        const timelimitmessage = document.getElementById('fitem_id_honestycheckmessage');
+                        if (timelimitmessage) {
+                            timelimitmessage.style.display = 'none';
+                        }
+                        const timelimitheader = document.getElementById('id_honestycheckheader');
+                        if (timelimitheader) {
+                            const timelimitlegend = timelimitheader.querySelector('legend') ||
+                                timelimitheader.querySelector('h3, .fheader');
+                            if (timelimitlegend) {
+                                timelimitlegend.style.display = 'none';
+                            }
+                        }
                     }
                     const spacer = document.createElement('div');
                     spacer.className = 'proctoring-stepper-spacer';

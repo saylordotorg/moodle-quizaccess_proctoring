@@ -33,6 +33,12 @@ class exemption_email {
     /** @var string Logo shown in the email header. */
     const LOGO_URL = 'https://resources.saylor.org/logos/saylor-university.png';
 
+    /** @var string Brand name shown in the email footer. */
+    const BRAND_NAME = 'Saylor University';
+
+    /** @var string Postal address shown in the email footer. */
+    const BRAND_ADDRESS = '1041 SE 17th Street, Suite 100, Fort Lauderdale, Florida 33316';
+
     /** @var string Accent for informational messages (request, received). */
     const ACCENT_BLUE = '#0f6cbf';
 
@@ -308,7 +314,8 @@ class exemption_email {
             '</table></td></tr>' .
             '<tr><td class="px" style="padding:22px 40px; ' . $font . '">' .
             '<div align="center" style="font-size:12px; color:#7a828b; ' . $lh . ' line-height:18px;">' .
-                s($spec['footer'] ?? '') . '</div></td></tr>' .
+                s($spec['footer'] ?? '') . '<br>' .
+                s(self::BRAND_NAME . ', ' . self::BRAND_ADDRESS) . '</div></td></tr>' .
             '</table></td></tr></table></body></html>';
 
         $textlines = [
@@ -331,6 +338,7 @@ class exemption_email {
         }
         $textlines[] = '';
         $textlines[] = (string)($spec['footer'] ?? '');
+        $textlines[] = self::BRAND_NAME . ', ' . self::BRAND_ADDRESS;
 
         return [$html, implode("\n", $textlines)];
     }
@@ -354,9 +362,7 @@ class exemption_email {
      * @return string Footer text.
      */
     private static function footer(string $lang): string {
-        global $SITE;
-
-        return self::str($lang, 'idexemptionemail:footer', format_string($SITE->fullname));
+        return self::str($lang, 'idexemptionemail:footer', self::BRAND_NAME);
     }
 
     /**
