@@ -2633,3 +2633,893 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
     line-height: 1.6;
     max-width: 78ch;
 }
+
+/* ============================================================
+   Risk factor scoring redesign (riskFactorSettings.js transform)
+   ============================================================ */
+
+/* Hide the raw Moodle settings rows once their inputs are relocated into the card layout. */
+body.quizaccess-proctoring-rfs-page #adminsettings > fieldset > .form-item,
+body.quizaccess-proctoring-rfs-page #adminsettings > fieldset > h3,
+body.quizaccess-proctoring-rfs-page #adminsettings > fieldset > .form-description,
+body.quizaccess-proctoring-rfs-page #adminsettings > fieldset > p {
+    display: none !important;
+}
+
+body.quizaccess-proctoring-rfs-page #adminsettings > fieldset > .quizaccess-proctoring-rfs-layout {
+    display: flex !important;
+}
+
+.quizaccess-proctoring-rfs-visually-hidden {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.quizaccess-proctoring-rfs-layout {
+    flex-direction: column;
+    gap: 20px;
+    max-width: 1080px;
+    margin: 0 auto;
+    font-family: "Open Sans", "Segoe UI", sans-serif;
+    color: #1e2a35;
+}
+
+.quizaccess-proctoring-rfs-intro {
+    font-size: 0.9375rem;
+    color: #46525f;
+    line-height: 1.55;
+    max-width: 72ch;
+}
+
+.quizaccess-proctoring-rfs-card {
+    background: #fff;
+    border: 1px solid #dde3e9;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.quizaccess-proctoring-rfs-cardtitle {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #1e2a35;
+}
+
+.quizaccess-proctoring-rfs-carddesc {
+    font-size: 0.85rem;
+    color: #5a6673;
+    line-height: 1.5;
+    margin-top: 3px;
+    max-width: 68ch;
+}
+
+/* Cap card */
+.quizaccess-proctoring-rfs-capcard {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px 32px;
+    padding: 18px 22px;
+}
+
+.quizaccess-proctoring-rfs-capcopy {
+    flex: 1;
+    min-width: 280px;
+}
+
+.quizaccess-proctoring-rfs-captotal {
+    width: 100%;
+    border-top: 1px solid #f0f3f6;
+    padding-top: 14px;
+    font-size: 0.85rem;
+    color: #46525f;
+}
+
+/* Toggle switch (wraps the relocated real checkbox) */
+.quizaccess-proctoring-rfs-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.quizaccess-proctoring-rfs-toggle-state {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #5f6c79;
+    min-width: 2rem;
+    text-align: right;
+}
+
+.quizaccess-proctoring-rfs-toggle.is-on .quizaccess-proctoring-rfs-toggle-state {
+    color: #2c5e36;
+}
+
+.quizaccess-proctoring-rfs-toggle-track {
+    width: 42px;
+    height: 24px;
+    border-radius: 12px;
+    background: #b6c0c9;
+    position: relative;
+    transition: background 0.15s ease;
+    flex-shrink: 0;
+}
+
+.quizaccess-proctoring-rfs-toggle.is-on .quizaccess-proctoring-rfs-toggle-track {
+    background: #2c5e36;
+}
+
+.quizaccess-proctoring-rfs-toggle-knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    transition: left 0.15s ease;
+}
+
+.quizaccess-proctoring-rfs-toggle.is-on .quizaccess-proctoring-rfs-toggle-knob {
+    left: 21px;
+}
+
+.quizaccess-proctoring-rfs-toggle:focus-within .quizaccess-proctoring-rfs-toggle-track {
+    box-shadow: 0 0 0 3px rgba(15, 108, 191, 0.4);
+}
+
+/* Column legend */
+.quizaccess-proctoring-rfs-legend {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 22px 0 74px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #67717c;
+}
+
+.quizaccess-proctoring-rfs-legendcol {
+    width: 92px;
+    text-align: center;
+}
+
+.quizaccess-proctoring-rfs-legendcol.is-wide {
+    flex: 1;
+    min-width: 200px;
+    text-align: left;
+}
+
+.quizaccess-proctoring-rfs-legendcol:last-child {
+    width: 130px;
+    text-align: left;
+}
+
+/* Group header */
+.quizaccess-proctoring-rfs-grouphead {
+    padding: 16px 22px 12px;
+    border-bottom: 1px solid #e7ebef;
+}
+
+/* Factor row */
+.quizaccess-proctoring-rfs-factor {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 16px;
+    padding: 14px 22px;
+    border-bottom: 1px solid #f0f3f6;
+}
+
+.quizaccess-proctoring-rfs-factor:last-child {
+    border-bottom: 0;
+}
+
+.quizaccess-proctoring-rfs-factor.is-off {
+    opacity: 0.72;
+}
+
+.quizaccess-proctoring-rfs-factorcopy {
+    flex: 1;
+    min-width: 220px;
+}
+
+.quizaccess-proctoring-rfs-factorlabel {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #1e2a35;
+}
+
+.quizaccess-proctoring-rfs-factorhelp {
+    font-size: 0.83rem;
+    color: #5a6673;
+    line-height: 1.5;
+    margin-top: 2px;
+    max-width: 54ch;
+}
+
+.quizaccess-proctoring-rfs-controls {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.quizaccess-proctoring-rfs-factor.is-off .quizaccess-proctoring-rfs-controls {
+    display: none;
+}
+
+.quizaccess-proctoring-rfs-offnote {
+    display: none;
+    font-size: 0.83rem;
+    color: #7a8592;
+    font-style: italic;
+    width: 314px;
+}
+
+.quizaccess-proctoring-rfs-factor.is-off .quizaccess-proctoring-rfs-offnote {
+    display: block;
+}
+
+.quizaccess-proctoring-rfs-numcell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    width: 92px;
+}
+
+.quizaccess-proctoring-rfs-num.form-control,
+input.quizaccess-proctoring-rfs-num {
+    width: 64px;
+    padding: 7px 6px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-align: center;
+    border: 1px solid #cfd7de;
+    border-radius: 4px;
+    background: #fff;
+    color: #1e2a35;
+}
+
+input.quizaccess-proctoring-rfs-num:focus {
+    border-color: #b95400;
+    box-shadow: 0 0 0 0.15rem rgba(185, 84, 0, 0.16);
+    outline: 0;
+}
+
+.quizaccess-proctoring-rfs-numcaption {
+    font-size: 0.7rem;
+    color: #7a8592;
+}
+
+.quizaccess-proctoring-rfs-share {
+    width: 130px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 4px;
+}
+
+.quizaccess-proctoring-rfs-sharetrack {
+    height: 8px;
+    border-radius: 4px;
+    background: #eef1f4;
+    overflow: hidden;
+}
+
+.quizaccess-proctoring-rfs-sharefill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.2s ease;
+}
+
+.quizaccess-proctoring-rfs-sharelabel {
+    font-size: 0.7rem;
+    color: #67717c;
+}
+
+/* Risk level boundary editor */
+.quizaccess-proctoring-rfs-gradient {
+    height: 14px;
+    border-radius: 7px;
+    margin: 18px 22px 0;
+}
+
+.quizaccess-proctoring-rfs-bands {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 14px 22px 0;
+}
+
+.quizaccess-proctoring-rfs-band {
+    flex: 1;
+    min-width: 150px;
+    border: 1px solid #e7ebef;
+    border-radius: 6px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.quizaccess-proctoring-rfs-banddot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.quizaccess-proctoring-rfs-bandcopy {
+    flex: 1;
+}
+
+.quizaccess-proctoring-rfs-bandname {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #1e2a35;
+}
+
+.quizaccess-proctoring-rfs-bandrange {
+    font-size: 0.78rem;
+    color: #67717c;
+}
+
+.quizaccess-proctoring-rfs-boundnote {
+    padding: 10px 22px 4px;
+}
+
+/* Card titles/desc for group + boundary + fp cards need padding when not in a head wrapper */
+.quizaccess-proctoring-rfs-card > .quizaccess-proctoring-rfs-cardtitle,
+.quizaccess-proctoring-rfs-card > .quizaccess-proctoring-rfs-carddesc {
+    padding-left: 22px;
+    padding-right: 22px;
+}
+
+.quizaccess-proctoring-rfs-card > .quizaccess-proctoring-rfs-cardtitle {
+    padding-top: 18px;
+}
+
+.quizaccess-proctoring-rfs-fpcard {
+    padding: 18px 22px;
+}
+
+.quizaccess-proctoring-rfs-capcard .quizaccess-proctoring-rfs-cardtitle,
+.quizaccess-proctoring-rfs-capcard .quizaccess-proctoring-rfs-carddesc {
+    padding: 0;
+}
+
+/* Sticky save bar */
+body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar {
+    position: sticky;
+    bottom: 16px;
+    max-width: 1080px;
+    margin: 20px auto 0;
+    background: #1e2a35;
+    border-radius: 6px;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 4px 16px rgba(20, 30, 40, 0.25);
+    z-index: 20;
+}
+
+.quizaccess-proctoring-rfs-savenote {
+    flex: 1;
+    font-size: 0.85rem;
+    color: #c3ccd4;
+}
+
+body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="submit"] {
+    background: #b95400;
+    border-color: #b95400;
+    border-radius: 4px;
+    color: #fff;
+    font-weight: 700;
+    padding: 0.5rem 1.4rem;
+}
+
+body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="submit"]:hover,
+body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="submit"]:focus {
+    background: #934300;
+    border-color: #934300;
+}
+
+@media (max-width: 720px) {
+    .quizaccess-proctoring-rfs-legend {
+        display: none;
+    }
+
+    .quizaccess-proctoring-rfs-controls {
+        flex-wrap: wrap;
+        width: 100%;
+        padding-left: 52px;
+    }
+}
+
+/* ============================================================
+   Overall reports redesign ("Exam integrity review")
+   ============================================================ */
+.proctoring-overview {
+    max-width: 1120px;
+    margin: 0 auto;
+    font-family: "Open Sans", "Segoe UI", sans-serif;
+    color: #1e2a35;
+}
+
+.proctoring-overview-intro {
+    font-size: 0.9375rem;
+    color: #46525f;
+    line-height: 1.55;
+    max-width: 64ch;
+}
+
+.proctoring-overview-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px 16px;
+    margin: 16px 0 24px;
+}
+
+.proctoring-overview-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #46525f;
+}
+
+.proctoring-overview-filter select,
+.proctoring-overview-filter input {
+    padding: 9px 12px;
+    font-size: 0.85rem;
+    font-weight: 400;
+    border: 1px solid #cfd7de;
+    border-radius: 5px;
+    background: #fff;
+    color: #1e2a35;
+    min-width: 150px;
+}
+
+.proctoring-overview-apply {
+    padding: 0.5rem 1.2rem;
+    font-weight: 700;
+}
+
+/* Pulse cards */
+.proctoring-overview-pulse {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.proctoring-overview-pulsecard {
+    display: block;
+    background: #fff;
+    border: 2px solid #dde3e9;
+    border-radius: 6px;
+    padding: 16px 18px;
+    text-decoration: none;
+    color: inherit;
+}
+
+.proctoring-overview-pulsecard:hover,
+.proctoring-overview-pulsecard:focus {
+    border-color: #b95400;
+    text-decoration: none;
+    color: inherit;
+}
+
+.proctoring-overview-pulsecard.is-active {
+    border-color: #b95400;
+}
+
+.proctoring-overview-pulsenum {
+    font-size: 1.75rem;
+    font-weight: 800;
+    line-height: 1;
+    color: #1e2a35;
+}
+
+.proctoring-overview-pulsenum.is-critical {
+    color: #9c322b;
+}
+
+.proctoring-overview-pulselabel {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #1e2a35;
+    margin-top: 4px;
+}
+
+.proctoring-overview-pulsehint {
+    font-size: 0.78rem;
+    color: #5f6c79;
+    margin-top: 2px;
+}
+
+/* View pills */
+.proctoring-overview-views {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.proctoring-overview-pill {
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    border: 1px solid #cfd7de;
+    background: #fff;
+    color: #46525f;
+    text-decoration: none;
+}
+
+.proctoring-overview-pill:hover,
+.proctoring-overview-pill:focus {
+    border-color: #b95400;
+    text-decoration: none;
+    color: #46525f;
+}
+
+.proctoring-overview-pill.is-active {
+    background: #1e2a35;
+    border-color: #1e2a35;
+    color: #fff;
+}
+
+.proctoring-overview-countnote {
+    margin-left: auto;
+    font-size: 0.82rem;
+    color: #5f6c79;
+}
+
+/* Attempt cards */
+.proctoring-overview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.proctoring-overview-attempt {
+    background: #fff;
+    border: 1px solid #dde3e9;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.proctoring-overview-attempt.is-needs {
+    border-color: #f0d9d6;
+}
+
+.proctoring-overview-attempt.is-clean {
+    opacity: 0.85;
+}
+
+.proctoring-overview-attempthead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 20px;
+    padding: 16px 20px;
+    cursor: pointer;
+    list-style: none;
+}
+
+.proctoring-overview-attempthead::-webkit-details-marker {
+    display: none;
+}
+
+.proctoring-overview-attempthead:hover {
+    background: #fafbfc;
+}
+
+.proctoring-overview-attempt summary:focus-visible {
+    outline: 3px solid #0f6cbf;
+    outline-offset: -3px;
+}
+
+.proctoring-overview-score {
+    width: 54px;
+    text-align: center;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    color: #5a6673;
+}
+
+.proctoring-overview-score.proctoring-risk-low {
+    color: #2c5e36;
+}
+
+.proctoring-overview-score.proctoring-risk-moderate {
+    color: #7d5300;
+}
+
+.proctoring-overview-score.proctoring-risk-high {
+    color: #96411a;
+}
+
+.proctoring-overview-score.proctoring-risk-critical {
+    color: #9c322b;
+}
+
+.proctoring-overview-scorenum {
+    font-size: 1.35rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.proctoring-overview-scoreband {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.proctoring-overview-who {
+    flex: 1;
+    min-width: 240px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.proctoring-overview-wholine {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.proctoring-overview-student {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #1e2a35;
+}
+
+.proctoring-overview-context {
+    font-size: 0.8rem;
+    color: #5f6c79;
+}
+
+.proctoring-overview-signal {
+    font-size: 0.85rem;
+    color: #46525f;
+    font-weight: 600;
+}
+
+.proctoring-overview-when {
+    font-size: 0.8rem;
+    color: #5f6c79;
+    width: 150px;
+}
+
+.proctoring-overview-status {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.proctoring-overview-status-needs {
+    background: #fbe7e4;
+    color: #9c322b;
+}
+
+.proctoring-overview-status-reviewed {
+    background: #e8f2e9;
+    color: #2c5e36;
+}
+
+.proctoring-overview-status-escalated {
+    background: #1e2a35;
+    color: #fff;
+}
+
+.proctoring-overview-status-flagged {
+    background: #fdf3e0;
+    color: #7d5300;
+}
+
+.proctoring-overview-status-clean {
+    background: #eef1f4;
+    color: #5f6c79;
+}
+
+.proctoring-overview-chev {
+    font-size: 0.8rem;
+    color: #b95400;
+    font-weight: 700;
+    width: 64px;
+    text-align: right;
+}
+
+.proctoring-overview-attempt[open] .proctoring-overview-chev {
+    color: #5f6c79;
+}
+
+/* Expanded detail */
+.proctoring-overview-detail {
+    border-top: 1px solid #f0f3f6;
+    background: #fafbfc;
+    padding: 18px 20px 20px;
+}
+
+.proctoring-overview-detailcols {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+}
+
+.proctoring-overview-detailcol {
+    flex: 1;
+    min-width: 200px;
+}
+
+.proctoring-overview-detailcol.is-wide {
+    flex: 2;
+    min-width: 300px;
+}
+
+.proctoring-overview-detailhead {
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #67717c;
+    margin-bottom: 8px;
+}
+
+.proctoring-overview-signals {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.proctoring-overview-signalrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.85rem;
+    color: #1e2a35;
+    font-weight: 600;
+}
+
+.proctoring-overview-signaldot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #b3423a;
+    flex-shrink: 0;
+}
+
+.proctoring-overview-signaldot.is-ok {
+    background: #2c5e36;
+}
+
+.proctoring-overview-signalpts {
+    color: #5f6c79;
+    font-family: monospace;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.proctoring-overview-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.proctoring-overview-breakrow {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.83rem;
+    color: #46525f;
+}
+
+.proctoring-overview-breakpts {
+    font-weight: 700;
+    font-family: monospace;
+}
+
+.proctoring-overview-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+}
+
+.proctoring-overview-primary,
+.proctoring-overview-primary:hover,
+.proctoring-overview-primary:focus {
+    background: #b95400;
+    border-color: #b95400;
+    color: #fff;
+    font-weight: 700;
+}
+
+.proctoring-overview-primary:hover,
+.proctoring-overview-primary:focus {
+    background: #934300;
+    border-color: #934300;
+}
+
+.proctoring-overview-secondary {
+    border: 1px solid #cfd7de;
+    color: #46525f;
+    font-weight: 700;
+    background: #fff;
+}
+
+.proctoring-overview-secondary:hover,
+.proctoring-overview-secondary:focus {
+    border-color: #2c5e36;
+    color: #2c5e36;
+}
+
+.proctoring-overview-danger {
+    border: 1px solid #cfd7de;
+    color: #46525f;
+    font-weight: 700;
+    background: #fff;
+}
+
+.proctoring-overview-danger:hover,
+.proctoring-overview-danger:focus {
+    border-color: #9c322b;
+    color: #9c322b;
+}
+
+.proctoring-overview-empty {
+    background: #fff;
+    border: 1px solid #dde3e9;
+    border-radius: 6px;
+    padding: 36px;
+    text-align: center;
+}
+
+.proctoring-overview-emptytitle {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #2c5e36;
+}
+
+.proctoring-overview-emptybody {
+    font-size: 0.85rem;
+    color: #5f6c79;
+    margin-top: 4px;
+}
+
+@media (max-width: 720px) {
+    .proctoring-overview-when {
+        width: auto;
+    }
+
+    .proctoring-overview-chev {
+        width: auto;
+    }
+}

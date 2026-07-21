@@ -1010,6 +1010,7 @@ if ($hassiteconfig) {
     ));
 
     // 3. Risk factor scoring (per-factor enable/points/cap and risk level boundaries).
+    $PAGE->requires->js_call_amd('quizaccess_proctoring/riskFactorSettings', 'init');
     $riskfactorspage = new admin_settingpage(
         'quizaccess_proctoring_riskfactors',
         get_string('riskfactorspage', 'quizaccess_proctoring'),

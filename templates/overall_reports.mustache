@@ -12,142 +12,162 @@
 
 {{!
     @template quizaccess_proctoring/overall_reports
-    Site-wide aggregate proctoring report.
+    Site-wide aggregate proctoring report ("Exam integrity review").
     Example context (json):
     {
         "formurl": "https://example.com/overall_reports.php",
-        "intro": "Monitor proctoring activity across all courses.",
+        "intro": "Every proctored exam attempt across your courses.",
         "minviolations": 0,
         "courseoptions": [{"value": 0, "label": "All courses", "selected": true}],
         "rangeoptions": [{"value": "7days", "label": "Last 7 days", "selected": true}],
         "sortoptions": [{"value": "violations", "label": "Most violations", "selected": true}],
-        "summary": {
-            "totalattempts": 12, "students": 9, "courses": 3,
-            "withviolations": 5, "activeholds": 2, "aiflagged": 1
-        },
-        "truncated": false,
-        "hasrows": true,
+        "pulse": [{"num": 2, "label": "Waiting for your review", "hint": "Flagged attempts", "url": "#", "iscritical": true, "isactive": true}],
+        "views": [{"label": "Needs review (2)", "url": "#", "isactive": true}],
+        "countnote": "Showing 2 of 12 attempts",
         "rows": [
             {
-                "fullname": "John Doe", "userurl": "https://example.com/user",
-                "course": "CS105", "quiz": "Final exam", "lastactivity": "1 Jan 2026, 10:00",
-                "riskscore": 85, "risklevel": "Critical", "riskbadgeclass": "proctoring-risk-badge",
-                "violations": 4, "eventcount": 3, "facemismatch": 1,
-                "aireview": {"badgeclass": "badge badge-danger", "compactlabel": "90/100 Highly suspicious"},
-                "hashold": true, "holdlabel": "On hold", "viewurl": "https://example.com/report"
+                "fullname": "John Doe", "userurl": "#", "course": "CS105", "quiz": "Final exam",
+                "lastactivity": "1 Jan 2026, 10:00", "riskscore": 85, "risklevel": "Critical", "levelkey": "critical",
+                "signalsummary": "AI tool (2) · Tab switching (5)", "statuslabel": "Needs review", "reviewstate": "needs",
+                "isneeds": true, "hassignals": true,
+                "signals": [{"factor": "AI tool", "pts": "+30"}],
+                "breakdown": [{"factor": "AI tool", "pts": "+30"}],
+                "canact": true, "releaseurl": "#", "confirmurl": "#", "viewurl": "#"
             }
         ],
-        "pagingbar": "<nav></nav>"
+        "hasrows": true, "emptyqueue": false, "pagingbar": "<nav></nav>"
     }
 }}
 
-<div class="proctoring-overall-report">
-    <p class="text-muted">{{intro}}</p>
+<div class="proctoring-overview">
+    <p class="proctoring-overview-intro">{{intro}}</p>
 
-    <form method="get" action="{{formurl}}" class="proctoring-overall-filters form-row align-items-end mb-3">
-        <div class="form-group col-md-3">
-            <label for="proctoring-overall-course">{{#str}}overallreport:filtercourse, quizaccess_proctoring{{/str}}</label>
-            <select class="custom-select" id="proctoring-overall-course" name="courseid">
-                {{#courseoptions}}
-                <option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>
-                {{/courseoptions}}
+    {{! Filters: course + period + sort + minimum violations. }}
+    <form method="get" action="{{formurl}}" class="proctoring-overview-filters">
+        <input type="hidden" name="queue" value="{{queue}}">
+        <label class="proctoring-overview-filter">
+            <span>{{#str}}overallreport:filtercourse, quizaccess_proctoring{{/str}}</span>
+            <select name="courseid">
+                {{#courseoptions}}<option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>{{/courseoptions}}
             </select>
-        </div>
-        <div class="form-group col-md-2">
-            <label for="proctoring-overall-range">{{#str}}overallreport:filterrange, quizaccess_proctoring{{/str}}</label>
-            <select class="custom-select" id="proctoring-overall-range" name="range">
-                {{#rangeoptions}}
-                <option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>
-                {{/rangeoptions}}
+        </label>
+        <label class="proctoring-overview-filter">
+            <span>{{#str}}overallreport:filterrange, quizaccess_proctoring{{/str}}</span>
+            <select name="range">
+                {{#rangeoptions}}<option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>{{/rangeoptions}}
             </select>
-        </div>
-        <div class="form-group col-md-2">
-            <label for="proctoring-overall-sort">{{#str}}overallreport:filtersort, quizaccess_proctoring{{/str}}</label>
-            <select class="custom-select" id="proctoring-overall-sort" name="sort">
-                {{#sortoptions}}
-                <option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>
-                {{/sortoptions}}
+        </label>
+        <label class="proctoring-overview-filter">
+            <span>{{#str}}overallreport:filtersort, quizaccess_proctoring{{/str}}</span>
+            <select name="sort">
+                {{#sortoptions}}<option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>{{/sortoptions}}
             </select>
-        </div>
-        <div class="form-group col-md-2">
-            <label for="proctoring-overall-minviolations">{{#str}}overallreport:filterminviolations, quizaccess_proctoring{{/str}}</label>
-            <input type="number" min="0" class="form-control" id="proctoring-overall-minviolations" name="minviolations" value="{{minviolations}}">
-        </div>
-        <div class="form-group col-md-2">
-            <button type="submit" class="btn btn-primary">{{#str}}overallreport:apply, quizaccess_proctoring{{/str}}</button>
-        </div>
+        </label>
+        <label class="proctoring-overview-filter">
+            <span>{{#str}}overallreport:filterminviolations, quizaccess_proctoring{{/str}}</span>
+            <input type="number" min="0" name="minviolations" value="{{minviolations}}">
+        </label>
+        <button type="submit" class="btn btn-secondary proctoring-overview-apply">{{#str}}overallreport:apply, quizaccess_proctoring{{/str}}</button>
     </form>
 
-    <div class="proctoring-overall-stats row mb-3">
-        <div class="col-6 col-md-2"><div class="proctoring-overall-stat"><div class="proctoring-overall-stat-value">{{summary.totalattempts}}</div><div class="proctoring-overall-stat-label">{{#str}}overallreport:stat_attempts, quizaccess_proctoring{{/str}}</div></div></div>
-        <div class="col-6 col-md-2"><div class="proctoring-overall-stat"><div class="proctoring-overall-stat-value">{{summary.students}}</div><div class="proctoring-overall-stat-label">{{#str}}overallreport:stat_students, quizaccess_proctoring{{/str}}</div></div></div>
-        <div class="col-6 col-md-2"><div class="proctoring-overall-stat"><div class="proctoring-overall-stat-value">{{summary.withviolations}}</div><div class="proctoring-overall-stat-label">{{#str}}overallreport:stat_violations, quizaccess_proctoring{{/str}}</div></div></div>
-        <div class="col-6 col-md-2"><div class="proctoring-overall-stat"><div class="proctoring-overall-stat-value">{{summary.activeholds}}</div><div class="proctoring-overall-stat-label">{{#str}}overallreport:stat_holds, quizaccess_proctoring{{/str}}</div></div></div>
-        <div class="col-6 col-md-2"><div class="proctoring-overall-stat"><div class="proctoring-overall-stat-value">{{summary.aiflagged}}</div><div class="proctoring-overall-stat-label">{{#str}}overallreport:stat_aiflagged, quizaccess_proctoring{{/str}}</div></div></div>
-        <div class="col-6 col-md-2"><div class="proctoring-overall-stat"><div class="proctoring-overall-stat-value">{{summary.courses}}</div><div class="proctoring-overall-stat-label">{{#str}}overallreport:stat_courses, quizaccess_proctoring{{/str}}</div></div></div>
+    {{! Pulse cards. }}
+    <div class="proctoring-overview-pulse">
+        {{#pulse}}
+        <a class="proctoring-overview-pulsecard {{#isactive}}is-active{{/isactive}}" href="{{url}}">
+            <div class="proctoring-overview-pulsenum {{#iscritical}}is-critical{{/iscritical}}">{{num}}</div>
+            <div class="proctoring-overview-pulselabel">{{label}}</div>
+            <div class="proctoring-overview-pulsehint">{{hint}}</div>
+        </a>
+        {{/pulse}}
     </div>
 
-    {{#truncated}}
-    <div class="alert alert-warning">{{truncatednotice}}</div>
-    {{/truncated}}
+    {{! View pills. }}
+    <div class="proctoring-overview-views">
+        {{#views}}
+        <a class="proctoring-overview-pill {{#isactive}}is-active{{/isactive}}" href="{{url}}">{{label}}</a>
+        {{/views}}
+        <span class="proctoring-overview-countnote">{{countnote}}</span>
+    </div>
 
-    {{#hasrows}}
-    <div class="table-responsive">
-    <table class="table table-striped proctoring-overall-table">
-        <thead>
-            <tr>
-                <th>{{#str}}overallreport:col_student, quizaccess_proctoring{{/str}}</th>
-                <th>{{#str}}overallreport:col_course, quizaccess_proctoring{{/str}}</th>
-                <th>{{#str}}overallreport:col_quiz, quizaccess_proctoring{{/str}}</th>
-                <th>{{#str}}overallreport:col_lastactivity, quizaccess_proctoring{{/str}}</th>
-                <th>{{#str}}overallreport:col_risk, quizaccess_proctoring{{/str}}</th>
-                <th>{{#str}}overallreport:col_violations, quizaccess_proctoring{{/str}}</th>
-                <th>{{#str}}overallreport:col_aireview, quizaccess_proctoring{{/str}}</th>
-                <th>{{#str}}overallreport:col_hold, quizaccess_proctoring{{/str}}</th>
-                <th>{{#str}}overallreport:col_actions, quizaccess_proctoring{{/str}}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {{#rows}}
-            <tr>
-                <td><a href="{{userurl}}" target="_blank">{{fullname}}</a></td>
-                <td>{{course}}</td>
-                <td>{{quiz}}</td>
-                <td>{{lastactivity}}</td>
-                <td><span class="{{riskbadgeclass}}">{{riskscore}}/100 {{risklevel}}</span></td>
-                <td>
-                    <strong>{{violations}}</strong>
-                    <span class="text-muted">{{violationsbreakdown}}</span>
-                </td>
-                <td>
-                    {{#aireview}}<span class="{{badgeclass}}">{{compactlabel}}</span>{{/aireview}}
-                    {{^aireview}}<span class="text-muted">&mdash;</span>{{/aireview}}
-                </td>
-                <td>
-                    {{#hashold}}<div class="proctoring-risk-hold-status">{{holdlabel}}</div>{{/hashold}}
-                    {{^hashold}}<span class="text-muted">&mdash;</span>{{/hashold}}
-                    {{#canact}}
-                    <div class="proctoring-overall-hold-actions">
-                        <a class="btn btn-outline-success btn-sm" href="{{releaseurl}}">{{#str}}riskreview:releasebutton, quizaccess_proctoring{{/str}}</a>
-                        <a class="btn btn-outline-danger btn-sm" href="{{confirmurl}}"
-                           data-confirmation="modal"
-                           data-confirmation-type="delete"
-                           data-confirmation-title-str='["overallreport:confirmtitle", "quizaccess_proctoring"]'
-                           data-confirmation-content-str='["overallreport:confirmbody", "quizaccess_proctoring"]'
-                           data-confirmation-yes-button-str='["riskreview:confirmbutton", "quizaccess_proctoring"]'>{{#str}}riskreview:confirmbutton, quizaccess_proctoring{{/str}}</a>
+    {{#truncated}}<div class="alert alert-warning">{{truncatednotice}}</div>{{/truncated}}
+
+    {{! Attempt cards. }}
+    <div class="proctoring-overview-list">
+        {{#rows}}
+        <details class="proctoring-overview-attempt {{#isneeds}}is-needs{{/isneeds}} {{#isclean}}is-clean{{/isclean}}">
+            <summary class="proctoring-overview-attempthead">
+                <span class="proctoring-overview-score proctoring-risk-{{levelkey}}">
+                    <span class="proctoring-overview-scorenum">{{riskscore}}</span>
+                    <span class="proctoring-overview-scoreband">{{risklevel}}</span>
+                </span>
+                <span class="proctoring-overview-who">
+                    <span class="proctoring-overview-wholine">
+                        <span class="proctoring-overview-student">{{fullname}}</span>
+                        <span class="proctoring-overview-context">{{course}} · {{quiz}}</span>
+                    </span>
+                    <span class="proctoring-overview-signal">{{signalsummary}}</span>
+                </span>
+                <span class="proctoring-overview-when">{{lastactivity}}</span>
+                <span class="proctoring-overview-status proctoring-overview-status-{{reviewstate}}">{{statuslabel}}</span>
+                <span class="proctoring-overview-chev">{{#str}}overallreport:details, quizaccess_proctoring{{/str}}</span>
+            </summary>
+            <div class="proctoring-overview-detail">
+                <div class="proctoring-overview-detailcols">
+                    {{#hassignals}}
+                    <div class="proctoring-overview-detailcol is-wide">
+                        <div class="proctoring-overview-detailhead">{{#str}}overallreport:detected, quizaccess_proctoring{{/str}}</div>
+                        <div class="proctoring-overview-signals">
+                            {{#signals}}
+                            <div class="proctoring-overview-signalrow"><span class="proctoring-overview-signaldot"></span>{{factor}} <span class="proctoring-overview-signalpts">{{pts}}</span></div>
+                            {{/signals}}
+                        </div>
                     </div>
+                    <div class="proctoring-overview-detailcol">
+                        <div class="proctoring-overview-detailhead">{{#str}}overallreport:breakdown, quizaccess_proctoring{{/str}}</div>
+                        <div class="proctoring-overview-breakdown">
+                            {{#breakdown}}
+                            <div class="proctoring-overview-breakrow"><span>{{factor}}</span><span class="proctoring-overview-breakpts">{{pts}}</span></div>
+                            {{/breakdown}}
+                        </div>
+                    </div>
+                    {{/hassignals}}
+                    {{^hassignals}}
+                    <div class="proctoring-overview-detailcol is-wide">
+                        <div class="proctoring-overview-signalrow"><span class="proctoring-overview-signaldot is-ok"></span>{{#str}}overallreport:nosignals, quizaccess_proctoring{{/str}}</div>
+                    </div>
+                    {{/hassignals}}
+                </div>
+                <div class="proctoring-overview-actions">
+                    <a class="btn proctoring-overview-primary" href="{{viewurl}}">{{#str}}overallreport:openreport, quizaccess_proctoring{{/str}}</a>
+                    {{#canact}}
+                    <a class="btn proctoring-overview-secondary" href="{{releaseurl}}">{{#str}}overallreport:markreviewed, quizaccess_proctoring{{/str}}</a>
+                    <a class="btn proctoring-overview-danger" href="{{confirmurl}}"
+                       data-confirmation="modal"
+                       data-confirmation-type="delete"
+                       data-confirmation-title-str='["overallreport:confirmtitle", "quizaccess_proctoring"]'
+                       data-confirmation-content-str='["overallreport:confirmbody", "quizaccess_proctoring"]'
+                       data-confirmation-yes-button-str='["overallreport:escalate", "quizaccess_proctoring"]'>{{#str}}overallreport:escalate, quizaccess_proctoring{{/str}}</a>
                     {{/canact}}
-                </td>
-                <td><a class="btn btn-sm btn-secondary" href="{{viewurl}}">{{#str}}overallreport:view, quizaccess_proctoring{{/str}}</a></td>
-            </tr>
-            {{/rows}}
-        </tbody>
-    </table>
-    </div>
-    {{{pagingbar}}}
-    {{/hasrows}}
+                </div>
+            </div>
+        </details>
+        {{/rows}}
 
-    {{^hasrows}}
-    <div class="alert alert-info">{{#str}}overallreport:empty, quizaccess_proctoring{{/str}}</div>
-    {{/hasrows}}
+        {{#emptyqueue}}
+        <div class="proctoring-overview-empty">
+            <div class="proctoring-overview-emptytitle">{{#str}}overallreport:queueclear, quizaccess_proctoring{{/str}}</div>
+            <div class="proctoring-overview-emptybody">{{#str}}overallreport:queueclearbody, quizaccess_proctoring{{/str}}</div>
+        </div>
+        {{/emptyqueue}}
+
+        {{^hasrows}}
+        {{^emptyqueue}}
+        <div class="proctoring-overview-empty">
+            <div class="proctoring-overview-emptybody">{{#str}}overallreport:empty, quizaccess_proctoring{{/str}}</div>
+        </div>
+        {{/emptyqueue}}
+        {{/hasrows}}
+    </div>
+
+    {{#hasrows}}{{{pagingbar}}}{{/hasrows}}
 </div>
