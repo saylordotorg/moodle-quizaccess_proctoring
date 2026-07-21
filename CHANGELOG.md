@@ -1,6 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.5.0
+Redesigned the Start attempt precheck as a guided stepper (Claude Design: "Proctoring Setup Stepper").
+- The precheck modal now lays out as a two-pane wizard: a "Setup checklist" rail on the left with a numbered dot per requirement (blue for the current step, green check when done, red outline when action is needed), and the active step filling the right pane under a "Step N of M" kicker. Only enabled requirements appear, and the modal widens to 1000px to give camera and screen-share steps room. Completed steps can be revisited by clicking them in the rail; future steps stay locked.
+- The quiz's Start attempt / Cancel buttons move into a pinned footer inside the card, joined by a live "N of M complete" counter and a compact time-limit line ("Time limit: 2 hours — cannot be paused") when the quiz is timed. The Start button renders grey while locked and green once every step is complete.
+- On phones the rail collapses into segmented progress bars under the header (grey pending, blue current, green done) and the footer stacks with a full-width start button.
+- Implemented as a presentation-layer transform in startAttempt.js over the existing precheck markup and step machine — validation, gating, and every step's behavior are unchanged. New strings localized in English, Spanish, and Portuguese.
+
 # v1.4.1
 - Fixed "Blur quiz when multiple monitors are detected" overriding the multi-monitor detection mode. With the mode set to Log or Warn — explicit "allow extra monitors" policies — students were still blocked mid-attempt by the blur overlay ("Disconnect or disable extra monitors to continue the quiz"). The mode now wins: the blur enforcement only runs when the mode is Block (blocks at start and during the attempt) or Off (blur as the sole enforcement); in Log/Warn modes extra monitors are logged or warned about but never block the quiz. The setting description now documents this interplay.
 

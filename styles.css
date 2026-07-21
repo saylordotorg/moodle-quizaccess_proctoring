@@ -4105,3 +4105,373 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     font-weight: 600;
     margin-top: 4px;
 }
+
+/* ------------------------------------------------------------------
+   Start attempt stepper: the precheck renders as a two-pane wizard —
+   numbered checklist rail on the left, the active step on the right,
+   and the quiz's submit buttons in a pinned footer. The layout is
+   assembled by startAttempt.js; these rules restyle the existing
+   checklist/step markup inside it.
+   ------------------------------------------------------------------ */
+.modal-dialog.proctoring-stepper-dialog {
+    max-width: min(1000px, calc(100vw - 2rem));
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-stepper {
+    background: #ffffff;
+    border: 1px solid #e3e6ea;
+    border-bottom: 0;
+    border-radius: 12px 12px 0 0;
+    display: grid;
+    grid-template-columns: 290px minmax(0, 1fr);
+    overflow: hidden;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-stepper-rail {
+    background: #f7f8fa;
+    border-right: 1px solid #e3e6ea;
+    padding: 16px 12px;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-panel {
+    background: transparent;
+    border: 0 !important;
+    margin: 0;
+    padding: 0;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-heading {
+    color: #5b6470;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    margin: 0;
+    padding: 4px 10px 10px;
+    text-transform: uppercase;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-intro {
+    display: none;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-items {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item {
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    box-shadow: none;
+    cursor: default;
+    gap: 10px;
+    justify-content: flex-start;
+    padding: 9px 10px;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-complete,
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-current {
+    cursor: pointer;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-complete:hover,
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-current:hover {
+    background: #eef1f4;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-current,
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-viewing {
+    background: #e7f0f8;
+    border: 0;
+    box-shadow: none;
+}
+
+.quiz-check-form.proctoring-stepper-active #proctoring-check-multimonitor {
+    grid-column: auto;
+}
+
+.proctoring-stepper-dot {
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #c6cdd4;
+    border-radius: 50%;
+    color: #5b6470;
+    display: flex;
+    flex: none;
+    font-size: 0.75rem;
+    font-weight: 700;
+    height: 24px;
+    justify-content: center;
+    width: 24px;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-current .proctoring-stepper-dot {
+    background: #0f6cbf;
+    border-color: transparent;
+    color: #ffffff;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-complete .proctoring-stepper-dot {
+    background: #357a32;
+    border-color: transparent;
+    color: #ffffff;
+    font-size: 0;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-complete .proctoring-stepper-dot::before {
+    content: "✓";
+    font-size: 0.75rem;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-action .proctoring-stepper-dot {
+    border-color: #b42318;
+    color: #b42318;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-label {
+    color: #5b6470;
+    flex: 1;
+    font-size: 0.875rem;
+    font-weight: 500;
+    min-width: 0;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-current .proctoring-preflight-label,
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-complete .proctoring-preflight-label {
+    color: #1d2125;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-current .proctoring-preflight-label {
+    font-weight: 700;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-status {
+    background: transparent !important;
+    font-size: 0.6875rem;
+    min-width: 0;
+    padding: 0;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-status.is-pending {
+    display: none;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-status.is-complete {
+    color: #357a32;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-status.is-action {
+    color: #b42318;
+}
+
+.proctoring-stepper-pane {
+    min-height: 360px;
+    min-width: 0;
+    padding: 24px 28px;
+}
+
+.proctoring-stepper-kicker {
+    color: #0f6cbf;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+    min-height: 1em;
+    text-transform: uppercase;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-steps {
+    margin: 0;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-step {
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-step-title {
+    color: #1d2125;
+    font-size: 1.375rem;
+    font-weight: 700;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-step-description {
+    color: #3c434a;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    max-width: 560px;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-viewing .proctoring-preflight-step.is-active:not(.is-viewed) {
+    display: none;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-preflight-step.is-viewed {
+    display: block;
+}
+
+.quiz-check-form.proctoring-stepper-active .proctoring-viewing .proctoring-preflight-ready {
+    display: none !important;
+}
+
+.proctoring-stepper-footer {
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #e3e6ea;
+    border-radius: 0 0 12px 12px;
+    bottom: 0;
+    display: flex;
+    gap: 16px;
+    padding: 12px 16px;
+    position: sticky;
+    z-index: 10;
+}
+
+.proctoring-stepper-timelimit {
+    align-items: center;
+    color: #5b6470;
+    display: flex;
+    font-size: 0.8125rem;
+    gap: 8px;
+}
+
+.proctoring-stepper-timelimit::before {
+    content: "⏱";
+    font-size: 0.9375rem;
+}
+
+.proctoring-stepper-spacer {
+    flex: 1;
+}
+
+.proctoring-stepper-progress {
+    color: #5b6470;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.proctoring-stepper-actions {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.proctoring-stepper-actions .col-form-label,
+.proctoring-stepper-actions .fitemtitle,
+.proctoring-stepper-actions > .col-md-3 {
+    display: none !important;
+}
+
+.proctoring-stepper-actions .felement,
+.proctoring-stepper-actions > .col-md-9 {
+    align-items: center;
+    display: flex;
+    flex: none;
+    gap: 8px;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: auto;
+}
+
+.proctoring-stepper-actions #id_submitbutton {
+    background: #357a32;
+    border-color: #357a32;
+    border-radius: 8px;
+    color: #ffffff;
+    font-weight: 600;
+    padding: 0.5rem 1.35rem;
+    white-space: normal;
+}
+
+.proctoring-stepper-actions #id_submitbutton:disabled,
+.proctoring-stepper-actions #id_submitbutton.disabled {
+    background: #a9b4be;
+    border-color: #a9b4be;
+    cursor: not-allowed;
+}
+
+.proctoring-stepper-actions #id_cancel {
+    background: transparent;
+    border: 0;
+    color: #5b6470;
+    font-weight: 600;
+}
+
+.proctoring-stepper-actions #id_cancel:hover,
+.proctoring-stepper-actions #id_cancel:focus {
+    color: #1d2125;
+    text-decoration: underline;
+}
+
+@media (max-width: 840px) {
+    .quiz-check-form.proctoring-stepper-active .proctoring-stepper {
+        display: block;
+    }
+
+    .quiz-check-form.proctoring-stepper-active .proctoring-stepper-rail {
+        background: #ffffff;
+        border-bottom: 1px solid #e3e6ea;
+        border-right: 0;
+        padding: 12px 16px 10px;
+    }
+
+    .quiz-check-form.proctoring-stepper-active .proctoring-preflight-heading {
+        display: none;
+    }
+
+    .quiz-check-form.proctoring-stepper-active .proctoring-preflight-items {
+        flex-direction: row;
+        gap: 5px;
+    }
+
+    .quiz-check-form.proctoring-stepper-active .proctoring-preflight-item {
+        background: #dde1e6;
+        border-radius: 3px;
+        flex: 1;
+        height: 5px;
+        min-width: 0;
+        overflow: hidden;
+        padding: 0;
+    }
+
+    .quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-current,
+    .quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-viewing {
+        background: #0f6cbf;
+    }
+
+    .quiz-check-form.proctoring-stepper-active .proctoring-preflight-item.is-complete {
+        background: #357a32;
+    }
+
+    .quiz-check-form.proctoring-stepper-active .proctoring-preflight-item .proctoring-stepper-dot,
+    .quiz-check-form.proctoring-stepper-active .proctoring-preflight-item .proctoring-preflight-label,
+    .quiz-check-form.proctoring-stepper-active .proctoring-preflight-item .proctoring-preflight-status {
+        display: none;
+    }
+
+    .proctoring-stepper-pane {
+        min-height: 0;
+        padding: 16px;
+    }
+
+    .proctoring-stepper-footer {
+        flex-wrap: wrap;
+        gap: 8px 16px;
+    }
+
+    .proctoring-stepper-actions {
+        width: 100%;
+    }
+
+    .proctoring-stepper-actions .felement,
+    .proctoring-stepper-actions > .col-md-9 {
+        width: 100%;
+    }
+
+    .proctoring-stepper-actions #id_submitbutton {
+        flex: 1;
+    }
+}

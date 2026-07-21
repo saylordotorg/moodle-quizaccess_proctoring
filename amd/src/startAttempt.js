@@ -39,6 +39,17 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'modal:idverificationdocumentinwindow', component: 'quizaccess_proctoring'},
                 {key: 'modal:idverificationdocumentready', component: 'quizaccess_proctoring'},
                 {key: 'modal:idverificationdocumentblurry', component: 'quizaccess_proctoring'},
+                {
+                    key: 'preflight:stepcounter',
+                    component: 'quizaccess_proctoring',
+                    param: {current: '__CURRENT__', total: '__TOTAL__'},
+                },
+                {
+                    key: 'preflight:progresscount',
+                    component: 'quizaccess_proctoring',
+                    param: {done: '__DONE__', total: '__TOTAL__'},
+                },
+                {key: 'preflight:setupcomplete', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -80,6 +91,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     idverificationdocumentinwindow: strings[34],
                     idverificationdocumentready: strings[35],
                     idverificationdocumentblurry: strings[36],
+                    stepcounterpattern: strings[37],
+                    progresscountpattern: strings[38],
+                    setupcomplete: strings[39],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -305,6 +319,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     back: false,
                 };
                 let screenMonitorClient = null;
+                let stepperRefresh = null;
                 const idDocumentAutoCaptureRequiredScore = 8;
                 const idDocumentAutoCaptureInterval = 400;
                 const idDocumentMinCaptureSharpness = 1.8;
@@ -1530,6 +1545,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     if (!ready && currentStep === 'captcha') {
                         renderTurnstileWidgets();
                     }
+
+                    if (stepperRefresh) {
+                        stepperRefresh(ready, currentStep);
+                    }
                 };
 
                 const updatePreflightGate = function() {
@@ -1670,6 +1689,141 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         return false;
                     }
                 };
+
+                // Rebuild the precheck as a two-pane stepper: the requirements checklist
+                // becomes a left rail with numbered dots, the active step fills the right
+                // pane, and the quiz's submit buttons move into a pinned footer. Purely
+                // presentational — the existing step machine keeps driving the state.
+                const stepperNodes = (function() {
+                    const wrapper = document.querySelector('.quiz-check-form');
+                    const panel = wrapper ? wrapper.querySelector('.proctoring-preflight-panel') : null;
+                    const stepsWrap = wrapper ? wrapper.querySelector('.proctoring-preflight-steps') : null;
+                    if (!wrapper || !panel || !stepsWrap) {
+                        return null;
+                    }
+
+                    const dialog = wrapper.closest('.modal-dialog');
+                    if (dialog) {
+                        dialog.classList.add('proctoring-stepper-dialog');
+                    }
+                    wrapper.classList.add('proctoring-stepper-active');
+
+                    const layout = document.createElement('div');
+                    layout.className = 'proctoring-stepper';
+                    const rail = document.createElement('div');
+                    rail.className = 'proctoring-stepper-rail';
+                    const pane = document.createElement('div');
+                    pane.className = 'proctoring-stepper-pane';
+                    const kicker = document.createElement('div');
+                    kicker.className = 'proctoring-stepper-kicker';
+                    wrapper.insertBefore(layout, wrapper.firstChild);
+                    rail.appendChild(panel);
+                    pane.appendChild(kicker);
+                    pane.appendChild(stepsWrap);
+                    layout.appendChild(rail);
+                    layout.appendChild(pane);
+
+                    const footer = document.createElement('div');
+                    footer.className = 'proctoring-stepper-footer';
+                    const timelimit = document.getElementById('proctoring-stepper-timelimit');
+                    if (timelimit) {
+                        timelimit.style.display = '';
+                        footer.appendChild(timelimit);
+                    }
+                    const spacer = document.createElement('div');
+                    spacer.className = 'proctoring-stepper-spacer';
+                    footer.appendChild(spacer);
+                    const progress = document.createElement('div');
+                    progress.className = 'proctoring-stepper-progress';
+                    footer.appendChild(progress);
+                    const submitNode = document.getElementById('id_submitbutton');
+                    const actionRow = submitNode
+                        ? (submitNode.closest('.fitem') || submitNode.closest('.form-group') || submitNode.parentNode)
+                        : null;
+                    if (actionRow && actionRow !== wrapper && !wrapper.contains(actionRow)) {
+                        actionRow.classList.add('proctoring-stepper-actions');
+                        footer.appendChild(actionRow);
+                    }
+                    wrapper.appendChild(footer);
+
+                    const items = Array.from(panel.querySelectorAll('.proctoring-preflight-item'));
+                    items.forEach(function(item, index) {
+                        const dot = document.createElement('span');
+                        dot.className = 'proctoring-stepper-dot';
+                        dot.textContent = String(index + 1);
+                        item.insertBefore(dot, item.firstChild);
+                    });
+
+                    return {
+                        wrapper: wrapper,
+                        stepsWrap: stepsWrap,
+                        kicker: kicker,
+                        progress: progress,
+                        items: items,
+                    };
+                })();
+
+                const clearViewedStep = function() {
+                    if (!stepperNodes) {
+                        return;
+                    }
+                    stepperNodes.stepsWrap.classList.remove('proctoring-viewing');
+                    stepperNodes.stepsWrap.querySelectorAll('.proctoring-preflight-step.is-viewed')
+                        .forEach(function(node) {
+                            node.classList.remove('is-viewed');
+                        });
+                    stepperNodes.items.forEach(function(item) {
+                        item.classList.remove('is-viewing');
+                    });
+                };
+
+                if (stepperNodes) {
+                    stepperNodes.items.forEach(function(item) {
+                        item.addEventListener('click', function() {
+                            const key = item.id.replace('proctoring-check-', '');
+                            const section = stepperNodes.stepsWrap.querySelector(
+                                '.proctoring-preflight-step[data-preflight-step="' + key + '"]'
+                            );
+                            if (!section) {
+                                return;
+                            }
+                            const reachable = item.classList.contains('is-complete') ||
+                                key === getCurrentPreflightStep();
+                            if (!reachable) {
+                                return;
+                            }
+                            clearViewedStep();
+                            if (!section.classList.contains('is-active')) {
+                                section.classList.add('is-viewed');
+                                item.classList.add('is-viewing');
+                                stepperNodes.stepsWrap.classList.add('proctoring-viewing');
+                            }
+                        });
+                    });
+
+                    stepperRefresh = function(ready, currentStep) {
+                        clearViewedStep();
+                        const total = stepperNodes.items.length;
+                        let doneCount = 0;
+                        let currentIndex = -1;
+                        stepperNodes.items.forEach(function(item, index) {
+                            if (item.classList.contains('is-complete')) {
+                                doneCount++;
+                            }
+                            if (item.id === 'proctoring-check-' + currentStep) {
+                                currentIndex = index;
+                            }
+                        });
+                        stepperNodes.kicker.textContent = (ready || currentIndex === -1)
+                            ? (strings.setupcomplete || '')
+                            : (strings.stepcounterpattern || '')
+                                .replace('__CURRENT__', String(currentIndex + 1))
+                                .replace('__TOTAL__', String(total));
+                        stepperNodes.progress.textContent = (strings.progresscountpattern || '')
+                            .replace('__DONE__', String(doneCount))
+                            .replace('__TOTAL__', String(total));
+                    };
+                }
 
                 syncPrivacyRequirement();
                 syncHonorRequirement();

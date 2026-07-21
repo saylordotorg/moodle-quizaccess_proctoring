@@ -1003,6 +1003,19 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             )
         );
 
+        // Compact time-limit line for the stepper footer (JS relocates it there).
+        if (!empty($this->quiz->timelimit) && (int)$this->quiz->timelimit > 0) {
+            $mform->addElement('html', html_writer::div(
+                get_string(
+                    'preflight:timelimitfooter',
+                    'quizaccess_proctoring',
+                    format_time((int)$this->quiz->timelimit)
+                ),
+                'proctoring-stepper-timelimit',
+                ['id' => 'proctoring-stepper-timelimit', 'style' => 'display:none;']
+            ));
+        }
+
         // Prepare user profile image URL.
         $profileimageurl = $USER->picture
             ? (new moodle_url("/user/pix.php/{$USER->id}/f1.jpg"))->out(false)
