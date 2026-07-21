@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.40
+- Redesigned the Risk factor scoring admin page to match the approved mockup. Factors are now grouped into cards (Webcam & identity, Screen & monitors, AI tools & copying, Keyboard shortcuts, Audio & pacing), each row showing a toggle, points-per-event and maximum-points fields, and a live "share of score" bar. The cap toggle shows a live "if every factor fired at its maximum" total; the Low/Moderate/High/Critical boundaries have a gradient editor that keeps its order automatically (and now writes the corrected order back so saved values never invert); the false-positive tuning panel and a sticky save bar round it out. Implemented as a JS transform over the existing settings form, so the underlying config keys, validation, and save are unchanged.
+
 # v1.1.36
 - Accessibility pass on the report Summary verdict card. All text sizes moved from small fixed pixels (11-13px) to larger rem-based sizes that respect user font-size preferences (body text ~15px, secondary text no smaller than 13px, headline and score enlarged). Muted grays and the Low/Moderate/High/Critical zone and pill colors darkened to meet WCAG AA 4.5:1 contrast, the "View captures" button background darkened so its white label passes contrast, and keyboard focus outlines added to the button, false-positive actions, and collapsible section toggles.
 
