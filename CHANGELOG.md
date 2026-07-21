@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.36
+- Accessibility pass on the report Summary verdict card. All text sizes moved from small fixed pixels (11-13px) to larger rem-based sizes that respect user font-size preferences (body text ~15px, secondary text no smaller than 13px, headline and score enlarged). Muted grays and the Low/Moderate/High/Critical zone and pill colors darkened to meet WCAG AA 4.5:1 contrast, the "View captures" button background darkened so its white label passes contrast, and keyboard focus outlines added to the button, false-positive actions, and collapsible section toggles.
+
 # v1.1.35
 - Privacy: the finding-reviews table is now covered by the privacy provider — declared in the metadata, included in user data exports (for the student and the reviewer), and anonymized on deletion (student id, reviewer id, and the reviewer note, which describes the student's evidence). Also fixed a latent duplicate named-parameter bug in the risk-holds export query that would have failed exports for users with holds.
 - Uncapped scores: the auto-release risk ceiling is now aware of the score cap setting. The ceiling counts as disabled only when it exceeds the maximum achievable score (100 with the cap on; the sum of enabled factors' caps with the cap off), so an expired hold with an uncapped score such as 135 is retained by a ceiling of 101 instead of being auto-released.
