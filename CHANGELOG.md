@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.38
+- Settings page UX: made the setting rows uniform and fixed the save bar so it floats. Every control (toggles, dropdowns, text fields) now aligns to one shared right edge with a consistent field width, and labels reclaim the horizontal space the old fixed control column was wasting. The save bar, previously a last-in-flow sticky element that never actually floated, is now a fixed bottom tray that stays pinned to the viewport while scrolling and clears the content above it; its Save button was also darkened to meet colour-contrast guidelines. Small muted-grey and font-size adjustments across the page for legibility. CSS-only.
+
 # v1.1.36
 - Accessibility pass on the report Summary verdict card. All text sizes moved from small fixed pixels (11-13px) to larger rem-based sizes that respect user font-size preferences (body text ~15px, secondary text no smaller than 13px, headline and score enlarged). Muted grays and the Low/Moderate/High/Critical zone and pill colors darkened to meet WCAG AA 4.5:1 contrast, the "View captures" button background darkened so its white label passes contrast, and keyboard focus outlines added to the button, false-positive actions, and collapsible section toggles.
 

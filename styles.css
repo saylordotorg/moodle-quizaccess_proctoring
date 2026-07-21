@@ -258,6 +258,8 @@ body.quizaccess-proctoring-settings-page [hidden] {
     flex-direction: column;
     gap: 1.25rem;
     min-width: 0;
+    /* Clear the fixed save tray so the last section / danger box is never covered. */
+    padding-bottom: 5.5rem;
 }
 
 .quizaccess-proctoring-admin-section {
@@ -282,10 +284,10 @@ body.quizaccess-proctoring-settings-page [hidden] {
 }
 
 .quizaccess-proctoring-admin-section-header > :not(h3.main) {
-    color: #4a5866;
-    font-size: 0.8rem;
+    color: #46525f;
+    font-size: 0.85rem;
     line-height: 1.5;
-    margin: 0.2rem 0 0;
+    margin: 0.25rem 0 0;
     max-width: 68ch;
 }
 
@@ -308,8 +310,10 @@ body.quizaccess-proctoring-settings-page [hidden] {
 .quizaccess-proctoring-admin-row > .form-item {
     align-items: center;
     display: grid !important;
-    gap: 0.75rem 1.5rem;
-    grid-template-columns: minmax(250px, 1fr) minmax(220px, auto);
+    gap: 0.75rem 2rem;
+    /* Control column shrinks to its content (a ~6rem toggle or an 18rem field) so labels keep
+       the remaining width, while flex-end alignment keeps every control on one shared right edge. */
+    grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .quizaccess-proctoring-admin-row-copy {
@@ -321,7 +325,7 @@ body.quizaccess-proctoring-settings-page [hidden] {
     color: #1e2a35;
     flex: none !important;
     float: none !important;
-    font-size: 0.87rem;
+    font-size: 0.9rem;
     font-weight: 700;
     margin: 0 !important;
     max-width: none !important;
@@ -337,31 +341,31 @@ body.quizaccess-proctoring-settings-page [hidden] {
 }
 
 .quizaccess-proctoring-admin-row-copy .form-description {
-    color: #6b7885;
-    font-size: 0.78rem;
+    color: #5a6673;
+    font-size: 0.83rem;
     line-height: 1.5;
-    margin-top: 0.2rem;
+    margin-top: 0.25rem;
     max-width: 60ch;
 }
 
 .quizaccess-proctoring-admin-row-control {
     align-items: center;
     display: flex;
-    flex: 0 1 380px !important;
+    flex: none !important;
     flex-wrap: wrap;
     gap: 0.5rem;
     justify-content: flex-end;
     margin: 0 !important;
-    max-width: 420px !important;
-    min-width: 220px;
+    max-width: 20rem !important;
+    min-width: 0;
     padding: 0 !important;
     width: auto !important;
 }
 
 .quizaccess-proctoring-admin-row-control .form-defaultinfo {
-    color: #8a96a3;
+    color: #67717c;
     flex-basis: 100%;
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     text-align: right;
 }
 
@@ -373,13 +377,14 @@ body.quizaccess-proctoring-settings-page [hidden] {
 .quizaccess-proctoring-admin-row-control input[type="number"] {
     border-color: #cfd7de;
     border-radius: 4px;
-    font-size: 0.8rem;
-    max-width: 360px;
+    font-size: 0.85rem;
+    max-width: 100%;
+    width: 18rem;
 }
 
 .quizaccess-proctoring-admin-row-control textarea {
     min-height: 86px;
-    width: 360px;
+    width: 20rem;
 }
 
 .quizaccess-proctoring-admin-row-control select:focus,
@@ -390,15 +395,15 @@ body.quizaccess-proctoring-settings-page [hidden] {
 }
 
 .quizaccess-proctoring-admin-switch-state {
-    color: #8a96a3;
-    font-size: 0.75rem;
+    color: #5f6c79;
+    font-size: 0.8rem;
     font-weight: 700;
-    min-width: 1.6rem;
+    min-width: 2rem;
     text-align: right;
 }
 
 .quizaccess-proctoring-admin-switch-state.is-on {
-    color: #3e7d48;
+    color: #2c5e36;
 }
 
 .quizaccess-proctoring-admin-switch {
@@ -532,34 +537,44 @@ body.quizaccess-proctoring-settings-page [hidden] {
     text-align: center;
 }
 
+/* Fixed bottom tray: a last-in-flow sticky element has no scroll range to engage against
+   (and any Moodle ancestor with overflow silently disables sticky), so it never floats.
+   A viewport-fixed tray floats reliably regardless of ancestor overflow. */
 .quizaccess-proctoring-admin-savebar {
     align-items: center;
     background: #1e2a35;
-    border-radius: 6px;
-    bottom: 1rem;
-    box-shadow: 0 4px 16px rgba(20, 30, 40, 0.25);
+    bottom: 0;
+    box-shadow: 0 -4px 16px rgba(20, 30, 40, 0.22);
     display: flex !important;
     gap: 1rem;
     justify-content: flex-end;
-    margin: 1.25rem 0 0 234px !important;
-    padding: 0.75rem 1.25rem !important;
-    position: sticky;
-    z-index: 20;
-}
-
-.quizaccess-proctoring-admin-save-note {
-    color: #b9c3cd;
-    flex: 1;
-    font-size: 0.8rem;
-    text-align: left;
+    left: 0;
+    margin: 0 !important;
+    padding: 0.85rem clamp(1rem, 4vw, 3rem) !important;
+    position: fixed;
+    right: 0;
+    z-index: 1030;
 }
 
 .quizaccess-proctoring-admin-savebar [type="submit"] {
-    background: #f98012;
-    border-color: #f98012;
+    flex: none;
+}
+
+.quizaccess-proctoring-admin-save-note {
+    color: #c3ccd4;
+    flex: 1;
+    font-size: 0.85rem;
+    margin-left: auto;
+    max-width: none;
+    text-align: right;
+}
+
+.quizaccess-proctoring-admin-savebar [type="submit"] {
+    background: #b95400;
+    border-color: #b95400;
     border-radius: 4px;
     color: #fff;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     font-weight: 700;
     min-width: 132px;
     padding: 0.55rem 1.35rem;
@@ -567,8 +582,13 @@ body.quizaccess-proctoring-settings-page [hidden] {
 
 .quizaccess-proctoring-admin-savebar [type="submit"]:hover,
 .quizaccess-proctoring-admin-savebar [type="submit"]:focus {
-    background: #e06f05;
-    border-color: #e06f05;
+    background: #934300;
+    border-color: #934300;
+}
+
+.quizaccess-proctoring-admin-savebar [type="submit"]:focus-visible {
+    outline: 3px solid #7cc0ff;
+    outline-offset: 2px;
 }
 
 @media (max-width: 900px) {
@@ -603,10 +623,6 @@ body.quizaccess-proctoring-settings-page [hidden] {
 
     .quizaccess-proctoring-admin-nav-link.is-active {
         border-bottom-color: #f98012;
-    }
-
-    .quizaccess-proctoring-admin-savebar {
-        margin-left: 0 !important;
     }
 }
 
