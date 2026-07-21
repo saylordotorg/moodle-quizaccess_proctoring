@@ -33,6 +33,7 @@ require_once(__DIR__ . '/../../../../config.php');
 require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
 use quizaccess_proctoring\form\override_form;
+use quizaccess_proctoring\local\exemption_email;
 use quizaccess_proctoring\local\override_manager;
 use quizaccess_proctoring\local\override_resolver;
 
@@ -42,7 +43,7 @@ $action = optional_param('action', 'list', PARAM_ALPHA);
 $overrideid = optional_param('overrideid', 0, PARAM_INT);
 $confirm = optional_param('confirm', 0, PARAM_BOOL);
 
-if (!in_array($action, ['list', 'create', 'edit', 'revoke'], true)) {
+if (!in_array($action, ['list', 'create', 'edit', 'revoke', 'approverequest', 'declinerequest'], true)) {
     $action = 'list';
 }
 
@@ -175,6 +176,61 @@ if ($action === 'revoke') {
 }
 
 // ---------------------------------------------------------------------------
+// Approve / decline a pending ID verification exception request.
+//
+// Approving creates a quiz-scoped override that waives ID verification for the
+// student and emails them; declining just records the decision and emails them.
+// Either way the decision is written to the events log for audit.
+// ---------------------------------------------------------------------------
+if ($action === 'approverequest' || $action === 'declinerequest') {
+    require_sesskey();
+    $requestuserid = required_param('userid', PARAM_INT);
+    $student = core_user::get_user($requestuserid, '*', MUST_EXIST);
+    $approved = ($action === 'approverequest');
+    $quizname = format_string($quizzes[(int)$cm->instance] ?? $cm->name);
+    $contact = trim((string)get_config($component, 'idexemptioncontactemail'));
+
+    if ($approved) {
+        override_manager::create($context, (object)[
+            'quizid' => (int)$cm->instance,
+            'userid' => $requestuserid,
+            'idverificationstate' => override_resolver::STATE_DISABLED,
+            'justification' => get_string('idexemption:justification', $component),
+        ]);
+    }
+
+    $DB->insert_record('quizaccess_proctoring_events', (object)[
+        'courseid' => $courseid,
+        'quizid' => $cmid,
+        'userid' => $requestuserid,
+        'attemptid' => 0,
+        'reportid' => 0,
+        'eventtype' => $approved ? 'id_exemption_approved' : 'id_exemption_declined',
+        'eventdetail' => substr(json_encode(['decidedby' => (int)$USER->id]), 0, 2000),
+        'pagevisibility' => 'visible',
+        'currenturl' => '',
+        'screenshoturl' => '',
+        'timemodified' => time(),
+    ]);
+
+    exemption_email::notify_student_decision(
+        $student,
+        $approved,
+        format_string($course->fullname),
+        $quizname,
+        $cmid,
+        $contact
+    );
+
+    redirect(
+        $baseurl,
+        get_string($approved ? 'idexemption:approvednotice' : 'idexemption:declinednotice', $component),
+        null,
+        \core\output\notification::NOTIFY_SUCCESS
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Default: coordination view.
 //
 // List the proctoring overrides applicable to this quiz (either quiz-scoped to this quiz's
@@ -253,6 +309,76 @@ $nativeoverrideexists = function (int $userid, array $quizinstanceids) use ($DB,
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('override_manageheading', $component));
+
+// Pending ID exception requests for this quiz: a request is pending until an
+// approve/decline decision event is recorded at or after its request time.
+$exemptionrequests = $DB->get_records(
+    'quizaccess_proctoring_events',
+    ['quizid' => $cmid, 'eventtype' => 'id_exemption_requested'],
+    'timemodified ASC'
+);
+if (!empty($exemptionrequests)) {
+    $decisionrecords = $DB->get_records_select(
+        'quizaccess_proctoring_events',
+        "quizid = :quizid AND eventtype IN ('id_exemption_approved', 'id_exemption_declined')",
+        ['quizid' => $cmid]
+    );
+    $lastdecision = [];
+    foreach ($decisionrecords as $decision) {
+        $lastdecision[(int)$decision->userid] = max(
+            $lastdecision[(int)$decision->userid] ?? 0,
+            (int)$decision->timemodified
+        );
+    }
+    $pendingrequests = [];
+    foreach ($exemptionrequests as $request) {
+        $pendingrequests[(int)$request->userid] = (int)$request->timemodified;
+    }
+    foreach ($pendingrequests as $requestuserid => $requestedat) {
+        if (($lastdecision[$requestuserid] ?? 0) >= $requestedat) {
+            unset($pendingrequests[$requestuserid]);
+        }
+    }
+
+    if (!empty($pendingrequests)) {
+        echo $OUTPUT->heading(get_string('idexemption:pendingheading', $component), 3);
+        echo html_writer::div(get_string('idexemption:pendingintro', $component), 'text-muted mb-2');
+        $pendingtable = new html_table();
+        $pendingtable->head = [
+            get_string('override_targetstudent', $component),
+            get_string('idexemption:requestedcol', $component),
+            get_string('override_actions', $component),
+        ];
+        foreach ($pendingrequests as $requestuserid => $requestedat) {
+            $requester = core_user::get_user($requestuserid);
+            $approveurl = new moodle_url($baseurl, [
+                'action' => 'approverequest',
+                'userid' => $requestuserid,
+                'sesskey' => sesskey(),
+            ]);
+            $declineurl = new moodle_url($baseurl, [
+                'action' => 'declinerequest',
+                'userid' => $requestuserid,
+                'sesskey' => sesskey(),
+            ]);
+            $pendingtable->data[] = [
+                $requester ? fullname($requester) . ' · ' . $requester->email : (string)$requestuserid,
+                userdate($requestedat),
+                html_writer::link(
+                    $approveurl,
+                    get_string('idexemption:approvebutton', $component),
+                    ['class' => 'btn btn-primary btn-sm mr-2 me-2']
+                ) .
+                html_writer::link(
+                    $declineurl,
+                    get_string('idexemption:declinebutton', $component),
+                    ['class' => 'btn btn-secondary btn-sm']
+                ),
+            ];
+        }
+        echo html_writer::table($pendingtable);
+    }
+}
 
 // Create button.
 $createurl = new moodle_url($baseurl, ['action' => 'create']);

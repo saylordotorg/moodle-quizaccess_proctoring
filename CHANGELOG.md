@@ -1,6 +1,12 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.6.0
+ID exception requests now have a full email lifecycle (Claude Design: "ID Exception Request Email").
+- The staff notification is redesigned as a branded HTML email matching the approved design: Saylor logo header, accent card with a "Proctoring · Action needed" eyebrow, a details panel (student, course, exam, requested time), and a "Review on Manage overrides" button — with a plain-text alternative for text-only clients. All exception emails share this shell (new exemption_email class).
+- Students now get emails at every stage: a confirmation when they submit ("Request received" — 24-48 hour review window, profile-email accuracy reminder), a green "Your ID exception was approved" email with a Go-to-the-exam button when staff approve, and a red-accented "not approved" email pointing them at the contact address when staff decline. Every email is localized to the recipient's language (en/es/pt_br).
+- The Manage overrides page now shows a "Pending ID exception requests" panel listing students who asked for the waiver, with one-click Approve (creates the quiz-scoped ID verification override, emails the student) and Decline (emails the student) actions. Decisions are recorded as id_exemption_approved/declined audit events, and a request stays pending until a decision is made.
+
 # v1.5.3
 - The ID exception confirmation now sets expectations and catches stale contact details: "Your request has been sent to student support. They will review it within 24-48 hours and contact you with any questions. Once an exception is approved you can start the exam without ID verification. Make sure the email (student@example.com) in your profile is accurate." — with the student's actual profile email shown inline. Updated in English, Spanish, and Portuguese.
 

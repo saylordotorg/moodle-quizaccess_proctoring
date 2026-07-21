@@ -193,6 +193,8 @@ $string['eventtype:contextmenu'] = 'Opened context menu';
 $string['eventtype:face_missing'] = 'No face visible';
 $string['eventtype:focus_lost'] = 'Left quiz window';
 $string['eventtype:focus_returned'] = 'Returned to quiz window';
+$string['eventtype:id_exemption_approved'] = 'ID verification exception approved';
+$string['eventtype:id_exemption_declined'] = 'ID verification exception declined';
 $string['eventtype:id_exemption_requested'] = 'Requested an ID verification exception';
 $string['eventtype:monitor_detection_unavailable'] = 'Monitor detection unavailable';
 $string['eventtype:mouse_left_window'] = 'Mouse left quiz window';
@@ -255,18 +257,40 @@ $string['heldcertificates:viewtoggle'] = 'Held certificates';
 $string['honorstatement:agreementdefault'] = 'I have read and agree to the above statement.';
 $string['honorstatement:default'] = 'I understand that it is important that the attempt I am about to make is all my own work. I understand what constitutes plagiarism or cheating, and I will not undertake such activities.';
 $string['honorstatement:heading'] = 'Please read the following message';
+$string['idexemption:approvebutton'] = 'Approve';
+$string['idexemption:approvednotice'] = 'Exception approved — the student was emailed and can now start the exam without ID verification.';
+$string['idexemption:declinebutton'] = 'Decline';
+$string['idexemption:declinednotice'] = 'Request declined — the student was emailed.';
+$string['idexemption:justification'] = 'Approved ID verification exception request (student cannot provide a photo ID).';
+$string['idexemption:pendingheading'] = 'Pending ID exception requests';
+$string['idexemption:pendingintro'] = 'Students who asked for photo ID verification to be waived. Approving creates an ID verification override for this quiz and emails the student; declining emails them without changing anything.';
+$string['idexemption:requestedcol'] = 'Requested';
 $string['idexemptioncontactname'] = 'Student support';
-$string['idexemptionemailbody'] = 'A student has requested an exception to photo ID verification for a proctored exam.
-
-Student: {$a->student} ({$a->email}, user id {$a->userid})
-Course: {$a->course}
-Exam: {$a->quiz}
-Requested: {$a->time}
-
-If the exception is appropriate, waive the ID verification requirement for this student on the Manage overrides page:
-{$a->overridesurl}
-
-The student can start the exam once the override is in place.';
+$string['idexemptionemail:approved:cta'] = 'Go to the exam';
+$string['idexemptionemail:approved:eyebrow'] = 'Proctoring · Approved';
+$string['idexemptionemail:approved:intro'] = 'Student support approved your request. You can now take {$a} without the ID verification step — every other exam check still applies.';
+$string['idexemptionemail:approved:subject'] = 'Your ID exception was approved — {$a}';
+$string['idexemptionemail:approved:title'] = 'Your ID exception was approved';
+$string['idexemptionemail:declined:eyebrow'] = 'Proctoring · Update';
+$string['idexemptionemail:declined:intro'] = 'Student support reviewed your request for {$a->quiz} and could not approve it. If you have questions or new information to share, contact {$a->contact}.';
+$string['idexemptionemail:declined:subject'] = 'Update on your ID exception request — {$a}';
+$string['idexemptionemail:declined:title'] = 'Your ID exception request was not approved';
+$string['idexemptionemail:footer'] = 'This is an automated notification from {$a} proctoring — please do not reply.';
+$string['idexemptionemail:labelcourse'] = 'Course';
+$string['idexemptionemail:labelexam'] = 'Exam';
+$string['idexemptionemail:labelrequested'] = 'Requested';
+$string['idexemptionemail:labelstudent'] = 'Student';
+$string['idexemptionemail:received:eyebrow'] = 'Proctoring · Request received';
+$string['idexemptionemail:received:intro'] = 'Student support will review your request within 24-48 hours and contact you at this address ({$a}) with any questions. Make sure the email in your profile is accurate.';
+$string['idexemptionemail:received:note'] = 'You will receive another email once a decision has been made.';
+$string['idexemptionemail:received:subject'] = 'We received your ID exception request — {$a}';
+$string['idexemptionemail:received:title'] = 'We received your ID exception request';
+$string['idexemptionemail:staff:cta'] = 'Review on Manage overrides';
+$string['idexemptionemail:staff:eyebrow'] = 'Proctoring · Action needed';
+$string['idexemptionemail:staff:intro'] = 'A student has requested an exception to photo ID verification for a proctored exam. Review the request and, if appropriate, approve it so they can begin.';
+$string['idexemptionemail:staff:note'] = 'The student can start the exam once the exception is in place.';
+$string['idexemptionemail:staff:preheader'] = '{$a->student} has requested an ID verification exception for {$a->quiz} — action needed.';
+$string['idexemptionemail:staff:title'] = 'ID verification exception request';
 $string['idexemptionemailsubject'] = 'ID verification exception request: {$a->student} — {$a->quiz}';
 $string['identity_mismatch_label'] = 'Identity Mismatch';
 $string['image'] = 'Upload Image';

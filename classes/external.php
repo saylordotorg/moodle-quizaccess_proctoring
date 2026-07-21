@@ -1201,28 +1201,16 @@ class quizaccess_proctoring_external extends external_api {
 
         $course = get_course((int)$courseid);
         $quizname = format_string((string)($DB->get_field('quiz', 'name', ['id' => $cm->instance]) ?: $cm->name));
-        $overridesurl = new moodle_url('/mod/quiz/accessrule/proctoring/manage_overrides.php', ['cmid' => (int)$cm->id]);
-        $details = (object)[
-            'student' => fullname($USER),
-            'email' => (string)$USER->email,
-            'userid' => (int)$USER->id,
-            'course' => format_string($course->fullname),
-            'quiz' => $quizname,
-            'time' => userdate(time()),
-            'overridesurl' => $overridesurl->out(false),
-        ];
+        $coursename = format_string($course->fullname);
+        $requesttime = time();
 
-        $recipient = clone core_user::get_noreply_user();
-        $recipient->email = $contact;
-        $recipient->firstname = get_string('idexemptioncontactname', 'quizaccess_proctoring');
-        $recipient->lastname = '';
-        $recipient->maildisplay = 1;
-        $recipient->emailstop = 0;
-        $sent = email_to_user(
-            $recipient,
-            core_user::get_noreply_user(),
-            get_string('idexemptionemailsubject', 'quizaccess_proctoring', $details),
-            get_string('idexemptionemailbody', 'quizaccess_proctoring', $details)
+        $sent = \quizaccess_proctoring\local\exemption_email::notify_staff_request(
+            $contact,
+            $USER,
+            $coursename,
+            $quizname,
+            (int)$cm->id,
+            $requesttime
         );
         if (!$sent) {
             return [
@@ -1230,6 +1218,12 @@ class quizaccess_proctoring_external extends external_api {
                 'message' => get_string('modal:idexemptionfailed', 'quizaccess_proctoring'),
             ];
         }
+        \quizaccess_proctoring\local\exemption_email::notify_student_received(
+            $USER,
+            $coursename,
+            $quizname,
+            $requesttime
+        );
 
         // Audit trail: the request shows up alongside the attempt's other events.
         $record = new stdClass();
