@@ -598,6 +598,20 @@ define([], function() {
                 }
 
                 fieldset.appendChild(layout);
+
+                // Hide every original settings row and section heading now that their inputs have
+                // been relocated into the card layout. This is done in JS (not a CSS child selector)
+                // because Moodle's real settings markup nests the rows more deeply than a
+                // "#adminsettings > fieldset > .form-item" rule can reach, which previously left the
+                // raw list visible above the redesigned cards.
+                Array.from(admin.querySelectorAll('.form-item, h3, .form-description')).forEach(
+                    function(node) {
+                        if (!layout.contains(node)) {
+                            node.classList.add('quizaccess-proctoring-rfs-original-hidden');
+                        }
+                    }
+                );
+
                 capCard.refresh();
                 boundaryCard.refresh();
                 buildSaveBar(admin);
