@@ -803,6 +803,11 @@ if (
         'quizname'        => get_string('eprotroringreports', 'quizaccess_proctoring') . $quiz->name,
         'settingsbtn'     => $settingsbtn,
         'settingspageurl'  => $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/proctoringsummary.php?cmid=' . $cmid,
+        'overridesbtn'    => has_capability('quizaccess/proctoring:manageoverrides', $context, $USER->id),
+        'overridesurl'    => (new moodle_url(
+            '/mod/quiz/accessrule/proctoring/manage_overrides.php',
+            ['cmid' => $cmid]
+        ))->out(false),
         'proctoringsummary' => get_string('eprotroringreportsdesc', 'quizaccess_proctoring'),
         'url' => $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/report.php',
         'courseid' => $courseid,

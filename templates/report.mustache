@@ -80,6 +80,9 @@
             </div>
 
             <div class="col-md-auto mt-2 mt-md-0 text-md-end me-0 pe-0">
+                {{#overridesbtn}}
+                <a class="btn btn-secondary mr-2 me-2" href="{{overridesurl}}">{{#str}}override_managebutton,quizaccess_proctoring{{/str}}</a>
+                {{/overridesbtn}}
                 {{#settingsbtn}}
                 <a class="btn btn-primary" href="{{settingspageurl}}">{{#str}}course_proctoring_summary,quizaccess_proctoring{{/str}}</a>
                 {{/settingsbtn}}

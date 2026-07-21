@@ -429,6 +429,7 @@ $string['override_formheader'] = 'Override details';
 $string['override_idverificationstate'] = 'ID verification';
 $string['override_justification'] = 'Justification';
 $string['override_justification_help'] = 'Record why this override is being granted, for example an approved accommodation. The justification is stored in the audit trail and may contain personal data. Maximum 2000 characters.';
+$string['override_managebutton'] = 'Manage overrides';
 $string['override_manageheading'] = 'Per-student proctoring overrides';
 $string['override_affectednone'] = 'None';
 $string['override_affectedrequirements'] = 'Affected requirements';

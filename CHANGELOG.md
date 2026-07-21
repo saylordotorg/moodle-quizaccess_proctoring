@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.5.2
+- The per-student overrides page is now discoverable: the quiz proctoring report header shows a "Manage overrides" button for users with the manage-overrides capability. Previously the page (where staff waive ID verification and other requirements per student — including granting the "I can't provide a photo ID" exceptions) was reachable only by typing its URL.
+
 # v1.5.1
 - Hidden the quiz page's "Back" button during proctored attempts. Moodle core renders a lone tertiary-navigation Back link (to the quiz view page) on every attempt page; on a proctored attempt it only walks students out of the exam mid-attempt — and fires focus-loss violations on the way. It is hidden on attempt and summary pages of proctored quizzes only; review pages and non-proctored quizzes keep it.
 

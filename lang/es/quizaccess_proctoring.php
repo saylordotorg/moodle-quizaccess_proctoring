@@ -267,6 +267,7 @@ $string['preflight:actionneeded'] = 'Acción necesaria';
 $string['preflight:complete'] = 'Completo';
 $string['preflight:facerecognition'] = 'Pasar el reconocimiento facial';
 $string['preflight:honesty'] = 'Marcar la declaración de honestidad';
+$string['override_managebutton'] = 'Gestionar excepciones';
 $string['preflight:privacy'] = 'Aceptar el aviso de privacidad';
 $string['preflight:progresscount'] = '{$a->done} de {$a->total} completados';
 $string['preflight:setupcomplete'] = 'Configuración completa — listo para comenzar';
