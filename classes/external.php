@@ -1165,6 +1165,14 @@ class quizaccess_proctoring_external extends external_api {
             'id_live_image' => 'id-live',
         ];
         $prefix = $prefixes[$filearea] ?? 'id-verification';
+        $extensions = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+        ];
+        $imageinfo = @getimagesizefromstring($bytes);
+        $mime = is_array($imageinfo) && !empty($imageinfo['mime']) ? strtolower((string)$imageinfo['mime']) : '';
+        $extension = $extensions[$mime] ?? 'png';
         $record = new stdClass();
         $record->contextid = $context->id;
         $record->component = 'quizaccess_proctoring';
@@ -1172,7 +1180,7 @@ class quizaccess_proctoring_external extends external_api {
         $record->itemid = $verificationid;
         $record->filepath = file_correct_filepath('');
         $record->filename = $prefix . '-' . $verificationid . '-' . $USER->id . '-' . $courseid . '-' . time() .
-            '-' . random_int(1, 1000) . '.png';
+            '-' . random_int(1, 1000) . '.' . $extension;
         $record->userid = $USER->id;
         $record->author = fullname($USER);
         $record->license = '';

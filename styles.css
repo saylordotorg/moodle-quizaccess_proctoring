@@ -3538,3 +3538,547 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
         width: auto;
     }
 }
+
+/* ------------------------------------------------------------------
+   Webcam captures tab redesign: identity verdict band, filter pills,
+   and the capture grid with per-photo match-status rings.
+   ------------------------------------------------------------------ */
+.proctoring-captures-card,
+.proctoring-activity-card {
+    background: #ffffff;
+    border: 1px solid #dde3e9;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-top: 1rem;
+}
+.proctoring-idband {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 20px;
+    padding: 20px 24px;
+    border-bottom: 1px solid #e7ebef;
+}
+.proctoring-idband-confirmed {
+    background: #f0f7f1;
+}
+.proctoring-idband-mismatch {
+    background: #fdfaf9;
+}
+.proctoring-idband-pending {
+    background: #f7f9fb;
+}
+.proctoring-idband-photos {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.proctoring-idband-photo {
+    text-align: center;
+}
+.proctoring-idband-photo img,
+.proctoring-idband-placeholder {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #dde3e9;
+    background: #eef1f4;
+    display: block;
+    box-sizing: border-box;
+}
+.proctoring-idband-confirmed .proctoring-idband-best {
+    border: 2px solid #3e7d48;
+}
+.proctoring-idband-mismatch .proctoring-idband-best {
+    border: 2px solid #b3423a;
+}
+.proctoring-idband-caption {
+    font-size: 0.75rem;
+    color: #5a6673;
+    margin-top: 3px;
+}
+.proctoring-idband-symbol {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #5a6673;
+}
+.proctoring-idband-confirmed .proctoring-idband-symbol {
+    color: #2f6138;
+}
+.proctoring-idband-mismatch .proctoring-idband-symbol {
+    color: #b3423a;
+}
+.proctoring-idband-text {
+    flex: 1;
+    min-width: 240px;
+}
+.proctoring-idband-headline {
+    font-size: 1.0625rem;
+    font-weight: 800;
+    color: #1e2a35;
+}
+.proctoring-idband-confirmed .proctoring-idband-headline {
+    color: #2f6138;
+}
+.proctoring-idband-mismatch .proctoring-idband-headline {
+    color: #b3423a;
+}
+.proctoring-idband-desc {
+    font-size: 0.9375rem;
+    color: #5a6673;
+    line-height: 1.5;
+    margin-top: 3px;
+    max-width: 60ch;
+}
+.proctoring-idband-student {
+    font-size: 0.8125rem;
+    color: #5a6673;
+    margin-top: 6px;
+}
+.proctoring-idband-action {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: stretch;
+}
+.proctoring-idband-analyze {
+    padding: 9px 18px;
+    background: #b95400;
+    color: #ffffff;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: center;
+}
+.proctoring-idband-analyze:hover,
+.proctoring-idband-analyze:focus {
+    background: #9c4700;
+    color: #ffffff;
+}
+.proctoring-idband-analyzenote {
+    font-size: 0.8125rem;
+    color: #5a6673;
+    text-align: center;
+}
+.proctoring-idband-done {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: #2f6138;
+}
+.proctoring-captures-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 24px 0;
+}
+.proctoring-capture-filter {
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid #cfd7de;
+    background: #ffffff;
+    color: #43505d;
+}
+.proctoring-capture-filter:hover,
+.proctoring-capture-filter:focus {
+    border-color: #b95400;
+}
+.proctoring-capture-filter.is-active {
+    background: #1e2a35;
+    border-color: #1e2a35;
+    color: #ffffff;
+}
+.proctoring-captures-interval {
+    margin-left: auto;
+    font-size: 0.8125rem;
+    color: #5a6673;
+}
+.proctoring-captures-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: 14px;
+    padding: 16px 24px 20px;
+}
+.proctoring-capture-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+}
+.proctoring-capture-hidden {
+    display: none;
+}
+.proctoring-capture-frame {
+    position: relative;
+    display: block;
+    aspect-ratio: 4 / 3;
+    border-radius: 4px;
+    border: 2px solid #dde3e9;
+    overflow: hidden;
+    box-sizing: border-box;
+    background: #eef1f4;
+}
+.proctoring-capture-frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.proctoring-capture-ring-matched {
+    border-color: #3e7d48;
+}
+.proctoring-capture-ring-mismatch {
+    border-color: #b3423a;
+}
+.proctoring-capture-ring-noface {
+    border-color: #b58a00;
+}
+.proctoring-capture-badge {
+    position: absolute;
+    bottom: 5px;
+    left: 5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.proctoring-capture-badge-matched {
+    background: #e8f2e9;
+    color: #2f6138;
+}
+.proctoring-capture-badge-mismatch {
+    background: #fbe7e4;
+    color: #b3423a;
+}
+.proctoring-capture-badge-noface {
+    background: #fdf3d7;
+    color: #6e5600;
+}
+.proctoring-capture-badge-notanalyzed {
+    background: #eef1f4;
+    color: #43505d;
+}
+.proctoring-capture-time {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #5a6673;
+}
+.proctoring-captures-legend {
+    padding: 0 24px 20px;
+    font-size: 0.8125rem;
+    color: #5a6673;
+    line-height: 1.55;
+    max-width: 80ch;
+}
+
+/* ------------------------------------------------------------------
+   Suspicious activity tab redesign: plain-language rollup, attempt
+   timeline, collapsible away-episodes, and the routine-noise drawer.
+   ------------------------------------------------------------------ */
+.proctoring-activity-summary {
+    padding: 20px 24px;
+    border-bottom: 1px solid #e7ebef;
+    background: #f7f9fb;
+}
+.proctoring-activity-headline {
+    font-size: 1.0625rem;
+    font-weight: 800;
+    color: #1e2a35;
+}
+.proctoring-activity-rollup {
+    font-size: 0.9375rem;
+    color: #5a6673;
+    line-height: 1.55;
+    margin-top: 4px;
+    max-width: 70ch;
+}
+.proctoring-activity-timeline {
+    margin-top: 16px;
+}
+.proctoring-activity-track {
+    position: relative;
+    height: 10px;
+    border-radius: 5px;
+    background: #e7ebef;
+}
+.proctoring-activity-span {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-radius: 5px;
+    min-width: 3px;
+}
+.proctoring-activity-span-away {
+    background: #c9762a;
+}
+.proctoring-activity-span-capture {
+    background: #b3423a;
+}
+.proctoring-activity-ends {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 5px;
+    font-size: 0.75rem;
+    color: #5a6673;
+}
+.proctoring-activity-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 6px;
+}
+.proctoring-activity-legenditem {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8125rem;
+    color: #43505d;
+}
+.proctoring-activity-swatch {
+    position: static;
+    display: inline-block;
+    width: 12px;
+    height: 8px;
+    border-radius: 3px;
+}
+.proctoring-episodes {
+    padding: 18px 24px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.proctoring-episode {
+    border: 1px solid #e7ebef;
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 0;
+}
+.proctoring-episode-red {
+    border-color: #f0d9d6;
+}
+.proctoring-episode-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 12px 16px;
+    cursor: pointer;
+    list-style: none;
+}
+.proctoring-episode-head::-webkit-details-marker {
+    display: none;
+}
+.proctoring-episode-red > .proctoring-episode-head {
+    background: #fdfaf9;
+}
+.proctoring-episode-head:hover {
+    background: #fafbfc;
+}
+.proctoring-episode-time {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #5a6673;
+    min-width: 64px;
+}
+.proctoring-episode-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #5a6673;
+}
+.proctoring-episode-orange .proctoring-episode-dot {
+    background: #c9762a;
+}
+.proctoring-episode-red .proctoring-episode-dot {
+    background: #b3423a;
+}
+.proctoring-episode-titles {
+    flex: 1;
+    min-width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.proctoring-episode-title {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: #1e2a35;
+}
+.proctoring-episode-sub {
+    font-size: 0.8125rem;
+    color: #5a6673;
+}
+.proctoring-episode-pill {
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #fbe7e4;
+    color: #b3423a;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.proctoring-episode-toggle {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #b95400;
+    white-space: nowrap;
+}
+.proctoring-episode[open] .proctoring-episode-toggle-open {
+    display: none;
+}
+.proctoring-episode:not([open]) .proctoring-episode-toggle-close {
+    display: none;
+}
+.proctoring-episode-body {
+    border-top: 1px solid #f0f3f6;
+    background: #fafbfc;
+    padding: 12px 16px 14px;
+}
+.proctoring-episode-captures {
+    margin-bottom: 14px;
+}
+.proctoring-episode-capturelabel {
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #b3423a;
+    margin-bottom: 8px;
+}
+.proctoring-episode-capture {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+.proctoring-episode-captureimg {
+    display: block;
+    width: 300px;
+    max-width: 100%;
+    border: 2px solid #b3423a;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.proctoring-episode-captureimg img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+.proctoring-episode-capturemeta {
+    flex: 1;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.8125rem;
+    color: #43505d;
+    line-height: 1.5;
+}
+.proctoring-episode-capturenote {
+    max-width: 48ch;
+}
+.proctoring-episode-aisummary {
+    font-size: 0.8125rem;
+    color: #5a6673;
+    margin-top: 4px;
+}
+.proctoring-episode-fullsize {
+    font-size: 0.8125rem;
+    font-weight: 700;
+}
+.proctoring-episode-rawlabel {
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #5a6673;
+    margin-bottom: 8px;
+}
+.proctoring-episode-rawlist {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.proctoring-episode-rawrow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    font-family: monospace;
+    font-size: 0.8125rem;
+    color: #43505d;
+}
+.proctoring-raw-time {
+    color: #5a6673;
+    width: 74px;
+    flex-shrink: 0;
+}
+.proctoring-raw-code {
+    width: 210px;
+    flex-shrink: 0;
+    overflow-wrap: anywhere;
+}
+.proctoring-raw-extra {
+    color: #5a6673;
+    flex: 1;
+    min-width: 160px;
+    overflow-wrap: anywhere;
+}
+.proctoring-routine {
+    padding: 6px 24px 22px;
+    margin: 0;
+}
+.proctoring-routine-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    list-style: none;
+    font-size: 0.8125rem;
+}
+.proctoring-routine-head::-webkit-details-marker {
+    display: none;
+}
+.proctoring-routine-toggle-open,
+.proctoring-routine-toggle-close {
+    font-weight: 700;
+    color: #b95400;
+}
+.proctoring-routine[open] .proctoring-routine-toggle-open {
+    display: none;
+}
+.proctoring-routine:not([open]) .proctoring-routine-toggle-close {
+    display: none;
+}
+.proctoring-routine-note {
+    color: #5a6673;
+}
+.proctoring-routine-list {
+    margin-top: 10px;
+    border: 1px solid #e7ebef;
+    border-radius: 6px;
+    background: #fafbfc;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+@media (max-width: 767px) {
+    .proctoring-episode-time {
+        min-width: 0;
+    }
+    .proctoring-raw-code {
+        width: auto;
+    }
+}

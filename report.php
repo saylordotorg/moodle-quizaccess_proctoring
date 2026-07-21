@@ -873,27 +873,51 @@ if (
 
         $user = core_user::get_user($studentid);
         $thresholdvalue = (int) quizaccess_proctoring_get_proctoring_settings('threshold');
+        $timeformat = get_string('strftimetime', 'langconfig');
         $studentdata = [];
+        $capturecounts = ['matched' => 0, 'mismatch' => 0, 'noface' => 0, 'notanalyzed' => 0];
+        $lowestscore = null;
+        $bestscore = null;
+        $bestcaptureurl = '';
         foreach ($sqlexecuted as $info) {
                 $row = [];
                 $row['firstname'] = $info->firstname;
                 $row['lastname'] = $info->lastname;
                 $row['name'] = userdate((int)$info->timemodified);
                 $row['image_url'] = $info->webcampicture;
-                $row['border_color'] = $info->awsflag == 2 && $info->awsscore >= $thresholdvalue ? 'green' :
-                                        ($info->awsflag == 2 && $info->awsscore < $thresholdvalue ? 'red' :
-                                        ($info->awsflag == 3 && $info->awsscore < $thresholdvalue ? 'yellow' : 'none'));
                 $row['face_match_status'] = quizaccess_proctoring_get_face_match_status_label(
                     (int)$info->awsflag,
                     (int)$info->awsscore
                 );
-                $row['face_match_status_class'] = quizaccess_proctoring_get_face_match_status_class(
-                    (int)$info->awsflag,
-                    (int)$info->awsscore,
-                    $thresholdvalue
-                );
                 $row['img_id'] = 'reportid-' . $info->reportid;
                 $row['lightbox_data'] = basename($info->webcampicture, '.png');
+                // Bucket every capture for the identity verdict band, the filter pills,
+                // and the colored status ring on the capture card.
+                $awsflag = (int)$info->awsflag;
+                $awsscore = max(0, min(100, (int)$info->awsscore));
+            if ($awsflag === 2 && $awsscore >= $thresholdvalue) {
+                $statuskey = 'matched';
+                $row['badgelabel'] = get_string('reportcaptures:badgematched', 'quizaccess_proctoring', $awsscore);
+            } else if ($awsflag === 2) {
+                $statuskey = 'mismatch';
+                $row['badgelabel'] = get_string('reportcaptures:badgemismatch', 'quizaccess_proctoring', $awsscore);
+            } else if ($awsflag === 3) {
+                $statuskey = 'noface';
+                $row['badgelabel'] = get_string('reportcaptures:badgenoface', 'quizaccess_proctoring');
+            } else {
+                $statuskey = 'notanalyzed';
+                $row['badgelabel'] = get_string('reportcaptures:badgenotanalyzed', 'quizaccess_proctoring');
+            }
+                $capturecounts[$statuskey]++;
+            if ($awsflag === 2) {
+                $lowestscore = ($lowestscore === null) ? $awsscore : min($lowestscore, $awsscore);
+                if ($bestscore === null || $awsscore > $bestscore) {
+                    $bestscore = $awsscore;
+                    $bestcaptureurl = (string)$info->webcampicture;
+                }
+            }
+                $row['statuskey'] = $statuskey;
+                $row['timeshort'] = userdate((int)$info->timemodified, $timeformat);
                 $studentdata[] = $row;
         }
         $eventwhere = 'courseid = :courseid AND quizid = :cmid AND userid = :studentid';
@@ -1013,21 +1037,6 @@ if (
                 }
             }
         }
-        $events = [];
-        foreach ($eventrecords as $event) {
-            $eventreview = $eventreviews[(int)$event->id] ?? null;
-            $events[] = [
-                'timemodified' => userdate((int)$event->timemodified),
-                'eventtype' => quizaccess_proctoring_get_event_label($event->eventtype),
-                'eventdetail' => quizaccess_proctoring_format_event_detail($event->eventdetail),
-                'pagevisibility' => $event->pagevisibility,
-                'currenturl' => $event->currenturl,
-                'screenshoturl' => $event->screenshoturl,
-                'hasscreenshot' => !empty($event->screenshoturl),
-                'eventaireview' => $eventreview,
-                'haseventaireview' => !empty($eventreview),
-            ];
-        }
         // Verdict banner, score meter, finding cards, and passed checks for the summary redesign.
         $attemptstart = 0;
         $attemptfinish = 0;
@@ -1097,7 +1106,6 @@ if (
             'sesskey' => sesskey(),
         ];
 
-        $timeformat = get_string('strftimetime', 'langconfig');
         $findings = [];
         $passedchecks = [];
         $monitoredkeys = [];
@@ -1265,6 +1273,260 @@ if (
         $riskscore['notmonitoredlist'] = implode(', ', $notmonitored);
         $riskscore['hasnotmonitored'] = !empty($notmonitored);
 
+        // Webcam captures tab: identity verdict band, filter pills, and grid metadata.
+        $fcmethodenabled = quizaccess_proctoring_is_facematch_method_enabled($fcmethod);
+        $analyzedcount = $capturecounts['matched'] + $capturecounts['mismatch'];
+        $notanalyzedcount = $capturecounts['notanalyzed'];
+        if ($analyzedcount === 0) {
+            $verdictstate = 'pending';
+            $comparesymbol = '?';
+            $verdictheadline = get_string('reportcaptures:identitypending', 'quizaccess_proctoring');
+            $verdictdesc = get_string('reportcaptures:pendingdesc', 'quizaccess_proctoring');
+        } else if ($capturecounts['mismatch'] > 0) {
+            $verdictstate = 'mismatch';
+            $comparesymbol = '≠';
+            $verdictheadline = get_string('reportcaptures:identitymismatch', 'quizaccess_proctoring');
+            $verdictdesc = get_string('reportcaptures:mismatchdesc', 'quizaccess_proctoring', (object)[
+                'mismatched' => $capturecounts['mismatch'],
+                'analyzed' => $analyzedcount,
+                'lowest' => (int)$lowestscore,
+            ]);
+        } else {
+            $verdictstate = 'confirmed';
+            $comparesymbol = '=';
+            $verdictheadline = get_string('reportcaptures:identityconfirmed', 'quizaccess_proctoring');
+            $verdictdesc = $analyzedcount === 1
+                ? get_string('reportcaptures:confirmeddesc_one', 'quizaccess_proctoring', (int)$lowestscore)
+                : get_string('reportcaptures:confirmeddesc', 'quizaccess_proctoring', (object)[
+                    'analyzed' => $analyzedcount,
+                    'lowest' => (int)$lowestscore,
+                ]);
+        }
+        if ($capturecounts['noface'] > 0) {
+            $verdictdesc .= ' ' . ($capturecounts['noface'] === 1
+                ? get_string('reportcaptures:nofacenote_one', 'quizaccess_proctoring')
+                : get_string('reportcaptures:nofacenote', 'quizaccess_proctoring', $capturecounts['noface']));
+        }
+
+        $capturefilters = [[
+            'key' => 'all',
+            'label' => get_string('reportcaptures:filterall', 'quizaccess_proctoring', count($studentdata)),
+            'active' => true,
+        ]];
+        $filterdefs = [
+            'matched' => 'reportcaptures:filtermatched',
+            'mismatch' => 'reportcaptures:filtermismatch',
+            'noface' => 'reportcaptures:filternoface',
+            'notanalyzed' => 'reportcaptures:filternotanalyzed',
+        ];
+        foreach ($filterdefs as $filterkey => $filterstring) {
+            if ($capturecounts[$filterkey] > 0) {
+                $capturefilters[] = [
+                    'key' => $filterkey,
+                    'label' => get_string($filterstring, 'quizaccess_proctoring', $capturecounts[$filterkey]),
+                    'active' => false,
+                ];
+            }
+        }
+
+        $camshotdelay = (int)quizaccess_proctoring_get_proctoring_settings('autoreconfigurecamshotdelay');
+        $capturescontext = [
+            'verdictstate' => $verdictstate,
+            'verdictheadline' => $verdictheadline,
+            'verdictdesc' => $verdictdesc,
+            'comparesymbol' => $comparesymbol,
+            'bestcaptureurl' => $bestcaptureurl,
+            'hasbestcapture' => $bestcaptureurl !== '',
+            'filters' => $capturefilters,
+            'showfilters' => count($capturefilters) > 2,
+            'intervalnote' => $camshotdelay > 0
+                ? get_string('reportcaptures:interval', 'quizaccess_proctoring', $camshotdelay)
+                : '',
+            'legend' => get_string('reportcaptures:legend', 'quizaccess_proctoring'),
+            'hasitems' => !empty($studentdata),
+            'showanalyze' => $fcmethodenabled && $notanalyzedcount > 0,
+            'analyzelabel' => $notanalyzedcount === 1
+                ? get_string('reportcaptures:analyzeremaining_one', 'quizaccess_proctoring')
+                : get_string('reportcaptures:analyzeremaining', 'quizaccess_proctoring', $notanalyzedcount),
+            'analyzenote' => get_string('reportcaptures:analyzenote', 'quizaccess_proctoring'),
+            'allanalyzed' => $fcmethodenabled && $notanalyzedcount === 0 && $analyzedcount > 0,
+        ];
+
+        // Suspicious activity tab: fold the raw event stream into away-from-exam
+        // episodes, standalone flagged events, and collapsed routine noise.
+        $grouped = \quizaccess_proctoring\local\activity_grouper::group($eventrecords);
+        $rawtimeformat = '%H:%M:%S';
+        $makerawrow = static function (stdClass $event) use ($rawtimeformat): array {
+            return [
+                'time' => userdate((int)$event->timemodified, $rawtimeformat),
+                'code' => (string)$event->eventtype,
+                'extra' => quizaccess_proctoring_format_event_detail((string)$event->eventdetail),
+            ];
+        };
+
+        $boundarytypes = array_merge(
+            \quizaccess_proctoring\local\activity_grouper::AWAY_START,
+            \quizaccess_proctoring\local\activity_grouper::AWAY_END
+        );
+        $awaycapturecount = 0;
+        $activityepisodes = [];
+        foreach ($grouped['episodes'] as $episode) {
+            $firstevent = $episode['events'][0];
+            if ($episode['type'] === 'away') {
+                if ($episode['duration'] === null) {
+                    $title = get_string('reportactivity:episodeopen', 'quizaccess_proctoring');
+                } else {
+                    $durationlabel = format_time(max(1, (int)$episode['duration']));
+                    $title = $episode['hascapture']
+                        ? get_string('reportactivity:episodeawaycapture', 'quizaccess_proctoring', $durationlabel)
+                        : get_string('reportactivity:episodeaway', 'quizaccess_proctoring', $durationlabel);
+                }
+                $includedlabels = [];
+                foreach ($episode['events'] as $eventrecord) {
+                    if (in_array((string)$eventrecord->eventtype, $boundarytypes, true)) {
+                        continue;
+                    }
+                    $label = quizaccess_proctoring_get_event_label((string)$eventrecord->eventtype);
+                    $includedlabels[$label] = ($includedlabels[$label] ?? 0) + 1;
+                }
+                if (empty($includedlabels)) {
+                    $sub = get_string('reportactivity:subquiet', 'quizaccess_proctoring');
+                } else {
+                    $includedparts = [];
+                    foreach ($includedlabels as $label => $labelcount) {
+                        $includedparts[] = $labelcount > 1 ? $label . ' ×' . $labelcount : $label;
+                    }
+                    $sub = get_string('reportactivity:subincludes', 'quizaccess_proctoring', implode(', ', $includedparts));
+                }
+                if ($episode['hascapture']) {
+                    $awaycapturecount++;
+                }
+            } else {
+                $title = quizaccess_proctoring_get_event_label((string)$firstevent->eventtype);
+                $sub = quizaccess_proctoring_format_event_detail((string)$firstevent->eventdetail);
+            }
+
+            $episodecaptures = [];
+            foreach ($episode['captures'] as $capturerecord) {
+                $episodecaptures[] = [
+                    'url' => (string)$capturerecord->screenshoturl,
+                    'note' => quizaccess_proctoring_get_event_label((string)$capturerecord->eventtype),
+                    'capturedat' => get_string(
+                        'reportactivity:capturedat',
+                        'quizaccess_proctoring',
+                        userdate((int)$capturerecord->timemodified, $rawtimeformat)
+                    ),
+                    'aireview' => $eventreviews[(int)$capturerecord->id] ?? null,
+                ];
+            }
+
+            $activityepisodes[] = [
+                'timelabel' => userdate((int)$episode['start'], $timeformat),
+                'title' => $title,
+                'sub' => $sub,
+                'accent' => $episode['hascapture'] ? 'red' : ($episode['type'] === 'away' ? 'orange' : 'slate'),
+                'evidencepill' => $episode['hascapture']
+                    ? get_string('reportactivity:evidencepill', 'quizaccess_proctoring')
+                    : '',
+                'hascaptures' => !empty($episodecaptures),
+                'captures' => $episodecaptures,
+                'raw' => array_map($makerawrow, $episode['events']),
+                'rawlabel' => get_string('reportactivity:rawevents', 'quizaccess_proctoring', count($episode['events'])),
+                'spanstart' => (int)$episode['start'],
+                'spanend' => $episode['type'] === 'away' && $episode['end'] > 0 ? (int)$episode['end'] : 0,
+                'isaway' => $episode['type'] === 'away',
+                'hascapture' => $episode['hascapture'],
+            ];
+        }
+
+        $signalcount = count($grouped['episodes']) - $grouped['awaycount'];
+        if ($grouped['awaycount'] > 0) {
+            $activityheadline = $grouped['awaycount'] === 1
+                ? get_string('reportactivity:headline_one', 'quizaccess_proctoring')
+                : get_string('reportactivity:headline', 'quizaccess_proctoring', $grouped['awaycount']);
+            $activityrollup = get_string('reportactivity:rollup', 'quizaccess_proctoring', (object)[
+                'raw' => $grouped['rawcount'],
+                'episodes' => $grouped['awaycount'],
+                'awaytime' => format_time(max(1, $grouped['awayseconds'])),
+            ]);
+            if ($awaycapturecount > 0) {
+                $activityrollup .= ' ' . ($awaycapturecount === 1
+                    ? get_string('reportactivity:rollupcaptures_one', 'quizaccess_proctoring')
+                    : get_string('reportactivity:rollupcaptures', 'quizaccess_proctoring', $awaycapturecount));
+            }
+            if ($signalcount > 0) {
+                $activityrollup .= ' ' . ($signalcount === 1
+                    ? get_string('reportactivity:rollupother_one', 'quizaccess_proctoring')
+                    : get_string('reportactivity:rollupother', 'quizaccess_proctoring', $signalcount));
+            }
+        } else {
+            $activityheadline = get_string('reportactivity:headlinenone', 'quizaccess_proctoring');
+            $activityrollup = !empty($grouped['episodes'])
+                ? get_string('reportactivity:rollupnone', 'quizaccess_proctoring', $grouped['rawcount'])
+                : '';
+        }
+
+        // Away episodes (and captures) placed proportionally between attempt start and submission.
+        $timelinespans = [];
+        if ($attemptstart > 0 && $timelinespan > 0) {
+            foreach ($activityepisodes as $episodecontext) {
+                if (!$episodecontext['isaway'] && !$episodecontext['hascapture']) {
+                    continue;
+                }
+                $spanstart = $episodecontext['spanstart'];
+                if ($spanstart < $attemptstart - MINSECS || $spanstart > $attemptfinish + MINSECS) {
+                    continue;
+                }
+                $spanend = $episodecontext['spanend'] > 0
+                    ? $episodecontext['spanend']
+                    : ($episodecontext['isaway'] ? $attemptfinish : $spanstart);
+                $clampedstart = max($attemptstart, min($spanstart, $attemptfinish));
+                $clampedend = max($clampedstart, min($spanend, $attemptfinish));
+                $leftpct = min(98, max(0, ($clampedstart - $attemptstart) / $timelinespan * 100));
+                $widthpct = max(1.5, ($clampedend - $clampedstart) / $timelinespan * 100);
+                $timelinespans[] = [
+                    'leftpct' => round($leftpct, 2),
+                    'widthpct' => round(min(100 - $leftpct, $widthpct), 2),
+                    'colorclass' => $episodecontext['hascapture'] ? 'capture' : 'away',
+                    'label' => $episodecontext['title'],
+                ];
+            }
+        }
+        $activitylegend = [];
+        $legenddefs = ['away' => 'reportactivity:legendaway', 'capture' => 'reportactivity:legendcapture'];
+        foreach ($legenddefs as $legendkey => $legendstring) {
+            foreach ($timelinespans as $span) {
+                if ($span['colorclass'] === $legendkey) {
+                    $activitylegend[] = ['colorclass' => $legendkey, 'label' => get_string($legendstring, 'quizaccess_proctoring')];
+                    break;
+                }
+            }
+        }
+
+        $routinecount = count($grouped['routine']);
+        $activitycontext = [
+            'headline' => $activityheadline,
+            'rollup' => $activityrollup,
+            'hasepisodes' => !empty($activityepisodes),
+            'episodes' => $activityepisodes,
+            'hastimeline' => !empty($timelinespans),
+            'timelinespans' => $timelinespans,
+            'timelinelegend' => $activitylegend,
+            'timelinestart' => $attemptstart > 0
+                ? get_string('verdict:timelinestart', 'quizaccess_proctoring', userdate($attemptstart, $timeformat))
+                : '',
+            'timelineend' => $attemptfinish > 0
+                ? get_string('verdict:timelineend', 'quizaccess_proctoring', userdate($attemptfinish, $timeformat))
+                : '',
+            'hasroutine' => $routinecount > 0,
+            'routineshow' => $routinecount === 1
+                ? get_string('reportactivity:routineshow_one', 'quizaccess_proctoring')
+                : get_string('reportactivity:routineshow', 'quizaccess_proctoring', $routinecount),
+            'routinehide' => get_string('reportactivity:routinehide', 'quizaccess_proctoring'),
+            'routinenote' => get_string('reportactivity:routinenote', 'quizaccess_proctoring'),
+            'routine' => array_map($makerawrow, $grouped['routine']),
+        ];
+
         $analyzeurl = new moodle_url('/mod/quiz/accessrule/proctoring/analyzeimage.php');
         $userimageurl = quizaccess_proctoring_get_image_url($user->id);
         if (!$userimageurl) {
@@ -1278,7 +1540,7 @@ if (
             'firstname' => $info->firstname,
             'lastname' => $info->lastname,
             'email' => $info->email,
-            'fcmethod' => quizaccess_proctoring_is_facematch_method_enabled($fcmethod),
+            'fcmethod' => $fcmethodenabled,
             'analyzeurl' => $analyzeurl->out(false),
             'analyzecourseid' => $courseid,
             'analyzecmid' => $cmid,
@@ -1289,8 +1551,9 @@ if (
             'sessionsummary' => $sessionsummary,
             'hassessionsummary' => ($sessionsummary !== ''),
             'aireview' => $aireviewdata,
-            'events' => $events,
-            'hasevents' => !empty($events),
+            'captures' => $capturescontext,
+            'activity' => $activitycontext,
+            'hasevents' => !empty($eventrecords),
         ];
         echo $OUTPUT->render_from_template('quizaccess_proctoring/studentreport', $templatecontext);
     }

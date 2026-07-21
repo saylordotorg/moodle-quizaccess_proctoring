@@ -38,6 +38,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'modal:idverificationdocumentnotinwindow', component: 'quizaccess_proctoring'},
                 {key: 'modal:idverificationdocumentinwindow', component: 'quizaccess_proctoring'},
                 {key: 'modal:idverificationdocumentready', component: 'quizaccess_proctoring'},
+                {key: 'modal:idverificationdocumentblurry', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -78,6 +79,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     idverificationdocumentnotinwindow: strings[33],
                     idverificationdocumentinwindow: strings[34],
                     idverificationdocumentready: strings[35],
+                    idverificationdocumentblurry: strings[36],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -149,6 +151,38 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 contrast: Math.sqrt(variance),
                 sharpness: edgecount > 0 ? edgedelta / edgecount : 0,
             };
+        };
+
+        const getCaptureSharpness = function(canvas) {
+            // Measure on a fixed-width rendition so the metric is independent of capture resolution.
+            const sampleWidth = Math.min(480, canvas.width);
+            const sampleHeight = Math.max(1, Math.round(canvas.height * (sampleWidth / canvas.width)));
+            const sample = document.createElement('canvas');
+            sample.width = sampleWidth;
+            sample.height = sampleHeight;
+            const context = sample.getContext('2d');
+            context.drawImage(canvas, 0, 0, sampleWidth, sampleHeight);
+            const imageData = context.getImageData(0, 0, sampleWidth, sampleHeight).data;
+            const luminances = new Float32Array(sampleWidth * sampleHeight);
+            for (let index = 0; index < luminances.length; index++) {
+                const offset = index * 4;
+                luminances[index] = (0.2126 * imageData[offset]) +
+                    (0.7152 * imageData[offset + 1]) +
+                    (0.0722 * imageData[offset + 2]);
+            }
+
+            let edgedelta = 0;
+            let edgecount = 0;
+            for (let yy = 1; yy < sampleHeight; yy++) {
+                for (let xx = 1; xx < sampleWidth; xx++) {
+                    const index = (yy * sampleWidth) + xx;
+                    edgedelta += Math.abs(luminances[index] - luminances[index - 1]) +
+                        Math.abs(luminances[index] - luminances[index - sampleWidth]);
+                    edgecount += 2;
+                }
+            }
+
+            return edgecount > 0 ? edgedelta / edgecount : 0;
         };
 
         const getMinFaceRatio = function(canvas, box) {
@@ -273,6 +307,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 let screenMonitorClient = null;
                 const idDocumentAutoCaptureRequiredScore = 8;
                 const idDocumentAutoCaptureInterval = 400;
+                const idDocumentMinCaptureSharpness = 1.8;
                 const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
 
                 const escapeHtml = function(text) {
@@ -305,7 +340,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 };
 
                 const getCameraCaptureSize = function(video) {
-                    const configuredWidth = Math.max(240, parseInt(props.imagewidth, 10) || 480);
+                    // The camshot width setting sizes the periodic in-quiz captures; identity and face
+                    // verification captures need more detail, so never go below 640 pixels wide here.
+                    const configuredWidth = Math.max(640, parseInt(props.imagewidth, 10) || 480);
                     const sourceWidth = video && video.videoWidth ? video.videoWidth : 0;
                     const sourceHeight = video && video.videoHeight ? video.videoHeight : 0;
 
@@ -316,9 +353,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         };
                     }
 
+                    const width = Math.min(configuredWidth, sourceWidth);
                     return {
-                        width: configuredWidth,
-                        height: Math.max(1, Math.round(configuredWidth * (sourceHeight / sourceWidth))),
+                        width: width,
+                        height: Math.max(1, Math.round(width * (sourceHeight / sourceWidth))),
                     };
                 };
 
@@ -1142,14 +1180,17 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     const context = canvas.getContext('2d');
                     const rect = getIdDocumentGuideSourceRect(video, 0.035);
                     if (!rect) {
-                        const fallbackSize = getCameraCaptureSize(video);
-                        canvas.width = fallbackSize.width;
-                        canvas.height = fallbackSize.height;
+                        const fallbackWidth = Math.min(1920, video.videoWidth || 1280);
+                        const fallbackHeight = video.videoWidth
+                            ? Math.max(1, Math.round(fallbackWidth * (video.videoHeight / video.videoWidth)))
+                            : Math.round(fallbackWidth / (4 / 3));
+                        canvas.width = fallbackWidth;
+                        canvas.height = fallbackHeight;
                         context.drawImage(video, 0, 0, canvas.width, canvas.height);
                         return;
                     }
 
-                    const targetWidth = Math.min(1280, Math.max(640, Math.round(rect.width)));
+                    const targetWidth = Math.min(1920, Math.max(640, Math.round(rect.width)));
                     const targetHeight = Math.max(1, Math.round(targetWidth * (rect.height / rect.width)));
                     canvas.width = targetWidth;
                     canvas.height = targetHeight;
@@ -1210,8 +1251,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     idDocumentStream = await navigator.mediaDevices.getUserMedia({
                         video: {
                             facingMode: {ideal: 'environment'},
-                            width: {ideal: 1280},
-                            height: {ideal: 720}
+                            width: {ideal: 2560},
+                            height: {ideal: 1440}
                         },
                         audio: false
                     }).catch(() => navigator.mediaDevices.getUserMedia({video: true, audio: false}));
@@ -1238,24 +1279,29 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     const canvas = getIdDocumentElement(captureSide, 'canvas');
                     const preview = getIdDocumentElement(captureSide, 'preview-image');
                     if (!video || !canvas || !preview) {
-                        return false;
+                        return 'unavailable';
                     }
                     if (!idDocumentStream || video.srcObject !== idDocumentStream || !video.videoWidth) {
                         if (!await startIdDocumentCamera(captureSide)) {
-                            return false;
+                            return 'unavailable';
                         }
-                        return false;
+                        return 'notready';
                     }
 
                     const finalDocumentStatus = getIdDocumentRegionStatus(video, captureSide);
                     if (!idDocumentCaptureReady[captureSide] || !finalDocumentStatus.aligned) {
                         idDocumentAutoCaptureScore = 0;
                         setIdDocumentGuideProgress(captureSide, 0, false);
-                        return false;
+                        return 'notready';
                     }
 
                     drawIdDocumentCapture(video, canvas);
-                    capturedIdImages[captureSide] = canvas.toDataURL('image/png');
+                    if (getCaptureSharpness(canvas) < idDocumentMinCaptureSharpness) {
+                        idDocumentAutoCaptureScore = 0;
+                        setIdDocumentGuideProgress(captureSide, 0, false);
+                        return 'blurry';
+                    }
+                    capturedIdImages[captureSide] = canvas.toDataURL('image/jpeg', 0.92);
                     preview.setAttribute('src', capturedIdImages[captureSide]);
                     stopIdDocumentAutoCapture();
                     setIdDocumentCaptureState('captured', captureSide);
@@ -1266,7 +1312,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         idInput.value = '';
                     }
 
-                    return true;
+                    return 'captured';
                 };
 
                 const startIdVerificationCamera = async function() {
@@ -1604,7 +1650,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     $(getIdDocumentButton(captureSide, 'capture')).click(async function(event) {
                         event.preventDefault();
                         try {
-                            if (!await captureIdDocumentImage(captureSide)) {
+                            const captureResult = await captureIdDocumentImage(captureSide);
+                            if (captureResult === 'blurry') {
+                                setIdVerificationResult(
+                                    strings.idverificationdocumentblurry || getIdDocumentMissingMessage(captureSide),
+                                    false
+                                );
+                            } else if (captureResult === 'unavailable') {
+                                setIdVerificationResult(strings.videonotavailable, false);
+                            } else if (captureResult !== 'captured') {
                                 setIdVerificationResult(
                                     strings.idverificationdocumentnotinwindow || getIdDocumentMissingMessage(captureSide),
                                     false

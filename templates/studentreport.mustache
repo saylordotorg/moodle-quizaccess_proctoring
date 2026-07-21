@@ -24,20 +24,56 @@
         "analyzeurl": "https://example.com/analyze",
         "data": [
             {
-                "name": "Image 1",
+                "name": "Monday, 20 July 2026, 2:41 PM",
                 "image_url": "https://example.com/image1.png",
-                "img_id": "img1",
-                "border_color": "green",
-                "lightbox_data": "lightbox-group-1"
-            },
-            {
-                "name": "Image 2",
-                "image_url": "https://example.com/image2.png",
-                "img_id": "img2",
-                "border_color": "red",
-                "lightbox_data": "lightbox-group-1"
+                "img_id": "reportid-1",
+                "lightbox_data": "lightbox-group-1",
+                "statuskey": "matched",
+                "badgelabel": "✓ 98/100",
+                "timeshort": "2:41 PM",
+                "face_match_status": "Face match score 98/100"
             }
-        ]
+        ],
+        "captures": {
+            "verdictstate": "confirmed",
+            "verdictheadline": "Identity confirmed",
+            "verdictdesc": "All 12 analyzed photos matched the student's profile picture (lowest score 91/100).",
+            "comparesymbol": "=",
+            "hasbestcapture": true,
+            "bestcaptureurl": "https://example.com/image1.png",
+            "showfilters": true,
+            "filters": [{"key": "all", "label": "All (12)", "active": true}],
+            "intervalnote": "One photo about every 30 seconds",
+            "legend": "Green = matched the profile photo.",
+            "showanalyze": false,
+            "allanalyzed": true
+        },
+        "activity": {
+            "headline": "The student left the exam window 5 times",
+            "rollup": "The 42 raw browser events below boil down to 5 moments away from the exam, totaling about 1 min 40 secs.",
+            "hastimeline": true,
+            "timelinespans": [{"leftpct": 30, "widthpct": 8, "colorclass": "capture", "label": "Away for 48 secs"}],
+            "timelinelegend": [{"colorclass": "away", "label": "Away from exam"}],
+            "timelinestart": "2:41 PM · start",
+            "timelineend": "2:45 PM · submitted",
+            "hasepisodes": true,
+            "episodes": [{
+                "timelabel": "2:42 PM",
+                "title": "Away from the exam for 48 secs — desktop captured during this gap",
+                "sub": "Also recorded: Pasted content",
+                "accent": "red",
+                "evidencepill": "Desktop capture",
+                "rawlabel": "Raw events (4)",
+                "hascaptures": true,
+                "captures": [{"url": "https://example.com/shot.png", "note": "Possible AI tool interaction", "capturedat": "Captured at 14:42:41."}],
+                "raw": [{"time": "14:42:20", "code": "focus_lost", "extra": "reason: window blur"}]
+            }],
+            "hasroutine": true,
+            "routineshow": "Show 32 routine events",
+            "routinehide": "Hide routine events",
+            "routinenote": "— cursor moves at the window edge and similar noise. Almost never meaningful.",
+            "routine": [{"time": "14:41:10", "code": "mouse_left_window", "extra": ""}]
+        }
     }
 }}
 
@@ -302,140 +338,189 @@
 </div>
 
 <div class="tab-pane fade" id="proctoring-report-captures" role="tabpanel" aria-labelledby="proctoring-report-captures-tab">
-<h3>{{#str}}picturesusedreport, quizaccess_proctoring{{/str}}</h3>
+{{#captures}}
+<div class="proctoring-captures-card">
 
-
-{{! user info table  }}
-
-
-<div class="container-fluid p-0">
-    <div class="row no-gutters">
-        <!-- Remove any additional margins or padding here -->
-        <div class="col-lg-3 col-md-5 ">
-            <table class="generaltable generalbox reporttable proctoring-table-style">
-            <thead>
-                <tr>
-                    <th class = "text-center">{{#str}}name, quizaccess_proctoring{{/str}}</th>
-                </tr>
-            </thead>
-                <tbody>
-                    <tr>
-                        <td class="text-center">
-                            <img src="{{userimageurl}}" alt="User Picture" class="img-fluid" id="proctoring-profile-img">
-                        </td>
-                    </tr>
-                    <tr>
-                        <td class="text-center font-weight-bold">{{firstname}} {{lastname}}</td>
-                    </tr>
-                    <tr>
-                        <td class="text-center font-weight-bold">{{email}}</td>
-                    </tr>
-                    {{#fcmethod}}
-                     <tr>
-                        <td class = "text-center">
-                            <form method="post" action="{{analyzeurl}}" class="d-inline">
-                                <input type="hidden" name="courseid" value="{{analyzecourseid}}">
-                                <input type="hidden" name="cmid" value="{{analyzecmid}}">
-                                <input type="hidden" name="studentid" value="{{analyzestudentid}}">
-                                <input type="hidden" name="reportid" value="{{analyzereportid}}">
-                                <input type="hidden" name="sesskey" value="{{sesskey}}">
-                                <button type="submit" class="btn btn-primary text-center">
-                                    {{#str}}analyzimage, quizaccess_proctoring{{/str}}
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                    {{/fcmethod}}
-                </tbody>
-            </table>
+    {{! Identity verdict band: profile photo vs best capture, plain-language verdict, analyze action. }}
+    <div class="proctoring-idband proctoring-idband-{{verdictstate}}">
+        <div class="proctoring-idband-photos">
+            <div class="proctoring-idband-photo">
+                <img src="{{userimageurl}}" alt="{{#str}}reportcaptures:profilephoto, quizaccess_proctoring{{/str}}" id="proctoring-profile-img">
+                <div class="proctoring-idband-caption">{{#str}}reportcaptures:profilephoto, quizaccess_proctoring{{/str}}</div>
+            </div>
+            <div class="proctoring-idband-symbol">{{comparesymbol}}</div>
+            <div class="proctoring-idband-photo">
+                {{#hasbestcapture}}
+                <img src="{{bestcaptureurl}}" class="proctoring-idband-best" alt="{{#str}}reportcaptures:bestcapture, quizaccess_proctoring{{/str}}">
+                {{/hasbestcapture}}
+                {{^hasbestcapture}}
+                <div class="proctoring-idband-placeholder"></div>
+                {{/hasbestcapture}}
+                <div class="proctoring-idband-caption">{{#str}}reportcaptures:bestcapture, quizaccess_proctoring{{/str}}</div>
+            </div>
         </div>
-
-    
-        <div class=" col-lg-9 col-md-7 ">
-            <table class="generaltable generalbox reporttable proctoring-table-style">
-            <thead>
-                <tr>
-                    <th class = "text-center">{{#str}}dateverified, quizaccess_proctoring{{/str}}</th>
-                    <th class = "text-center" >{{#str}}webcampicture, quizaccess_proctoring{{/str}}</th>
-                    <th class = "text-center">{{#str}}facematchstatus, quizaccess_proctoring{{/str}}</th>
-                </tr>
-            </thead>
-            <tbody id = "proctoring-table-body"  >
-                {{#data}}
-                <tr class="p-0 m-0">
-                    <td class="p-0 m-0">{{name}}</td>
-                    <td class="p-0 m-0">
-                        {{#image_url}}
-                            <a href="{{image_url}}" data-lightbox="proc-images" data-title="{{name}}">
-                                <img id="{{img_id}}" class="proctoring-border-color-{{border_color}}"  width="100" 
-                                    src="{{image_url}}" alt="{{name}}" data-lightbox="{{lightbox_data}}">
-                            </a>
-                        {{/image_url}}
-                    </td>
-                    <td class="text-center align-middle"><span class="{{face_match_status_class}}">{{face_match_status}}</span></td>
-                </tr>
-                {{/data}}
-            </tbody>
-            </table>
+        <div class="proctoring-idband-text">
+            <div class="proctoring-idband-headline">{{verdictheadline}}</div>
+            <div class="proctoring-idband-desc">{{verdictdesc}}</div>
+            <div class="proctoring-idband-student">{{firstname}} {{lastname}} · {{email}}</div>
         </div>
+        {{#showanalyze}}
+        <div class="proctoring-idband-action">
+            <form method="post" action="{{analyzeurl}}">
+                <input type="hidden" name="courseid" value="{{analyzecourseid}}">
+                <input type="hidden" name="cmid" value="{{analyzecmid}}">
+                <input type="hidden" name="studentid" value="{{analyzestudentid}}">
+                <input type="hidden" name="reportid" value="{{analyzereportid}}">
+                <input type="hidden" name="sesskey" value="{{sesskey}}">
+                <button type="submit" class="proctoring-idband-analyze">{{analyzelabel}}</button>
+            </form>
+            <div class="proctoring-idband-analyzenote">{{analyzenote}}</div>
+        </div>
+        {{/showanalyze}}
+        {{#allanalyzed}}
+        <div class="proctoring-idband-action">
+            <div class="proctoring-idband-done">✓ {{#str}}reportcaptures:allanalyzed, quizaccess_proctoring{{/str}}</div>
+        </div>
+        {{/allanalyzed}}
     </div>
+
+    {{! Filter pills and capture cadence. }}
+    <div class="proctoring-captures-toolbar">
+        {{#showfilters}}
+        {{#filters}}
+        <button type="button" class="proctoring-capture-filter {{#active}}is-active{{/active}}" data-proctoring-capture-filter="{{key}}">{{label}}</button>
+        {{/filters}}
+        {{/showfilters}}
+        {{#intervalnote}}<div class="proctoring-captures-interval">{{intervalnote}}</div>{{/intervalnote}}
+    </div>
+
+    {{! Capture grid with a match-status ring and badge per photo. }}
+    <div class="proctoring-captures-grid">
+        {{#data}}
+        <figure class="proctoring-capture-item" data-proctoring-capture-status="{{statuskey}}">
+            <a href="{{image_url}}" class="proctoring-capture-frame proctoring-capture-ring-{{statuskey}}" data-lightbox="proc-images" data-title="{{name}} · {{face_match_status}}">
+                <img id="{{img_id}}" src="{{image_url}}" alt="{{name}} · {{face_match_status}}" loading="lazy">
+                <span class="proctoring-capture-badge proctoring-capture-badge-{{statuskey}}">{{badgelabel}}</span>
+            </a>
+            <figcaption class="proctoring-capture-time">{{timeshort}}</figcaption>
+        </figure>
+        {{/data}}
+    </div>
+    <div class="proctoring-captures-legend">{{legend}}</div>
 </div>
+{{/captures}}
 </div>
 
 {{#hasevents}}
 <div class="tab-pane fade" id="proctoring-report-activity" role="tabpanel" aria-labelledby="proctoring-report-activity-tab">
-<h3>{{#str}}suspiciousactivity, quizaccess_proctoring{{/str}}</h3>
-<div class="proctoring-report-table-scroll">
-<table class="generaltable generalbox reporttable" id="proctoring-event-table">
-    <thead>
-        <tr>
-            <th>{{#str}}dateverified, quizaccess_proctoring{{/str}}</th>
-            <th>{{#str}}eventtype, quizaccess_proctoring{{/str}}</th>
-            <th>{{#str}}eventdetails, quizaccess_proctoring{{/str}}</th>
-            <th>{{#str}}pagevisibility, quizaccess_proctoring{{/str}}</th>
-            <th>{{#str}}desktopcapture, quizaccess_proctoring{{/str}}</th>
-            <th>{{#str}}aireview:shorttitle, quizaccess_proctoring{{/str}}</th>
-        </tr>
-    </thead>
-    <tbody>
-        {{#events}}
-        <tr>
-            <td>{{timemodified}}</td>
-            <td>{{eventtype}}</td>
-            <td>
-                {{#eventdetail}}
-                    <details class="proctoring-raw-details">
-                        <summary>{{#str}}rawdetails, quizaccess_proctoring{{/str}}</summary>
-                        <div class="proctoring-raw-details-body">{{eventdetail}}</div>
-                    </details>
-                {{/eventdetail}}
-                {{^eventdetail}}-{{/eventdetail}}
-            </td>
-            <td>{{pagevisibility}}</td>
-            <td>
-                {{#hasscreenshot}}
-                    <a href="{{screenshoturl}}" data-lightbox="proc-violation-screens" data-title="{{eventtype}}">
-                        <img class="proctoring-event-screenshot" src="{{screenshoturl}}" alt="{{eventtype}}">
-                    </a>
-                {{/hasscreenshot}}
-                {{^hasscreenshot}}-{{/hasscreenshot}}
-            </td>
-            <td>
-                {{#eventaireview}}
-                    <span class="{{badgeclass}}">{{compactlabel}}</span>
-                    {{#summary}}<div class="small mt-1">{{summary}}</div>{{/summary}}
-                    {{#haserror}}<div class="small text-danger mt-1">{{errormessage}}</div>{{/haserror}}
-                {{/eventaireview}}
-                {{^eventaireview}}
-                    {{#hasscreenshot}}<span class="text-muted">{{#str}}aireview:notqueued, quizaccess_proctoring{{/str}}</span>{{/hasscreenshot}}
-                    {{^hasscreenshot}}-{{/hasscreenshot}}
-                {{/eventaireview}}
-            </td>
-        </tr>
-        {{/events}}
-    </tbody>
-</table>
+{{#activity}}
+<div class="proctoring-activity-card">
+
+    {{! Plain-language summary of what the raw events amount to, with an attempt timeline. }}
+    <div class="proctoring-activity-summary">
+        <div class="proctoring-activity-headline">{{headline}}</div>
+        {{#rollup}}<div class="proctoring-activity-rollup">{{rollup}}</div>{{/rollup}}
+        {{#hastimeline}}
+        <div class="proctoring-activity-timeline">
+            <div class="proctoring-activity-track">
+                {{#timelinespans}}
+                <div class="proctoring-activity-span proctoring-activity-span-{{colorclass}}" style="left: {{leftpct}}%; width: {{widthpct}}%;" title="{{label}}"></div>
+                {{/timelinespans}}
+            </div>
+            <div class="proctoring-activity-ends">
+                <span>{{timelinestart}}</span>
+                <span>{{timelineend}}</span>
+            </div>
+            <div class="proctoring-activity-legend">
+                {{#timelinelegend}}
+                <div class="proctoring-activity-legenditem">
+                    <span class="proctoring-activity-swatch proctoring-activity-span-{{colorclass}}"></span><span>{{label}}</span>
+                </div>
+                {{/timelinelegend}}
+            </div>
+        </div>
+        {{/hastimeline}}
+    </div>
+
+    {{! One collapsible card per away-from-exam episode or standalone flagged event. }}
+    {{#hasepisodes}}
+    <div class="proctoring-episodes">
+        {{#episodes}}
+        <details class="proctoring-episode proctoring-episode-{{accent}}">
+            <summary class="proctoring-episode-head">
+                <span class="proctoring-episode-time">{{timelabel}}</span>
+                <span class="proctoring-episode-dot"></span>
+                <span class="proctoring-episode-titles">
+                    <span class="proctoring-episode-title">{{title}}</span>
+                    {{#sub}}<span class="proctoring-episode-sub">{{sub}}</span>{{/sub}}
+                </span>
+                {{#evidencepill}}<span class="proctoring-episode-pill">{{evidencepill}}</span>{{/evidencepill}}
+                <span class="proctoring-episode-toggle">
+                    <span class="proctoring-episode-toggle-open">{{rawlabel}}</span>
+                    <span class="proctoring-episode-toggle-close">{{#str}}reportactivity:close, quizaccess_proctoring{{/str}}</span>
+                </span>
+            </summary>
+            <div class="proctoring-episode-body">
+                {{#hascaptures}}
+                <div class="proctoring-episode-captures">
+                    <div class="proctoring-episode-capturelabel">{{#str}}reportactivity:capturelabel, quizaccess_proctoring{{/str}}</div>
+                    {{#captures}}
+                    <div class="proctoring-episode-capture">
+                        <a href="{{url}}" class="proctoring-episode-captureimg" data-lightbox="proc-violation-screens" data-title="{{note}} · {{capturedat}}">
+                            <img src="{{url}}" alt="{{note}}" loading="lazy">
+                        </a>
+                        <div class="proctoring-episode-capturemeta">
+                            <div class="proctoring-episode-capturenote">{{note}}. {{capturedat}}</div>
+                            {{#aireview}}
+                            <div class="proctoring-episode-aireview">
+                                <span class="{{badgeclass}}">{{compactlabel}}</span>
+                                {{#summary}}<div class="proctoring-episode-aisummary">{{summary}}</div>{{/summary}}
+                                {{#haserror}}<div class="proctoring-episode-aisummary text-danger">{{errormessage}}</div>{{/haserror}}
+                            </div>
+                            {{/aireview}}
+                            <a href="{{url}}" data-lightbox="proc-violation-screens" data-title="{{note}} · {{capturedat}}" class="proctoring-episode-fullsize">{{#str}}reportactivity:viewfullsize, quizaccess_proctoring{{/str}}</a>
+                        </div>
+                    </div>
+                    {{/captures}}
+                </div>
+                {{/hascaptures}}
+                <div class="proctoring-episode-rawlabel">{{rawlabel}}</div>
+                <div class="proctoring-episode-rawlist">
+                    {{#raw}}
+                    <div class="proctoring-episode-rawrow">
+                        <span class="proctoring-raw-time">{{time}}</span>
+                        <span class="proctoring-raw-code">{{code}}</span>
+                        <span class="proctoring-raw-extra">{{extra}}</span>
+                    </div>
+                    {{/raw}}
+                </div>
+            </div>
+        </details>
+        {{/episodes}}
+    </div>
+    {{/hasepisodes}}
+
+    {{! Routine noise (mouse wiggles at the window edge) stays out of the way. }}
+    {{#hasroutine}}
+    <details class="proctoring-routine">
+        <summary class="proctoring-routine-head">
+            <span class="proctoring-routine-toggle-open">{{routineshow}}</span>
+            <span class="proctoring-routine-toggle-close">{{routinehide}}</span>
+            <span class="proctoring-routine-note">{{routinenote}}</span>
+        </summary>
+        <div class="proctoring-routine-list">
+            {{#routine}}
+            <div class="proctoring-episode-rawrow">
+                <span class="proctoring-raw-time">{{time}}</span>
+                <span class="proctoring-raw-code">{{code}}</span>
+                <span class="proctoring-raw-extra">{{extra}}</span>
+            </div>
+            {{/routine}}
+        </div>
+    </details>
+    {{/hasroutine}}
 </div>
+{{/activity}}
 </div>
 {{/hasevents}}
 
@@ -450,6 +535,17 @@ require(['jquery'], function($) {
         if (tab) {
             tab.click();
         }
+    });
+    $('[data-proctoring-capture-filter]').on('click', function() {
+        var key = $(this).attr('data-proctoring-capture-filter');
+        $('[data-proctoring-capture-filter]').removeClass('is-active');
+        $(this).addClass('is-active');
+        $('[data-proctoring-capture-status]').each(function() {
+            $(this).toggleClass(
+                'proctoring-capture-hidden',
+                key !== 'all' && $(this).attr('data-proctoring-capture-status') !== key
+            );
+        });
     });
 });
 {{/js}}
