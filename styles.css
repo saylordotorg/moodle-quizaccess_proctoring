@@ -4093,3 +4093,15 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
         width: auto;
     }
 }
+
+/* "I can't provide a photo ID" exception request in the precheck. */
+.proctoring-idv-exempt-link {
+    font-size: 0.8125rem;
+    text-decoration: underline;
+}
+
+.proctoring-idv-exempt-note {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    margin-top: 4px;
+}

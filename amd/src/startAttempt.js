@@ -1176,25 +1176,136 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     };
                 };
 
-                const drawIdDocumentCapture = function(video, canvas) {
+                const improveIdDocumentStreamResolution = async function(video) {
+                    // Some cameras hand out a low-resolution mode despite the ideal
+                    // constraints; ask the live track to renegotiate before capture.
+                    const track = idDocumentStream ? idDocumentStream.getVideoTracks()[0] : null;
+                    if (!track || !track.getSettings || !track.applyConstraints) {
+                        return;
+                    }
+                    if ((track.getSettings().width || 0) >= 1920) {
+                        return;
+                    }
+                    try {
+                        await track.applyConstraints({width: {ideal: 3840}, height: {ideal: 2160}});
+                        await waitForVideoFrame(video);
+                    } catch (error) {
+                        // Keep whatever resolution the camera agreed to.
+                    }
+                };
+
+                const takeIdDocumentPhoto = async function() {
+                    // A still photo uses the camera's photo pipeline, which on most
+                    // devices is far sharper than a grabbed video frame.
+                    const track = idDocumentStream ? idDocumentStream.getVideoTracks()[0] : null;
+                    if (!track || typeof window.ImageCapture !== 'function' ||
+                            typeof window.createImageBitmap !== 'function') {
+                        return null;
+                    }
+                    try {
+                        const capturer = new window.ImageCapture(track);
+                        const blob = await Promise.race([
+                            capturer.takePhoto(),
+                            new Promise((resolve) => window.setTimeout(() => resolve(null), 3000)),
+                        ]);
+                        if (!blob) {
+                            return null;
+                        }
+                        return await window.createImageBitmap(blob);
+                    } catch (error) {
+                        return null;
+                    }
+                };
+
+                const trimLetterboxBars = function(canvas) {
+                    // Virtual cameras and mismatched driver modes pad frames with black
+                    // bars; crop uniform near-black margins so the ID fills the capture.
+                    const width = canvas.width;
+                    const height = canvas.height;
+                    if (width < 80 || height < 80) {
+                        return;
+                    }
+                    const context = canvas.getContext('2d');
+                    const imageData = context.getImageData(0, 0, width, height).data;
+                    const isDarkLine = function(fixed, isRow) {
+                        const length = isRow ? width : height;
+                        const step = Math.max(1, Math.floor(length / 48));
+                        let bright = 0;
+                        let count = 0;
+                        for (let position = 0; position < length; position += step) {
+                            const index = (isRow ? ((fixed * width) + position) : ((position * width) + fixed)) * 4;
+                            const luminance = (0.2126 * imageData[index]) +
+                                (0.7152 * imageData[index + 1]) +
+                                (0.0722 * imageData[index + 2]);
+                            count++;
+                            if (luminance > 18) {
+                                bright++;
+                            }
+                        }
+                        return count > 0 && (bright / count) < 0.04;
+                    };
+                    const limitY = Math.floor(height / 3);
+                    const limitX = Math.floor(width / 3);
+                    let top = 0;
+                    while (top < limitY && isDarkLine(top, true)) {
+                        top++;
+                    }
+                    let bottom = 0;
+                    while (bottom < limitY && isDarkLine(height - 1 - bottom, true)) {
+                        bottom++;
+                    }
+                    let left = 0;
+                    while (left < limitX && isDarkLine(left, false)) {
+                        left++;
+                    }
+                    let right = 0;
+                    while (right < limitX && isDarkLine(width - 1 - right, false)) {
+                        right++;
+                    }
+                    if (top + bottom + left + right < 8) {
+                        return;
+                    }
+                    const cropWidth = width - left - right;
+                    const cropHeight = height - top - bottom;
+                    if (cropWidth < 200 || cropHeight < 120) {
+                        return;
+                    }
+                    const trimmed = context.getImageData(left, top, cropWidth, cropHeight);
+                    canvas.width = cropWidth;
+                    canvas.height = cropHeight;
+                    canvas.getContext('2d').putImageData(trimmed, 0, 0);
+                };
+
+                const drawIdDocumentCapture = function(video, canvas, photo = null) {
                     const context = canvas.getContext('2d');
                     const rect = getIdDocumentGuideSourceRect(video, 0.035);
+                    const source = photo || video;
+                    const sourceWidth = photo ? photo.width : (video.videoWidth || 0);
+                    const sourceHeight = photo ? photo.height : (video.videoHeight || 0);
                     if (!rect) {
-                        const fallbackWidth = Math.min(1920, video.videoWidth || 1280);
-                        const fallbackHeight = video.videoWidth
-                            ? Math.max(1, Math.round(fallbackWidth * (video.videoHeight / video.videoWidth)))
+                        const fallbackWidth = Math.min(1920, sourceWidth || 1280);
+                        const fallbackHeight = sourceWidth
+                            ? Math.max(1, Math.round(fallbackWidth * (sourceHeight / sourceWidth)))
                             : Math.round(fallbackWidth / (4 / 3));
                         canvas.width = fallbackWidth;
                         canvas.height = fallbackHeight;
-                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        context.drawImage(source, 0, 0, canvas.width, canvas.height);
                         return;
                     }
 
-                    const targetWidth = Math.min(1920, Math.max(640, Math.round(rect.width)));
-                    const targetHeight = Math.max(1, Math.round(targetWidth * (rect.height / rect.width)));
+                    // The guide rect is measured in video-frame pixels; a still photo can
+                    // be larger than the video stream, so rescale the crop to match it.
+                    const scaleX = photo && video.videoWidth ? photo.width / video.videoWidth : 1;
+                    const scaleY = photo && video.videoHeight ? photo.height / video.videoHeight : 1;
+                    const cropX = rect.x * scaleX;
+                    const cropY = rect.y * scaleY;
+                    const cropWidth = Math.max(1, rect.width * scaleX);
+                    const cropHeight = Math.max(1, rect.height * scaleY);
+                    const targetWidth = Math.min(1920, Math.max(640, Math.round(cropWidth)));
+                    const targetHeight = Math.max(1, Math.round(targetWidth * (cropHeight / cropWidth)));
                     canvas.width = targetWidth;
                     canvas.height = targetHeight;
-                    context.drawImage(video, rect.x, rect.y, rect.width, rect.height, 0, 0, targetWidth, targetHeight);
+                    context.drawImage(source, cropX, cropY, cropWidth, cropHeight, 0, 0, targetWidth, targetHeight);
                 };
 
                 const startIdDocumentAutoCapture = function(side = activeIdDocumentSide) {
@@ -1251,8 +1362,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     idDocumentStream = await navigator.mediaDevices.getUserMedia({
                         video: {
                             facingMode: {ideal: 'environment'},
-                            width: {ideal: 2560},
-                            height: {ideal: 1440}
+                            width: {ideal: 3840},
+                            height: {ideal: 2160}
                         },
                         audio: false
                     }).catch(() => navigator.mediaDevices.getUserMedia({video: true, audio: false}));
@@ -1267,6 +1378,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         setIdDocumentCaptureState('hidden', captureSide);
                         return false;
                     }
+                    await improveIdDocumentStreamResolution(video);
 
                     setIdDocumentCaptureState('camera', captureSide);
                     startIdDocumentAutoCapture(captureSide);
@@ -1295,7 +1407,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         return 'notready';
                     }
 
-                    drawIdDocumentCapture(video, canvas);
+                    const photo = await takeIdDocumentPhoto();
+                    drawIdDocumentCapture(video, canvas, photo);
+                    trimLetterboxBars(canvas);
                     if (getCaptureSharpness(canvas) < idDocumentMinCaptureSharpness) {
                         idDocumentAutoCaptureScore = 0;
                         setIdDocumentGuideProgress(captureSide, 0, false);
@@ -1690,18 +1804,29 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 bindIdDocumentCaptureButtons('front');
                 bindIdDocumentCaptureButtons('back');
 
-                $("#idverificationcamera").click(async function(event) {
+                $("#idverificationexempt").click(function(event) {
                     event.preventDefault();
-                    setRequirementStatus('identity', 'pending');
-                    try {
-                        if (!await startIdVerificationCamera()) {
-                            setIdVerificationResult(strings.videonotavailable, false);
-                            setRequirementStatus('identity', 'action');
+                    const button = event.currentTarget;
+                    const result = document.getElementById('id_exemption_result');
+                    button.disabled = true;
+                    Ajax.call([{
+                        methodname: 'quizaccess_proctoring_request_id_exemption',
+                        args: {
+                            courseid: parseInt(props.courseid, 10) || 0,
+                            cmid: parseInt(props.cmid, 10) || 0,
                         }
-                    } catch (error) {
-                        setIdVerificationResult(strings.videonotavailable, false);
-                        setRequirementStatus('identity', 'action');
-                    }
+                    }])[0].done(function(res) {
+                        if (result) {
+                            result.textContent = res.message;
+                            result.style.display = 'block';
+                        }
+                        if (res.status !== 'sent' && res.status !== 'already') {
+                            button.disabled = false;
+                        }
+                    }).fail(function(error) {
+                        button.disabled = false;
+                        Notification.exception(error);
+                    });
                 });
 
                 $("#idverificationvalidate").click(async function(event) {
@@ -1741,6 +1866,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         return;
                     }
 
+                    const liveVideo = document.getElementById('proctoring-id-live-video');
+                    const cameraWasLive = !!(idLiveStream && liveVideo &&
+                        liveVideo.srcObject === idLiveStream && liveVideo.videoWidth);
                     let cameraReady = false;
                     try {
                         cameraReady = await startIdVerificationCamera();
@@ -1751,6 +1879,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     if (!cameraReady) {
                         failIdentity(strings.videonotavailable);
                         return;
+                    }
+
+                    // Verify ID starts the camera itself; when it was off, give
+                    // auto-exposure and the student a moment before the snapshot.
+                    if (!cameraWasLive) {
+                        await new Promise((resolve) => window.setTimeout(resolve, 1500));
                     }
 
                     const video = document.getElementById('proctoring-id-live-video');

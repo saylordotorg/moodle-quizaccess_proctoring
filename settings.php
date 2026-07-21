@@ -423,6 +423,14 @@ if ($hassiteconfig) {
         PARAM_TEXT
     ));
 
+    $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/idexemptioncontactemail',
+        get_string('setting:idexemptioncontactemail', 'quizaccess_proctoring'),
+        get_string('setting:idexemptioncontactemail_desc', 'quizaccess_proctoring'),
+        '',
+        PARAM_NOTAGS
+    ));
+
     $settings->add(new admin_setting_configcheckbox(
         'quizaccess_proctoring/idverificationrequireback',
         get_string('setting:idverificationrequireback', 'quizaccess_proctoring'),

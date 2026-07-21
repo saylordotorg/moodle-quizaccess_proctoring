@@ -478,6 +478,40 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * Builds the "I can't provide a photo ID" request block for the precheck.
+     *
+     * Shown only when a contact address is configured and the student has not
+     * already passed ID verification. The button emails the configured contact
+     * (student support) who can then waive the requirement for this student via
+     * the Manage overrides page — the exception stays a human decision.
+     *
+     * @param bool $idverificationpassed Whether the student already passed.
+     * @return string HTML block, or an empty string when unavailable.
+     */
+    private static function get_id_exemption_request_html(bool $idverificationpassed): string {
+        if ($idverificationpassed) {
+            return '';
+        }
+        $contact = trim((string)get_config('quizaccess_proctoring', 'idexemptioncontactemail'));
+        if ($contact === '' || !validate_email($contact)) {
+            return '';
+        }
+
+        return html_writer::div(
+            html_writer::tag('button', get_string('modal:idexemptionbutton', 'quizaccess_proctoring'), [
+                'type' => 'button',
+                'id' => 'idverificationexempt',
+                'class' => 'btn btn-link p-0 proctoring-idv-exempt-link',
+            ]) .
+            html_writer::div('', 'proctoring-idv-exempt-note', [
+                'id' => 'id_exemption_result',
+                'style' => 'display:none;',
+            ]),
+            'proctoring-idv-exempt mt-2'
+        );
+    }
+
+    /**
      * Determine whether this preflight submission should require ID verification.
      *
      * @param int|null $attemptid Current attempt id, if one already exists.
@@ -1199,15 +1233,6 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 html_writer::div(
                     html_writer::tag(
                         'button',
-                        get_string('modal:idverificationcapture', 'quizaccess_proctoring'),
-                        [
-                            'type' => 'button',
-                            'id' => 'idverificationcamera',
-                            'class' => 'btn btn-secondary mr-2 mb-2',
-                        ]
-                    ) .
-                    html_writer::tag(
-                        'button',
                         html_writer::div('', 'proctoring-loadingspinner', ['id' => 'idverification_spinner']) .
                             get_string('modal:idverificationverify', 'quizaccess_proctoring'),
                         [
@@ -1228,7 +1253,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                         ['id' => 'id_verification_result']
                     ),
                     'proctoring-idv-result mt-2'
-                ),
+                ) .
+                self::get_id_exemption_request_html($idverificationpassed),
                 'proctoring-idv-panel alert alert-info'
             );
 

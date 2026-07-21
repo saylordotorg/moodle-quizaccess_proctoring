@@ -63,6 +63,17 @@ $functions = [
         'services'     => [MOODLE_OFFICIAL_MOBILE_SERVICE],
     ],
 
+    // Ask student support to waive ID verification for a student without a photo ID.
+    'quizaccess_proctoring_request_id_exemption' => [
+        'classname'    => 'quizaccess_proctoring_external',
+        'methodname'   => 'request_id_exemption',
+        'description'  => 'Email the configured contact to request an ID verification exception.',
+        'type'         => 'write',
+        'ajax'         => true,
+        'capabilities' => '',
+        'services'     => [MOODLE_OFFICIAL_MOBILE_SERVICE],
+    ],
+
     // Log suspicious browser activity during a proctored quiz attempt.
     'quizaccess_proctoring_log_event' => [
         'classname'    => 'quizaccess_proctoring_external',

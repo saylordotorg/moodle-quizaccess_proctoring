@@ -193,6 +193,7 @@ $string['eventtype:contextmenu'] = 'Opened context menu';
 $string['eventtype:face_missing'] = 'No face visible';
 $string['eventtype:focus_lost'] = 'Left quiz window';
 $string['eventtype:focus_returned'] = 'Returned to quiz window';
+$string['eventtype:id_exemption_requested'] = 'Requested an ID verification exception';
 $string['eventtype:monitor_detection_unavailable'] = 'Monitor detection unavailable';
 $string['eventtype:mouse_left_window'] = 'Mouse left quiz window';
 $string['eventtype:mouse_returned_window'] = 'Mouse returned to quiz window';
@@ -254,6 +255,19 @@ $string['heldcertificates:viewtoggle'] = 'Held certificates';
 $string['honorstatement:agreementdefault'] = 'I have read and agree to the above statement.';
 $string['honorstatement:default'] = 'I understand that it is important that the attempt I am about to make is all my own work. I understand what constitutes plagiarism or cheating, and I will not undertake such activities.';
 $string['honorstatement:heading'] = 'Please read the following message';
+$string['idexemptioncontactname'] = 'Student support';
+$string['idexemptionemailbody'] = 'A student has requested an exception to photo ID verification for a proctored exam.
+
+Student: {$a->student} ({$a->email}, user id {$a->userid})
+Course: {$a->course}
+Exam: {$a->quiz}
+Requested: {$a->time}
+
+If the exception is appropriate, waive the ID verification requirement for this student on the Manage overrides page:
+{$a->overridesurl}
+
+The student can start the exam once the override is in place.';
+$string['idexemptionemailsubject'] = 'ID verification exception request: {$a->student} — {$a->quiz}';
 $string['identity_mismatch_label'] = 'Identity Mismatch';
 $string['image'] = 'Upload Image';
 $string['image_not_uploaded'] = 'The uploaded image does not contain any faces.';
@@ -280,8 +294,12 @@ $string['mobilescreenshare:blocked'] = 'This quiz requires desktop screen sharin
 $string['modal:checkmonitors'] = 'Check monitor setup';
 $string['modal:faceregistration'] = 'Face registration:';
 $string['modal:facevalidation'] = 'Face validated:';
+$string['modal:idexemptionalready'] = 'You already sent a request for this exam. Student support will contact you — you do not need to send another.';
+$string['modal:idexemptionbutton'] = 'I can\'t provide a photo ID';
+$string['modal:idexemptionfailed'] = 'Your request could not be sent. Please contact student support directly.';
+$string['modal:idexemptionsent'] = 'Your request has been sent to student support. They will review it and contact you; once an exception is approved you can start the exam without ID verification.';
+$string['modal:idexemptionunavailable'] = 'Exception requests are not available right now. Please contact student support directly.';
 $string['modal:idverification'] = 'ID verification:';
-$string['modal:idverificationcapture'] = 'Start camera';
 $string['modal:idverificationdocument'] = 'ID image';
 $string['modal:idverificationdocumentback'] = 'ID back image';
 $string['modal:idverificationdocumentbackmissing'] = 'Upload a clear image of the back of your ID first.';
@@ -913,6 +931,8 @@ $string['setting:honorstatement'] = 'Pre-quiz integrity statement';
 $string['setting:honorstatement_desc'] = 'Message students must read before starting a proctored quiz.';
 $string['setting:honorstatementrequired'] = 'Require pre-quiz integrity statement';
 $string['setting:honorstatementrequired_desc'] = 'If enabled, students must check the integrity statement agreement before the quiz can start.';
+$string['setting:idexemptioncontactemail'] = 'ID exception contact email';
+$string['setting:idexemptioncontactemail_desc'] = 'Where "I can\'t provide a photo ID" requests are sent (for example student affairs). Students who cannot obtain identity documents — such as refugees or displaced people — can ask for the ID check to be waived; staff grant the exception per student on the quiz\'s Manage overrides page. Leave empty to hide the request option.';
 $string['setting:idverificationapikey'] = 'ID verification API key';
 $string['setting:idverificationapikey_desc'] = 'API key sent to the Saylor ID verification endpoint in the X-API-Key header.';
 $string['setting:idverificationcheckface'] = 'Check ID photo against live face';

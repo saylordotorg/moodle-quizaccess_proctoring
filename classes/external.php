@@ -1139,6 +1139,135 @@ class quizaccess_proctoring_external extends external_api {
     }
 
     /**
+     * Returns the ID exemption request parameter definition.
+     *
+     * @return external_function_parameters
+     */
+    public static function request_id_exemption_parameters() {
+        return new external_function_parameters(
+            [
+                'courseid' => new external_value(PARAM_INT, 'course id'),
+                'cmid' => new external_value(PARAM_INT, 'cm id'),
+            ]
+        );
+    }
+
+    /**
+     * Emails the configured contact so staff can waive ID verification for a student.
+     *
+     * For students who cannot provide a photo ID (refugees, displaced people, and
+     * others without access to identity documents). The request notifies the
+     * configured contact address with the student and quiz details plus a link to
+     * the Manage overrides page; granting the exception stays a human decision.
+     *
+     * @param int $courseid Course ID.
+     * @param int $cmid Quiz course module ID.
+     * @return array Status and student-facing message.
+     */
+    public static function request_id_exemption($courseid, $cmid) {
+        global $DB, $USER;
+
+        self::validate_parameters(
+            self::request_id_exemption_parameters(),
+            [
+                'courseid' => $courseid,
+                'cmid' => $cmid,
+            ]
+        );
+
+        [$cm, $context] = self::get_authorized_quiz_context((int)$courseid, (int)$cmid);
+        unset($context);
+
+        $contact = trim((string)get_config('quizaccess_proctoring', 'idexemptioncontactemail'));
+        if (
+            (int)get_config('quizaccess_proctoring', 'idverificationenabled') !== 1 ||
+                $contact === '' || !validate_email($contact)
+        ) {
+            return [
+                'status' => 'unavailable',
+                'message' => get_string('modal:idexemptionunavailable', 'quizaccess_proctoring'),
+            ];
+        }
+
+        // One request per student, quiz, and day keeps the contact inbox sane.
+        $prefname = 'quizaccess_proctoring_idexempt_' . (int)$cm->id;
+        $lastrequest = (int)get_user_preferences($prefname, 0);
+        if ($lastrequest > time() - DAYSECS) {
+            return [
+                'status' => 'already',
+                'message' => get_string('modal:idexemptionalready', 'quizaccess_proctoring'),
+            ];
+        }
+
+        $course = get_course((int)$courseid);
+        $quizname = format_string((string)($DB->get_field('quiz', 'name', ['id' => $cm->instance]) ?: $cm->name));
+        $overridesurl = new moodle_url('/mod/quiz/accessrule/proctoring/manage_overrides.php', ['cmid' => (int)$cm->id]);
+        $details = (object)[
+            'student' => fullname($USER),
+            'email' => (string)$USER->email,
+            'userid' => (int)$USER->id,
+            'course' => format_string($course->fullname),
+            'quiz' => $quizname,
+            'time' => userdate(time()),
+            'overridesurl' => $overridesurl->out(false),
+        ];
+
+        $recipient = clone core_user::get_noreply_user();
+        $recipient->email = $contact;
+        $recipient->firstname = get_string('idexemptioncontactname', 'quizaccess_proctoring');
+        $recipient->lastname = '';
+        $recipient->maildisplay = 1;
+        $recipient->emailstop = 0;
+        $sent = email_to_user(
+            $recipient,
+            core_user::get_noreply_user(),
+            get_string('idexemptionemailsubject', 'quizaccess_proctoring', $details),
+            get_string('idexemptionemailbody', 'quizaccess_proctoring', $details)
+        );
+        if (!$sent) {
+            return [
+                'status' => 'error',
+                'message' => get_string('modal:idexemptionfailed', 'quizaccess_proctoring'),
+            ];
+        }
+
+        // Audit trail: the request shows up alongside the attempt's other events.
+        $record = new stdClass();
+        $record->courseid = (int)$courseid;
+        $record->quizid = (int)$cm->id;
+        $record->userid = (int)$USER->id;
+        $record->attemptid = 0;
+        $record->reportid = 0;
+        $record->eventtype = 'id_exemption_requested';
+        $record->eventdetail = substr(json_encode(['contact' => $contact]), 0, 2000);
+        $record->pagevisibility = 'visible';
+        $record->currenturl = '';
+        $record->screenshoturl = '';
+        $record->timemodified = time();
+        $DB->insert_record('quizaccess_proctoring_events', $record);
+        set_user_preference($prefname, time());
+
+        return [
+            'status' => 'sent',
+            'message' => get_string('modal:idexemptionsent', 'quizaccess_proctoring'),
+        ];
+    }
+
+    /**
+     * Returns the ID exemption request response structure.
+     *
+     * @return external_single_structure
+     */
+    public static function request_id_exemption_returns() {
+        return new external_single_structure(
+            [
+                'status' => new external_value(PARAM_ALPHA, 'sent, already, unavailable, or error'),
+                'message' => new external_value(PARAM_TEXT, 'Student-facing status message'),
+            ]
+        );
+    }
+
+    /**
      * Saves a pre-attempt ID verification image to Moodle file storage.
      *
      * @param int $courseid Course ID.
