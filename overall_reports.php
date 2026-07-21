@@ -40,6 +40,10 @@ $page = optional_param('page', 0, PARAM_INT);
 $action = optional_param('action', '', PARAM_ALPHA);
 $holdid = optional_param('holdid', 0, PARAM_INT);
 $view = optional_param('view', 'attempts', PARAM_ALPHA);
+$queue = optional_param('queue', 'needs', PARAM_ALPHA);
+if (!in_array($queue, ['needs', 'all', 'reviewed'], true)) {
+    $queue = 'needs';
+}
 
 // The cross-course held-certificate dashboard is a site-wide review surface, so it is guarded by
 // the review capability at the system context. Reviewers without it never see the toggle or view.
@@ -152,15 +156,79 @@ if ($view === 'held') {
     return;
 }
 
-$data = \quizaccess_proctoring\local\overall_report::build($courseid, $range, $minviolations, $sort, $page);
+$data = \quizaccess_proctoring\local\overall_report::build($courseid, $range, $minviolations, $sort, $page, $queue);
 
 $baseurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', [
     'courseid' => $courseid,
     'range' => $range,
     'minviolations' => $minviolations,
     'sort' => $sort,
+    'queue' => $queue,
 ]);
 $pagingbar = $OUTPUT->paging_bar($data['total'], $data['page'], $data['perpage'], $baseurl);
+
+// Build the clickable pulse cards and the review-queue view pills, preserving the active filters.
+$queueurl = function (string $q) use ($courseid, $range, $minviolations, $sort) {
+    return (new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', [
+        'courseid' => $courseid,
+        'range' => $range,
+        'minviolations' => $minviolations,
+        'sort' => $sort,
+        'queue' => $q,
+    ]))->out(false);
+};
+$summary = $data['summary'];
+$pulse = [
+    [
+        'num' => $summary['needsreview'],
+        'label' => get_string('overallreport:pulse_needs', 'quizaccess_proctoring'),
+        'hint' => get_string('overallreport:pulse_needs_hint', 'quizaccess_proctoring'),
+        'url' => $queueurl('needs'),
+        'iscritical' => $summary['needsreview'] > 0,
+        'isactive' => $queue === 'needs',
+    ],
+    [
+        'num' => $summary['totalattempts'],
+        'label' => get_string('overallreport:pulse_attempts', 'quizaccess_proctoring'),
+        'hint' => get_string('overallreport:pulse_attempts_hint', 'quizaccess_proctoring'),
+        'url' => $queueurl('all'),
+        'iscritical' => false,
+        'isactive' => $queue === 'all',
+    ],
+    [
+        'num' => $summary['clean'],
+        'label' => get_string('overallreport:pulse_clean', 'quizaccess_proctoring'),
+        'hint' => get_string('overallreport:pulse_clean_hint', 'quizaccess_proctoring'),
+        'url' => $queueurl('all'),
+        'iscritical' => false,
+        'isactive' => false,
+    ],
+    [
+        'num' => $summary['escalated'],
+        'label' => get_string('overallreport:pulse_escalated', 'quizaccess_proctoring'),
+        'hint' => get_string('overallreport:pulse_escalated_hint', 'quizaccess_proctoring'),
+        'url' => $queueurl('reviewed'),
+        'iscritical' => false,
+        'isactive' => false,
+    ],
+];
+$views = [
+    [
+        'label' => get_string('overallreport:view_needs', 'quizaccess_proctoring', $summary['needsreview']),
+        'url' => $queueurl('needs'),
+        'isactive' => $queue === 'needs',
+    ],
+    [
+        'label' => get_string('overallreport:view_all', 'quizaccess_proctoring'),
+        'url' => $queueurl('all'),
+        'isactive' => $queue === 'all',
+    ],
+    [
+        'label' => get_string('overallreport:view_reviewed', 'quizaccess_proctoring'),
+        'url' => $queueurl('reviewed'),
+        'isactive' => $queue === 'reviewed',
+    ],
+];
 
 $templatecontext = [
     'formurl' => (new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'))->out(false),
@@ -169,9 +237,17 @@ $templatecontext = [
     'rangeoptions' => \quizaccess_proctoring\local\overall_report::range_options($range),
     'sortoptions' => \quizaccess_proctoring\local\overall_report::sort_options($sort),
     'minviolations' => $minviolations,
-    'summary' => $data['summary'],
+    'queue' => $queue,
+    'pulse' => $pulse,
+    'views' => $views,
+    'countnote' => get_string('overallreport:countnote', 'quizaccess_proctoring', (object)[
+        'shown' => count($data['rows']),
+        'total' => $summary['totalattempts'],
+    ]),
+    'summary' => $summary,
     'rows' => $data['rows'],
     'hasrows' => $data['hasrows'],
+    'emptyqueue' => !$data['hasrows'] && $queue === 'needs',
     'truncated' => $data['truncated'],
     'truncatednotice' => get_string(
         'overallreport:truncated',
