@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.39
+- Settings page now inherits the LMS theme background instead of forcing a hardcoded grey on the main content region. The white setting cards keep their borders, so they stay delineated on any theme.
+
 # v1.1.38
 - Settings page UX: made the setting rows uniform and fixed the save bar so it floats. Every control (toggles, dropdowns, text fields) now aligns to one shared right edge with a consistent field width, and labels reclaim the horizontal space the old fixed control column was wasting. The save bar, previously a last-in-flow sticky element that never actually floated, is now a fixed bottom tray that stays pinned to the viewport while scrolling and clears the content above it; its Save button was also darkened to meet colour-contrast guidelines. Small muted-grey and font-size adjustments across the page for legibility. CSS-only.
 

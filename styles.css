@@ -2,10 +2,6 @@ body.proctoring-lb-disable-scrolling {
     overflow: hidden;
 }
 
-body.quizaccess-proctoring-settings-page #region-main {
-    background: #eef1f4;
-}
-
 body.quizaccess-proctoring-settings-page #adminsettings {
     color: #1e2a35;
     font-family: "Open Sans", "Segoe UI", sans-serif;
