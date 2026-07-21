@@ -1769,7 +1769,11 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->blockclipboard = (int)(get_config('quizaccess_proctoring', 'blockclipboard') ?? 1);
             $record->captureviolationdesktop = $this->should_capture_violation_desktop() ? 1 : 0;
             $record->multimonitormode = self::multi_monitor_mode();
-            $record->blurquizwithmultiplemonitors = self::blur_quiz_with_multiple_monitors() ? 1 : 0;
+            // Log and Warn are explicit "allow extra monitors" policies, so they win
+            // over the blur checkbox: the blur enforcement only runs when the mode is
+            // Block (belt and braces) or Off (blur as the sole enforcement).
+            $record->blurquizwithmultiplemonitors = (self::blur_quiz_with_multiple_monitors() &&
+                !in_array($record->multimonitormode, [self::MULTI_MONITOR_LOG, self::MULTI_MONITOR_WARN], true)) ? 1 : 0;
             $record->blurquizwithoutface = (int)(get_config('quizaccess_proctoring', 'blurquizwithoutface') ?? 0);
             $faceblurminscore = (float)(get_config('quizaccess_proctoring', 'faceblurminscore') ?: 0.30);
             $record->faceblurminscore = max(0.10, min(0.95, $faceblurminscore));
