@@ -294,11 +294,14 @@ final class overall_report {
         }
         $attemptids = array_keys($attemptids);
 
-        // Map each attempt onto the review queue using the existing risk-hold lifecycle:
-        // an active hold (or an unheld attempt with violations) needs a decision; a released hold
-        // is reviewed; a confirmed or auto-failed hold is escalated; everything else is clean.
+        // Map each attempt onto the review queue using the existing risk-hold lifecycle. Only an
+        // active hold is actionable (release/confirm), so only that state enters the "needs review"
+        // queue: a released hold is reviewed; a confirmed/auto-failed hold is escalated; an unheld
+        // attempt that still has violations is "flagged" (surfaced under All attempts for context
+        // but not parked in the actionable queue, since there is no hold to act on); everything
+        // else is clean.
         $holdstates = self::hold_states($attemptids);
-        $pulse = ['needs' => 0, 'reviewed' => 0, 'escalated' => 0, 'clean' => 0];
+        $pulse = ['needs' => 0, 'flagged' => 0, 'reviewed' => 0, 'escalated' => 0, 'clean' => 0];
         foreach ($attempts as $k => $a) {
             $status = $a['attemptid'] > 0 ? ($holdstates[$a['attemptid']] ?? null) : null;
             if ($status === \QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED) {
@@ -306,8 +309,10 @@ final class overall_report {
             } else if ($status === \QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED ||
                     $status === \QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED) {
                 $reviewstate = 'escalated';
-            } else if ($status === \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE || $a['violations'] > 0) {
+            } else if ($status === \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
                 $reviewstate = 'needs';
+            } else if ($a['violations'] > 0) {
+                $reviewstate = 'flagged';
             } else {
                 $reviewstate = 'clean';
             }
@@ -582,6 +587,7 @@ final class overall_report {
             $reviewstate = $a['reviewstate'] ?? 'clean';
             $statuslabels = [
                 'needs' => get_string('overallreport:status_needs', 'quizaccess_proctoring'),
+                'flagged' => get_string('overallreport:status_flagged', 'quizaccess_proctoring'),
                 'reviewed' => get_string('overallreport:status_reviewed', 'quizaccess_proctoring'),
                 'escalated' => get_string('overallreport:status_escalated', 'quizaccess_proctoring'),
                 'clean' => get_string('overallreport:status_clean', 'quizaccess_proctoring'),

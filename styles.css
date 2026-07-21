@@ -3328,6 +3328,11 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     color: #fff;
 }
 
+.proctoring-overview-status-flagged {
+    background: #fdf3e0;
+    color: #7d5300;
+}
+
 .proctoring-overview-status-clean {
     background: #eef1f4;
     color: #5f6c79;

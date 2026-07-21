@@ -383,6 +383,7 @@ $string['overallreport:stat_students'] = 'Test takers';
 $string['overallreport:stat_violations'] = 'Attempts with violations';
 $string['overallreport:status_clean'] = 'Clean';
 $string['overallreport:status_escalated'] = 'Escalated';
+$string['overallreport:status_flagged'] = 'Flagged';
 $string['overallreport:status_needs'] = 'Needs review';
 $string['overallreport:status_reviewed'] = 'Reviewed';
 $string['overallreport:truncated'] = 'Showing up to {$a} attempts per data source. Narrow the period or choose a course to see the rest.';
