@@ -1492,11 +1492,11 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 }
 
 .proctoring-verdict-kicker {
-    font-size: 11px;
+    font-size: 0.8125rem;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #6b7885;
+    color: #5a6673;
 }
 
 .proctoring-verdict-scorerow {
@@ -1506,49 +1506,49 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 }
 
 .proctoring-verdict-score {
-    font-size: 34px;
+    font-size: 2.5rem;
     font-weight: 800;
     line-height: 1;
     color: #1e2a35;
 }
 
 .proctoring-verdict-denom {
-    font-size: 14px;
-    color: #6b7885;
+    font-size: 1rem;
+    color: #5a6673;
     font-weight: 600;
 }
 
 .proctoring-verdict-pill {
     margin-top: 6px;
     align-self: flex-start;
-    padding: 3px 10px;
+    padding: 4px 12px;
     border-radius: 999px;
-    font-size: 12px;
+    font-size: 0.875rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     background: #eef1f4;
-    color: #4a5866;
+    color: #3f4a55;
 }
 
 .proctoring-pill-low {
     background: #e8f2e9;
-    color: #3e7d48;
+    color: #2c5e36;
 }
 
 .proctoring-pill-moderate {
     background: #fdf3e0;
-    color: #b07407;
+    color: #7d5300;
 }
 
 .proctoring-pill-high {
     background: #fde8dc;
-    color: #c05621;
+    color: #96411a;
 }
 
 .proctoring-pill-critical {
     background: #fbe7e4;
-    color: #b3423a;
+    color: #9c322b;
 }
 
 .proctoring-verdict-textcol {
@@ -1560,15 +1560,16 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 }
 
 .proctoring-verdict-headline {
-    font-size: 16px;
+    font-size: 1.125rem;
+    line-height: 1.4;
     font-weight: 700;
     color: #1e2a35;
 }
 
 .proctoring-verdict-sub {
-    font-size: 13px;
+    font-size: 0.9375rem;
     line-height: 1.5;
-    color: #6b7885;
+    color: #5a6673;
 }
 
 .proctoring-verdict-actioncol {
@@ -1580,10 +1581,10 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 
 .proctoring-verdict-cta {
     display: inline-block;
-    background: #f98012;
+    background: #b95400;
     color: #ffffff;
     font-weight: 700;
-    font-size: 13.5px;
+    font-size: 1rem;
     padding: 10px 18px;
     border-radius: 4px;
     text-align: center;
@@ -1592,14 +1593,22 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 
 .proctoring-verdict-cta:hover,
 .proctoring-verdict-cta:focus {
-    background: #e06f05;
+    background: #934300;
     color: #ffffff;
     text-decoration: none;
 }
 
+.proctoring-verdict-cta:focus-visible,
+.proctoring-finding-fpaction:focus-visible,
+.proctoring-passed-summary:focus-visible,
+.proctoring-scoring-details summary:focus-visible {
+    outline: 3px solid #0f6cbf;
+    outline-offset: 2px;
+}
+
 .proctoring-verdict-meta {
-    font-size: 11.5px;
-    color: #8a96a3;
+    font-size: 0.875rem;
+    color: #5f6c79;
     text-align: center;
 }
 
@@ -1656,7 +1665,7 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 .proctoring-meter-labels {
     display: flex;
     margin-top: 8px;
-    font-size: 11px;
+    font-size: 0.875rem;
     font-weight: 600;
 }
 
@@ -1667,19 +1676,19 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 }
 
 .proctoring-zonelabel-low {
-    color: #3e7d48;
+    color: #2c5e36;
 }
 
 .proctoring-zonelabel-moderate {
-    color: #b07407;
+    color: #7d5300;
 }
 
 .proctoring-zonelabel-high {
-    color: #c05621;
+    color: #96411a;
 }
 
 .proctoring-zonelabel-critical {
-    color: #b3423a;
+    color: #9c322b;
 }
 
 .proctoring-verdict-section {
@@ -1692,19 +1701,19 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 }
 
 .proctoring-verdict-sectionlabel {
-    font-size: 12px;
+    font-size: 0.875rem;
     font-weight: 800;
     letter-spacing: 0.08em;
     text-transform: uppercase;
 }
 
 .proctoring-verdict-flaggedlabel {
-    color: #b3423a;
+    color: #9c322b;
     margin-bottom: 14px;
 }
 
 .proctoring-verdict-passedlabel {
-    color: #3e7d48;
+    color: #2c5e36;
 }
 
 /* Flag accent palette shared by finding dots, timeline dots, and legend swatches. */
@@ -1748,11 +1757,11 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 }
 
 .proctoring-timeline-title {
-    font-size: 11px;
+    font-size: 0.8125rem;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #8a96a3;
+    color: #5a6673;
     margin-bottom: 10px;
 }
 
@@ -1778,8 +1787,8 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
     display: flex;
     justify-content: space-between;
     margin-top: 6px;
-    font-size: 11px;
-    color: #8a96a3;
+    font-size: 0.8125rem;
+    color: #5a6673;
 }
 
 .proctoring-timeline-legend {
@@ -1793,8 +1802,8 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 11.5px;
-    color: #4a5866;
+    font-size: 0.875rem;
+    color: #3f4a55;
 }
 
 .proctoring-legend-swatch {
@@ -1831,24 +1840,24 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 }
 
 .proctoring-finding-title {
-    font-size: 15.5px;
+    font-size: 1.0625rem;
     font-weight: 700;
     color: #1e2a35;
 }
 
 .proctoring-finding-badge {
-    padding: 2px 9px;
+    padding: 3px 10px;
     border-radius: 999px;
     background: #fbe7e4;
-    color: #b3423a;
-    font-size: 12px;
+    color: #9c322b;
+    font-size: 0.875rem;
     font-weight: 700;
 }
 
 .proctoring-finding-desc {
-    font-size: 13px;
+    font-size: 0.9375rem;
     line-height: 1.55;
-    color: #4a5866;
+    color: #3f4a55;
     margin-top: 6px;
     max-width: 66ch;
 }
@@ -1869,14 +1878,14 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 }
 
 .proctoring-finding-capturemeta {
-    font-size: 11.5px;
-    color: #4a5866;
+    font-size: 0.875rem;
+    color: #3f4a55;
     font-weight: 600;
     margin-top: 5px;
 }
 
 .proctoring-finding-capturemeta span {
-    color: #8a96a3;
+    color: #5f6c79;
     font-weight: 400;
 }
 
@@ -1888,25 +1897,30 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 
 .proctoring-finding-badge-dismissed {
     background: #e7ebef;
-    color: #5a6b7c;
+    color: #495663;
 }
 
 .proctoring-finding-fpaction {
     margin-left: auto;
-    font-size: 12px;
+    font-size: 0.875rem;
     font-weight: 700;
-    color: #c96a00;
+    color: #9d5400;
     white-space: nowrap;
 }
 
+.proctoring-finding-fpaction:hover {
+    color: #7a4100;
+    text-decoration: underline;
+}
+
 .proctoring-finding-fpbyline {
-    font-size: 11.5px;
-    color: #8a96a3;
+    font-size: 0.875rem;
+    color: #5f6c79;
     margin-top: 4px;
 }
 
 .proctoring-fp-holdhint {
-    font-size: 13px;
+    font-size: 0.9375rem;
     font-weight: 600;
 }
 
@@ -1928,15 +1942,15 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 }
 
 .proctoring-passed-note {
-    font-size: 12px;
-    color: #8a96a3;
+    font-size: 0.875rem;
+    color: #5f6c79;
 }
 
 .proctoring-passed-toggle {
     margin-left: auto;
-    font-size: 12px;
+    font-size: 0.875rem;
     font-weight: 700;
-    color: #c96a00;
+    color: #9d5400;
 }
 
 .proctoring-passed[open] .proctoring-passed-toggle {
@@ -1954,20 +1968,20 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 13px;
-    color: #4a5866;
+    font-size: 0.9375rem;
+    color: #3f4a55;
 }
 
 .proctoring-passed-check {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     background: #e8f2e9;
-    color: #3e7d48;
+    color: #2c5e36;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 0.75rem;
     font-weight: 800;
     flex-shrink: 0;
 }
@@ -1979,36 +1993,36 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 }
 
 .proctoring-notmonitored-icon {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     background: #eef1f4;
-    color: #6b7885;
+    color: #5a6673;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
+    font-size: 0.8125rem;
     font-weight: 800;
     flex-shrink: 0;
     margin-top: 1px;
 }
 
 .proctoring-notmonitored-text {
-    font-size: 13px;
+    font-size: 0.9375rem;
     line-height: 1.55;
-    color: #6b7885;
+    color: #5a6673;
     max-width: 70ch;
 }
 
 .proctoring-notmonitored-text strong {
-    color: #4a5866;
+    color: #3f4a55;
 }
 
 .proctoring-scoring-details summary {
     cursor: pointer;
-    font-size: 12px;
+    font-size: 0.9375rem;
     font-weight: 700;
-    color: #6b7885;
+    color: #5a6673;
 }
 
 .proctoring-scoring-details[open] summary {
@@ -2016,8 +2030,8 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
 }
 
 .proctoring-verdict-footnote {
-    font-size: 12px;
-    color: #8a96a3;
+    font-size: 0.875rem;
+    color: #5f6c79;
     margin-top: 14px;
     line-height: 1.6;
     max-width: 78ch;
