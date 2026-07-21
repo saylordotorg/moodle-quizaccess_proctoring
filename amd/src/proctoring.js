@@ -314,6 +314,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let latestDesktopFrame = '';
             let multiMonitorLastState = '';
             let focusLostSince = 0;
+            let suppressFocusLossUntil = 0;
             let phoneModel = null;
             let phoneCanvas = null;
             let phoneConsecutive = 0;
@@ -754,6 +755,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (event) {
                     event.preventDefault();
                 }
+
+                // The helper window (or the browser's share picker) is about to take
+                // focus at our own request; that must not count against the student.
+                suppressFocusLossUntil = Date.now() + 15000;
 
                 if (screenMonitorClient) {
                     screenMonitorClient.open();
@@ -1241,6 +1246,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }, true);
 
                 window.addEventListener('blur', function() {
+                    if (Date.now() < suppressFocusLossUntil) {
+                        return;
+                    }
                     focusLostSince = Date.now();
                     logEvent('focus_lost', {
                         reason: 'window_blur'

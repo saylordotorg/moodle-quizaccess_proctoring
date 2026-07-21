@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.6.3
+- Fixed the "Desktop capture required" prompt reappearing on every quiz page and the focus-loss churn it caused. Browsers throttle the hidden screen-share helper window's timers to as little as once a minute, so its marker check went stale, and status requests replied from that stale cache — every page navigation then looked like a wrong-screen share within seconds. The helper now runs a fresh marker check whenever the quiz page asks for status (message handlers are not throttled), and the marker grace window is extended to cover page-navigation gaps.
+- Clicking "Share entire screen" no longer logs focus-loss violations against the student: the helper window (or the browser's share picker) taking focus at the plugin's own request suppresses focus-loss logging for 15 seconds.
+
 # v1.6.2
 - Browser-native AI side panels (Gemini in Chrome, Copilot in Edge) are now detected. The old check only fired when a student clicked an AI-named link inside the quiz page itself, so panels living in the browser's own UI were invisible to it. Opening one now triggers a "Possible AI tool interaction" event (with the usual desktop capture) via its geometry signature — the page viewport narrows sharply (220px+) while the window keeps its size and the zoom level stays constant, which filters out window resizes, snapping, and zooming. A panel already open when the attempt page loads is caught by the window-vs-viewport width gap at integer zoom levels. 90-second cooldown between detections.
 

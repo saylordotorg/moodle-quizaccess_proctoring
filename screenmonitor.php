@@ -80,7 +80,7 @@ HTML;
 
 $js = <<<JS
 (function(config) {
-    const markerGraceMs = 20000;
+    const markerGraceMs = 30000;
     const statusIntervalMs = 2000;
     const markerMissingNotifyMs = 15000;
     let channel = null;
@@ -352,7 +352,12 @@ $js = <<<JS
         channel.onmessage = function(event) {
             const message = event.data || {};
             if (message.type === 'status_request') {
-                publishStatus();
+                // Run a fresh marker check instead of replying from cache: browsers
+                // throttle this hidden window's timers (to as little as once a
+                // minute), so the interval-driven marker state can be long stale by
+                // the time the quiz page asks. Message handlers are not throttled,
+                // and checkMarker() publishes the status itself.
+                checkMarker();
             } else if (message.type === 'screenshot_request' && ready && channel) {
                 channel.postMessage({
                     type: 'screenshot',
