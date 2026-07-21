@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.5.3
+- The ID exception confirmation now sets expectations and catches stale contact details: "Your request has been sent to student support. They will review it within 24-48 hours and contact you with any questions. Once an exception is approved you can start the exam without ID verification. Make sure the email (student@example.com) in your profile is accurate." — with the student's actual profile email shown inline. Updated in English, Spanish, and Portuguese.
+
 # v1.5.2
 - The per-student overrides page is now discoverable: the quiz proctoring report header shows a "Manage overrides" button for users with the manage-overrides capability. Previously the page (where staff waive ID verification and other requirements per student — including granting the "I can't provide a photo ID" exceptions) was reachable only by typing its URL.
 

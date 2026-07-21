@@ -1249,7 +1249,7 @@ class quizaccess_proctoring_external extends external_api {
 
         return [
             'status' => 'sent',
-            'message' => get_string('modal:idexemptionsent', 'quizaccess_proctoring'),
+            'message' => get_string('modal:idexemptionsent', 'quizaccess_proctoring', (string)$USER->email),
         ];
     }
 
