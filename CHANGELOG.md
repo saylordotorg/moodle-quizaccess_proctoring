@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.2.0
+Starts the 1.2 series, bundling the admin/report redesign work from the 1.1.40–1.1.43 entries below (settings page, Exam integrity review queue, Risk factor scoring cards) with their follow-up fixes. Going forward, minor versions mark feature releases and patch versions mark fixes.
+- Risk factor scoring page: Moodle validation feedback is no longer hidden with the original settings rows. When a save is rejected (e.g. a non-integer risk level or factor cap), the error message rendered in the original (now hidden) row is relocated next to the relocated input inside its card, so the reason the save failed stays visible.
+
+# v1.1.43
+- Fixed the Risk factor scoring page rendering the raw Moodle settings list above the redesigned cards. The transform now hides each original settings row from JavaScript (tagging it directly) instead of relying on a CSS child selector, which did not match Moodle's actual settings markup nesting, so only the redesigned cards show.
+- Fixed the settings-page toggle running off the right edge on narrow admin content widths: the setting-row control column can now shrink (minmax(0, max-content)) instead of being pinned to its min-content width, so the toggle always stays within the card.
+
 # v1.1.42
 - Removed the redundant heading banner from the top of the Proctoring settings page (the "Site-wide exam supervision / Proctoring settings / Choose how exams are supervised…" block), which duplicated the Moodle settings page heading. The settings search box is kept.
 # v1.1.41

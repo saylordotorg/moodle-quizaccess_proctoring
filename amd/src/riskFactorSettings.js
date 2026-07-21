@@ -238,11 +238,26 @@ define([], function() {
     const buildNumberCell = function(input, caption, onInput) {
         const cell = el('div', 'quizaccess-proctoring-rfs-numcell');
         if (input) {
+            // Capture the original settings row before the input is relocated out of it.
+            const originalitem = input.closest('.form-item');
             input.classList.add('quizaccess-proctoring-rfs-num');
             input.setAttribute('inputmode', 'numeric');
             cell.appendChild(input);
             input.addEventListener('input', onInput);
             input.addEventListener('change', onInput);
+
+            // Relocate any validation feedback Moodle rendered in the original row (which is
+            // hidden after the transform), so a failed save stays visible next to its field.
+            if (originalitem) {
+                const error = originalitem.querySelector(
+                    '.form-error, .invalid-feedback, .form-control-feedback, .error'
+                );
+                if (error && error.textContent.trim()) {
+                    error.classList.add('quizaccess-proctoring-rfs-fielderror');
+                    cell.appendChild(error);
+                    cell.classList.add('has-error');
+                }
+            }
         }
         if (caption) {
             const cap = el('div', 'quizaccess-proctoring-rfs-numcaption');
@@ -598,6 +613,20 @@ define([], function() {
                 }
 
                 fieldset.appendChild(layout);
+
+                // Hide every original settings row and section heading now that their inputs have
+                // been relocated into the card layout. This is done in JS (not a CSS child selector)
+                // because Moodle's real settings markup nests the rows more deeply than a
+                // "#adminsettings > fieldset > .form-item" rule can reach, which previously left the
+                // raw list visible above the redesigned cards.
+                Array.from(admin.querySelectorAll('.form-item, h3, .form-description')).forEach(
+                    function(node) {
+                        if (!layout.contains(node)) {
+                            node.classList.add('quizaccess-proctoring-rfs-original-hidden');
+                        }
+                    }
+                );
+
                 capCard.refresh();
                 boundaryCard.refresh();
                 buildSaveBar(admin);

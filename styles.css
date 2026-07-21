@@ -308,8 +308,10 @@ body.quizaccess-proctoring-settings-page [hidden] {
     display: grid !important;
     gap: 0.75rem 2rem;
     /* Control column shrinks to its content (a ~6rem toggle or an 18rem field) so labels keep
-       the remaining width, while flex-end alignment keeps every control on one shared right edge. */
-    grid-template-columns: minmax(0, 1fr) auto;
+       the remaining width, while flex-end alignment keeps every control on one shared right edge.
+       minmax(0, max-content) — rather than a bare `auto` whose min-content floor cannot shrink —
+       lets the column give way on narrow admin widths so the toggle never runs off the edge. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
 }
 
 .quizaccess-proctoring-admin-row-copy {
@@ -2638,15 +2640,14 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
    Risk factor scoring redesign (riskFactorSettings.js transform)
    ============================================================ */
 
-/* Hide the raw Moodle settings rows once their inputs are relocated into the card layout. */
-body.quizaccess-proctoring-rfs-page #adminsettings > fieldset > .form-item,
-body.quizaccess-proctoring-rfs-page #adminsettings > fieldset > h3,
-body.quizaccess-proctoring-rfs-page #adminsettings > fieldset > .form-description,
-body.quizaccess-proctoring-rfs-page #adminsettings > fieldset > p {
+/* Hide the raw Moodle settings rows once their inputs are relocated into the card layout. The
+   transform tags each original row with this class (it can't be done with a child selector because
+   Moodle nests the rows more deeply than a "> fieldset >" rule reaches). */
+.quizaccess-proctoring-rfs-original-hidden {
     display: none !important;
 }
 
-body.quizaccess-proctoring-rfs-page #adminsettings > fieldset > .quizaccess-proctoring-rfs-layout {
+body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-layout {
     display: flex !important;
 }
 
@@ -2902,6 +2903,20 @@ input.quizaccess-proctoring-rfs-num:focus {
 .quizaccess-proctoring-rfs-numcaption {
     font-size: 0.7rem;
     color: #7a8592;
+}
+
+/* Validation feedback relocated from the hidden original row (see buildNumberCell). */
+.quizaccess-proctoring-rfs-fielderror {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #9c322b;
+    text-align: center;
+    max-width: 12rem;
+}
+
+.quizaccess-proctoring-rfs-numcell.has-error input.quizaccess-proctoring-rfs-num {
+    border-color: #9c322b;
 }
 
 .quizaccess-proctoring-rfs-share {
