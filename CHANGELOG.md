@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.5.1
+- Hidden the quiz page's "Back" button during proctored attempts. Moodle core renders a lone tertiary-navigation Back link (to the quiz view page) on every attempt page; on a proctored attempt it only walks students out of the exam mid-attempt — and fires focus-loss violations on the way. It is hidden on attempt and summary pages of proctored quizzes only; review pages and non-proctored quizzes keep it.
+
 # v1.5.0
 Redesigned the Start attempt precheck as a guided stepper (Claude Design: "Proctoring Setup Stepper").
 - The precheck modal now lays out as a two-pane wizard: a "Setup checklist" rail on the left with a numbered dot per requirement (blue for the current step, green check when done, red outline when action is needed), and the active step filling the right pane under a "Step N of M" kicker. Only enabled requirements appear, and the modal widens to 1000px to give camera and screen-share steps room. Completed steps can be revisited by clicking them in the rail; future steps stay locked.

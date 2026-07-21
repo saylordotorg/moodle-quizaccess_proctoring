@@ -1391,6 +1391,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                 }
                 takepicturedelay = props.camshotdelay;
+                // Quiz core renders a lone tertiary-nav "Back" link during attempts;
+                // on a proctored attempt it only walks students out of the exam
+                // mid-attempt (and fires focus-loss violations on the way).
+                const backnav = document.querySelector('.tertiary-navigation');
+                if (backnav) {
+                    backnav.style.display = 'none';
+                }
                 // Skip for summary page.
                 if (document.getElementById("page-mod-quiz-summary") !== null &&
                     document.getElementById("page-mod-quiz-summary").innerHTML.length) {
