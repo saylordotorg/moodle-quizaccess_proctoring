@@ -1160,5 +1160,11 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072106, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026072107) {
+        // No schema changes (Risk factor scoring validation-feedback relocation is UI-only).
+        // No-op savepoint to advance the stored plugin version.
+        upgrade_plugin_savepoint(true, 2026072107, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

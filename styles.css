@@ -2905,6 +2905,20 @@ input.quizaccess-proctoring-rfs-num:focus {
     color: #7a8592;
 }
 
+/* Validation feedback relocated from the hidden original row (see buildNumberCell). */
+.quizaccess-proctoring-rfs-fielderror {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #9c322b;
+    text-align: center;
+    max-width: 12rem;
+}
+
+.quizaccess-proctoring-rfs-numcell.has-error input.quizaccess-proctoring-rfs-num {
+    border-color: #9c322b;
+}
+
 .quizaccess-proctoring-rfs-share {
     width: 130px;
     display: flex;
