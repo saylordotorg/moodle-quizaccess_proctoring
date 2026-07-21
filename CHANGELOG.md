@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.1.42
+- Removed the redundant heading banner from the top of the Proctoring settings page (the "Site-wide exam supervision / Proctoring settings / Choose how exams are supervised…" block), which duplicated the Moodle settings page heading. The settings search box is kept.
+
 # v1.1.36
 - Accessibility pass on the report Summary verdict card. All text sizes moved from small fixed pixels (11-13px) to larger rem-based sizes that respect user font-size preferences (body text ~15px, secondary text no smaller than 13px, headline and score enlarged). Muted grays and the Low/Moderate/High/Critical zone and pill colors darkened to meet WCAG AA 4.5:1 contrast, the "View captures" button background darkened so its white label passes contrast, and keyboard focus outlines added to the button, false-positive actions, and collapsible section toggles.
 
