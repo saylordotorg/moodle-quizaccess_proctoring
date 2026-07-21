@@ -535,23 +535,23 @@ body.quizaccess-proctoring-settings-page [hidden] {
     text-align: center;
 }
 
-/* Fixed bottom tray: a last-in-flow sticky element has no scroll range to engage against
-   (and any Moodle ancestor with overflow silently disables sticky), so it never floats.
-   A viewport-fixed tray floats reliably regardless of ancestor overflow. */
+/* Floating save tray: the JS moves the submit into a clean bar appended as the tall
+   form's last direct child, so position: sticky has real scroll range to engage
+   against. Sticky (unlike fixed) also survives theme ancestors with transforms,
+   which turned the old viewport-fixed tray into a misplaced floating box. */
 .quizaccess-proctoring-admin-savebar {
     align-items: center;
     background: #1e2a35;
-    bottom: 0;
-    box-shadow: 0 -4px 16px rgba(20, 30, 40, 0.22);
+    border-radius: 6px;
+    bottom: 16px;
+    box-shadow: 0 4px 16px rgba(20, 30, 40, 0.25);
     display: flex !important;
     gap: 1rem;
     justify-content: flex-end;
-    left: 0;
-    margin: 0 !important;
-    padding: 0.85rem clamp(1rem, 4vw, 3rem) !important;
-    position: fixed;
-    right: 0;
-    z-index: 1030;
+    margin: 20px 0 0 !important;
+    padding: 12px 20px !important;
+    position: sticky;
+    z-index: 30;
 }
 
 .quizaccess-proctoring-admin-savebar [type="submit"] {
@@ -562,9 +562,20 @@ body.quizaccess-proctoring-settings-page [hidden] {
     color: #c3ccd4;
     flex: 1;
     font-size: 0.85rem;
-    margin-left: auto;
     max-width: none;
-    text-align: right;
+    text-align: left;
+}
+
+/* Data retention danger card: room between the explanation and the destructive button. */
+body.quizaccess-proctoring-settings-page #admin-deleteallimages p {
+    color: #5a6673;
+    line-height: 1.5;
+    margin: 0.25rem 0 0.9rem;
+    max-width: 62ch;
+}
+
+body.quizaccess-proctoring-settings-page #admin-deleteallimages .btn-danger {
+    margin: 0 0 0.35rem;
 }
 
 .quizaccess-proctoring-admin-savebar [type="submit"] {

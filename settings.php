@@ -947,8 +947,8 @@ if ($hassiteconfig) {
     ]);
 
     $settingdescription = html_writer::div(
-        $deleteallbutton .
-        html_writer::tag('p', get_string('settingscontroll:deletealldescription', 'quizaccess_proctoring'))
+        html_writer::tag('p', get_string('settingscontroll:deletealldescription', 'quizaccess_proctoring')) .
+        $deleteallbutton
     );
 
     $dbman = $DB->get_manager();

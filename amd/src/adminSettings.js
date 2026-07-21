@@ -616,8 +616,7 @@ define([], function() {
         }
 
         const submit = form.querySelector('[type="submit"]');
-        const saveBar = form.querySelector('.form-buttons') || (submit ? submit.parentNode : null);
-        if (!saveBar) {
+        if (!submit) {
             return {initialValues: readFormValues(form), refresh: function() {}, setActive: function() {}};
         }
 
@@ -627,8 +626,26 @@ define([], function() {
         const state = {dirty: false, active: ''};
         note.className = 'quizaccess-proctoring-admin-save-note';
         note.setAttribute('aria-live', 'polite');
-        saveBar.classList.add('quizaccess-proctoring-admin-savebar');
-        saveBar.insertBefore(note, saveBar.firstChild);
+
+        // Moodle wraps the submit in Bootstrap column divs (offset-sm-3 col-sm-3) whose
+        // width caps distorted the tray, and a transformed theme ancestor breaks
+        // viewport-fixed positioning. Move the submit into a clean bar appended as the
+        // tall form's last child, where the sticky CSS can float it while scrolling.
+        const previousHolder = submit.parentNode;
+        const saveBar = document.createElement('div');
+        saveBar.className = 'quizaccess-proctoring-admin-savebar';
+        saveBar.appendChild(note);
+        saveBar.appendChild(submit);
+        form.appendChild(saveBar);
+        if (previousHolder && previousHolder !== form &&
+                previousHolder.childElementCount === 0 && previousHolder.textContent.trim() === '') {
+            const previousRow = previousHolder.parentNode;
+            previousHolder.remove();
+            if (previousRow && previousRow !== form &&
+                    previousRow.childElementCount === 0 && previousRow.textContent.trim() === '') {
+                previousRow.remove();
+            }
+        }
 
         const render = function() {
             const attribute = state.dirty

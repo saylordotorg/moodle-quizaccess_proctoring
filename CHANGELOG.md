@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.3.1
+- Fixed the Proctoring settings page save bar rendering as a misplaced dark box floating mid-page. The bar reused Moodle's Bootstrap column wrapper (offset-sm-3 col-sm-3), whose width caps squeezed the note text, and its viewport-fixed positioning broke under theme ancestors with CSS transforms. The submit button now moves into a clean bar appended as the form's last child, floated with position: sticky (immune to transformed ancestors) as a rounded tray 16px above the viewport bottom while scrolling, settling into flow at the end of the page.
+- Fixed the Risk factor scoring page save button rendering as a bare Bootstrap button at the bottom-left. Its sticky save bar (with the "Changes apply to new attempts" note) never activated because the code required a .form-buttons wrapper that Moodle 4.5 does not render; the bar is now built the same way as the settings page's and aligns with the 1080px card column.
+- Data retention card: the "Delete all records" area now reads explanation-first — the warning text sits above the red button with proper spacing — and the heading is corrected to "Delete all records captured during exams".
+
 # v1.3.0
 Redesigned the per-student report's Webcam captures and Suspicious activity tabs to match the approved mockups (Claude Design: "Proctoring Report Tabs Redesign").
 - Webcam captures tab: leads with an identity verdict band — profile photo next to the best-scoring capture with a plain-language verdict ("Identity confirmed" / "Possible identity mismatch" / "Photos not analyzed yet") derived from the per-photo face-match results, the student's name/email, and the Analyze action relabeled to say how many photos remain ("Analyze remaining N photos"). The old two-table layout is replaced by a responsive photo grid where each capture carries a colored status ring and badge (green matched with score, red mismatch, yellow no face, grey not analyzed), client-side filter pills with counts (All / Matched / Mismatch / No face / Not analyzed), the capture cadence ("One photo about every 30 seconds"), and a color legend. Lightbox viewing and the analyze flow are unchanged.

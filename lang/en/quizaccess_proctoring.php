@@ -1046,7 +1046,7 @@ $string['settings:fcheckquizstart'] = 'Face validation on quiz start';
 $string['settings:fcheckquizstart_desc'] = 'If enabled, users must validate their face before they can start the quiz.';
 
 $string['settings'] = 'Settings';
-$string['settingscontroll:deleteall'] = 'Delete all record that captured during the exams';
+$string['settingscontroll:deleteall'] = 'Delete all records captured during exams';
 $string['settingscontroll:deleteallcourseimage'] = 'Delete all images and records of students that were captured during the exams for <b>this course</b>.';
 $string['settingscontroll:deletealldescription'] = 'This will permanently delete all captured images and proctoring related data. This action cannot be undone.';
 

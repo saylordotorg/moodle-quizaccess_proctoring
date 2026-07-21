@@ -516,15 +516,31 @@ define([], function() {
         if (!form) {
             return;
         }
-        const buttons = form.querySelector('.form-buttons');
         const submit = form.querySelector('[type="submit"]');
-        if (!buttons || !submit) {
+        if (!submit) {
             return;
         }
-        buttons.classList.add('quizaccess-proctoring-rfs-savebar');
+
+        // Moodle 4.5 renders the submit inside plain Bootstrap column divs (there is
+        // no .form-buttons wrapper), so build the bar ourselves: move the submit into
+        // it and append it as the tall form's last child, where the sticky CSS can
+        // float it while scrolling.
+        const previousHolder = submit.parentNode;
+        const bar = el('div', 'quizaccess-proctoring-rfs-savebar');
         const note = el('span', 'quizaccess-proctoring-rfs-savenote');
         note.textContent = 'Changes apply to new attempts; past reports keep the score they had.';
-        buttons.insertBefore(note, buttons.firstChild);
+        bar.appendChild(note);
+        bar.appendChild(submit);
+        form.appendChild(bar);
+        if (previousHolder && previousHolder !== form &&
+                previousHolder.childElementCount === 0 && previousHolder.textContent.trim() === '') {
+            const previousRow = previousHolder.parentNode;
+            previousHolder.remove();
+            if (previousRow && previousRow !== form &&
+                    previousRow.childElementCount === 0 && previousRow.textContent.trim() === '') {
+                previousRow.remove();
+            }
+        }
     };
 
     return {
