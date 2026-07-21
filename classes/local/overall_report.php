@@ -153,9 +153,17 @@ final class overall_report {
      * @param int $minviolations Only include attempts with at least this many violations.
      * @param string $sort Sort key: 'violations' or 'recent'.
      * @param int $page Zero-based page number.
+     * @param string $queue Review queue filter: 'needs', 'all', or 'reviewed'.
      * @return array Template-ready report data.
      */
-    public static function build(int $courseid, string $range, int $minviolations, string $sort, int $page): array {
+    public static function build(
+        int $courseid,
+        string $range,
+        int $minviolations,
+        string $sort,
+        int $page,
+        string $queue = 'needs'
+    ): array {
         global $CFG, $DB;
 
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
@@ -286,6 +294,27 @@ final class overall_report {
         }
         $attemptids = array_keys($attemptids);
 
+        // Map each attempt onto the review queue using the existing risk-hold lifecycle:
+        // an active hold (or an unheld attempt with violations) needs a decision; a released hold
+        // is reviewed; a confirmed or auto-failed hold is escalated; everything else is clean.
+        $holdstates = self::hold_states($attemptids);
+        $pulse = ['needs' => 0, 'reviewed' => 0, 'escalated' => 0, 'clean' => 0];
+        foreach ($attempts as $k => $a) {
+            $status = $a['attemptid'] > 0 ? ($holdstates[$a['attemptid']] ?? null) : null;
+            if ($status === \QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED) {
+                $reviewstate = 'reviewed';
+            } else if ($status === \QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED ||
+                    $status === \QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED) {
+                $reviewstate = 'escalated';
+            } else if ($status === \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE || $a['violations'] > 0) {
+                $reviewstate = 'needs';
+            } else {
+                $reviewstate = 'clean';
+            }
+            $attempts[$k]['reviewstate'] = $reviewstate;
+            $pulse[$reviewstate]++;
+        }
+
         $summary = [
             'totalattempts' => count($attempts),
             'students' => count($students),
@@ -293,7 +322,22 @@ final class overall_report {
             'withviolations' => $withviolations,
             'activeholds' => self::count_active_holds($attemptids),
             'aiflagged' => self::count_ai_flagged($attemptids),
+            'needsreview' => $pulse['needs'],
+            'reviewed' => $pulse['reviewed'] + $pulse['escalated'],
+            'escalated' => $pulse['escalated'],
+            'clean' => $pulse['clean'],
         ];
+
+        // Apply the review-queue filter before pagination.
+        if ($queue === 'needs') {
+            $attempts = array_filter($attempts, function ($a) {
+                return $a['reviewstate'] === 'needs';
+            });
+        } else if ($queue === 'reviewed') {
+            $attempts = array_filter($attempts, function ($a) {
+                return in_array($a['reviewstate'], ['reviewed', 'escalated'], true);
+            });
+        }
 
         // Sort, then paginate.
         $attempts = array_values($attempts);
@@ -322,6 +366,7 @@ final class overall_report {
             'minviolations' => $minviolations,
             'sort' => $sort,
             'page' => $page,
+            'queue' => $queue,
         ];
 
         return [
@@ -354,6 +399,51 @@ final class overall_report {
             "status = :status AND attemptid {$insql}",
             $params
         );
+    }
+
+    /**
+     * Map each of the given attempts to its most relevant risk-hold status.
+     *
+     * When an attempt has more than one hold row (rare), the most advanced decision wins, so the
+     * review state reflects the latest reviewer action rather than a stale active row.
+     *
+     * @param array $attemptids Quiz attempt ids.
+     * @return array<int, int> attemptid => risk-hold status constant.
+     */
+    private static function hold_states(array $attemptids): array {
+        global $DB;
+
+        if (empty($attemptids)) {
+            return [];
+        }
+        [$insql, $params] = $DB->get_in_or_equal($attemptids, SQL_PARAMS_NAMED, 'att');
+        $records = $DB->get_records_select(
+            'quizaccess_proctoring_risk_holds',
+            "attemptid {$insql}",
+            $params,
+            'id ASC',
+            'id, attemptid, status'
+        );
+
+        // Priority so a later decision (confirmed/auto-failed/released) beats a lingering active row.
+        $priority = [
+            \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE => 1,
+            \QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED => 2,
+            \QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED => 3,
+            \QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED => 3,
+        ];
+        $states = [];
+        $ranks = [];
+        foreach ($records as $r) {
+            $attemptid = (int)$r->attemptid;
+            $status = (int)$r->status;
+            $rank = $priority[$status] ?? 0;
+            if (!isset($ranks[$attemptid]) || $rank >= $ranks[$attemptid]) {
+                $ranks[$attemptid] = $rank;
+                $states[$attemptid] = $status;
+            }
+        }
+        return $states;
     }
 
     /**
@@ -469,6 +559,34 @@ final class overall_report {
                 (int)$a['reportid']
             );
 
+            // Detected-signals and score-breakdown come from the scored risk factors that fired.
+            $factors = isset($risk['factors']) && is_array($risk['factors']) ? $risk['factors'] : [];
+            $breakdown = [];
+            $signals = [];
+            foreach ($factors as $factor) {
+                if (empty($factor['haspoints'])) {
+                    continue;
+                }
+                $breakdown[] = [
+                    'factor' => $factor['label'],
+                    'pts' => '+' . (int)$factor['points'],
+                ];
+                $signals[] = (int)$factor['count'] > 1
+                    ? $factor['label'] . ' (' . (int)$factor['count'] . ')'
+                    : $factor['label'];
+            }
+            $signalsummary = !empty($signals)
+                ? implode(' · ', array_slice($signals, 0, 3))
+                : get_string('overallreport:nosignals', 'quizaccess_proctoring');
+
+            $reviewstate = $a['reviewstate'] ?? 'clean';
+            $statuslabels = [
+                'needs' => get_string('overallreport:status_needs', 'quizaccess_proctoring'),
+                'reviewed' => get_string('overallreport:status_reviewed', 'quizaccess_proctoring'),
+                'escalated' => get_string('overallreport:status_escalated', 'quizaccess_proctoring'),
+                'clean' => get_string('overallreport:status_clean', 'quizaccess_proctoring'),
+            ];
+
             $rows[] = [
                 'fullname' => $user ? fullname($user) : get_string('overallreport:unknownuser', 'quizaccess_proctoring'),
                 'userurl' => $userurl->out(false),
@@ -477,6 +595,7 @@ final class overall_report {
                 'lastactivity' => $a['lastactivity'] > 0 ? userdate($a['lastactivity']) : '',
                 'riskscore' => $risk['score'],
                 'risklevel' => $risk['level'],
+                'levelkey' => $risk['levelkey'] ?? '',
                 'riskbadgeclass' => $risk['badgeclass'],
                 'violations' => $a['violations'],
                 'eventcount' => $a['eventcount'],
@@ -485,6 +604,14 @@ final class overall_report {
                     'events' => $a['eventcount'],
                     'face' => $a['facemismatch'],
                 ]),
+                'signalsummary' => $signalsummary,
+                'signals' => $breakdown,
+                'hassignals' => !empty($breakdown),
+                'breakdown' => $breakdown,
+                'reviewstate' => $reviewstate,
+                'statuslabel' => $statuslabels[$reviewstate] ?? $statuslabels['clean'],
+                'isneeds' => $reviewstate === 'needs',
+                'isclean' => $reviewstate === 'clean',
                 'aireview' => $aidata,
                 'holdlabel' => $hold ? $cert['label'] : '',
                 'hashold' => (bool)$hold,
