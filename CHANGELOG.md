@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.6.4
+- The per-attempt action button on the proctoring report is now labelled "View report" (with a report icon) instead of "View images", since it opens the full per-student report (summary, webcam captures, and suspicious activity), not just images. The Spanish and Portuguese translations were updated to match.
+- Restored the version.php / install.xml version lockstep (install.xml had been left at 2026072107 while version.php advanced to 2026072120) and added the missing upgrade savepoint covering the 1.2.1–1.6.3 releases.
+
 # v1.6.3
 - Fixed the "Desktop capture required" prompt reappearing on every quiz page and the focus-loss churn it caused. Browsers throttle the hidden screen-share helper window's timers to as little as once a minute, so its marker check went stale, and status requests replied from that stale cache — every page navigation then looked like a wrong-screen share within seconds. The helper now runs a fresh marker check whenever the quiz page asks for status (message handlers are not throttled), and the marker grace window is extended to cover page-navigation gaps.
 - Clicking "Share entire screen" no longer logs focus-loss violations against the student: the helper window (or the browser's share picker) taking focus at the plugin's own request suppresses focus-loss logging for 15 seconds.

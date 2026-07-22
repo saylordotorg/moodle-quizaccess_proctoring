@@ -1166,5 +1166,12 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072107, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026072121) {
+        // No schema changes. Covers the UI-only 2026072108-2026072120 releases (which shipped
+        // without their own savepoints) and the report action button relabel from "View images"
+        // to "View report". No-op savepoint to advance the stored plugin version.
+        upgrade_plugin_savepoint(true, 2026072121, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

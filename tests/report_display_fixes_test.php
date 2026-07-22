@@ -37,7 +37,7 @@ global $CFG;
  * report.php is a page script whose output is produced by a full Moodle page render, so it is not
  * practical to unit test its rendered HTML in isolation. Per the design's Testing Strategy these
  * criteria are covered by worked examples that assert on the page-script source: the date column
- * uses Moodle's locale-aware userdate() (18.1), "View images" is the primary/emphasized action
+ * uses Moodle's locale-aware userdate() (18.1), "View report" is the primary/emphasized action
  * while "Delete" is de-emphasized but keeps its destructive confirm() guard (18.3), and the
  * non-actionable "This can include…" note has been removed from the client module (18.4).
  *
@@ -82,27 +82,28 @@ final class report_display_fixes_test extends advanced_testcase {
         $this->assertStringNotContainsString("date('Y/M/d", $report,
             "report.php must not use the raw date('Y/M/d ...) format for the report date column");
 
-        // The row and event timestamps are rendered via userdate() (locale/timezone aware).
+        // The row and event timestamps are rendered via userdate() (locale/timezone aware). The
+        // event date takes an explicit format argument, so only the call prefix is asserted.
         $this->assertStringContainsString('userdate((int)$info->timemodified)', $report,
             'the report row date must be rendered via userdate()');
-        $this->assertStringContainsString('userdate((int)$event->timemodified)', $report,
+        $this->assertStringContainsString('userdate((int)$eventrecord->timemodified', $report,
             'the event date must be rendered via userdate()');
     }
 
     /**
-     * "View images" is rendered as the primary/emphasized action and "Delete" is de-emphasized
+     * "View report" is rendered as the primary/emphasized action and "Delete" is de-emphasized
      * (muted link, not a danger/prominent button) while retaining its destructive confirm() guard.
      *
      * Validates: Requirements 18.3
      */
-    public function test_view_images_primary_and_delete_deemphasized(): void {
+    public function test_view_report_primary_and_delete_deemphasized(): void {
         $report = $this->read_plugin_file('report.php');
 
-        // "View images" is the primary action.
+        // "View report" is the primary action (the viewimages string key is kept for translations).
         $this->assertStringContainsString("get_string('viewimages', 'quizaccess_proctoring')", $report,
-            'report.php must render a "View images" action');
+            'report.php must render a "View report" action');
         $this->assertStringContainsString("'class' => 'btn btn-primary btn-sm'", $report,
-            '"View images" must be rendered as a primary button');
+            '"View report" must be rendered as a primary button');
 
         // "Delete" is de-emphasized: a muted link, never a danger/prominent button.
         $this->assertStringContainsString('btn btn-link btn-sm text-muted', $report,

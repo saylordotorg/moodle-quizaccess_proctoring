@@ -626,11 +626,11 @@ if (
                 'reportid' => $info->reportid,
             ]);
 
-            // View images is the primary, emphasized action (Requirement 18.3): rendered as a
+            // View report is the primary, emphasized action (Requirement 18.3): rendered as a
             // prominent primary button rather than hidden inside the kebab menu.
             $viewbutton = html_writer::link(
                 $viewurl,
-                $OUTPUT->pix_icon('e/insert_edit_image', '', 'moodle') . ' '
+                $OUTPUT->pix_icon('i/report', '', 'moodle') . ' '
                     . get_string('viewimages', 'quizaccess_proctoring'),
                 [
                     'class' => 'btn btn-primary btn-sm',
@@ -678,7 +678,7 @@ if (
             $deleteform .= html_writer::end_tag('form');
         }
 
-            // Add rendered HTML to template context: View images primary/emphasized first, Delete
+            // Add rendered HTML to template context: View report primary/emphasized first, Delete
             // de-emphasized after it (Requirement 18.3).
             $row['actionmenu'] = $viewbutton . $deleteform;
             $rows[] = $row;
