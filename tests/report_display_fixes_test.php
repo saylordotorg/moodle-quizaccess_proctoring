@@ -82,10 +82,11 @@ final class report_display_fixes_test extends advanced_testcase {
         $this->assertStringNotContainsString("date('Y/M/d", $report,
             "report.php must not use the raw date('Y/M/d ...) format for the report date column");
 
-        // The row and event timestamps are rendered via userdate() (locale/timezone aware).
+        // The row and event timestamps are rendered via userdate() (locale/timezone aware). The
+        // event date takes an explicit format argument, so only the call prefix is asserted.
         $this->assertStringContainsString('userdate((int)$info->timemodified)', $report,
             'the report row date must be rendered via userdate()');
-        $this->assertStringContainsString('userdate((int)$event->timemodified)', $report,
+        $this->assertStringContainsString('userdate((int)$eventrecord->timemodified', $report,
             'the event date must be rendered via userdate()');
     }
 

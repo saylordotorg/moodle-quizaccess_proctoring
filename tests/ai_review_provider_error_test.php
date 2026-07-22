@@ -132,6 +132,10 @@ final class ai_review_provider_error_test extends advanced_testcase {
 
         $review = $DB->get_record('quizaccess_proctoring_ai_reviews', ['id' => $reviewid], '*', MUST_EXIST);
 
+        // The failure path mtrace()s the provider error for the cron log; expect that output so
+        // PHPUnit does not mark the test risky.
+        $this->expectOutputRegex('/AI image review failed for id \d+/');
+
         // Process the queued review; the simulated provider error must be caught internally.
         quizaccess_proctoring_process_ai_review($review, $settings);
 
