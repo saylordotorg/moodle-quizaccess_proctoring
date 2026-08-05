@@ -94,8 +94,11 @@ final class overall_report {
      */
     public static function sort_options(string $selected): array {
         $labels = [
-            'violations' => get_string('overallreport:sortviolations', 'quizaccess_proctoring'),
             'recent' => get_string('overallreport:sortrecent', 'quizaccess_proctoring'),
+            'oldest' => get_string('overallreport:sortoldest', 'quizaccess_proctoring'),
+            'violations' => get_string('overallreport:sortviolations', 'quizaccess_proctoring'),
+            'student' => get_string('overallreport:sortstudent', 'quizaccess_proctoring'),
+            'email' => get_string('overallreport:sortemail', 'quizaccess_proctoring'),
         ];
         $options = [];
         foreach ($labels as $value => $label) {
@@ -151,9 +154,16 @@ final class overall_report {
      * @param int $courseid Course filter (0 for all courses).
      * @param string $range Date-range key (see {@see self::range_seconds()}).
      * @param int $minviolations Only include attempts with at least this many violations.
-     * @param string $sort Sort key: 'violations' or 'recent'.
+     * @param string $sort Sort key: 'recent', 'oldest', 'violations', 'student' or 'email'.
      * @param int $page Zero-based page number.
-     * @param string $queue Review queue filter: 'needs', 'all', or 'reviewed'.
+     * @param string $queue Review queue filter: 'needs', 'flagged', 'reviewed', 'escalated',
+     *                      'clean', or 'all'.
+     * @param string $search Case-insensitive substring matched against student name and email.
+     * @param string $tifirst Single first-name initial from the initials bar ('' for all).
+     * @param string $tilast Single surname initial from the initials bar ('' for all).
+     * @param string $risklevel Risk band key ('low', 'moderate', 'high', 'critical') or '' for all.
+     * @param int $riskmin Lowest risk score to include (0 for no lower bound).
+     * @param int $riskmax Highest risk score to include (100 for no upper bound).
      * @return array Template-ready report data.
      */
     public static function build(
@@ -162,7 +172,13 @@ final class overall_report {
         int $minviolations,
         string $sort,
         int $page,
-        string $queue = 'needs'
+        string $queue = 'needs',
+        string $search = '',
+        string $tifirst = '',
+        string $tilast = '',
+        string $risklevel = '',
+        int $riskmin = 0,
+        int $riskmax = 100
     ): array {
         global $CFG, $DB;
 
@@ -277,6 +293,22 @@ final class overall_report {
             });
         }
 
+        // Resolve the students once for the whole set, not just the visible page: the search box,
+        // the initials bars and the name/email sorts all order or exclude rows that pagination has
+        // not reached yet, and the counters above the list have to agree with them.
+        $users = self::load_users($attempts);
+        foreach ($attempts as $k => $a) {
+            $user = $users[$a['userid']] ?? null;
+            $attempts[$k]['fullname'] = $user
+                ? fullname($user)
+                : get_string('overallreport:unknownuser', 'quizaccess_proctoring');
+            $attempts[$k]['email'] = $user ? (string)$user->email : '';
+            $attempts[$k]['firstinitial'] = $user ? \core_text::substr((string)$user->firstname, 0, 1) : '';
+            $attempts[$k]['lastinitial'] = $user ? \core_text::substr((string)$user->lastname, 0, 1) : '';
+        }
+        $attempts = self::filter_by_student($attempts, $search, $tifirst, $tilast);
+        $attempts = self::filter_by_risk($attempts, $risklevel, $riskmin, $riskmax);
+
         // Summary counters across the whole filtered set.
         $students = [];
         $courses = [];
@@ -301,9 +333,25 @@ final class overall_report {
         // but not parked in the actionable queue, since there is no hold to act on); everything
         // else is clean.
         $holdstates = self::hold_states($attemptids);
+        // A flagged attempt has no hold to release, so its only decision is a reviewer sign-off.
+        $signoffs = attempt_review::active_for($attempts);
         $pulse = ['needs' => 0, 'flagged' => 0, 'reviewed' => 0, 'escalated' => 0, 'clean' => 0];
         foreach ($attempts as $k => $a) {
             $status = $a['attemptid'] > 0 ? ($holdstates[$a['attemptid']] ?? null) : null;
+            $signoffkey = attempt_review::key(
+                (int)$a['courseid'],
+                (int)$a['cmid'],
+                (int)$a['userid'],
+                (int)$a['attemptid'],
+                (int)$a['reportid']
+            );
+            $signoff = $signoffs[$signoffkey] ?? null;
+            if ($signoff !== null && !attempt_review::is_current($signoff, (int)$a['lastactivity'])) {
+                // Evidence arrived after the sign-off, so it no longer speaks for this attempt.
+                $signoff = null;
+            }
+            $attempts[$k]['signoff'] = $signoff;
+
             if ($status === \QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED) {
                 $reviewstate = 'reviewed';
             } else if ($status === \QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED ||
@@ -312,7 +360,9 @@ final class overall_report {
             } else if ($status === \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
                 $reviewstate = 'needs';
             } else if ($a['violations'] > 0) {
-                $reviewstate = 'flagged';
+                // Signed off counts as reviewed: a decision has been recorded either way, and the
+                // row names who made it. Without one the attempt stays flagged and keeps asking.
+                $reviewstate = $signoff !== null ? 'reviewed' : 'flagged';
             } else {
                 $reviewstate = 'clean';
             }
@@ -328,32 +378,51 @@ final class overall_report {
             'activeholds' => self::count_active_holds($attemptids),
             'aiflagged' => self::count_ai_flagged($attemptids),
             'needsreview' => $pulse['needs'],
-            'reviewed' => $pulse['reviewed'] + $pulse['escalated'],
+            'flagged' => $pulse['flagged'],
+            'reviewed' => $pulse['reviewed'],
             'escalated' => $pulse['escalated'],
             'clean' => $pulse['clean'],
         ];
 
-        // Apply the review-queue filter before pagination.
-        if ($queue === 'needs') {
-            $attempts = array_filter($attempts, function ($a) {
-                return $a['reviewstate'] === 'needs';
-            });
-        } else if ($queue === 'reviewed') {
-            $attempts = array_filter($attempts, function ($a) {
-                return in_array($a['reviewstate'], ['reviewed', 'escalated'], true);
+        // Apply the review-queue filter before pagination. Every queue except 'all' selects exactly
+        // one review state, so each card and pill lands on the rows its own count describes.
+        if (in_array($queue, ['needs', 'flagged', 'reviewed', 'escalated', 'clean'], true)) {
+            $attempts = array_filter($attempts, function ($a) use ($queue) {
+                return $a['reviewstate'] === $queue;
             });
         }
 
-        // Sort, then paginate.
+        // Sort, then paginate. Every comparison falls back to newest-first so equal keys - a shared
+        // surname, an empty email - still come out in a stable, useful order.
         $attempts = array_values($attempts);
-        if ($sort === 'recent') {
-            usort($attempts, function ($a, $b) {
-                return $b['lastactivity'] <=> $a['lastactivity'];
-            });
-        } else {
-            usort($attempts, function ($a, $b) {
-                return [$b['violations'], $b['lastactivity']] <=> [$a['violations'], $a['lastactivity']];
-            });
+        switch ($sort) {
+            case 'oldest':
+                usort($attempts, function ($a, $b) {
+                    return $a['lastactivity'] <=> $b['lastactivity'];
+                });
+                break;
+            case 'violations':
+                usort($attempts, function ($a, $b) {
+                    return [$b['violations'], $b['lastactivity']] <=> [$a['violations'], $a['lastactivity']];
+                });
+                break;
+            case 'student':
+                usort($attempts, function ($a, $b) {
+                    return [\core_text::strtolower($a['fullname']), -$a['lastactivity']]
+                        <=> [\core_text::strtolower($b['fullname']), -$b['lastactivity']];
+                });
+                break;
+            case 'email':
+                usort($attempts, function ($a, $b) {
+                    return [\core_text::strtolower($a['email']), -$a['lastactivity']]
+                        <=> [\core_text::strtolower($b['email']), -$b['lastactivity']];
+                });
+                break;
+            default:
+                usort($attempts, function ($a, $b) {
+                    return $b['lastactivity'] <=> $a['lastactivity'];
+                });
+                break;
         }
 
         $total = count($attempts);
@@ -372,6 +441,12 @@ final class overall_report {
             'sort' => $sort,
             'page' => $page,
             'queue' => $queue,
+            'search' => $search,
+            'tifirst' => $tifirst,
+            'tilast' => $tilast,
+            'risklevel' => $risklevel,
+            'riskmin' => $riskmin,
+            'riskmax' => $riskmax,
         ];
 
         return [
@@ -383,6 +458,158 @@ final class overall_report {
             'page' => $page,
             'perpage' => self::PER_PAGE,
         ];
+    }
+
+    /**
+     * Load the name and identity fields for every student in an attempt set.
+     *
+     * Only the fields {@see fullname()} can consult are selected, plus the email the report shows
+     * and sorts on, so a 2000-attempt set stays one narrow query rather than 2000 full user rows.
+     *
+     * @param array $attempts Attempt rows keyed however the caller likes.
+     * @return array User records keyed by id.
+     */
+    private static function load_users(array $attempts): array {
+        global $DB;
+
+        $userids = [];
+        foreach ($attempts as $a) {
+            $userids[(int)$a['userid']] = true;
+        }
+        if (empty($userids)) {
+            return [];
+        }
+
+        return $DB->get_records_list(
+            'user',
+            'id',
+            array_keys($userids),
+            '',
+            'id, firstname, lastname, middlename, alternatename, firstnamephonetic, lastnamephonetic, email'
+        );
+    }
+
+    /**
+     * Apply the student search box and the two initials bars.
+     *
+     * The search matches the displayed name and the email address, so a reviewer can paste either
+     * from a support ticket. The initials bars are the standard Moodle participant filters and
+     * combine with the search rather than replacing it.
+     *
+     * @param array $attempts Attempt rows carrying 'fullname', 'email' and the two initials.
+     * @param string $search Case-insensitive substring, or '' for no search.
+     * @param string $tifirst First-name initial, or '' for all.
+     * @param string $tilast Surname initial, or '' for all.
+     * @return array The surviving attempt rows.
+     */
+    private static function filter_by_student(array $attempts, string $search, string $tifirst, string $tilast): array {
+        $needle = \core_text::strtolower(trim($search));
+        $tifirst = \core_text::strtolower($tifirst);
+        $tilast = \core_text::strtolower($tilast);
+        if ($needle === '' && $tifirst === '' && $tilast === '') {
+            return $attempts;
+        }
+
+        return array_filter($attempts, function ($a) use ($needle, $tifirst, $tilast) {
+            if ($tifirst !== '' && \core_text::strtolower($a['firstinitial']) !== $tifirst) {
+                return false;
+            }
+            if ($tilast !== '' && \core_text::strtolower($a['lastinitial']) !== $tilast) {
+                return false;
+            }
+            if ($needle === '') {
+                return true;
+            }
+            return \core_text::strpos(\core_text::strtolower($a['fullname']), $needle) !== false
+                || \core_text::strpos(\core_text::strtolower($a['email']), $needle) !== false;
+        });
+    }
+
+    /**
+     * Apply the risk band and risk score range filters.
+     *
+     * Risk scores are not stored - they are recomputed from current evidence and current factor
+     * settings - so filtering on them means scoring the whole candidate set. That is one bulk pass
+     * through {@see risk_calculator::calculate_many()} rather than twenty queries per attempt, and
+     * the score each survivor was judged on is kept on the row so the visible page does not pay to
+     * compute it a second time.
+     *
+     * @param array $attempts Attempt rows.
+     * @param string $risklevel Band key, or '' for any band.
+     * @param int $riskmin Lowest score to include.
+     * @param int $riskmax Highest score to include.
+     * @return array The surviving attempt rows, each carrying the risk result it was judged on.
+     */
+    private static function filter_by_risk(array $attempts, string $risklevel, int $riskmin, int $riskmax): array {
+        $bandfilter = in_array($risklevel, ['low', 'moderate', 'high', 'critical'], true) ? $risklevel : '';
+        $riskmin = max(0, $riskmin);
+        $riskmax = min(100, $riskmax);
+        if ($bandfilter === '' && $riskmin <= 0 && $riskmax >= 100) {
+            return $attempts;
+        }
+
+        $scores = self::score_attempts($attempts);
+        $kept = [];
+        foreach ($attempts as $key => $a) {
+            $risk = $scores[$key] ?? null;
+            if ($risk === null) {
+                continue;
+            }
+            if ($bandfilter !== '' && ($risk['levelkey'] ?? '') !== $bandfilter) {
+                continue;
+            }
+            $score = (int)$risk['score'];
+            if ($score < $riskmin || $score > $riskmax) {
+                continue;
+            }
+            $a['risk'] = $risk;
+            $kept[$key] = $a;
+        }
+
+        return $kept;
+    }
+
+    /**
+     * Score a set of attempt rows in one bulk pass.
+     *
+     * @param array $attempts Attempt rows keyed however the caller likes.
+     * @return array Risk results keyed by the same keys.
+     */
+    private static function score_attempts(array $attempts): array {
+        $requests = [];
+        foreach ($attempts as $key => $a) {
+            $requests[$key] = [
+                'courseid' => (int)$a['courseid'],
+                'cmid' => (int)$a['cmid'],
+                'userid' => (int)$a['userid'],
+                'reportid' => (int)$a['reportid'],
+                'attemptid' => (int)$a['attemptid'],
+            ];
+        }
+
+        return risk_calculator::calculate_many($requests);
+    }
+
+    /**
+     * Build select options for the risk band filter.
+     *
+     * @param string $selected Selected band key ('' for any band).
+     * @return array List of option rows for the template.
+     */
+    public static function risk_level_options(string $selected): array {
+        ['moderate' => $moderate, 'high' => $high, 'critical' => $critical] = risk_calculator::get_level_boundaries();
+        $labels = [
+            '' => get_string('overallreport:riskany', 'quizaccess_proctoring'),
+            'low' => get_string('riskscore:low', 'quizaccess_proctoring') . ' (0-' . ($moderate - 1) . ')',
+            'moderate' => get_string('riskscore:moderate', 'quizaccess_proctoring') . ' (' . $moderate . '-' . ($high - 1) . ')',
+            'high' => get_string('riskscore:high', 'quizaccess_proctoring') . ' (' . $high . '-' . ($critical - 1) . ')',
+            'critical' => get_string('riskscore:critical', 'quizaccess_proctoring') . ' (' . $critical . '+)',
+        ];
+        $options = [];
+        foreach ($labels as $value => $label) {
+            $options[] = ['value' => $value, 'label' => $label, 'selected' => $value === $selected];
+        }
+        return $options;
     }
 
     /**
@@ -489,17 +716,29 @@ final class overall_report {
             return [];
         }
 
-        $userids = array_values(array_unique(array_map(function ($a) {
-            return $a['userid'];
-        }, $pagerows)));
-        $users = $DB->get_records_list('user', 'id', $userids);
         $aisettings = quizaccess_proctoring_get_ai_review_settings();
         $coursecache = [];
         $quizcache = [];
         $rows = [];
 
+        // One bulk scoring pass for the page. Rows a risk filter already scored keep that result.
+        $unscored = array_filter($pagerows, function ($a) {
+            return !isset($a['risk']);
+        });
+        $pagescores = !empty($unscored) ? self::score_attempts($unscored) : [];
+
+        // The reviewers named on signed-off rows, in one query rather than one per row.
+        $reviewerids = [];
         foreach ($pagerows as $a) {
-            $user = $users[$a['userid']] ?? null;
+            if (!empty($a['signoff'])) {
+                $reviewerids[(int)$a['signoff']->reviewerid] = true;
+            }
+        }
+        $reviewers = !empty($reviewerids)
+            ? $DB->get_records_list('user', 'id', array_keys($reviewerids))
+            : [];
+
+        foreach ($pagerows as $rowkey => $a) {
             if (!isset($coursecache[$a['courseid']])) {
                 $shortname = $DB->get_field('course', 'shortname', ['id' => $a['courseid']]);
                 $coursecache[$a['courseid']] = $shortname ? format_string($shortname) : ('#' . $a['courseid']);
@@ -509,12 +748,7 @@ final class overall_report {
                 $quizcache[$a['cmid']] = $cm ? format_string($cm->name) : ('#' . $a['cmid']);
             }
 
-            $risk = quizaccess_proctoring_calculate_attempt_risk(
-                $a['courseid'],
-                $a['cmid'],
-                $a['userid'],
-                $a['reportid']
-            );
+            $risk = $a['risk'] ?? $pagescores[$rowkey];
             $aireview = quizaccess_proctoring_get_ai_review(
                 $a['courseid'],
                 $a['cmid'],
@@ -538,6 +772,49 @@ final class overall_report {
                 'reportid' => $a['reportid'],
             ]);
             $userurl = new moodle_url('/user/view.php', ['id' => $a['userid'], 'course' => $a['courseid']]);
+
+            // A flagged attempt has no hold, so it gets the sign-off action instead of release and
+            // escalate; a signed-off one gets the undo. Both re-check the capability on the course.
+            $signoff = $a['signoff'] ?? null;
+            $cansignoff = $canmanageholds && ($a['reviewstate'] ?? '') === 'flagged';
+            $signoffurl = '';
+            $undosignoffurl = '';
+            if ($cansignoff) {
+                // Row-scoped ids carry a prefix: plain 'courseid' is this page's course filter, and
+                // reusing it here would silently re-filter the whole report on one row's course.
+                $signoffurl = (new moodle_url(
+                    '/mod/quiz/accessrule/proctoring/overall_reports.php',
+                    $filterparams + [
+                        'action' => 'signoff',
+                        'rowcourseid' => (int)$a['courseid'],
+                        'rowcmid' => (int)$a['cmid'],
+                        'rowuserid' => (int)$a['userid'],
+                        'rowattemptid' => (int)$a['attemptid'],
+                        'rowreportid' => (int)$a['reportid'],
+                        'sesskey' => sesskey(),
+                    ]
+                ))->out(false);
+            }
+            if ($signoff !== null && $canmanageholds) {
+                $undosignoffurl = (new moodle_url(
+                    '/mod/quiz/accessrule/proctoring/overall_reports.php',
+                    $filterparams + [
+                        'action' => 'undosignoff',
+                        'signoffid' => (int)$signoff->id,
+                        'sesskey' => sesskey(),
+                    ]
+                ))->out(false);
+            }
+            $signofflabel = '';
+            if ($signoff !== null) {
+                $reviewer = $reviewers[(int)$signoff->reviewerid] ?? null;
+                $signofflabel = get_string('overallreport:signedoffby', 'quizaccess_proctoring', (object)[
+                    'reviewer' => $reviewer
+                        ? fullname($reviewer)
+                        : get_string('overallreport:unknownuser', 'quizaccess_proctoring'),
+                    'date' => userdate((int)$signoff->timecreated),
+                ]);
+            }
 
             $holdactive = $hold && (int)$hold->status === \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
             $canact = $holdactive && $canmanageholds;
@@ -594,7 +871,10 @@ final class overall_report {
             ];
 
             $rows[] = [
-                'fullname' => $user ? fullname($user) : get_string('overallreport:unknownuser', 'quizaccess_proctoring'),
+                // Name and email come from the set-wide pass in build(), so what the list shows is
+                // exactly what the search matched and the name/email sorts ordered on.
+                'fullname' => $a['fullname'],
+                'email' => $a['email'],
                 'userurl' => $userurl->out(false),
                 'course' => $coursecache[$a['courseid']],
                 'quiz' => $quizcache[$a['cmid']],
@@ -604,6 +884,13 @@ final class overall_report {
                 'levelkey' => $risk['levelkey'] ?? '',
                 'riskbadgeclass' => $risk['badgeclass'],
                 'violations' => $a['violations'],
+                // The list now shows this count, because sorting and filtering on a number the
+                // reader cannot see is guesswork.
+                'eventcountlabel' => get_string(
+                    'overallreport:detectedevents',
+                    'quizaccess_proctoring',
+                    $a['violations']
+                ),
                 'eventcount' => $a['eventcount'],
                 'facemismatch' => $a['facemismatch'],
                 'violationsbreakdown' => get_string('overallreport:violationsbreakdown', 'quizaccess_proctoring', (object)[
@@ -624,6 +911,10 @@ final class overall_report {
                 'canact' => $canact,
                 'releaseurl' => $releaseurl,
                 'confirmurl' => $confirmurl,
+                'cansignoff' => $cansignoff,
+                'signoffurl' => $signoffurl,
+                'undosignoffurl' => $undosignoffurl,
+                'signofflabel' => $signofflabel,
                 'viewurl' => $viewurl->out(false),
             ];
         }
@@ -729,7 +1020,10 @@ final class overall_report {
         $quizcache = [];
         $rows = [];
 
-        foreach ($pagerows as $a) {
+        // Same bulk scoring pass as the attempts list: this page shows live scores too.
+        $pagescores = self::score_attempts($pagerows);
+
+        foreach ($pagerows as $rowkey => $a) {
             $user = $users[$a['userid']] ?? null;
             if (!isset($coursecache[$a['courseid']])) {
                 $shortname = $DB->get_field('course', 'shortname', ['id' => $a['courseid']]);
@@ -740,12 +1034,7 @@ final class overall_report {
                 $quizcache[$a['cmid']] = $cm ? format_string($cm->name) : ('#' . $a['cmid']);
             }
 
-            $risk = quizaccess_proctoring_calculate_attempt_risk(
-                $a['courseid'],
-                $a['cmid'],
-                $a['userid'],
-                $a['reportid']
-            );
+            $risk = $pagescores[$rowkey];
 
             $viewurl = new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
                 'courseid' => $a['courseid'],
