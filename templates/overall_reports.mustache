@@ -85,8 +85,12 @@
                 {{#risklevoptions}}<option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>{{/risklevoptions}}
             </select>
         </label>
-        <label class="proctoring-overview-filter is-range">
-            <span>{{#str}}overallreport:filterriskrange, quizaccess_proctoring{{/str}}</span>
+        {{! Two inputs, so this one is a labelled group rather than a label: a label may only own
+            one control, and pointing one at two of them leaves it ambiguous which it activates.
+            Each input keeps its own aria-label, so both are named on their own. }}
+        <div class="proctoring-overview-filter is-range" role="group"
+             aria-labelledby="proctoring-riskrange-{{uniqid}}">
+            <span id="proctoring-riskrange-{{uniqid}}">{{#str}}overallreport:filterriskrange, quizaccess_proctoring{{/str}}</span>
             <span class="proctoring-overview-rangeinputs">
                 <input type="number" min="0" max="100" name="riskmin" value="{{riskmin}}"
                        aria-label="{{#str}}overallreport:filterriskmin, quizaccess_proctoring{{/str}}">
@@ -94,7 +98,7 @@
                 <input type="number" min="0" max="100" name="riskmax" value="{{riskmax}}"
                        aria-label="{{#str}}overallreport:filterriskmax, quizaccess_proctoring{{/str}}">
             </span>
-        </label>
+        </div>
         <label class="proctoring-overview-filter">
             <span>{{#str}}overallreport:filterminviolations, quizaccess_proctoring{{/str}}</span>
             <input type="number" min="0" name="minviolations" value="{{minviolations}}">
