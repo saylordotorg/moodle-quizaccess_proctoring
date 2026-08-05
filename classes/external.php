@@ -1148,23 +1148,30 @@ class quizaccess_proctoring_external extends external_api {
             [
                 'courseid' => new external_value(PARAM_INT, 'course id'),
                 'cmid' => new external_value(PARAM_INT, 'cm id'),
+                'reason' => new external_value(
+                    PARAM_ALPHA,
+                    'Declared reason: capture (cannot photograph the ID) or noid (has no photo ID)',
+                    VALUE_DEFAULT,
+                    ''
+                ),
             ]
         );
     }
 
     /**
-     * Emails the configured contact so staff can waive ID verification for a student.
+     * Records that a student cannot get past the ID step, so staff can find them.
      *
-     * For students who cannot provide a photo ID (refugees, displaced people, and
-     * others without access to identity documents). The request notifies the
-     * configured contact address with the student and quiz details plus a link to
-     * the Manage overrides page; granting the exception stays a human decision.
+     * Nothing is emailed from here. The precheck already told the student what to send
+     * to the configured contact address themselves; this call only writes the declaration
+     * to the events log, which is what lists them under "Pending ID exception requests"
+     * on the Manage overrides page. Waiving the requirement stays a human decision.
      *
      * @param int $courseid Course ID.
      * @param int $cmid Quiz course module ID.
+     * @param string $reason Declared reason ('capture' or 'noid'); anything else is stored unset.
      * @return array Status and student-facing message.
      */
-    public static function request_id_exemption($courseid, $cmid) {
+    public static function request_id_exemption($courseid, $cmid, $reason = '') {
         global $DB, $USER;
 
         self::validate_parameters(
@@ -1172,8 +1179,10 @@ class quizaccess_proctoring_external extends external_api {
             [
                 'courseid' => $courseid,
                 'cmid' => $cmid,
+                'reason' => $reason,
             ]
         );
+        $reason = in_array((string)$reason, ['capture', 'noid'], true) ? (string)$reason : '';
 
         [$cm, $context] = self::get_authorized_quiz_context((int)$courseid, (int)$cmid);
         unset($context);
@@ -1189,8 +1198,10 @@ class quizaccess_proctoring_external extends external_api {
             ];
         }
 
-        // One request per student, quiz, and day keeps the contact inbox sane.
-        $prefname = 'quizaccess_proctoring_idexempt_' . (int)$cm->id;
+        // One declaration per student, quiz, reason, and day keeps the pending list readable
+        // while still letting a student who first reported a capture problem come back and
+        // declare they have no ID at all.
+        $prefname = 'quizaccess_proctoring_idexempt_' . (int)$cm->id . ($reason === '' ? '' : '_' . $reason);
         $lastrequest = (int)get_user_preferences($prefname, 0);
         if ($lastrequest > time() - DAYSECS) {
             return [
@@ -1199,33 +1210,8 @@ class quizaccess_proctoring_external extends external_api {
             ];
         }
 
-        $course = get_course((int)$courseid);
-        $quizname = format_string((string)($DB->get_field('quiz', 'name', ['id' => $cm->instance]) ?: $cm->name));
-        $coursename = format_string($course->fullname);
-        $requesttime = time();
-
-        $sent = \quizaccess_proctoring\local\exemption_email::notify_staff_request(
-            $contact,
-            $USER,
-            $coursename,
-            $quizname,
-            (int)$cm->id,
-            $requesttime
-        );
-        if (!$sent) {
-            return [
-                'status' => 'error',
-                'message' => get_string('modal:idexemptionfailed', 'quizaccess_proctoring'),
-            ];
-        }
-        \quizaccess_proctoring\local\exemption_email::notify_student_received(
-            $USER,
-            $coursename,
-            $quizname,
-            $requesttime
-        );
-
-        // Audit trail: the request shows up alongside the attempt's other events.
+        // Audit trail: the declaration shows up alongside the attempt's other events, and
+        // feeds the pending-requests list on the Manage overrides page.
         $record = new stdClass();
         $record->courseid = (int)$courseid;
         $record->quizid = (int)$cm->id;
@@ -1233,7 +1219,7 @@ class quizaccess_proctoring_external extends external_api {
         $record->attemptid = 0;
         $record->reportid = 0;
         $record->eventtype = 'id_exemption_requested';
-        $record->eventdetail = substr(json_encode(['contact' => $contact]), 0, 2000);
+        $record->eventdetail = substr(json_encode(['contact' => $contact, 'reason' => $reason]), 0, 2000);
         $record->pagevisibility = 'visible';
         $record->currenturl = '';
         $record->screenshoturl = '';
@@ -1242,8 +1228,8 @@ class quizaccess_proctoring_external extends external_api {
         set_user_preference($prefname, time());
 
         return [
-            'status' => 'sent',
-            'message' => get_string('modal:idexemptionsent', 'quizaccess_proctoring', (string)$USER->email),
+            'status' => 'recorded',
+            'message' => get_string('modal:idexemptionrecorded', 'quizaccess_proctoring'),
         ];
     }
 
@@ -1255,7 +1241,7 @@ class quizaccess_proctoring_external extends external_api {
     public static function request_id_exemption_returns() {
         return new external_single_structure(
             [
-                'status' => new external_value(PARAM_ALPHA, 'sent, already, unavailable, or error'),
+                'status' => new external_value(PARAM_ALPHA, 'recorded, already, or unavailable'),
                 'message' => new external_value(PARAM_TEXT, 'Student-facing status message'),
             ]
         );

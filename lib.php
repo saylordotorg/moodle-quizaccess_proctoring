@@ -1372,7 +1372,9 @@ function quizaccess_proctoring_get_student_risk_hold_notice_html(stdClass $hold)
         'days' => $days,
     ]);
     if ($deadline) {
-        $message .= ' ' . get_string('riskreview:studentnoticereviewwindow', 'quizaccess_proctoring', $days);
+        $message .= ' ' . ($days === 1
+            ? get_string('riskreview:studentnoticereviewwindowoneday', 'quizaccess_proctoring')
+            : get_string('riskreview:studentnoticereviewwindow', 'quizaccess_proctoring', $days));
         $message .= ' ' . get_string('riskreview:studentnoticedeadline', 'quizaccess_proctoring', userdate($deadline));
     } else {
         $message .= ' ' . get_string('riskreview:studentnoticenorelease', 'quizaccess_proctoring');

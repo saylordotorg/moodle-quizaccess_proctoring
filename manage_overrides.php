@@ -330,15 +330,26 @@ if (!empty($exemptionrequests)) {
             (int)$decision->timemodified
         );
     }
+    // Keep each student's most recent declaration, with the reason they gave for it
+    // ('capture' or 'noid'; requests recorded before reasons existed have none).
     $pendingrequests = [];
     foreach ($exemptionrequests as $request) {
-        $pendingrequests[(int)$request->userid] = (int)$request->timemodified;
+        $detail = json_decode((string)$request->eventdetail, true);
+        $pendingrequests[(int)$request->userid] = [
+            'time' => (int)$request->timemodified,
+            'reason' => is_array($detail) ? (string)($detail['reason'] ?? '') : '',
+        ];
     }
-    foreach ($pendingrequests as $requestuserid => $requestedat) {
-        if (($lastdecision[$requestuserid] ?? 0) >= $requestedat) {
+    foreach ($pendingrequests as $requestuserid => $request) {
+        if (($lastdecision[$requestuserid] ?? 0) >= $request['time']) {
             unset($pendingrequests[$requestuserid]);
         }
     }
+    $reasonlabels = [
+        'capture' => get_string('idexemption:reasonlabel_capture', $component),
+        'noid' => get_string('idexemption:reasonlabel_noid', $component),
+        '' => get_string('idexemption:reasonlabel_unknown', $component),
+    ];
 
     if (!empty($pendingrequests)) {
         echo $OUTPUT->heading(get_string('idexemption:pendingheading', $component), 3);
@@ -346,10 +357,11 @@ if (!empty($exemptionrequests)) {
         $pendingtable = new html_table();
         $pendingtable->head = [
             get_string('override_targetstudent', $component),
+            get_string('idexemption:reasoncol', $component),
             get_string('idexemption:requestedcol', $component),
             get_string('override_actions', $component),
         ];
-        foreach ($pendingrequests as $requestuserid => $requestedat) {
+        foreach ($pendingrequests as $requestuserid => $request) {
             $requester = core_user::get_user($requestuserid);
             $approveurl = new moodle_url($baseurl, [
                 'action' => 'approverequest',
@@ -363,7 +375,8 @@ if (!empty($exemptionrequests)) {
             ]);
             $pendingtable->data[] = [
                 $requester ? fullname($requester) . ' · ' . $requester->email : (string)$requestuserid,
-                userdate($requestedat),
+                $reasonlabels[$request['reason']] ?? $reasonlabels[''],
+                userdate($request['time']),
                 html_writer::link(
                     $approveurl,
                     get_string('idexemption:approvebutton', $component),

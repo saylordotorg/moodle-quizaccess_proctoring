@@ -1974,29 +1974,72 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 bindIdDocumentCaptureButtons('front');
                 bindIdDocumentCaptureButtons('back');
 
-                $("#idverificationexempt").click(function(event) {
-                    event.preventDefault();
-                    const button = event.currentTarget;
-                    const result = document.getElementById('id_exemption_result');
-                    button.disabled = true;
+                // "I can't provide a photo ID" opens a triage prompt instead of sending
+                // anything: the guidance for each answer is already rendered server-side, so
+                // this only reveals the matching panel. Two of the three answers record a
+                // declaration so staff can find the student on the Manage overrides page —
+                // the student still emails the details themselves.
+                const exemptTriage = document.getElementById('proctoring-idv-exempt-triage');
+                const exemptResult = document.getElementById('id_exemption_result');
+
+                const recordExemptDeclaration = function(reason) {
                     Ajax.call([{
                         methodname: 'quizaccess_proctoring_request_id_exemption',
                         args: {
                             courseid: parseInt(props.courseid, 10) || 0,
                             cmid: parseInt(props.cmid, 10) || 0,
+                            reason: reason,
                         }
                     }])[0].done(function(res) {
-                        if (result) {
-                            result.textContent = res.message;
-                            result.style.display = 'block';
+                        if (exemptResult && res.message) {
+                            exemptResult.textContent = res.message;
+                            exemptResult.style.display = 'block';
                         }
-                        if (res.status !== 'sent' && res.status !== 'already') {
-                            button.disabled = false;
-                        }
-                    }).fail(function(error) {
-                        button.disabled = false;
-                        Notification.exception(error);
+                    }).fail(function() {
+                        // Recording only helps staff find the student sooner. The student's
+                        // actual next step (emailing student support) is already on screen,
+                        // so a failure here must not replace it with an error.
                     });
+                };
+
+                $("#idverificationexempt").click(function(event) {
+                    event.preventDefault();
+                    if (!exemptTriage) {
+                        return;
+                    }
+                    const open = exemptTriage.style.display !== 'none';
+                    exemptTriage.style.display = open ? 'none' : 'block';
+                    event.currentTarget.setAttribute('aria-expanded', open ? 'false' : 'true');
+                });
+
+                $(".proctoring-idv-exempt-choice").click(function(event) {
+                    event.preventDefault();
+                    const reason = event.currentTarget.getAttribute('data-exempt-reason');
+                    document.querySelectorAll('.proctoring-idv-exempt-answer').forEach(function(panel) {
+                        panel.style.display = panel.getAttribute('data-exempt-answer') === reason ? 'block' : 'none';
+                    });
+                    document.querySelectorAll('.proctoring-idv-exempt-choice').forEach(function(choice) {
+                        choice.classList.toggle('active', choice === event.currentTarget);
+                    });
+                    if (exemptResult) {
+                        exemptResult.textContent = '';
+                        exemptResult.style.display = 'none';
+                    }
+                    // Only "I don't have a photo ID" is a request for review. A capture problem
+                    // is recorded further in, once the tips have not helped.
+                    if (reason === 'noid') {
+                        recordExemptDeclaration(reason);
+                    }
+                });
+
+                $("#proctoring-idv-exempt-stuck").click(function(event) {
+                    event.preventDefault();
+                    const escalation = document.getElementById('proctoring-idv-exempt-capture-escalation');
+                    if (escalation) {
+                        escalation.style.display = 'block';
+                    }
+                    event.currentTarget.disabled = true;
+                    recordExemptDeclaration('capture');
                 });
 
                 $("#idverificationvalidate").click(async function(event) {

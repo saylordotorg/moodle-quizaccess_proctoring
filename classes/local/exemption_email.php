@@ -17,13 +17,14 @@
 namespace quizaccess_proctoring\local;
 
 /**
- * Builds and sends the ID verification exception emails.
+ * Builds and sends the ID verification exception decision emails.
  *
- * All four notifications (staff request alert, student confirmation, approval,
- * decline) share one send-ready table-based HTML shell — logo header, accent
- * card, details panel, optional button — from the approved "ID Exception
- * Request Email" design, plus a plain-text alternative built from the same
- * strings. Every message is localized to its recipient's language.
+ * Both notifications (approval, decline) share one send-ready table-based HTML
+ * shell — logo header, accent card, details panel, optional button — from the
+ * approved "ID Exception Request Email" design, plus a plain-text alternative
+ * built from the same strings, localized to the recipient's language. Only a
+ * staff decision on the Manage overrides page sends mail: students requesting an
+ * exception email student support themselves, so nothing is sent automatically.
  *
  * @package    quizaccess_proctoring
  * @copyright  2026 Saylor Academy
@@ -39,7 +40,7 @@ class exemption_email {
     /** @var string Postal address shown in the email footer. */
     const BRAND_ADDRESS = '1041 SE 17th Street, Suite 100, Fort Lauderdale, Florida 33316';
 
-    /** @var string Accent for informational messages (request, received). */
+    /** @var string Accent for informational messages and the default accent. */
     const ACCENT_BLUE = '#0f6cbf';
 
     /** @var string Accent for the approval message. */
@@ -47,85 +48,6 @@ class exemption_email {
 
     /** @var string Accent for the decline message. */
     const ACCENT_RED = '#b3423a';
-
-    /**
-     * Emails the configured contact about a new exception request.
-     *
-     * @param string $contact Contact email address (already validated).
-     * @param \stdClass $student Requesting student.
-     * @param string $coursename Formatted course name.
-     * @param string $quizname Formatted quiz name.
-     * @param int $cmid Quiz course module id.
-     * @param int $requesttime Request timestamp.
-     * @return bool Whether the email was accepted for delivery.
-     */
-    public static function notify_staff_request(
-        string $contact,
-        \stdClass $student,
-        string $coursename,
-        string $quizname,
-        int $cmid,
-        int $requesttime
-    ): bool {
-        $lang = self::site_language();
-        $overridesurl = new \moodle_url('/mod/quiz/accessrule/proctoring/manage_overrides.php', ['cmid' => $cmid]);
-        $names = (object)['student' => fullname($student), 'quiz' => $quizname];
-
-        return self::email(self::external_recipient($contact, self::str($lang, 'idexemptioncontactname')), [
-            'subject' => self::str($lang, 'idexemptionemailsubject', $names),
-            'preheader' => self::str($lang, 'idexemptionemail:staff:preheader', $names),
-            'accent' => self::ACCENT_BLUE,
-            'eyebrow' => self::str($lang, 'idexemptionemail:staff:eyebrow'),
-            'title' => self::str($lang, 'idexemptionemail:staff:title'),
-            'intro' => self::str($lang, 'idexemptionemail:staff:intro'),
-            'details' => [
-                self::str($lang, 'idexemptionemail:labelstudent') =>
-                    fullname($student) . ' · ' . $student->email . ' · id ' . (int)$student->id,
-                self::str($lang, 'idexemptionemail:labelcourse') => $coursename,
-                self::str($lang, 'idexemptionemail:labelexam') => $quizname,
-                self::str($lang, 'idexemptionemail:labelrequested') => userdate($requesttime),
-            ],
-            'ctaurl' => $overridesurl->out(false),
-            'ctalabel' => self::str($lang, 'idexemptionemail:staff:cta'),
-            'note' => self::str($lang, 'idexemptionemail:staff:note'),
-            'footer' => self::footer($lang),
-        ]);
-    }
-
-    /**
-     * Sends the student their "request received" confirmation.
-     *
-     * @param \stdClass $student Requesting student.
-     * @param string $coursename Formatted course name.
-     * @param string $quizname Formatted quiz name.
-     * @param int $requesttime Request timestamp.
-     * @return bool Whether the email was accepted for delivery.
-     */
-    public static function notify_student_received(
-        \stdClass $student,
-        string $coursename,
-        string $quizname,
-        int $requesttime
-    ): bool {
-        $lang = self::user_language($student);
-
-        return self::email($student, [
-            'subject' => self::str($lang, 'idexemptionemail:received:subject', $quizname),
-            'preheader' => self::str($lang, 'idexemptionemail:received:title'),
-            'accent' => self::ACCENT_BLUE,
-            'eyebrow' => self::str($lang, 'idexemptionemail:received:eyebrow'),
-            'title' => self::str($lang, 'idexemptionemail:received:title'),
-            'intro' => self::str($lang, 'idexemptionemail:received:intro', $student->email),
-            'details' => [
-                self::str($lang, 'idexemptionemail:labelcourse') => $coursename,
-                self::str($lang, 'idexemptionemail:labelexam') => $quizname,
-                self::str($lang, 'idexemptionemail:labelrequested') =>
-                    userdate($requesttime, '', $student->timezone ?? 99),
-            ],
-            'note' => self::str($lang, 'idexemptionemail:received:note'),
-            'footer' => self::footer($lang),
-        ]);
-    }
 
     /**
      * Sends the student the approval or decline decision.
@@ -148,6 +70,7 @@ class exemption_email {
     ): bool {
         $lang = self::user_language($student);
         $spec = [
+            'lang' => $lang,
             'details' => [
                 self::str($lang, 'idexemptionemail:labelcourse') => $coursename,
                 self::str($lang, 'idexemptionemail:labelexam') => $quizname,
@@ -185,42 +108,50 @@ class exemption_email {
     }
 
     /**
-     * Builds a deliverable-only recipient for an external address.
-     *
-     * @param string $email Destination address.
-     * @param string $name Display name.
-     * @return \stdClass Recipient usable with email_to_user().
-     */
-    public static function external_recipient(string $email, string $name): \stdClass {
-        $recipient = clone \core_user::get_noreply_user();
-        $recipient->email = $email;
-        $recipient->firstname = $name;
-        $recipient->lastname = '';
-        $recipient->maildisplay = 1;
-        $recipient->emailstop = 0;
-        $recipient->mailformat = 1;
-
-        return $recipient;
-    }
-
-    /**
      * Renders the shared shell and sends the message.
+     *
+     * Sent from the site noreply address, but with Reply-To pointed at the configured ID
+     * exception contact address so a student who just hits reply reaches a person instead
+     * of a black hole. The footer still tells them not to reply to the notification itself.
      *
      * @param \stdClass $recipient Recipient user record.
      * @param array $spec Message spec (subject, accent, eyebrow, title, intro,
-     *     details, ctaurl, ctalabel, note, preheader, footer).
+     *     details, ctaurl, ctalabel, note, preheader, footer, lang).
      * @return bool Whether the email was accepted for delivery.
      */
     private static function email(\stdClass $recipient, array $spec): bool {
         [$html, $text] = self::render($spec);
+        $replyto = self::reply_to_address();
+        $replytoname = $replyto === ''
+            ? ''
+            : self::str((string)($spec['lang'] ?? self::site_language()), 'idexemptionemail:replytoname');
 
         return (bool)email_to_user(
             $recipient,
             \core_user::get_noreply_user(),
             (string)($spec['subject'] ?? ''),
             $text,
-            $html
+            $html,
+            '',
+            '',
+            true,
+            $replyto,
+            $replytoname
         );
+    }
+
+    /**
+     * The Reply-To address for exception emails.
+     *
+     * Reuses the ID exception contact address — the one students are already told to write
+     * to — so there is a single address to keep current rather than two that can drift.
+     *
+     * @return string Validated address, or an empty string to leave Reply-To off.
+     */
+    private static function reply_to_address(): string {
+        $contact = trim((string)get_config('quizaccess_proctoring', 'idexemptioncontactemail'));
+
+        return validate_email($contact) ? $contact : '';
     }
 
     /**
@@ -358,11 +289,16 @@ class exemption_email {
     /**
      * Footer line for a language.
      *
+     * Only claims "do not reply" when there is genuinely nowhere to reply to — with a
+     * contact address configured, Reply-To reaches student support and the footer says so.
+     *
      * @param string $lang Language code.
      * @return string Footer text.
      */
     private static function footer(string $lang): string {
-        return self::str($lang, 'idexemptionemail:footer', self::BRAND_NAME);
+        $key = self::reply_to_address() === '' ? 'idexemptionemail:footer' : 'idexemptionemail:footerreplyto';
+
+        return self::str($lang, $key, self::BRAND_NAME);
     }
 
     /**

@@ -478,17 +478,22 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
-     * Builds the "I can't provide a photo ID" request block for the precheck.
+     * Builds the "I can't provide a photo ID" self-service block for the precheck.
      *
-     * Shown only when a contact address is configured and the student has not
-     * already passed ID verification. The button emails the configured contact
-     * (student support) who can then waive the requirement for this student via
-     * the Manage overrides page — the exception stays a human decision.
+     * Clicking the link asks what is actually wrong instead of sending anything: students
+     * who cannot get a usable picture get capture tips, students who left their ID
+     * elsewhere are told to fetch it and come back, and students with no ID at all get the
+     * list of details the contact address needs to review an exception. The plugin never
+     * emails that address itself — students send it themselves — so a stray click costs
+     * nobody an inbox item. The two escalation paths do record a declaration, which is what
+     * puts the student in the Manage overrides page's pending list for a human decision.
      *
      * @param bool $idverificationpassed Whether the student already passed.
      * @return string HTML block, or an empty string when unavailable.
      */
-    private static function get_id_exemption_request_html(bool $idverificationpassed): string {
+    private function get_id_exemption_request_html(bool $idverificationpassed): string {
+        global $USER;
+
         if ($idverificationpassed) {
             return '';
         }
@@ -497,12 +502,123 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             return '';
         }
 
+        $component = 'quizaccess_proctoring';
+        $quizname = format_string($this->quiz->name);
+        $coursename = format_string(get_course((int)$this->quiz->course)->fullname);
+
+        // Opening lines of both draft emails: what staff need to find this student and exam.
+        $mailheader = [
+            get_string('idexemption:mail_fullname', $component, fullname($USER)),
+            get_string('idexemption:mail_email', $component, $USER->email),
+            get_string('idexemption:mail_course', $component, $coursename),
+            get_string('idexemption:mail_exam', $component, $quizname),
+        ];
+
+        // The address doubles as a mailto: link that opens a draft with those details already
+        // filled in. Nothing is sent by clicking it, and the visible text stays copyable for
+        // students whose browser has no mail client wired up.
+        $maillink = function (string $subject, array $bodylines) use ($contact) {
+            $href = 'mailto:' . $contact .
+                '?subject=' . rawurlencode($subject) .
+                '&body=' . rawurlencode(implode("\r\n", $bodylines));
+
+            return html_writer::link($href, $contact, ['class' => 'proctoring-idv-exempt-mail']);
+        };
+        $answer = function (string $reason, string $body) {
+            return html_writer::div($body, 'proctoring-idv-exempt-answer mt-2', [
+                'data-exempt-answer' => $reason,
+                'style' => 'display:none;',
+            ]);
+        };
+
+        // 1. Cannot capture a usable picture: tips first, escalation only if they persist.
+        $tips = '';
+        foreach (range(1, 6) as $tip) {
+            $tips .= html_writer::tag('li', get_string('idexemption:capture_tip' . $tip, $component));
+        }
+        $capturemail = $maillink(
+            get_string('idexemption:capture_mailsubject', $component, $quizname),
+            array_merge($mailheader, [
+                '',
+                get_string('idexemption:capture_maildevice', $component),
+                '',
+                get_string('idexemption:capture_mailwhat', $component),
+                '',
+            ])
+        );
+        $captureanswer = $answer(
+            'capture',
+            html_writer::tag('p', get_string('idexemption:capture_heading', $component), [
+                'class' => 'font-weight-bold fw-bold mb-1',
+            ]) .
+            html_writer::tag('ul', $tips, ['class' => 'mb-2']) .
+            html_writer::tag('button', get_string('idexemption:capture_stuck', $component), [
+                'type' => 'button',
+                'id' => 'proctoring-idv-exempt-stuck',
+                'class' => 'btn btn-outline-secondary btn-sm',
+            ]) .
+            html_writer::div(
+                html_writer::tag(
+                    'p',
+                    get_string('idexemption:capture_stuckintro', $component, $capturemail),
+                    ['class' => 'mb-1']
+                ) .
+                html_writer::tag('p', get_string('idexemption:mailhint', $component), ['class' => 'text-muted mb-0']),
+                'proctoring-idv-exempt-escalation mt-2',
+                ['id' => 'proctoring-idv-exempt-capture-escalation', 'style' => 'display:none;']
+            )
+        );
+
+        // 2. Has an ID, just not to hand: nothing to send, and nothing is lost by coming back.
+        $notnowanswer = $answer(
+            'notnow',
+            html_writer::tag('p', get_string('idexemption:notnow_body', $component), ['class' => 'mb-0'])
+        );
+
+        // 3. No photo ID at all: the details student support needs to review an exception.
+        $noidmail = $maillink(
+            get_string('idexemption:noid_mailsubject', $component, $quizname),
+            array_merge($mailheader, [
+                '',
+                get_string('idexemption:noid_mailreason', $component),
+                '',
+                get_string('idexemption:noid_mailalt', $component),
+                '',
+            ])
+        );
+        $noidanswer = $answer(
+            'noid',
+            html_writer::tag('p', get_string('idexemption:noid_intro', $component, $noidmail), ['class' => 'mb-1']) .
+            html_writer::tag('p', get_string('idexemption:mailhint', $component), ['class' => 'text-muted mb-1']) .
+            html_writer::tag('p', get_string('idexemption:noid_wait', $component), ['class' => 'mb-0'])
+        );
+
+        $choices = '';
+        foreach (['capture', 'notnow', 'noid'] as $reason) {
+            $choices .= html_writer::tag('button', get_string('idexemption:reason_' . $reason, $component), [
+                'type' => 'button',
+                'class' => 'btn btn-outline-secondary btn-sm d-block mb-1 proctoring-idv-exempt-choice',
+                'data-exempt-reason' => $reason,
+            ]);
+        }
+
         return html_writer::div(
-            html_writer::tag('button', get_string('modal:idexemptionbutton', 'quizaccess_proctoring'), [
+            html_writer::tag('button', get_string('modal:idexemptionbutton', $component), [
                 'type' => 'button',
                 'id' => 'idverificationexempt',
                 'class' => 'btn btn-link p-0 proctoring-idv-exempt-link',
+                'aria-expanded' => 'false',
+                'aria-controls' => 'proctoring-idv-exempt-triage',
             ]) .
+            html_writer::div(
+                html_writer::tag('p', get_string('idexemption:triageheading', $component), [
+                    'class' => 'font-weight-bold fw-bold mb-2',
+                ]) .
+                html_writer::div($choices, 'proctoring-idv-exempt-choices') .
+                $captureanswer . $notnowanswer . $noidanswer,
+                'proctoring-idv-exempt-triage mt-2',
+                ['id' => 'proctoring-idv-exempt-triage', 'style' => 'display:none;']
+            ) .
             html_writer::div('', 'proctoring-idv-exempt-note', [
                 'id' => 'id_exemption_result',
                 'style' => 'display:none;',
@@ -564,6 +680,26 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
 
         return (string)$statement;
+    }
+
+    /**
+     * Get the student handbook URL linked below the integrity statement.
+     *
+     * The built-in default lives in a language string so each locale can point at its own
+     * handbook. An administrator who clears the setting gets no link at all.
+     *
+     * @return string The handbook URL, or an empty string when no link should be shown.
+     */
+    private static function get_honor_handbook_url() {
+        $url = get_config('quizaccess_proctoring', 'honorstatementhandbookurl');
+
+        if ($url === false) {
+            $url = get_string('honorstatement:handbookurldefault', 'quizaccess_proctoring');
+        }
+
+        $url = trim((string)$url);
+
+        return $url === '' ? '' : clean_param($url, PARAM_URL);
     }
 
     /**
@@ -684,9 +820,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
 
         $retentiondays = (int)get_config('quizaccess_proctoring', 'imageretentiondays');
-        $retention = $retentiondays > 0
-            ? get_string('privacynotice:retentiondays', 'quizaccess_proctoring', $retentiondays)
-            : get_string('privacynotice:retentionmanual', 'quizaccess_proctoring');
+        if ($retentiondays === 1) {
+            $retention = get_string('privacynotice:retentiononeday', 'quizaccess_proctoring');
+        } else if ($retentiondays > 0) {
+            $retention = get_string('privacynotice:retentiondays', 'quizaccess_proctoring', $retentiondays);
+        } else {
+            $retention = get_string('privacynotice:retentionmanual', 'quizaccess_proctoring');
+        }
 
         return html_writer::tag(
             'details',
@@ -1065,6 +1205,18 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 format_text(self::get_honor_statement(), FORMAT_PLAIN, ['para' => true]),
                 'proctoring-honor-statement-text'
             );
+            $handbookurl = self::get_honor_handbook_url();
+            if ($handbookurl !== '') {
+                $handbooklink = html_writer::link(
+                    $handbookurl,
+                    get_string('honorstatement:handbooklinktext', 'quizaccess_proctoring'),
+                    ['target' => '_blank', 'rel' => 'noopener noreferrer']
+                );
+                $statement .= html_writer::div(
+                    get_string('honorstatement:handbooklink', 'quizaccess_proctoring', $handbooklink),
+                    'proctoring-honor-statement-handbook small'
+                );
+            }
             $mform->addElement(
                 'html',
                 "<section id='proctoring-step-honor' class='proctoring-preflight-step' data-preflight-step='honor'>" .
@@ -1267,7 +1419,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                     ),
                     'proctoring-idv-result mt-2'
                 ) .
-                self::get_id_exemption_request_html($idverificationpassed),
+                $this->get_id_exemption_request_html($idverificationpassed),
                 'proctoring-idv-panel alert alert-info'
             );
 

@@ -258,6 +258,14 @@ if ($hassiteconfig) {
     ));
 
     $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/honorstatementhandbookurl',
+        get_string('setting:honorstatementhandbookurl', 'quizaccess_proctoring'),
+        get_string('setting:honorstatementhandbookurl_desc', 'quizaccess_proctoring'),
+        get_string('honorstatement:handbookurldefault', 'quizaccess_proctoring'),
+        PARAM_URL
+    ));
+
+    $settings->add(new admin_setting_configtext(
         'quizaccess_proctoring/honoragreementlabel',
         get_string('setting:honoragreementlabel', 'quizaccess_proctoring'),
         get_string('setting:honoragreementlabel_desc', 'quizaccess_proctoring'),
@@ -427,7 +435,7 @@ if ($hassiteconfig) {
         'quizaccess_proctoring/idexemptioncontactemail',
         get_string('setting:idexemptioncontactemail', 'quizaccess_proctoring'),
         get_string('setting:idexemptioncontactemail_desc', 'quizaccess_proctoring'),
-        '',
+        'contact@saylor.org',
         PARAM_NOTAGS
     ));
 
