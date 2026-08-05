@@ -309,6 +309,26 @@ final class attempt_review_test extends advanced_testcase {
     }
 
     /**
+     * The stored factor key is a named sentinel, never an empty string, and never one of the real
+     * risk factor keys. Empty strings are the one value Oracle cannot store in a NOT NULL column
+     * without a driver workaround, and a row that names itself is readable in the table besides.
+     */
+    public function test_signoff_stores_a_nonempty_factor_key(): void {
+        global $DB;
+
+        $id = $this->sign_off();
+        $stored = $DB->get_field(attempt_review::TABLE, 'factorkey', ['id' => $id]);
+
+        $this->assertSame(attempt_review::FACTOR_KEY, $stored);
+        $this->assertNotSame('', trim((string)$stored));
+        $this->assertArrayNotHasKey(
+            attempt_review::FACTOR_KEY,
+            \quizaccess_proctoring\local\risk_calculator::FACTOR_DEFAULTS,
+            'the sentinel must not collide with a real risk factor key'
+        );
+    }
+
+    /**
      * A clean attempt has nothing to sign off, so it is offered no such action.
      */
     public function test_clean_attempts_are_not_offered_a_signoff(): void {

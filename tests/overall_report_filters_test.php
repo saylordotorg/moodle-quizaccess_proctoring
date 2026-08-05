@@ -150,7 +150,7 @@ final class overall_report_filters_test extends advanced_testcase {
         string $tilast = '',
         string $risklevel = '',
         int $riskmin = 0,
-        int $riskmax = 100
+        int $riskmax = -1
     ): array {
         return overall_report::build(
             (int)$this->course->id,
@@ -314,6 +314,78 @@ final class overall_report_filters_test extends advanced_testcase {
 
         // Nothing seeded here reaches critical, so that band is empty.
         $this->assertSame([], $this->build('recent', '', '', '', 'critical')['rows']);
+    }
+
+    /**
+     * With the score cap off a score can exceed 100, and the filters must still reach it.
+     *
+     * Clamping the upper bound to a flat 100 would drop exactly the attempts a reviewer is looking
+     * for: asking for the Critical band on an uncapped site would silently exclude the worst ones.
+     */
+    public function test_uncapped_scores_above_100_are_still_reachable(): void {
+        global $DB;
+
+        set_config('riskscorecapenabled', 0, 'quizaccess_proctoring');
+
+        // Pile on evidence across several factors so the sum runs past 100 with no cap to stop it.
+        $loud = $this->students['brown'];
+        foreach (['multiple_faces_detected', 'possible_ai_tool', 'multiple_monitors_detected',
+                  'screen_marker_missing', 'phone_detected', 'audio_detected'] as $eventtype) {
+            for ($i = 0; $i < 4; $i++) {
+                $DB->insert_record('quizaccess_proctoring_events', (object)[
+                    'courseid' => $this->course->id,
+                    'quizid' => $this->cm->id,
+                    'userid' => $loud->id,
+                    'attemptid' => 102,
+                    'reportid' => 0,
+                    'eventtype' => $eventtype,
+                    'eventdetail' => '',
+                    'timemodified' => time() - (2 * HOURSECS),
+                ]);
+            }
+        }
+
+        $scores = [];
+        foreach ($this->build()['rows'] as $row) {
+            $scores[$row['fullname']] = (int)$row['riskscore'];
+        }
+        $this->assertArrayHasKey(
+            'Bo Brown',
+            $scores,
+            'the uncapped attempt fell out of the unfiltered list, so an upper bound is clamping it'
+        );
+        $this->assertGreaterThan(100, $scores['Bo Brown'], 'the uncapped score should exceed 100');
+
+        // Pass the bound the page passes, so this exercises the real upper bound rather than the
+        // helper's default: the page sends max_possible_score(), which is what a flat 100 broke.
+        $max = \quizaccess_proctoring\local\risk_calculator::max_possible_score();
+        $this->assertGreaterThan(100, $max, 'with the cap off the reachable maximum exceeds 100');
+
+        // The band the row displays must be the band that finds it.
+        $band = '';
+        foreach ($this->build()['rows'] as $row) {
+            if ($row['fullname'] === 'Bo Brown') {
+                $band = $row['levelkey'];
+            }
+        }
+        $this->assertSame('critical', $band);
+        $this->assertContains(
+            'Bo Brown',
+            $this->names($this->build('recent', '', '', '', 'critical', 0, $max)),
+            'a >100 attempt must still answer its own band filter'
+        );
+
+        // An explicit range whose upper bound is the reachable maximum must include it too.
+        $this->assertContains(
+            'Bo Brown',
+            $this->names($this->build('recent', '', '', '', '', 101, $max))
+        );
+
+        // And a range that genuinely excludes it still excludes it.
+        $this->assertNotContains(
+            'Bo Brown',
+            $this->names($this->build('recent', '', '', '', '', 0, 50))
+        );
     }
 
     /**

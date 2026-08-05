@@ -25,7 +25,7 @@
         "rangeoptions": [{"value": "7days", "label": "Last 7 days", "selected": true}],
         "sortoptions": [{"value": "recent", "label": "Most recent activity", "selected": true}],
         "risklevoptions": [{"value": "", "label": "Any risk level", "selected": true}],
-        "riskmin": 0, "riskmax": 100,
+        "riskmin": 0, "riskmax": 100, "riskmaxbound": 100,
         "pulse": [{"num": 2, "label": "Waiting for your review", "hint": "Flagged attempts", "url": "#", "iscritical": true, "isactive": true}],
         "views": [{"label": "Needs review (2)", "url": "#", "isactive": true}],
         "countnote": "Showing 2 of 12 attempts",
@@ -92,10 +92,10 @@
              aria-labelledby="proctoring-riskrange-{{uniqid}}">
             <span id="proctoring-riskrange-{{uniqid}}">{{#str}}overallreport:filterriskrange, quizaccess_proctoring{{/str}}</span>
             <span class="proctoring-overview-rangeinputs">
-                <input type="number" min="0" max="100" name="riskmin" value="{{riskmin}}"
+                <input type="number" min="0" max="{{riskmaxbound}}" name="riskmin" value="{{riskmin}}"
                        aria-label="{{#str}}overallreport:filterriskmin, quizaccess_proctoring{{/str}}">
                 <span class="proctoring-overview-rangedash">-</span>
-                <input type="number" min="0" max="100" name="riskmax" value="{{riskmax}}"
+                <input type="number" min="0" max="{{riskmaxbound}}" name="riskmax" value="{{riskmax}}"
                        aria-label="{{#str}}overallreport:filterriskmax, quizaccess_proctoring{{/str}}">
             </span>
         </div>

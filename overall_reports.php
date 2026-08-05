@@ -60,8 +60,12 @@ $risklevel = optional_param('risklevel', '', PARAM_ALPHA);
 if (!in_array($risklevel, ['low', 'moderate', 'high', 'critical'], true)) {
     $risklevel = '';
 }
-$riskmin = min(100, max(0, optional_param('riskmin', 0, PARAM_INT)));
-$riskmax = min(100, max(0, optional_param('riskmax', 100, PARAM_INT)));
+// Bounds come from the highest score that can actually be reached: that is 100 only while the
+// score cap is on, and the sum of the enabled factor caps when it is off. Clamping to a flat 100
+// would make the worst attempts unaskable-for on an uncapped site.
+$scoremax = \quizaccess_proctoring\local\risk_calculator::max_possible_score();
+$riskmin = min($scoremax, max(0, optional_param('riskmin', 0, PARAM_INT)));
+$riskmax = min($scoremax, max(0, optional_param('riskmax', $scoremax, PARAM_INT)));
 if ($riskmin > $riskmax) {
     [$riskmin, $riskmax] = [$riskmax, $riskmin];
 }
@@ -91,6 +95,7 @@ $activefilters = [
     'risklevel' => $risklevel,
     'riskmin' => $riskmin,
     'riskmax' => $riskmax,
+    'riskmaxbound' => $scoremax,
 ];
 
 // Sign a flagged attempt off, or undo a sign-off. A flagged attempt has no hold to release, so this
@@ -391,7 +396,7 @@ $lastinitialbar = $OUTPUT->initials_bar(
 );
 
 $hasstudentfilter = $search !== '' || $tifirst !== '' || $tilast !== '';
-$hasriskfilter = $risklevel !== '' || $riskmin > 0 || $riskmax < 100;
+$hasriskfilter = $risklevel !== '' || $riskmin > 0 || $riskmax < $scoremax;
 
 $templatecontext = [
     'formurl' => (new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'))->out(false),

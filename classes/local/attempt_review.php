@@ -42,6 +42,19 @@ final class attempt_review {
     /** @var string Verdict value marking an attempt-level sign-off. */
     const VERDICT = 'attempt_reviewed';
 
+    /**
+     * Factor key stored on an attempt-level sign-off.
+     *
+     * The verdict is about the whole attempt rather than one risk factor, so there is no real
+     * factor key to store. A named sentinel is used rather than an empty string: the column is
+     * NOT NULL, and Oracle stores '' as NULL - Moodle's driver papers over that by writing a
+     * single space, but a row that says what it is beats one that depends on a workaround. It
+     * must never collide with a key in {@see risk_calculator::FACTOR_DEFAULTS}.
+     *
+     * @var string
+     */
+    const FACTOR_KEY = 'attempt';
+
     /** @var string Table holding reviewer verdicts. */
     const TABLE = 'quizaccess_proctoring_finding_reviews';
 
@@ -192,8 +205,7 @@ final class attempt_review {
             'userid' => $userid,
             'attemptid' => $attemptid,
             'reportid' => $reportid,
-            // An attempt-level verdict is not about one factor, so it carries no factor key.
-            'factorkey' => '',
+            'factorkey' => self::FACTOR_KEY,
             'verdict' => self::VERDICT,
             'reviewerid' => $reviewerid,
             'timecreated' => $now,

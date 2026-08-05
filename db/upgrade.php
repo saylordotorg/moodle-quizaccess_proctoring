@@ -1173,5 +1173,14 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072121, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026072122) {
+        // No schema changes: the attempts report rework is queries, filters and templates, and
+        // attempt-level review sign-offs reuse the existing reviewer-verdict table. The bump only
+        // refreshes caches for the new strings. upgrade_plugins() writes the version back itself
+        // once this function returns, so this savepoint is not what advances it - it keeps the
+        // per-version record in this file unbroken, which is how every release here is logged.
+        upgrade_plugin_savepoint(true, 2026072122, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

@@ -163,7 +163,8 @@ final class overall_report {
      * @param string $tilast Single surname initial from the initials bar ('' for all).
      * @param string $risklevel Risk band key ('low', 'moderate', 'high', 'critical') or '' for all.
      * @param int $riskmin Lowest risk score to include (0 for no lower bound).
-     * @param int $riskmax Highest risk score to include (100 for no upper bound).
+     * @param int $riskmax Highest risk score to include; -1, or anything at or above the maximum
+     *                     possible score, means no upper bound.
      * @return array Template-ready report data.
      */
     public static function build(
@@ -178,7 +179,7 @@ final class overall_report {
         string $tilast = '',
         string $risklevel = '',
         int $riskmin = 0,
-        int $riskmax = 100
+        int $riskmax = -1
     ): array {
         global $CFG, $DB;
 
@@ -543,8 +544,14 @@ final class overall_report {
     private static function filter_by_risk(array $attempts, string $risklevel, int $riskmin, int $riskmax): array {
         $bandfilter = in_array($risklevel, ['low', 'moderate', 'high', 'critical'], true) ? $risklevel : '';
         $riskmin = max(0, $riskmin);
-        $riskmax = min(100, $riskmax);
-        if ($bandfilter === '' && $riskmin <= 0 && $riskmax >= 100) {
+
+        // The upper bound is the highest score that can actually be reached, which is 100 only
+        // while the score cap is on: with it off, a score is the sum of the factor caps and can run
+        // past 100. Hard-coding 100 here would drop exactly the attempts a reviewer most wants -
+        // asking for the Critical band would silently exclude a 135-point attempt.
+        $scoremax = risk_calculator::max_possible_score();
+        $unbounded = $riskmax < 0 || $riskmax >= $scoremax;
+        if ($bandfilter === '' && $riskmin <= 0 && $unbounded) {
             return $attempts;
         }
 
@@ -559,7 +566,7 @@ final class overall_report {
                 continue;
             }
             $score = (int)$risk['score'];
-            if ($score < $riskmin || $score > $riskmax) {
+            if ($score < $riskmin || (!$unbounded && $score > $riskmax)) {
                 continue;
             }
             $a['risk'] = $risk;
