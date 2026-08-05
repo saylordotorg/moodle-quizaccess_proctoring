@@ -685,6 +685,39 @@ function quizaccess_proctoring_student_hold_notice_enabled(): bool {
 }
 
 /**
+ * Render one pending ID exception request's reason for a staff table cell.
+ *
+ * Shows the category the student picked, then their own words underneath - that
+ * explanation is the whole point of asking, so it belongs in the list rather than behind
+ * another click. Shared by the per-exam panel and the site-wide Proctoring reports tab.
+ *
+ * @param array $request One record from id_exception::pending_requests().
+ * @return string Safe HTML for the reason cell.
+ */
+function quizaccess_proctoring_render_id_exception_reason(array $request): string {
+    $component = 'quizaccess_proctoring';
+    $html = html_writer::div(
+        s(\quizaccess_proctoring\local\id_exception::reason_label($request)),
+        'font-weight-bold fw-bold'
+    );
+
+    if (trim((string)$request['detail']) !== '') {
+        $html .= html_writer::div(s($request['detail']), 'small');
+    }
+    if (trim((string)$request['alternatives']) !== '') {
+        $html .= html_writer::div(
+            s(get_string('idexemption:altlabel', $component)) . ' ' . s($request['alternatives']),
+            'small text-muted'
+        );
+    }
+    if (trim((string)$request['detail']) === '') {
+        $html .= html_writer::div(s(get_string('idexemption:nodetail', $component)), 'small text-muted');
+    }
+
+    return $html;
+}
+
+/**
  * Get the configured Student Affairs review window.
  *
  * @return int Review window in days. Zero disables automatic release.

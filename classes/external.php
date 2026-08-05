@@ -1154,6 +1154,24 @@ class quizaccess_proctoring_external extends external_api {
                     VALUE_DEFAULT,
                     ''
                 ),
+                'category' => new external_value(
+                    PARAM_ALPHA,
+                    'For a noid request, why they have no ID: never, lostorstolen, expired, displaced, withheld, other',
+                    VALUE_DEFAULT,
+                    ''
+                ),
+                'detail' => new external_value(
+                    PARAM_TEXT,
+                    'The student\'s own explanation; required for a noid request',
+                    VALUE_DEFAULT,
+                    ''
+                ),
+                'alternatives' => new external_value(
+                    PARAM_TEXT,
+                    'Optional note on what documentation the student can provide instead',
+                    VALUE_DEFAULT,
+                    ''
+                ),
             ]
         );
     }
@@ -1161,17 +1179,25 @@ class quizaccess_proctoring_external extends external_api {
     /**
      * Records that a student cannot get past the ID step, so staff can find them.
      *
-     * Nothing is emailed from here. The precheck already told the student what to send
-     * to the configured contact address themselves; this call only writes the declaration
-     * to the events log, which is what lists them under "Pending ID exception requests"
-     * on the Manage overrides page. Waiving the requirement stays a human decision.
+     * Nothing is emailed from here. This writes the request to the events log, which is
+     * what lists the student under "Pending ID exception requests" on the Manage overrides
+     * page and the site-wide Proctoring reports tab. Waiving the requirement stays a human
+     * decision.
+     *
+     * A no-ID request must say something staff can act on: a category from the dropdown and
+     * the student's own explanation. An empty one is rejected rather than filed, because a
+     * request carrying no information only buys a round of "so why don't you have an ID?".
      *
      * @param int $courseid Course ID.
      * @param int $cmid Quiz course module ID.
      * @param string $reason Declared reason ('capture' or 'noid'); anything else is stored unset.
+     * @param string $category For a no-ID request, which dropdown option they picked.
+     * @param string $detail The student's own explanation; required for a no-ID request.
+     * @param string $alternatives Optional note on documentation they can provide instead.
      * @return array Status and student-facing message.
      */
-    public static function request_id_exemption($courseid, $cmid, $reason = '') {
+    public static function request_id_exemption($courseid, $cmid, $reason = '', $category = '', $detail = '',
+            $alternatives = '') {
         global $DB, $USER;
 
         self::validate_parameters(
@@ -1180,9 +1206,25 @@ class quizaccess_proctoring_external extends external_api {
                 'courseid' => $courseid,
                 'cmid' => $cmid,
                 'reason' => $reason,
+                'category' => $category,
+                'detail' => $detail,
+                'alternatives' => $alternatives,
             ]
         );
-        $reason = in_array((string)$reason, ['capture', 'noid'], true) ? (string)$reason : '';
+        $exception = \quizaccess_proctoring\local\id_exception::class;
+        $reason = in_array((string)$reason, [$exception::REASON_CAPTURE, $exception::REASON_NOID], true)
+            ? (string)$reason
+            : '';
+        $category = in_array((string)$category, $exception::CATEGORIES, true) ? (string)$category : '';
+        $detail = trim((string)$detail);
+        $alternatives = trim((string)$alternatives);
+
+        if ($reason === $exception::REASON_NOID && ($category === '' || $detail === '')) {
+            return [
+                'status' => 'incomplete',
+                'message' => get_string('modal:idexemptionincomplete', 'quizaccess_proctoring'),
+            ];
+        }
 
         [$cm, $context] = self::get_authorized_quiz_context((int)$courseid, (int)$cmid);
         unset($context);
@@ -1211,7 +1253,7 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         // Audit trail: the declaration shows up alongside the attempt's other events, and
-        // feeds the pending-requests list on the Manage overrides page.
+        // feeds the pending-requests lists staff work from.
         $record = new stdClass();
         $record->courseid = (int)$courseid;
         $record->quizid = (int)$cm->id;
@@ -1219,7 +1261,13 @@ class quizaccess_proctoring_external extends external_api {
         $record->attemptid = 0;
         $record->reportid = 0;
         $record->eventtype = 'id_exemption_requested';
-        $record->eventdetail = substr(json_encode(['contact' => $contact, 'reason' => $reason]), 0, 2000);
+        $record->eventdetail = json_encode([
+            'contact' => $contact,
+            'reason' => $reason,
+            'category' => $category,
+            'detail' => \core_text::substr($detail, 0, $exception::DETAIL_MAX),
+            'alternatives' => \core_text::substr($alternatives, 0, $exception::ALTERNATIVES_MAX),
+        ]);
         $record->pagevisibility = 'visible';
         $record->currenturl = '';
         $record->screenshoturl = '';
@@ -1241,7 +1289,7 @@ class quizaccess_proctoring_external extends external_api {
     public static function request_id_exemption_returns() {
         return new external_single_structure(
             [
-                'status' => new external_value(PARAM_ALPHA, 'recorded, already, or unavailable'),
+                'status' => new external_value(PARAM_ALPHA, 'recorded, already, incomplete, or unavailable'),
                 'message' => new external_value(PARAM_TEXT, 'Student-facing status message'),
             ]
         );

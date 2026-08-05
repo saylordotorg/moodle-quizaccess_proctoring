@@ -576,23 +576,96 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             html_writer::tag('p', get_string('idexemption:notnow_body', $component), ['class' => 'mb-0'])
         );
 
-        // 3. No photo ID at all: the details student support needs to review an exception.
-        $noidmail = $maillink(
-            get_string('idexemption:noid_mailsubject', $component, $quizname),
-            array_merge($mailheader, [
-                '',
-                get_string('idexemption:noid_mailreason', $component),
-                '',
-                get_string('idexemption:noid_mailalt', $component),
-                '',
-            ])
+        // 3. No photo ID at all. A bare "I have no ID" request only earns the student a
+        // "so why not?" reply, so the request is a short form: a category and, in their own
+        // words, why. Both are required here and re-checked server-side. The same answers are
+        // folded into the email draft afterwards, so the support ticket and the Moodle
+        // request say the same thing.
+        $categoryoptions = html_writer::tag(
+            'option',
+            get_string('idexemption:categoryprompt', $component),
+            ['value' => '']
+        );
+        foreach (\quizaccess_proctoring\local\id_exception::CATEGORIES as $category) {
+            $categoryoptions .= html_writer::tag(
+                'option',
+                get_string('idexemption:category_' . $category, $component),
+                ['value' => $category]
+            );
+        }
+        $noidform =
+            html_writer::label(
+                get_string('idexemption:categorylabel', $component),
+                'proctoring-idv-exempt-category',
+                true,
+                ['class' => 'font-weight-bold fw-bold d-block mb-1']
+            ) .
+            html_writer::tag('select', $categoryoptions, [
+                'id' => 'proctoring-idv-exempt-category',
+                'class' => 'custom-select form-select form-control mb-2',
+            ]) .
+            html_writer::label(
+                get_string('idexemption:detaillabel', $component),
+                'proctoring-idv-exempt-detail',
+                true,
+                ['class' => 'font-weight-bold fw-bold d-block mb-1']
+            ) .
+            html_writer::tag('textarea', '', [
+                'id' => 'proctoring-idv-exempt-detail',
+                'class' => 'form-control mb-2',
+                'rows' => 3,
+                'maxlength' => \quizaccess_proctoring\local\id_exception::DETAIL_MAX,
+                'placeholder' => get_string('idexemption:detailplaceholder', $component),
+            ]) .
+            html_writer::label(
+                get_string('idexemption:altlabel', $component),
+                'proctoring-idv-exempt-alt',
+                true,
+                ['class' => 'd-block mb-1']
+            ) .
+            html_writer::tag('textarea', '', [
+                'id' => 'proctoring-idv-exempt-alt',
+                'class' => 'form-control mb-2',
+                'rows' => 2,
+                'maxlength' => \quizaccess_proctoring\local\id_exception::ALTERNATIVES_MAX,
+                'placeholder' => get_string('idexemption:altplaceholder', $component),
+            ]) .
+            html_writer::tag('button', get_string('idexemption:submitrequest', $component), [
+                'type' => 'button',
+                'id' => 'proctoring-idv-exempt-submit',
+                'class' => 'btn btn-primary btn-sm',
+                'disabled' => 'disabled',
+            ]) .
+            html_writer::div(
+                get_string('idexemption:requiredhint', $component),
+                'text-muted small mt-1',
+                ['id' => 'proctoring-idv-exempt-required']
+            );
+
+        // The follow-up email is built in the browser once the answers exist, so the draft
+        // carries them. These carry the pieces JS needs to assemble that mailto: URL.
+        $noidsent = html_writer::div(
+            html_writer::tag('p', get_string('idexemption:noid_emailintro', $component), ['class' => 'mb-1']) .
+            html_writer::tag('p', '', ['class' => 'mb-1', 'id' => 'proctoring-idv-exempt-maillink']) .
+            html_writer::tag('p', get_string('idexemption:turnaround', $component), ['class' => 'mb-1']) .
+            html_writer::tag('p', get_string('idexemption:noid_wait', $component), ['class' => 'mb-1']) .
+            html_writer::tag('p', get_string('idexemption:mailhint', $component), ['class' => 'text-muted mb-0']),
+            'proctoring-idv-exempt-escalation mt-2',
+            [
+                'id' => 'proctoring-idv-exempt-noid-sent',
+                'style' => 'display:none;',
+                'data-contact' => $contact,
+                'data-subject' => get_string('idexemption:noid_mailsubject', $component, $quizname),
+                'data-header' => implode("\n", $mailheader),
+                'data-reasonlabel' => get_string('idexemption:noid_mailreason', $component),
+                'data-altlabel' => get_string('idexemption:noid_mailalt', $component),
+            ]
         );
         $noidanswer = $answer(
             'noid',
-            html_writer::tag('p', get_string('idexemption:noid_intro', $component, $noidmail), ['class' => 'mb-1']) .
-            html_writer::tag('p', get_string('idexemption:turnaround', $component), ['class' => 'mb-1']) .
-            html_writer::tag('p', get_string('idexemption:noid_wait', $component), ['class' => 'mb-1']) .
-            html_writer::tag('p', get_string('idexemption:mailhint', $component), ['class' => 'text-muted mb-0'])
+            html_writer::tag('p', get_string('idexemption:noid_intro', $component), ['class' => 'mb-2']) .
+            html_writer::div($noidform, 'proctoring-idv-exempt-form') .
+            $noidsent
         );
 
         $choices = '';

@@ -4134,6 +4134,23 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     word-break: break-all;
 }
 
+/* The no-ID request form: a category plus the student's own explanation, which is what
+   makes the request reviewable without a round of "so why don't you have an ID?". */
+.proctoring-idv-exempt-form select,
+.proctoring-idv-exempt-form textarea {
+    font-size: 0.8125rem;
+    max-width: 34rem;
+}
+
+.proctoring-idv-exempt-form label {
+    font-size: 0.8125rem;
+}
+
+/* Cross-exam ID exception queue on the Proctoring reports page. */
+.proctoring-idexception-table td {
+    vertical-align: top;
+}
+
 /* ------------------------------------------------------------------
    Start attempt stepper: the precheck renders as a two-pane wizard —
    numbered checklist rail on the left, the active step on the right,

@@ -1173,13 +1173,13 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072121, 'quizaccess', 'proctoring');
     }
 
-    if ($oldversion < 2026072123) {
-        // No schema changes. The self-service ID exception triage still records its
-        // declaration in quizaccess_proctoring_events - only the eventdetail JSON gained a
-        // "reason" key - and the honesty statement, handbook link, and day/days changes are
-        // text and settings only. No-op savepoint to advance the stored plugin version so
-        // the new settings' defaults are applied.
-        upgrade_plugin_savepoint(true, 2026072123, 'quizaccess', 'proctoring');
+    if ($oldversion < 2026072124) {
+        // No schema changes. ID exception requests still live in quizaccess_proctoring_events
+        // - the eventdetail JSON gained "reason", "category", "detail", and "alternatives"
+        // keys - and the honesty statement, handbook link, and day/days changes are text and
+        // settings only. No-op savepoint to advance the stored plugin version so the new
+        // settings' defaults are applied and the changed web service signature is picked up.
+        upgrade_plugin_savepoint(true, 2026072124, 'quizaccess', 'proctoring');
     }
 
     return true;
