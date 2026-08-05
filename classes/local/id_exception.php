@@ -176,13 +176,23 @@ class id_exception {
             'timemodified' => time(),
         ]);
 
+        // The decision email names the request it answers, so a student with more than one
+        // pending exam knows which is which.
+        $requestedat = (int)$DB->get_field_sql(
+            "SELECT MAX(timemodified)
+               FROM {quizaccess_proctoring_events}
+              WHERE quizid = :cmid AND userid = :userid AND eventtype = 'id_exemption_requested'",
+            ['cmid' => $cmid, 'userid' => $userid]
+        );
+
         exemption_email::notify_student_decision(
             $student,
             $approved,
             $coursename,
             $quizname,
             $cmid,
-            trim((string)get_config('quizaccess_proctoring', 'idexemptioncontactemail'))
+            trim((string)get_config('quizaccess_proctoring', 'idexemptioncontactemail')),
+            $requestedat
         );
     }
 

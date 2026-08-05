@@ -176,11 +176,12 @@ final class id_exception_test extends advanced_testcase {
         [$courseid, $cmid] = $this->create_quiz();
         $cm = get_coursemodule_from_id('quiz', $cmid, 0, false, MUST_EXIST);
         $student = $this->create_student($courseid);
+        $requestedat = time() - 60;
         $this->record_request($cmid, $courseid, (int)$student->id, [
             'reason' => id_exception::REASON_NOID,
             'category' => 'withheld',
             'detail' => 'My employer holds my passport.',
-        ], time() - 60);
+        ], $requestedat);
 
         $sink = $this->redirectEmails();
         id_exception::decide($cmid, (int)$student->id, true);
@@ -196,7 +197,19 @@ final class id_exception_test extends advanced_testcase {
         $this->assertCount(1, $messages);
         $message = reset($messages);
         $this->assertSame($student->email, $message->to);
-        $this->assertStringContainsString('contact@saylor.org', $message->header);
+
+        // Replies reach a person, not the site noreply address.
+        $this->assertMatchesRegularExpression('/^Reply-To: .*contact@saylor\.org/mi', $message->header);
+
+        // The request time is shown in the institution's timezone with the zone named, not in
+        // the server timezone a student never sees.
+        $expected = userdate(
+            $requestedat,
+            get_string('idexemptionemail:timeformat', 'quizaccess_proctoring'),
+            \quizaccess_proctoring\local\exemption_email::DISPLAY_TIMEZONE
+        );
+        $this->assertStringContainsString($expected, $message->body);
+        $this->assertMatchesRegularExpression('/\b(EST|EDT)\b/', $message->body);
 
         $this->assertTrue($DB->record_exists('quizaccess_proctoring_events', [
             'quizid' => $cmid,

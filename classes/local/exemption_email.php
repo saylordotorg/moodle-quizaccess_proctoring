@@ -50,6 +50,16 @@ class exemption_email {
     const ACCENT_RED = '#b3423a';
 
     /**
+     * @var string Timezone every date in these emails is shown in.
+     *
+     * Not the server timezone and not the student's: staff and students need to read the
+     * same wall-clock time when they discuss a request, and the zone is printed alongside
+     * so a student elsewhere can convert it. Moodle would otherwise fall back to the
+     * server timezone whenever a student has not set one on their profile.
+     */
+    const DISPLAY_TIMEZONE = 'America/New_York';
+
+    /**
      * Sends the student the approval or decline decision.
      *
      * @param \stdClass $student Requesting student.
@@ -58,6 +68,7 @@ class exemption_email {
      * @param string $quizname Formatted quiz name.
      * @param int $cmid Quiz course module id.
      * @param string $contact Contact address shown on declines.
+     * @param int $requestedat When the student filed the request; 0 to leave it out.
      * @return bool Whether the email was accepted for delivery.
      */
     public static function notify_student_decision(
@@ -66,15 +77,20 @@ class exemption_email {
         string $coursename,
         string $quizname,
         int $cmid,
-        string $contact
+        string $contact,
+        int $requestedat = 0
     ): bool {
         $lang = self::user_language($student);
+        $details = [
+            self::str($lang, 'idexemptionemail:labelcourse') => $coursename,
+            self::str($lang, 'idexemptionemail:labelexam') => $quizname,
+        ];
+        if ($requestedat > 0) {
+            $details[self::str($lang, 'idexemptionemail:labelrequested')] = self::format_time($requestedat, $lang);
+        }
         $spec = [
             'lang' => $lang,
-            'details' => [
-                self::str($lang, 'idexemptionemail:labelcourse') => $coursename,
-                self::str($lang, 'idexemptionemail:labelexam') => $quizname,
-            ],
+            'details' => $details,
             'footer' => self::footer($lang),
         ];
 
@@ -272,6 +288,17 @@ class exemption_email {
         $textlines[] = self::BRAND_NAME . ', ' . self::BRAND_ADDRESS;
 
         return [$html, implode("\n", $textlines)];
+    }
+
+    /**
+     * Formats a timestamp for a student, in the institution's timezone with the zone shown.
+     *
+     * @param int $time Unix timestamp.
+     * @param string $lang Language code.
+     * @return string For example "25 July 2026, 1:20 PM EDT".
+     */
+    private static function format_time(int $time, string $lang): string {
+        return userdate($time, self::str($lang, 'idexemptionemail:timeformat'), self::DISPLAY_TIMEZONE);
     }
 
     /**
