@@ -316,6 +316,46 @@ final class security_test extends advanced_testcase {
     }
 
     /**
+     * The daily report should let recipients reply to a staffed address, not to noreply.
+     *
+     * @covers \quizaccess_proctoring\task\send_daily_report_task
+     */
+    public function test_daily_report_replies_reach_the_support_contact(): void {
+        $this->resetAfterTest();
+
+        set_config('dailyreportenabled', 1, 'quizaccess_proctoring');
+        set_config('dailyreportsendempty', 1, 'quizaccess_proctoring');
+        set_config('idexemptioncontactemail', 'contact@saylor.org', 'quizaccess_proctoring');
+        $admin = get_admin();
+        set_config('dailyreportemails', $admin->email, 'quizaccess_proctoring');
+
+        $sink = $this->redirectEmails();
+        ob_start();
+        (new send_daily_report_task())->execute();
+        ob_end_clean();
+        $messages = $sink->get_messages();
+        $sink->close();
+
+        $this->assertCount(1, $messages);
+        $this->assertMatchesRegularExpression(
+            '/^Reply-To: .*contact@saylor\.org/mi',
+            reset($messages)->header
+        );
+
+        // With no contact configured the report falls back to Moodle's own Reply-To.
+        set_config('idexemptioncontactemail', '', 'quizaccess_proctoring');
+        $sink = $this->redirectEmails();
+        ob_start();
+        (new send_daily_report_task())->execute();
+        ob_end_clean();
+        $messages = $sink->get_messages();
+        $sink->close();
+
+        $this->assertCount(1, $messages);
+        $this->assertStringNotContainsString('contact@saylor.org', reset($messages)->header);
+    }
+
+    /**
      * Moodle-user daily report recipients should only receive rows they can view.
      *
      * @covers \quizaccess_proctoring\task\send_daily_report_task

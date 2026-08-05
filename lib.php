@@ -2526,12 +2526,12 @@ function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $deci
         $message->fullmessagehtml = text_to_html($body);
         $message->smallmessage = $subject;
         $message->notification = 1;
-        // Students reply to hold notices too, so point Reply-To at the same staffed address
-        // the ID exception guidance uses instead of leaving replies to hit noreply.
-        $contact = trim((string)get_config('quizaccess_proctoring', 'idexemptioncontactemail'));
-        if (validate_email($contact)) {
+        // Students reply to hold notices too, so point Reply-To at the staffed address
+        // instead of leaving replies to hit noreply.
+        $contact = \quizaccess_proctoring\local\support_contact::address();
+        if ($contact !== '') {
             $message->replyto = $contact;
-            $message->replytoname = get_string('idexemptionemail:replytoname', 'quizaccess_proctoring');
+            $message->replytoname = \quizaccess_proctoring\local\support_contact::name();
         }
         if ($cm) {
             $message->contexturl = (new moodle_url('/mod/quiz/view.php', ['id' => $cm->id]))->out(false);

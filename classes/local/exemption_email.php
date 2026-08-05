@@ -137,10 +137,10 @@ class exemption_email {
      */
     private static function email(\stdClass $recipient, array $spec): bool {
         [$html, $text] = self::render($spec);
-        $replyto = self::reply_to_address();
+        $replyto = support_contact::address();
         $replytoname = $replyto === ''
             ? ''
-            : self::str((string)($spec['lang'] ?? self::site_language()), 'idexemptionemail:replytoname');
+            : support_contact::name((string)($spec['lang'] ?? self::site_language()));
 
         return (bool)email_to_user(
             $recipient,
@@ -154,20 +154,6 @@ class exemption_email {
             $replyto,
             $replytoname
         );
-    }
-
-    /**
-     * The Reply-To address for exception emails.
-     *
-     * Reuses the ID exception contact address — the one students are already told to write
-     * to — so there is a single address to keep current rather than two that can drift.
-     *
-     * @return string Validated address, or an empty string to leave Reply-To off.
-     */
-    private static function reply_to_address(): string {
-        $contact = trim((string)get_config('quizaccess_proctoring', 'idexemptioncontactemail'));
-
-        return validate_email($contact) ? $contact : '';
     }
 
     /**
@@ -323,7 +309,7 @@ class exemption_email {
      * @return string Footer text.
      */
     private static function footer(string $lang): string {
-        $key = self::reply_to_address() === '' ? 'idexemptionemail:footer' : 'idexemptionemail:footerreplyto';
+        $key = support_contact::address() === '' ? 'idexemptionemail:footer' : 'idexemptionemail:footerreplyto';
 
         return self::str($lang, $key, self::BRAND_NAME);
     }
