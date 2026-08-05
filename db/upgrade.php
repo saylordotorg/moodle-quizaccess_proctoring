@@ -1182,5 +1182,22 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072124, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026072125) {
+        // The ID exception contact address gained a default of contact@saylor.org, but a default
+        // declared in settings.php only reaches config when defaults are applied: a CLI upgrade
+        // does that, while a web upgrade only does it if the admin walks the "new settings" page
+        // and saves it. Every place the address is read treats "not set" as "feature off", so on a
+        // site that clicked past that page the self-service ID exception link would stay hidden and
+        // decision emails would keep going out with no Reply-To, with nothing to indicate why.
+        //
+        // Only fill it in when nothing is stored at all. An admin who deliberately emptied the
+        // field has chosen to hide the option - that is what the setting's own description
+        // promises - so an empty string is a decision to respect, not a gap to fill.
+        if (get_config('quizaccess_proctoring', 'idexemptioncontactemail') === false) {
+            set_config('idexemptioncontactemail', 'contact@saylor.org', 'quizaccess_proctoring');
+        }
+        upgrade_plugin_savepoint(true, 2026072125, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
