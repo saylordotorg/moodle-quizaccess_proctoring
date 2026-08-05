@@ -563,6 +563,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                     get_string('idexemption:capture_stuckintro', $component, $capturemail),
                     ['class' => 'mb-1']
                 ) .
+                html_writer::tag('p', get_string('idexemption:turnaround', $component), ['class' => 'mb-1']) .
                 html_writer::tag('p', get_string('idexemption:mailhint', $component), ['class' => 'text-muted mb-0']),
                 'proctoring-idv-exempt-escalation mt-2',
                 ['id' => 'proctoring-idv-exempt-capture-escalation', 'style' => 'display:none;']
@@ -589,8 +590,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $noidanswer = $answer(
             'noid',
             html_writer::tag('p', get_string('idexemption:noid_intro', $component, $noidmail), ['class' => 'mb-1']) .
-            html_writer::tag('p', get_string('idexemption:mailhint', $component), ['class' => 'text-muted mb-1']) .
-            html_writer::tag('p', get_string('idexemption:noid_wait', $component), ['class' => 'mb-0'])
+            html_writer::tag('p', get_string('idexemption:turnaround', $component), ['class' => 'mb-1']) .
+            html_writer::tag('p', get_string('idexemption:noid_wait', $component), ['class' => 'mb-1']) .
+            html_writer::tag('p', get_string('idexemption:mailhint', $component), ['class' => 'text-muted mb-0'])
         );
 
         $choices = '';
