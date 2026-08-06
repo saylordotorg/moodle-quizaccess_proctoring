@@ -3132,6 +3132,51 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     font-weight: 700;
 }
 
+.proctoring-overview-filter.is-search input {
+    min-width: 220px;
+}
+
+.proctoring-overview-rangeinputs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.proctoring-overview-filter.is-range input {
+    min-width: 72px;
+    width: 72px;
+}
+
+.proctoring-overview-rangedash {
+    font-weight: 400;
+    color: #5f6c79;
+}
+
+.proctoring-overview-clearfilter {
+    align-self: center;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #b95400;
+}
+
+.proctoring-overview-clearfilter:hover,
+.proctoring-overview-clearfilter:focus {
+    color: #934300;
+}
+
+/* Moodle's initials bars carry their own markup; this only spaces the two of them. */
+.proctoring-overview-initials {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 24px;
+    margin: -8px 0 20px;
+    font-size: 0.85rem;
+}
+
+.proctoring-overview-initials .initialbar {
+    margin: 0;
+}
+
 /* Pulse cards */
 .proctoring-overview-pulse {
     display: grid;
@@ -3329,6 +3374,12 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     color: #1e2a35;
 }
 
+.proctoring-overview-email {
+    font-size: 0.8rem;
+    color: #5f6c79;
+    word-break: break-all;
+}
+
 .proctoring-overview-context {
     font-size: 0.8rem;
     color: #5f6c79;
@@ -3338,6 +3389,27 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     font-size: 0.85rem;
     color: #46525f;
     font-weight: 600;
+}
+
+/* Who signed a flagged attempt off, and when. */
+.proctoring-overview-signoff {
+    margin: 0 0 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #2c5e36;
+}
+
+/* The count the "Most detected events" sort and the minimum filter both act on. */
+.proctoring-overview-eventcount {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #eef2f5;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #46525f;
+    white-space: nowrap;
 }
 
 .proctoring-overview-when {
@@ -3542,6 +3614,25 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     font-size: 0.85rem;
     color: #5f6c79;
     margin-top: 4px;
+}
+
+/* An empty queue that is empty because holds are switched off is not good news, so it drops the
+   all-clear green and reads as a neutral notice. */
+.proctoring-overview-emptytitle.is-notice {
+    color: #46525f;
+}
+
+.proctoring-overview-emptyaction {
+    display: inline-block;
+    margin-top: 12px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #b95400;
+}
+
+.proctoring-overview-emptyaction:hover,
+.proctoring-overview-emptyaction:focus {
+    color: #934300;
 }
 
 @media (max-width: 720px) {

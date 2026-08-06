@@ -401,7 +401,7 @@
             </INDEXES>
         </TABLE>
 
-        <TABLE NAME="quizaccess_proctoring_finding_reviews" COMMENT="Reviewer false-positive verdicts on risk score findings">
+        <TABLE NAME="quizaccess_proctoring_finding_reviews" COMMENT="Reviewer verdicts: per-factor false positives (factorkey set), and attempt-level review sign-offs on flagged attempts (empty factorkey)">
             <FIELDS>
                 <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="true"/>
                 <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"

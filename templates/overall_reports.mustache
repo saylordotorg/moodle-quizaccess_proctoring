@@ -16,35 +16,51 @@
     Example context (json):
     {
         "formurl": "https://example.com/overall_reports.php",
-        "intro": "Every proctored exam attempt across your courses.",
+        "intro": "Proctored exam attempts from all courses on this site.",
         "minviolations": 0,
+        "search": "", "tifirst": "", "tilast": "",
+        "firstinitialbar": "<div class=\"initialbar\"></div>", "lastinitialbar": "<div class=\"initialbar\"></div>",
+        "hasstudentfilter": false, "clearstudentfilterurl": "#",
         "courseoptions": [{"value": 0, "label": "All courses", "selected": true}],
         "rangeoptions": [{"value": "7days", "label": "Last 7 days", "selected": true}],
-        "sortoptions": [{"value": "violations", "label": "Most violations", "selected": true}],
+        "sortoptions": [{"value": "recent", "label": "Most recent activity", "selected": true}],
+        "risklevoptions": [{"value": "", "label": "Any risk level", "selected": true}],
+        "riskmin": 0, "riskmax": 100, "riskmaxbound": 100,
         "pulse": [{"num": 2, "label": "Waiting for your review", "hint": "Flagged attempts", "url": "#", "iscritical": true, "isactive": true}],
         "views": [{"label": "Needs review (2)", "url": "#", "isactive": true}],
         "countnote": "Showing 2 of 12 attempts",
         "rows": [
             {
-                "fullname": "John Doe", "userurl": "#", "course": "CS105", "quiz": "Final exam",
+                "fullname": "John Doe", "email": "john.doe@example.com", "userurl": "#", "course": "CS105", "quiz": "Final exam",
+                "violations": 7, "violationsbreakdown": "(5 events, 2 face mismatches)", "eventcountlabel": "7 detected events",
                 "lastactivity": "1 Jan 2026, 10:00", "riskscore": 85, "risklevel": "Critical", "levelkey": "critical",
                 "signalsummary": "AI tool (2) · Tab switching (5)", "statuslabel": "Needs review", "reviewstate": "needs",
                 "isneeds": true, "hassignals": true,
                 "signals": [{"factor": "AI tool", "pts": "+30"}],
                 "breakdown": [{"factor": "AI tool", "pts": "+30"}],
-                "canact": true, "releaseurl": "#", "confirmurl": "#", "viewurl": "#"
+                "canact": true, "releaseurl": "#", "confirmurl": "#", "viewurl": "#",
+                "cansignoff": false, "signoffurl": "", "undosignoffurl": "", "signofflabel": ""
             }
         ],
-        "hasrows": true, "emptyqueue": false, "pagingbar": "<nav></nav>"
+        "hasrows": true, "emptyqueue": false, "pagingbar": "<nav></nav>",
+        "emptytitle": "Queue is clear", "emptybody": "Every held attempt has been reviewed.",
+        "emptyisnotice": false, "emptyactionurl": "", "emptyactionlabel": "Open the risk review settings"
     }
 }}
 
 <div class="proctoring-overview">
     <p class="proctoring-overview-intro">{{intro}}</p>
 
-    {{! Filters: course + period + sort + minimum violations. }}
+    {{! Filters: student search + course + period + sort + minimum detected events. }}
     <form method="get" action="{{formurl}}" class="proctoring-overview-filters">
         <input type="hidden" name="queue" value="{{queue}}">
+        <input type="hidden" name="tifirst" value="{{tifirst}}">
+        <input type="hidden" name="tilast" value="{{tilast}}">
+        <label class="proctoring-overview-filter is-search">
+            <span>{{#str}}overallreport:filtersearch, quizaccess_proctoring{{/str}}</span>
+            <input type="text" name="search" value="{{search}}"
+                   placeholder="{{#str}}overallreport:filtersearchplaceholder, quizaccess_proctoring{{/str}}">
+        </label>
         <label class="proctoring-overview-filter">
             <span>{{#str}}overallreport:filtercourse, quizaccess_proctoring{{/str}}</span>
             <select name="courseid">
@@ -64,11 +80,40 @@
             </select>
         </label>
         <label class="proctoring-overview-filter">
+            <span>{{#str}}overallreport:filterrisklevel, quizaccess_proctoring{{/str}}</span>
+            <select name="risklevel">
+                {{#risklevoptions}}<option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>{{/risklevoptions}}
+            </select>
+        </label>
+        {{! Two inputs, so this one is a labelled group rather than a label: a label may only own
+            one control, and pointing one at two of them leaves it ambiguous which it activates.
+            Each input keeps its own aria-label, so both are named on their own. }}
+        <div class="proctoring-overview-filter is-range" role="group"
+             aria-labelledby="proctoring-riskrange-{{uniqid}}">
+            <span id="proctoring-riskrange-{{uniqid}}">{{#str}}overallreport:filterriskrange, quizaccess_proctoring{{/str}}</span>
+            <span class="proctoring-overview-rangeinputs">
+                <input type="number" min="0" max="{{riskmaxbound}}" name="riskmin" value="{{riskmin}}"
+                       aria-label="{{#str}}overallreport:filterriskmin, quizaccess_proctoring{{/str}}">
+                <span class="proctoring-overview-rangedash">-</span>
+                <input type="number" min="0" max="{{riskmaxbound}}" name="riskmax" value="{{riskmax}}"
+                       aria-label="{{#str}}overallreport:filterriskmax, quizaccess_proctoring{{/str}}">
+            </span>
+        </div>
+        <label class="proctoring-overview-filter">
             <span>{{#str}}overallreport:filterminviolations, quizaccess_proctoring{{/str}}</span>
             <input type="number" min="0" name="minviolations" value="{{minviolations}}">
         </label>
         <button type="submit" class="btn btn-secondary proctoring-overview-apply">{{#str}}overallreport:apply, quizaccess_proctoring{{/str}}</button>
+        {{#hasstudentfilter}}
+        <a class="proctoring-overview-clearfilter" href="{{clearstudentfilterurl}}">{{#str}}overallreport:clearstudentfilter, quizaccess_proctoring{{/str}}</a>
+        {{/hasstudentfilter}}
     </form>
+
+    {{! Standard Moodle initials bars, filtering the list by first name and surname. }}
+    <div class="proctoring-overview-initials">
+        {{{firstinitialbar}}}
+        {{{lastinitialbar}}}
+    </div>
 
     {{! Pulse cards. }}
     <div class="proctoring-overview-pulse">
@@ -103,9 +148,13 @@
                 <span class="proctoring-overview-who">
                     <span class="proctoring-overview-wholine">
                         <span class="proctoring-overview-student">{{fullname}}</span>
+                        <span class="proctoring-overview-email">{{email}}</span>
                         <span class="proctoring-overview-context">{{course}} · {{quiz}}</span>
                     </span>
-                    <span class="proctoring-overview-signal">{{signalsummary}}</span>
+                    <span class="proctoring-overview-signal">
+                        {{signalsummary}}
+                        <span class="proctoring-overview-eventcount" title="{{violationsbreakdown}}">{{eventcountlabel}}</span>
+                    </span>
                 </span>
                 <span class="proctoring-overview-when">{{lastactivity}}</span>
                 <span class="proctoring-overview-status proctoring-overview-status-{{reviewstate}}">{{statuslabel}}</span>
@@ -137,8 +186,17 @@
                     </div>
                     {{/hassignals}}
                 </div>
+                {{#signofflabel}}
+                <div class="proctoring-overview-signoff">{{signofflabel}}</div>
+                {{/signofflabel}}
                 <div class="proctoring-overview-actions">
                     <a class="btn proctoring-overview-primary" href="{{viewurl}}">{{#str}}overallreport:openreport, quizaccess_proctoring{{/str}}</a>
+                    {{#cansignoff}}
+                    <a class="btn proctoring-overview-secondary" href="{{signoffurl}}">{{#str}}overallreport:signoff, quizaccess_proctoring{{/str}}</a>
+                    {{/cansignoff}}
+                    {{#undosignoffurl}}
+                    <a class="btn proctoring-overview-secondary" href="{{undosignoffurl}}">{{#str}}overallreport:undosignoff, quizaccess_proctoring{{/str}}</a>
+                    {{/undosignoffurl}}
                     {{#canact}}
                     <a class="btn proctoring-overview-secondary" href="{{releaseurl}}">{{#str}}overallreport:markreviewed, quizaccess_proctoring{{/str}}</a>
                     <a class="btn proctoring-overview-danger" href="{{confirmurl}}"
@@ -155,8 +213,11 @@
 
         {{#emptyqueue}}
         <div class="proctoring-overview-empty">
-            <div class="proctoring-overview-emptytitle">{{#str}}overallreport:queueclear, quizaccess_proctoring{{/str}}</div>
-            <div class="proctoring-overview-emptybody">{{#str}}overallreport:queueclearbody, quizaccess_proctoring{{/str}}</div>
+            <div class="proctoring-overview-emptytitle {{#emptyisnotice}}is-notice{{/emptyisnotice}}">{{emptytitle}}</div>
+            <div class="proctoring-overview-emptybody">{{emptybody}}</div>
+            {{#emptyactionurl}}
+            <a class="proctoring-overview-emptyaction" href="{{emptyactionurl}}">{{emptyactionlabel}}</a>
+            {{/emptyactionurl}}
         </div>
         {{/emptyqueue}}
 
