@@ -50,6 +50,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     param: {done: '__DONE__', total: '__TOTAL__'},
                 },
                 {key: 'preflight:setupcomplete', component: 'quizaccess_proctoring'},
+                {key: 'screenmarkerchecking', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -94,6 +95,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     stepcounterpattern: strings[37],
                     progresscountpattern: strings[38],
                     setupcomplete: strings[39],
+                    screenmarkerchecking: strings[40],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -2341,6 +2343,54 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return x + ':' + y;
                 };
 
+                /**
+                 * Size the marker search window, and the evidence it demands, from how large
+                 * the marker actually lands in the captured frame.
+                 *
+                 * The window used to be a fixed 6x4 tiles (96x64px of a 1280px-wide frame),
+                 * but the marker's colour row is 186 CSS px wide: on a 1728px-wide laptop
+                 * screen that is ~138px of the analysed frame, half again wider than the
+                 * window, so detection depended on clipping the outer two swatches and still
+                 * scraping past a flat 18-sample floor. Sizing the window to the row means
+                 * whole swatches land inside it, so the floor can scale with the area a real
+                 * swatch covers -- a stricter test than the flat 18, which matters because a
+                 * wider window would otherwise make it easier for unrelated colourful desktop
+                 * content to satisfy all three colours by coincidence.
+                 *
+                 * Kept in step with the same helper in proctoring.js and screenmonitor.php.
+                 */
+                const markerSearchGeometry = function(frameWidth, tileSize) {
+                    // Keep the historical window as the fallback for environments that cannot
+                    // report a screen width to scale against.
+                    const fallback = {tilesX: 6, tilesY: 4, minSamples: 18};
+                    const screenWidth = window.screen ? window.screen.width : 0;
+                    if (!screenWidth || !frameWidth || !tileSize) {
+                        return fallback;
+                    }
+
+                    // Captured pixels per CSS pixel of the shared screen. Matches styles.css:
+                    // three 58x24 swatches separated by two 6px gaps.
+                    const scale = frameWidth / screenWidth;
+                    const rowWidth = 186 * scale;
+                    const swatchWidth = 58 * scale;
+                    const swatchHeight = 24 * scale;
+                    if (!(rowWidth > 0) || !(swatchHeight > 0)) {
+                        return fallback;
+                    }
+
+                    // One tile of slack on each axis so the window still holds the whole row
+                    // when the marker straddles a tile boundary.
+                    return {
+                        tilesX: Math.min(24, Math.max(6, Math.ceil(rowWidth / tileSize) + 1)),
+                        tilesY: Math.min(12, Math.max(4, Math.ceil(swatchHeight / tileSize) + 1)),
+                        // countMarkerTiles samples every second pixel on both axes, so this is
+                        // the share of one whole swatch that must be visible and on-hue.
+                        minSamples: Math.max(18, Math.round(
+                            Math.floor(swatchWidth / 2) * Math.floor(swatchHeight / 2) * 0.35
+                        )),
+                    };
+                };
+
                 const countMarkerTiles = function(imageData, tileSize) {
                     const data = imageData.data;
                     const width = imageData.width;
@@ -2390,13 +2440,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     const tiles = countMarkerTiles(imageData, tileSize);
                     const maxTileX = Math.ceil(imageData.width / tileSize);
                     const maxTileY = Math.ceil(imageData.height / tileSize);
+                    const search = markerSearchGeometry(imageData.width, tileSize);
 
                     for (let tileY = 0; tileY < maxTileY; tileY++) {
                         for (let tileX = 0; tileX < maxTileX; tileX++) {
                             const totals = {magenta: 0, cyan: 0, yellow: 0};
 
-                            for (let yOffset = 0; yOffset < 4; yOffset++) {
-                                for (let xOffset = 0; xOffset < 6; xOffset++) {
+                            for (let yOffset = 0; yOffset < search.tilesY; yOffset++) {
+                                for (let xOffset = 0; xOffset < search.tilesX; xOffset++) {
                                     const tile = tiles[tileKey(tileX + xOffset, tileY + yOffset)];
                                     if (!tile) {
                                         continue;
@@ -2407,7 +2458,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 }
                             }
 
-                            if (totals.magenta >= 18 && totals.cyan >= 18 && totals.yellow >= 18) {
+                            if (totals.magenta >= search.minSamples && totals.cyan >= search.minSamples &&
+                                    totals.yellow >= search.minSamples) {
                                 return true;
                             }
                         }
@@ -2422,6 +2474,27 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             return true;
                         }
                         await new Promise((resolve) => window.setTimeout(resolve, 100));
+                    }
+
+                    return false;
+                };
+
+                /**
+                 * Wait for the screen check marker to show up on the shared screen.
+                 *
+                 * At the instant a share is granted the marker is routinely covered by
+                 * something the student did not choose to put there: the browser's share
+                 * picker closing, its "you are sharing your screen" bubble, a notification,
+                 * or another app that the desktop brings forward as the grant completes. A
+                 * single sample taken right then fails an entirely correct share, so give the
+                 * marker a few seconds to appear before rejecting the screen.
+                 */
+                const waitForSharedScreenMarker = async function() {
+                    for (let attempts = 0; attempts < 20; attempts++) {
+                        if (sharedScreenContainsMarker()) {
+                            return true;
+                        }
+                        await new Promise((resolve) => window.setTimeout(resolve, 500));
                     }
 
                     return false;
@@ -2533,7 +2606,20 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         return;
                     }
 
-                    if (!await waitForScreenFrame() || !sharedScreenContainsMarker()) {
+                    if (!await waitForScreenFrame()) {
+                        stopScreenStream();
+                        setScreenResult(strings.screensharedenied, false);
+                        setRequirementStatus('screen', 'action');
+                        screenReady = false;
+                        setScreenConfirmed(false);
+                        updatePreflightGate();
+                        return;
+                    }
+
+                    if (screenMarkerRequired) {
+                        setScreenResult(strings.screenmarkerchecking, true);
+                    }
+                    if (!await waitForSharedScreenMarker()) {
                         stopScreenStream();
                         setScreenResult(strings.screenmarkerwrongmonitor, false);
                         setRequirementStatus('screen', 'action');

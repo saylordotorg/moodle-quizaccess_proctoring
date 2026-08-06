@@ -291,8 +291,48 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @param string $multimonitormode Effective multi-monitor mode.
      * @return bool True when the marker should be shown and checked.
      */
-    private static function should_require_screen_marker(string $multimonitormode): bool {
-        return $multimonitormode !== self::MULTI_MONITOR_BLOCK;
+    /**
+     * Whether the visible screen check marker should be shown and looked for.
+     *
+     * The marker is what tells us *which* screen a student shared; without it we still
+     * require an entire-screen share and still capture desktop evidence, we just cannot
+     * say the shared screen is the one displaying the quiz. It is off by default because
+     * the marker has to be visible in the captured frames: anything in front of the quiz
+     * window hides it and the share is reported as the wrong screen.
+     *
+     * The admin setting is the master switch. Only when it is on do the persistent
+     * monitor and multi-monitor policy have a say -- the helper window samples whichever
+     * screen it was granted, so it needs the marker to identify it whatever the
+     * multi-monitor policy, whereas blocking multiple monitors outright already
+     * guarantees there is only one screen to share.
+     *
+     * @param string $multimonitormode One of the MULTI_MONITOR_* modes.
+     * @param bool $usepersistentmonitor Whether the persistent helper window holds the share.
+     * @return bool
+     */
+    private static function should_require_screen_marker(
+        string $multimonitormode,
+        bool $usepersistentmonitor = false
+    ): bool {
+        if (!self::screen_marker_setting_enabled()) {
+            return false;
+        }
+
+        return $usepersistentmonitor || $multimonitormode !== self::MULTI_MONITOR_BLOCK;
+    }
+
+    /**
+     * Whether the admin has switched the screen check marker on.
+     *
+     * Treats an unset value as off, matching the setting's default, so a site that has
+     * never saved the setting behaves the same as one that saved it unticked. The helper
+     * window in screenmonitor.php reads the same config key directly, as this class is
+     * not autoloadable from a standalone page.
+     *
+     * @return bool
+     */
+    private static function screen_marker_setting_enabled(): bool {
+        return (int)get_config('quizaccess_proctoring', 'requirescreenmarker') === 1;
     }
 
     /**
@@ -1159,7 +1199,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $idverificationpassed = $idverificationrequired ? $this->current_user_has_passed_id_verification() : true;
         $idverificationrequireback = $idverificationrequired && self::id_verification_requires_back_image();
         $usepersistentmonitor = self::should_use_persistent_screen_monitor();
-        $screenmarkerrequired = $usepersistentmonitor || self::should_require_screen_marker($multimonitormode);
+        $screenmarkerrequired = self::should_require_screen_marker($multimonitormode, $usepersistentmonitor);
 
         // Prepare data for the JavaScript module.
         $examurl = new moodle_url('/mod/quiz/startattempt.php');
@@ -2062,8 +2102,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             }
 
             $usepersistentmonitor = self::should_use_persistent_screen_monitor();
-            $record->screenmarkerrequired = ($usepersistentmonitor ||
-                self::should_require_screen_marker($record->multimonitormode)) ? 1 : 0;
+            $record->screenmarkerrequired = self::should_require_screen_marker(
+                $record->multimonitormode,
+                $usepersistentmonitor
+            ) ? 1 : 0;
             $screenmonitorkey = 'cm' . (int)$cmid . 'user' . (int)$USER->id;
             $screenmonitorurl = new moodle_url('/mod/quiz/accessrule/proctoring/screenmonitor.php', [
                 'cmid' => (int)$cmid,

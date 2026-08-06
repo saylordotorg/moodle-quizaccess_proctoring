@@ -33,6 +33,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'attemptwarning:screensharestopped', component: 'quizaccess_proctoring'},
                 {key: 'attemptwarning:title', component: 'quizaccess_proctoring'},
                 {key: 'attemptwarning:wrongscreen', component: 'quizaccess_proctoring'},
+                {key: 'screenmarkerchecking', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -63,6 +64,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     attemptwarningscreensharestopped: strings[23],
                     attemptwarningtitle: strings[24],
                     attemptwarningwrongscreen: strings[25],
+                    screenmarkerchecking: strings[26],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -308,6 +310,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let screenVideo = null;
             let screenCanvas = null;
             let screenReady = false;
+            let markerLastSeen = 0;
+            let markerMissingLoggedAt = 0;
+            let markerFaulted = false;
             let markerCheckTimer = null;
             let screenGateTimer = null;
             let screenMonitorClient = null;
@@ -580,6 +585,54 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 return x + ':' + y;
             };
 
+            /**
+             * Size the marker search window, and the evidence it demands, from how large the
+             * marker actually lands in the captured frame.
+             *
+             * The window used to be a fixed 6x4 tiles (96x64px of a 1280px-wide frame), but the
+             * marker's colour row is 186 CSS px wide: on a 1728px-wide laptop screen that is
+             * ~138px of the analysed frame, half again wider than the window. Detection
+             * therefore depended on a window that clipped the outer two swatches and still
+             * scraped past a flat 18-sample floor -- it worked, with almost no margin, and the
+             * margin shrank further on smaller or differently scaled displays.
+             *
+             * Sizing the window to the row means whole swatches land inside it, so the sample
+             * floor can scale with the area a real swatch covers. That is deliberately a
+             * stricter test than the flat 18: a wider window would otherwise make it easier for
+             * unrelated colourful desktop content to satisfy all three colours by coincidence.
+             */
+            const markerSearchGeometry = function(frameWidth, tileSize) {
+                // Keep the historical window as the fallback for environments that cannot
+                // report a screen width to scale against.
+                const fallback = {tilesX: 6, tilesY: 4, minSamples: 18};
+                const screenWidth = window.screen ? window.screen.width : 0;
+                if (!screenWidth || !frameWidth || !tileSize) {
+                    return fallback;
+                }
+
+                // Captured pixels per CSS pixel of the shared screen. Matches styles.css:
+                // three 58x24 swatches separated by two 6px gaps.
+                const scale = frameWidth / screenWidth;
+                const rowWidth = 186 * scale;
+                const swatchWidth = 58 * scale;
+                const swatchHeight = 24 * scale;
+                if (!(rowWidth > 0) || !(swatchHeight > 0)) {
+                    return fallback;
+                }
+
+                // One tile of slack on each axis so the window still holds the whole row when
+                // the marker straddles a tile boundary.
+                return {
+                    tilesX: Math.min(24, Math.max(6, Math.ceil(rowWidth / tileSize) + 1)),
+                    tilesY: Math.min(12, Math.max(4, Math.ceil(swatchHeight / tileSize) + 1)),
+                    // countMarkerTiles samples every second pixel on both axes, so this is the
+                    // share of one whole swatch that must be visible and on-hue.
+                    minSamples: Math.max(18, Math.round(
+                        Math.floor(swatchWidth / 2) * Math.floor(swatchHeight / 2) * 0.35
+                    )),
+                };
+            };
+
             const countMarkerTiles = function(imageData, tileSize) {
                 const data = imageData.data;
                 const width = imageData.width;
@@ -629,13 +682,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const tiles = countMarkerTiles(imageData, tileSize);
                 const maxTileX = Math.ceil(imageData.width / tileSize);
                 const maxTileY = Math.ceil(imageData.height / tileSize);
+                const search = markerSearchGeometry(imageData.width, tileSize);
 
                 for (let tileY = 0; tileY < maxTileY; tileY++) {
                     for (let tileX = 0; tileX < maxTileX; tileX++) {
                         const totals = {magenta: 0, cyan: 0, yellow: 0};
 
-                        for (let yOffset = 0; yOffset < 4; yOffset++) {
-                            for (let xOffset = 0; xOffset < 6; xOffset++) {
+                        for (let yOffset = 0; yOffset < search.tilesY; yOffset++) {
+                            for (let xOffset = 0; xOffset < search.tilesX; xOffset++) {
                                 const tile = tiles[tileKey(tileX + xOffset, tileY + yOffset)];
                                 if (!tile) {
                                     continue;
@@ -646,7 +700,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             }
                         }
 
-                        if (totals.magenta >= 18 && totals.cyan >= 18 && totals.yellow >= 18) {
+                        if (totals.magenta >= search.minSamples && totals.cyan >= search.minSamples &&
+                                totals.yellow >= search.minSamples) {
                             return true;
                         }
                     }
@@ -720,19 +775,52 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 screenReady = false;
             };
 
-            const requireCorrectSharedScreen = function(reason) {
-                if (!screenMarkerRequired) {
+            // The marker has to be *on* the shared screen, not visible in the very frame we
+            // happen to sample. Anything the desktop puts in front of the quiz window for a
+            // moment hides it through no fault of the student: the share picker, the browser's
+            // own "you are sharing your screen" bubble, a notification, the Dock, another app
+            // taking focus as the share is granted. So accept the share as soon as the marker
+            // appears, and only fault it once the marker has been gone for the whole grace
+            // period -- the same tolerance screenmonitor.php already applies.
+            const markerGraceMs = 30000;
+            const markerWatchIntervalMs = 2000;
+
+            const acceptSharedScreen = function() {
+                markerLastSeen = Date.now();
+                markerMissingLoggedAt = 0;
+                markerFaulted = false;
+                if (screenReady) {
                     return;
                 }
 
+                screenReady = true;
+                setScreenShareStatus(strings.screenshareaccepted, 'success');
+                clearAttemptWarning('wrongscreen');
+                clearAttemptWarning('screenshare');
+                hideScreenShareGate();
+            };
+
+            const faultSharedScreen = function(reason) {
+                // Keep the stream alive: this is a valid entire-screen share that is currently
+                // showing the wrong thing, so the student can fix it by bringing the quiz
+                // forward and the watcher below will accept it again without a re-prompt.
+                if (!markerFaulted) {
+                    markerFaulted = true;
+                    screenReady = false;
+                    setScreenShareStatus(strings.screenmarkerwrongmonitor, 'danger');
+                    setAttemptWarning('wrongscreen', strings.attemptwarningwrongscreen, 'danger');
+                    showScreenShareGate();
+                }
+
+                if (markerMissingLoggedAt && Date.now() - markerMissingLoggedAt < markerGraceMs) {
+                    return;
+                }
+
+                markerMissingLoggedAt = Date.now();
                 logEvent('screen_marker_missing', {
                     reason: reason,
                     note: 'The shared monitor did not contain the visible Moodle quiz screen marker.'
                 });
-                stopScreenStream();
-                setScreenShareStatus(strings.screenmarkerwrongmonitor, 'danger');
-                setAttemptWarning('wrongscreen', strings.attemptwarningwrongscreen, 'danger');
-                showScreenShareGate();
             };
 
             const startMarkerChecks = function() {
@@ -745,10 +833,20 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }
 
                 markerCheckTimer = window.setInterval(function() {
-                    if (screenReady && !sharedScreenContainsMarker()) {
-                        requireCorrectSharedScreen('periodic_marker_check_failed');
+                    if (!screenStream) {
+                        return;
                     }
-                }, 15000);
+
+                    if (sharedScreenContainsMarker()) {
+                        acceptSharedScreen();
+                        return;
+                    }
+
+                    if (Date.now() - markerLastSeen > markerGraceMs) {
+                        faultSharedScreen(screenReady ?
+                            'periodic_marker_check_failed' : 'initial_marker_check_failed');
+                    }
+                }, markerWatchIntervalMs);
             };
 
             const requestScreenShare = async function(event) {
@@ -807,15 +905,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return;
                 }
 
-                if (!await waitForScreenFrame() || !sharedScreenContainsMarker()) {
-                    requireCorrectSharedScreen('initial_marker_check_failed');
+                if (!await waitForScreenFrame()) {
+                    stopScreenStream();
+                    setScreenShareStatus(strings.screensharedenied, 'danger');
                     return;
                 }
 
-                screenReady = true;
-
                 videoTrack.addEventListener('ended', function() {
-                    screenReady = false;
+                    stopScreenStream();
                     setScreenShareStatus(strings.screensharestopped, 'danger');
                     clearAttemptWarning('wrongscreen');
                     setAttemptWarning('screenshare', strings.attemptwarningscreensharestopped, 'danger');
@@ -825,10 +922,19 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     });
                 });
 
-                setScreenShareStatus(strings.screenshareaccepted, 'success');
-                clearAttemptWarning('wrongscreen');
-                clearAttemptWarning('screenshare');
-                hideScreenShareGate();
+                // Open the grace period now. If the quiz window happens to be behind the share
+                // picker or another app at this instant, the watcher accepts the share the
+                // moment the marker becomes visible instead of failing the student outright.
+                markerLastSeen = Date.now();
+                markerMissingLoggedAt = 0;
+                markerFaulted = false;
+
+                if (!screenMarkerRequired || sharedScreenContainsMarker()) {
+                    acceptSharedScreen();
+                } else {
+                    setScreenShareStatus(strings.screenmarkerchecking, 'info');
+                }
+
                 startMarkerChecks();
             };
 
