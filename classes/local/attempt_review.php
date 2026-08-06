@@ -32,10 +32,10 @@ namespace quizaccess_proctoring\local;
  * the first had to redo the same reading. This is the missing decision - deliberately the lightest
  * one available. It changes no grade, sends the student nothing, and can be undone.
  *
- * Records live in the existing reviewer-verdict table under their own verdict and an empty factor
- * key, since they are a verdict on the whole attempt rather than on one risk factor. Reusing that
- * table keeps one place where reviewer verdicts are stored, exported for privacy requests and
- * deleted with the course.
+ * Records live in the existing reviewer-verdict table under their own verdict and the
+ * {@see self::FACTOR_KEY} sentinel, since they are a verdict on the whole attempt rather than on one
+ * risk factor. Reusing that table keeps one place where reviewer verdicts are stored, exported for
+ * privacy requests and deleted with the course.
  */
 final class attempt_review {
 
