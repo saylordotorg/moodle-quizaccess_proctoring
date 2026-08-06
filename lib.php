@@ -675,6 +675,36 @@ function quizaccess_proctoring_get_effective_risk_review_settings(int $cmid): ar
 }
 
 /**
+ * Determine whether a submission anywhere on the site can still open an active risk hold.
+ *
+ * The site-wide review queue is fed only by active holds opened at attempt submission, so a report
+ * that says "queue is clear" is only telling the truth while some route to an active hold exists.
+ * Three routes do it: the site action set to hold; any quiz overriding the site with its own hold
+ * mode; or a configured cheating lockout, which keeps the hold machinery running for quizzes that
+ * have not explicitly opted out. Auto-fail is deliberately not one of them - it writes a terminal
+ * decision that lands in Escalated cases without ever waiting for a reviewer.
+ *
+ * @return string 'reachable' when active holds can still be opened, 'autofailonly' when the only
+ *                configured action fails attempts outright, or 'off' when nothing opens a hold.
+ */
+function quizaccess_proctoring_risk_hold_reachability(): string {
+    global $DB;
+
+    $siteaction = (int)get_config('quizaccess_proctoring', 'riskreviewenabled');
+    $holdreachable = $siteaction === QUIZACCESS_PROCTORING_RISK_ACTION_HOLD
+        || quizaccess_proctoring_get_cheating_lockout_days() > 0
+        || $DB->record_exists('quizaccess_proctoring', ['riskreviewmode' => QUIZACCESS_PROCTORING_RISK_ACTION_HOLD]);
+    if ($holdreachable) {
+        return 'reachable';
+    }
+
+    $autofailreachable = $siteaction === QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL
+        || $DB->record_exists('quizaccess_proctoring', ['riskreviewmode' => QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL]);
+
+    return $autofailreachable ? 'autofailonly' : 'off';
+}
+
+/**
  * Determine whether students should see high-risk hold notices after submission.
  *
  * @return bool True when student notices are enabled.

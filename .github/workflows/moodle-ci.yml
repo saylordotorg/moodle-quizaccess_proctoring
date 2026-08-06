@@ -153,14 +153,17 @@ jobs:
             dbuser: postgres
             dbhealthcmd: pg_isready -U postgres
           # Early compatibility signal against Moodle main; never blocks the pipeline.
+          # Moodle main requires PostgreSQL 17, so this lane cannot share the 16 the stable
+          # series use: on 16 the install aborts at "version 17 is required" before a single
+          # test runs, which reads as a plugin failure but is only the database being too old.
           - version: '503 (main)'
             branch: main
             php: '8.4'
             pluginpath: ./moodle/public/mod/quiz/accessrule/proctoring
             experimental: true
-            dbname: PostgreSQL 16
+            dbname: PostgreSQL 17
             dbtype: pgsql
-            dbimage: postgres:16
+            dbimage: postgres:17
             dbport: 5432
             dbuser: postgres
             dbhealthcmd: pg_isready -U postgres
