@@ -3269,49 +3269,106 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     color: #5f6c79;
 }
 
-/* Attempt cards */
-.proctoring-overview-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.proctoring-overview-attempt {
+/* Attempts table */
+.proctoring-overview-tablewrap {
+    /* Twelve columns will not fit a narrow window; the table scrolls, the page does not. */
+    overflow-x: auto;
     background: #fff;
     border: 1px solid #dde3e9;
     border-radius: 6px;
-    overflow: hidden;
 }
 
-.proctoring-overview-attempt.is-needs {
-    border-color: #f0d9d6;
+.proctoring-overview-table {
+    width: 100%;
+    margin: 0;
+    border-collapse: collapse;
+    font-size: 0.85rem;
 }
 
-.proctoring-overview-attempt.is-clean {
-    opacity: 0.85;
+.proctoring-overview-table th,
+.proctoring-overview-table td {
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid #eef2f5;
 }
 
-.proctoring-overview-attempthead {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px 20px;
-    padding: 16px 20px;
+.proctoring-overview-table thead th {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #5f6c79;
+    background: #f7f9fb;
+    white-space: nowrap;
+}
+
+.proctoring-overview-table tbody tr.is-needs {
+    background: #fdf7f6;
+}
+
+.proctoring-overview-table tbody tr.is-clean td {
+    color: #5f6c79;
+}
+
+.proctoring-overview-cell-risk {
+    /* The score badge is two stacked lines; keep it off a third. */
+    white-space: nowrap;
+}
+
+.proctoring-overview-cell-student {
+    min-width: 190px;
+}
+
+.proctoring-overview-cell-student .proctoring-overview-student,
+.proctoring-overview-cell-student .proctoring-overview-email {
+    display: block;
+}
+
+/* The count the "Most detected events" sort and the minimum filter both act on. */
+.proctoring-overview-eventcount {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #eef2f5;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #46525f;
+    white-space: nowrap;
+}
+
+/* Who signed a flagged attempt off, and when. */
+.proctoring-overview-signoff {
+    margin: 0 0 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #2c5e36;
+}
+
+.proctoring-overview-cell-signals {
+    min-width: 200px;
+}
+
+.proctoring-overview-cell-actions a {
+    display: block;
+    white-space: nowrap;
+    font-weight: 700;
+    font-size: 0.8rem;
+}
+
+.proctoring-overview-dangerlink {
+    color: #9c322b;
+}
+
+.proctoring-overview-breakdowntoggle > summary {
     cursor: pointer;
-    list-style: none;
+    font-weight: 600;
+    color: #46525f;
 }
 
-.proctoring-overview-attempthead::-webkit-details-marker {
-    display: none;
-}
-
-.proctoring-overview-attempthead:hover {
-    background: #fafbfc;
-}
-
-.proctoring-overview-attempt summary:focus-visible {
-    outline: 3px solid #0f6cbf;
-    outline-offset: -3px;
+.proctoring-overview-breakdowntoggle[open] > summary {
+    margin-bottom: 6px;
 }
 
 .proctoring-overview-score {
@@ -3353,21 +3410,6 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     text-transform: uppercase;
 }
 
-.proctoring-overview-who {
-    flex: 1;
-    min-width: 240px;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-}
-
-.proctoring-overview-wholine {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
 .proctoring-overview-student {
     font-size: 0.95rem;
     font-weight: 700;
@@ -3380,36 +3422,10 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     word-break: break-all;
 }
 
-.proctoring-overview-context {
-    font-size: 0.8rem;
-    color: #5f6c79;
-}
-
 .proctoring-overview-signal {
     font-size: 0.85rem;
     color: #46525f;
     font-weight: 600;
-}
-
-/* Who signed a flagged attempt off, and when. */
-.proctoring-overview-signoff {
-    margin: 0 0 12px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: #2c5e36;
-}
-
-/* The count the "Most detected events" sort and the minimum filter both act on. */
-.proctoring-overview-eventcount {
-    display: inline-block;
-    margin-left: 8px;
-    padding: 1px 8px;
-    border-radius: 999px;
-    background: #eef2f5;
-    font-size: 0.75rem;
-    font-weight: 700;
-    color: #46525f;
-    white-space: nowrap;
 }
 
 .proctoring-overview-when {
@@ -3450,56 +3466,6 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
 .proctoring-overview-status-clean {
     background: #eef1f4;
     color: #5f6c79;
-}
-
-.proctoring-overview-chev {
-    font-size: 0.8rem;
-    color: #b95400;
-    font-weight: 700;
-    width: 64px;
-    text-align: right;
-}
-
-.proctoring-overview-attempt[open] .proctoring-overview-chev {
-    color: #5f6c79;
-}
-
-/* Expanded detail */
-.proctoring-overview-detail {
-    border-top: 1px solid #f0f3f6;
-    background: #fafbfc;
-    padding: 18px 20px 20px;
-}
-
-.proctoring-overview-detailcols {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 24px;
-}
-
-.proctoring-overview-detailcol {
-    flex: 1;
-    min-width: 200px;
-}
-
-.proctoring-overview-detailcol.is-wide {
-    flex: 2;
-    min-width: 300px;
-}
-
-.proctoring-overview-detailhead {
-    font-size: 0.7rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #67717c;
-    margin-bottom: 8px;
-}
-
-.proctoring-overview-signals {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
 }
 
 .proctoring-overview-signalrow {
@@ -3548,54 +3514,6 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     font-family: monospace;
 }
 
-.proctoring-overview-actions {
-    display: flex;
-    gap: 10px;
-    margin-top: 18px;
-    flex-wrap: wrap;
-}
-
-.proctoring-overview-primary,
-.proctoring-overview-primary:hover,
-.proctoring-overview-primary:focus {
-    background: #b95400;
-    border-color: #b95400;
-    color: #fff;
-    font-weight: 700;
-}
-
-.proctoring-overview-primary:hover,
-.proctoring-overview-primary:focus {
-    background: #934300;
-    border-color: #934300;
-}
-
-.proctoring-overview-secondary {
-    border: 1px solid #cfd7de;
-    color: #46525f;
-    font-weight: 700;
-    background: #fff;
-}
-
-.proctoring-overview-secondary:hover,
-.proctoring-overview-secondary:focus {
-    border-color: #2c5e36;
-    color: #2c5e36;
-}
-
-.proctoring-overview-danger {
-    border: 1px solid #cfd7de;
-    color: #46525f;
-    font-weight: 700;
-    background: #fff;
-}
-
-.proctoring-overview-danger:hover,
-.proctoring-overview-danger:focus {
-    border-color: #9c322b;
-    color: #9c322b;
-}
-
 .proctoring-overview-empty {
     background: #fff;
     border: 1px solid #dde3e9;
@@ -3636,11 +3554,9 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
 }
 
 @media (max-width: 720px) {
+    /* The table scrolls inside its own wrapper, so the only thing to relax is the date column's
+       reserved width. The card layout this used to also cover is gone. */
     .proctoring-overview-when {
-        width: auto;
-    }
-
-    .proctoring-overview-chev {
         width: auto;
     }
 }

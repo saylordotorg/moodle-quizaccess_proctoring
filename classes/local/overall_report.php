@@ -304,6 +304,7 @@ final class overall_report {
                 ? fullname($user)
                 : get_string('overallreport:unknownuser', 'quizaccess_proctoring');
             $attempts[$k]['email'] = $user ? (string)$user->email : '';
+            $attempts[$k]['usercreated'] = $user ? (int)$user->timecreated : 0;
             $attempts[$k]['firstinitial'] = $user ? \core_text::substr((string)$user->firstname, 0, 1) : '';
             $attempts[$k]['lastinitial'] = $user ? \core_text::substr((string)$user->lastname, 0, 1) : '';
         }
@@ -486,7 +487,7 @@ final class overall_report {
             'id',
             array_keys($userids),
             '',
-            'id, firstname, lastname, middlename, alternatename, firstnamephonetic, lastnamephonetic, email'
+            'id, firstname, lastname, middlename, alternatename, firstnamephonetic, lastnamephonetic, email, timecreated'
         );
     }
 
@@ -717,7 +718,10 @@ final class overall_report {
      * @return array Template-ready row data.
      */
     private static function decorate_rows(array $pagerows, bool $canmanageholds, array $filterparams): array {
-        global $DB;
+        global $CFG, $DB;
+
+        // quiz_rescale_grade() turns a raw sumgrades into the grade the quiz reports show.
+        require_once($CFG->dirroot . '/mod/quiz/locallib.php');
 
         if (empty($pagerows)) {
             return [];
@@ -726,6 +730,7 @@ final class overall_report {
         $aisettings = quizaccess_proctoring_get_ai_review_settings();
         $coursecache = [];
         $quizcache = [];
+        $quizinfo = [];
         $rows = [];
 
         // One bulk scoring pass for the page. Rows a risk filter already scored keep that result.
@@ -733,6 +738,27 @@ final class overall_report {
             return !isset($a['risk']);
         });
         $pagescores = !empty($unscored) ? self::score_attempts($unscored) : [];
+
+        // The attempts behind the visible rows, for score and duration, in one query.
+        $attemptids = [];
+        foreach ($pagerows as $a) {
+            if ((int)$a['attemptid'] > 0) {
+                $attemptids[(int)$a['attemptid']] = true;
+            }
+        }
+        $quizattempts = !empty($attemptids)
+            ? $DB->get_records_list(
+                'quiz_attempts',
+                'id',
+                array_keys($attemptids),
+                '',
+                'id, quiz, state, timestart, timefinish, sumgrades'
+            )
+            : [];
+
+        // Dates match the quiz Grades report, which lists these same attempts: reading one report
+        // against the other should not mean translating between two date formats.
+        $dateformat = str_replace(',', ' ', get_string('strftimedatetime'));
 
         // The reviewers named on signed-off rows, in one query rather than one per row.
         $reviewerids = [];
@@ -753,6 +779,10 @@ final class overall_report {
             if (!isset($quizcache[$a['cmid']])) {
                 $cm = get_coursemodule_from_id('quiz', $a['cmid'], 0, false, IGNORE_MISSING);
                 $quizcache[$a['cmid']] = $cm ? format_string($cm->name) : ('#' . $a['cmid']);
+                // The quiz record too, for the grade fields the attempt score is rescaled against.
+                $quizinfo[$a['cmid']] = $cm
+                    ? $DB->get_record('quiz', ['id' => $cm->instance], 'id, grade, sumgrades, decimalpoints')
+                    : null;
             }
 
             $risk = $a['risk'] ?? $pagescores[$rowkey];
@@ -877,15 +907,49 @@ final class overall_report {
                 'clean' => get_string('overallreport:status_clean', 'quizaccess_proctoring'),
             ];
 
+            // What the attempt itself scored and how long it took, and how old the account was -
+            // the three questions a reviewer asks about an attempt before opening anything.
+            $attempt = $quizattempts[(int)$a['attemptid']] ?? null;
+            $quiz = $quizinfo[$a['cmid']] ?? null;
+            $scorelabel = '';
+            if ($attempt && $quiz) {
+                $scorelabel = $attempt->sumgrades === null
+                    ? get_string('overallreport:notgraded', 'quizaccess_proctoring')
+                    : get_string('overallreport:scoreoutof', 'quizaccess_proctoring', (object)[
+                        'score' => quiz_rescale_grade($attempt->sumgrades, $quiz, true),
+                        'max' => format_float($quiz->grade, $quiz->decimalpoints),
+                    ]);
+            }
+            $durationseconds = 0;
+            if ($attempt && (int)$attempt->timestart > 0 && (int)$attempt->timefinish > (int)$attempt->timestart) {
+                $durationseconds = (int)$attempt->timefinish - (int)$attempt->timestart;
+            }
+            // Keyed off the signup date, not the elapsed time: an account created minutes ago has an
+            // age of about zero, and format_time() renders that as "now" - which is the truth, where
+            // a blank cell would read as "we do not know".
+            $accountage = $a['usercreated'] > 0 ? max(0, time() - (int)$a['usercreated']) : null;
+
             $rows[] = [
                 // Name and email come from the set-wide pass in build(), so what the list shows is
                 // exactly what the search matched and the name/email sorts ordered on.
                 'fullname' => $a['fullname'],
                 'email' => $a['email'],
+                'userid' => (int)$a['userid'],
                 'userurl' => $userurl->out(false),
+                // The site profile, not the course one: this report spans courses, and the id is
+                // what staff match against other systems.
+                'profileurl' => (new moodle_url('/user/profile.php', ['id' => $a['userid']]))->out(false),
                 'course' => $coursecache[$a['courseid']],
                 'quiz' => $quizcache[$a['cmid']],
-                'lastactivity' => $a['lastactivity'] > 0 ? userdate($a['lastactivity']) : '',
+                'scorelabel' => $scorelabel,
+                'duration' => $durationseconds > 0 ? format_time($durationseconds) : '',
+                'accountage' => $accountage === null ? '' : format_time($accountage),
+                'accountcreated' => $a['usercreated'] > 0 ? userdate((int)$a['usercreated'], $dateformat) : '',
+                // Straight into the attempt Moodle recorded, which is the evidence behind the row.
+                'attempturl' => (int)$a['attemptid'] > 0
+                    ? (new moodle_url('/mod/quiz/review.php', ['attempt' => (int)$a['attemptid']]))->out(false)
+                    : '',
+                'lastactivity' => $a['lastactivity'] > 0 ? userdate($a['lastactivity'], $dateformat) : '',
                 'riskscore' => $risk['score'],
                 'risklevel' => $risk['level'],
                 'levelkey' => $risk['levelkey'] ?? '',

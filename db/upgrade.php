@@ -1225,5 +1225,12 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072126, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026072127) {
+        // No schema changes: the attempts report moved from cards to a table and gained columns for
+        // exam score, duration and account age, all read from existing tables. The bump refreshes
+        // the string cache for the new column headings.
+        upgrade_plugin_savepoint(true, 2026072127, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

@@ -44,6 +44,9 @@ final class overall_report_filters_test extends advanced_testcase {
     /** @var \stdClass Generated course. */
     private $course;
 
+    /** @var \stdClass Generated quiz instance. */
+    private $quiz;
+
     /** @var \stdClass Generated quiz course module. */
     private $cm;
 
@@ -59,8 +62,8 @@ final class overall_report_filters_test extends advanced_testcase {
 
         $generator = $this->getDataGenerator();
         $this->course = $generator->create_course();
-        $quiz = $generator->create_module('quiz', ['course' => $this->course->id]);
-        $this->cm = get_coursemodule_from_instance('quiz', $quiz->id);
+        $this->quiz = $generator->create_module('quiz', ['course' => $this->course->id]);
+        $this->cm = get_coursemodule_from_instance('quiz', $this->quiz->id);
 
         // Three students whose names and emails sort differently from one another, so a sort that
         // silently falls back to another key cannot pass by coincidence.
@@ -385,6 +388,116 @@ final class overall_report_filters_test extends advanced_testcase {
         $this->assertNotContains(
             'Bo Brown',
             $this->names($this->build('recent', '', '', '', '', 0, 50))
+        );
+    }
+
+    /**
+     * Each row carries the attempt facts the table shows in columns, and the two links staff use to
+     * get out of this report: the student's profile and the attempt itself.
+     */
+    public function test_rows_carry_the_attempt_and_student_columns(): void {
+        global $DB;
+
+        // A real quiz attempt, so score and duration have something to report.
+        $user = $this->students['clark'];
+        $start = time() - (2 * HOURSECS);
+        // insert_record ignores an explicit id, so take the one the database assigns and point the
+        // seeded proctoring rows at it - otherwise the row and the attempt never match up.
+        $attemptid = (int)$DB->insert_record('quiz_attempts', (object)[
+            'quiz' => $this->quiz->id,
+            'userid' => $user->id,
+            'attempt' => 1,
+            'uniqueid' => 7001,
+            'layout' => '1,0',
+            'state' => 'finished',
+            'timestart' => $start,
+            'timefinish' => $start + 1800,
+            'timemodified' => time(),
+            'sumgrades' => 8,
+        ], true);
+        $DB->set_field(
+            'quizaccess_proctoring_logs',
+            'status',
+            $attemptid,
+            ['status' => 103, 'courseid' => $this->course->id]
+        );
+        $DB->set_field('quizaccess_proctoring_events', 'attemptid', $attemptid, ['attemptid' => 103]);
+        $DB->set_field('quiz', 'sumgrades', 10, ['id' => $this->quiz->id]);
+        $DB->set_field('quiz', 'grade', 100, ['id' => $this->quiz->id]);
+
+        $row = null;
+        foreach ($this->build()['rows'] as $candidate) {
+            if ($candidate['fullname'] === 'Cy Clark') {
+                $row = $candidate;
+            }
+        }
+        $this->assertNotNull($row);
+
+        // Student identity: name, email and the Moodle id, with a profile link to jump to.
+        $this->assertSame((int)$user->id, $row['userid']);
+        $this->assertSame($user->email, $row['email']);
+        $this->assertStringContainsString('/user/profile.php', $row['profileurl']);
+        $this->assertStringContainsString('id=' . $user->id, $row['profileurl']);
+
+        // Attempt facts: 8 of 10 raw rescaled onto a 100-point quiz, and half an hour spent.
+        $this->assertSame('80.00 / 100.00', $row['scorelabel']);
+        $this->assertSame(format_time(1800), $row['duration']);
+
+        // Account age, and the signup date behind it for the column's tooltip. The generator makes
+        // users "now", so backdate this one to something a reviewer would actually be weighing up.
+        $DB->set_field('user', 'timecreated', time() - (400 * DAYSECS), ['id' => $user->id]);
+        $aged = null;
+        foreach ($this->build()['rows'] as $candidate) {
+            if ($candidate['fullname'] === 'Cy Clark') {
+                $aged = $candidate;
+            }
+        }
+        $this->assertStringContainsString('year', $aged['accountage']);
+        $this->assertNotSame('', $aged['accountcreated']);
+
+        // A brand-new account reads as "now" rather than as an empty cell.
+        $this->assertSame(format_time(0), $row['accountage']);
+
+        // Straight into the attempt Moodle recorded.
+        $this->assertStringContainsString('/mod/quiz/review.php', $row['attempturl']);
+        $this->assertStringContainsString('attempt=' . $attemptid, $row['attempturl']);
+    }
+
+    /**
+     * Dates match the quiz Grades report, so reading one against the other needs no translating.
+     */
+    public function test_dates_use_the_quiz_grades_report_format(): void {
+        $row = reset($this->build()['rows']);
+        $expected = userdate(
+            $row === false ? 0 : $this->lastactivity_of($row['fullname']),
+            str_replace(',', ' ', get_string('strftimedatetime'))
+        );
+
+        $this->assertSame($expected, $row['lastactivity']);
+        // The old format led with a weekday name; the grades report format does not.
+        $this->assertStringNotContainsString('day,', $row['lastactivity']);
+    }
+
+    /**
+     * The newest evidence timestamp for a student, for comparing formatted dates.
+     *
+     * @param string $fullname Student full name.
+     * @return int Timestamp.
+     */
+    private function lastactivity_of(string $fullname): int {
+        global $DB;
+
+        $ids = [
+            'Ada Abbott' => 101,
+            'Bo Brown' => 102,
+            'Cy Clark' => 103,
+        ];
+        $attemptid = $ids[$fullname] ?? 0;
+
+        return (int)$DB->get_field(
+            'quizaccess_proctoring_logs',
+            'timemodified',
+            ['status' => $attemptid, 'courseid' => $this->course->id]
         );
     }
 

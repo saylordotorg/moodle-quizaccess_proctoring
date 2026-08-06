@@ -33,11 +33,13 @@
             {
                 "fullname": "John Doe", "email": "john.doe@example.com", "userurl": "#", "course": "CS105", "quiz": "Final exam",
                 "violations": 7, "violationsbreakdown": "(5 events, 2 face mismatches)", "eventcountlabel": "7 detected events",
-                "lastactivity": "1 Jan 2026, 10:00", "riskscore": 85, "risklevel": "Critical", "levelkey": "critical",
+                "lastactivity": "1 January 2026  10:00 AM", "riskscore": 85, "risklevel": "Critical", "levelkey": "critical",
                 "signalsummary": "AI tool (2) · Tab switching (5)", "statuslabel": "Needs review", "reviewstate": "needs",
                 "isneeds": true, "hassignals": true,
                 "signals": [{"factor": "AI tool", "pts": "+30"}],
                 "breakdown": [{"factor": "AI tool", "pts": "+30"}],
+                "userid": 42, "profileurl": "#", "scorelabel": "17.00 / 20.00", "duration": "42 mins 6 secs",
+                "accountage": "2 years 145 days", "accountcreated": "14 March 2024  9:02 AM", "attempturl": "#",
                 "canact": true, "releaseurl": "#", "confirmurl": "#", "viewurl": "#",
                 "cansignoff": false, "signoffurl": "", "undosignoffurl": "", "signofflabel": ""
             }
@@ -136,82 +138,94 @@
 
     {{#truncated}}<div class="alert alert-warning">{{truncatednotice}}</div>{{/truncated}}
 
-    {{! Attempt cards. }}
-    <div class="proctoring-overview-list">
-        {{#rows}}
-        <details class="proctoring-overview-attempt {{#isneeds}}is-needs{{/isneeds}} {{#isclean}}is-clean{{/isclean}}">
-            <summary class="proctoring-overview-attempthead">
-                <span class="proctoring-overview-score proctoring-risk-{{levelkey}}">
-                    <span class="proctoring-overview-scorenum">{{riskscore}}</span>
-                    <span class="proctoring-overview-scoreband">{{risklevel}}</span>
-                </span>
-                <span class="proctoring-overview-who">
-                    <span class="proctoring-overview-wholine">
-                        <span class="proctoring-overview-student">{{fullname}}</span>
+    {{! One row per attempt, in columns. The score breakdown stays reachable through a
+        disclosure inside its own cell, so no row needs a separate "Details" affordance. }}
+    <div class="proctoring-overview-tablewrap">
+        <table class="proctoring-overview-table generaltable">
+            <thead>
+                <tr>
+                    <th scope="col">{{#str}}overallreport:col_risk, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}overallreport:col_student, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}overallreport:col_moodleid, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}overallreport:col_course, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}overallreport:col_quiz, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}overallreport:col_score, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}overallreport:col_duration, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}overallreport:col_accountage, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}overallreport:col_signals, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}overallreport:col_lastactivity, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}overallreport:col_status, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}overallreport:col_actions, quizaccess_proctoring{{/str}}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#rows}}
+                <tr class="{{#isneeds}}is-needs{{/isneeds}} {{#isclean}}is-clean{{/isclean}}">
+                    <td class="proctoring-overview-cell-risk">
+                        <span class="proctoring-overview-score proctoring-risk-{{levelkey}}">
+                            <span class="proctoring-overview-scorenum">{{riskscore}}</span>
+                            <span class="proctoring-overview-scoreband">{{risklevel}}</span>
+                        </span>
+                    </td>
+                    <td class="proctoring-overview-cell-student">
+                        <a class="proctoring-overview-student" href="{{profileurl}}">{{fullname}}</a>
                         <span class="proctoring-overview-email">{{email}}</span>
-                        <span class="proctoring-overview-context">{{course}} · {{quiz}}</span>
-                    </span>
-                    <span class="proctoring-overview-signal">
-                        {{signalsummary}}
+                    </td>
+                    <td><a href="{{profileurl}}">{{userid}}</a></td>
+                    <td>{{course}}</td>
+                    <td>{{quiz}}</td>
+                    <td>{{scorelabel}}</td>
+                    <td>{{duration}}</td>
+                    <td title="{{accountcreated}}">{{accountage}}</td>
+                    <td class="proctoring-overview-cell-signals">
                         <span class="proctoring-overview-eventcount" title="{{violationsbreakdown}}">{{eventcountlabel}}</span>
-                    </span>
-                </span>
-                <span class="proctoring-overview-when">{{lastactivity}}</span>
-                <span class="proctoring-overview-status proctoring-overview-status-{{reviewstate}}">{{statuslabel}}</span>
-                <span class="proctoring-overview-chev">{{#str}}overallreport:details, quizaccess_proctoring{{/str}}</span>
-            </summary>
-            <div class="proctoring-overview-detail">
-                <div class="proctoring-overview-detailcols">
-                    {{#hassignals}}
-                    <div class="proctoring-overview-detailcol is-wide">
-                        <div class="proctoring-overview-detailhead">{{#str}}overallreport:detected, quizaccess_proctoring{{/str}}</div>
-                        <div class="proctoring-overview-signals">
-                            {{#signals}}
-                            <div class="proctoring-overview-signalrow"><span class="proctoring-overview-signaldot"></span>{{factor}} <span class="proctoring-overview-signalpts">{{pts}}</span></div>
-                            {{/signals}}
-                        </div>
-                    </div>
-                    <div class="proctoring-overview-detailcol">
-                        <div class="proctoring-overview-detailhead">{{#str}}overallreport:breakdown, quizaccess_proctoring{{/str}}</div>
-                        <div class="proctoring-overview-breakdown">
-                            {{#breakdown}}
-                            <div class="proctoring-overview-breakrow"><span>{{factor}}</span><span class="proctoring-overview-breakpts">{{pts}}</span></div>
-                            {{/breakdown}}
-                        </div>
-                    </div>
-                    {{/hassignals}}
-                    {{^hassignals}}
-                    <div class="proctoring-overview-detailcol is-wide">
-                        <div class="proctoring-overview-signalrow"><span class="proctoring-overview-signaldot is-ok"></span>{{#str}}overallreport:nosignals, quizaccess_proctoring{{/str}}</div>
-                    </div>
-                    {{/hassignals}}
-                </div>
-                {{#signofflabel}}
-                <div class="proctoring-overview-signoff">{{signofflabel}}</div>
-                {{/signofflabel}}
-                <div class="proctoring-overview-actions">
-                    <a class="btn proctoring-overview-primary" href="{{viewurl}}">{{#str}}overallreport:openreport, quizaccess_proctoring{{/str}}</a>
-                    {{#cansignoff}}
-                    <a class="btn proctoring-overview-secondary" href="{{signoffurl}}">{{#str}}overallreport:signoff, quizaccess_proctoring{{/str}}</a>
-                    {{/cansignoff}}
-                    {{#undosignoffurl}}
-                    <a class="btn proctoring-overview-secondary" href="{{undosignoffurl}}">{{#str}}overallreport:undosignoff, quizaccess_proctoring{{/str}}</a>
-                    {{/undosignoffurl}}
-                    {{#canact}}
-                    <a class="btn proctoring-overview-secondary" href="{{releaseurl}}">{{#str}}overallreport:markreviewed, quizaccess_proctoring{{/str}}</a>
-                    <a class="btn proctoring-overview-danger" href="{{confirmurl}}"
-                       data-confirmation="modal"
-                       data-confirmation-type="delete"
-                       data-confirmation-title-str='["overallreport:confirmtitle", "quizaccess_proctoring"]'
-                       data-confirmation-content-str='["overallreport:confirmbody", "quizaccess_proctoring"]'
-                       data-confirmation-yes-button-str='["overallreport:escalate", "quizaccess_proctoring"]'>{{#str}}overallreport:escalate, quizaccess_proctoring{{/str}}</a>
-                    {{/canact}}
-                </div>
-            </div>
-        </details>
-        {{/rows}}
+                        {{#hassignals}}
+                        <details class="proctoring-overview-breakdowntoggle">
+                            <summary>{{signalsummary}}</summary>
+                            <div class="proctoring-overview-breakdown">
+                                {{#breakdown}}
+                                <div class="proctoring-overview-breakrow"><span>{{factor}}</span><span class="proctoring-overview-breakpts">{{pts}}</span></div>
+                                {{/breakdown}}
+                            </div>
+                        </details>
+                        {{/hassignals}}
+                        {{^hassignals}}
+                        <span class="proctoring-overview-signalrow"><span class="proctoring-overview-signaldot is-ok"></span>{{#str}}overallreport:nosignals, quizaccess_proctoring{{/str}}</span>
+                        {{/hassignals}}
+                    </td>
+                    <td class="proctoring-overview-when">{{lastactivity}}</td>
+                    <td>
+                        <span class="proctoring-overview-status proctoring-overview-status-{{reviewstate}}">{{statuslabel}}</span>
+                        {{#signofflabel}}<span class="proctoring-overview-signoff">{{signofflabel}}</span>{{/signofflabel}}
+                    </td>
+                    <td class="proctoring-overview-cell-actions">
+                        <a href="{{viewurl}}">{{#str}}overallreport:openreport, quizaccess_proctoring{{/str}}</a>
+                        {{#attempturl}}
+                        <a href="{{attempturl}}">{{#str}}overallreport:openattempt, quizaccess_proctoring{{/str}}</a>
+                        {{/attempturl}}
+                        {{#cansignoff}}
+                        <a href="{{signoffurl}}">{{#str}}overallreport:signoff, quizaccess_proctoring{{/str}}</a>
+                        {{/cansignoff}}
+                        {{#undosignoffurl}}
+                        <a href="{{undosignoffurl}}">{{#str}}overallreport:undosignoff, quizaccess_proctoring{{/str}}</a>
+                        {{/undosignoffurl}}
+                        {{#canact}}
+                        <a href="{{releaseurl}}">{{#str}}overallreport:markreviewed, quizaccess_proctoring{{/str}}</a>
+                        <a class="proctoring-overview-dangerlink" href="{{confirmurl}}"
+                           data-confirmation="modal"
+                           data-confirmation-type="delete"
+                           data-confirmation-title-str='["overallreport:confirmtitle", "quizaccess_proctoring"]'
+                           data-confirmation-content-str='["overallreport:confirmbody", "quizaccess_proctoring"]'
+                           data-confirmation-yes-button-str='["overallreport:escalate", "quizaccess_proctoring"]'>{{#str}}overallreport:escalate, quizaccess_proctoring{{/str}}</a>
+                        {{/canact}}
+                    </td>
+                </tr>
+                {{/rows}}
+            </tbody>
+        </table>
+    </div>
 
-        {{#emptyqueue}}
+    {{#emptyqueue}}
         <div class="proctoring-overview-empty">
             <div class="proctoring-overview-emptytitle {{#emptyisnotice}}is-notice{{/emptyisnotice}}">{{emptytitle}}</div>
             <div class="proctoring-overview-emptybody">{{emptybody}}</div>
