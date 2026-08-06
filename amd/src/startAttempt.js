@@ -1974,29 +1974,162 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 bindIdDocumentCaptureButtons('front');
                 bindIdDocumentCaptureButtons('back');
 
+                // "I can't provide a photo ID" opens a triage prompt instead of sending
+                // anything: the guidance for each answer is already rendered server-side, so
+                // this only reveals the matching panel. The two escalation answers record a
+                // request so staff can act on it in Moodle, and a no-ID request has to carry
+                // a category and the student's own explanation before it can be submitted.
+                const exemptTriage = document.getElementById('proctoring-idv-exempt-triage');
+                const exemptResult = document.getElementById('id_exemption_result');
+                const exemptCategory = document.getElementById('proctoring-idv-exempt-category');
+                const exemptDetail = document.getElementById('proctoring-idv-exempt-detail');
+                const exemptAlt = document.getElementById('proctoring-idv-exempt-alt');
+                const exemptSubmit = document.getElementById('proctoring-idv-exempt-submit');
+
+                const setExemptResult = function(message) {
+                    if (exemptResult && message) {
+                        exemptResult.textContent = message;
+                        exemptResult.style.display = 'block';
+                    }
+                };
+
+                const recordExemptDeclaration = function(reason, extra) {
+                    const args = Object.assign({
+                        courseid: parseInt(props.courseid, 10) || 0,
+                        cmid: parseInt(props.cmid, 10) || 0,
+                        reason: reason,
+                    }, extra || {});
+                    return Ajax.call([{
+                        methodname: 'quizaccess_proctoring_request_id_exemption',
+                        args: args
+                    }])[0].done(function(res) {
+                        setExemptResult(res.message);
+                    }).fail(function() {
+                        // Recording only helps staff find the student sooner. The student's
+                        // actual next step is already on screen, so a failure here must not
+                        // replace it with an error.
+                    });
+                };
+
+                // The follow-up email draft is built here rather than server-side so it can
+                // quote the answers the student just gave: the support ticket and the request
+                // staff see in Moodle then say the same thing.
+                const buildExemptMailLink = function(panel, category, detail, alternatives) {
+                    const target = document.getElementById('proctoring-idv-exempt-maillink');
+                    const contact = panel.getAttribute('data-contact');
+                    if (!target || !contact) {
+                        return;
+                    }
+                    const lines = [panel.getAttribute('data-header'), ''];
+                    lines.push(panel.getAttribute('data-reasonlabel'));
+                    lines.push(category + (detail ? ' — ' + detail : ''));
+                    if (alternatives) {
+                        lines.push('');
+                        lines.push(panel.getAttribute('data-altlabel'));
+                        lines.push(alternatives);
+                    }
+                    const href = 'mailto:' + contact +
+                        '?subject=' + encodeURIComponent(panel.getAttribute('data-subject')) +
+                        '&body=' + encodeURIComponent(lines.join('\r\n'));
+                    const link = document.createElement('a');
+                    link.setAttribute('href', href);
+                    link.setAttribute('class', 'proctoring-idv-exempt-mail');
+                    link.textContent = contact;
+                    target.innerHTML = '';
+                    target.appendChild(link);
+                };
+
+                const updateExemptSubmitState = function() {
+                    if (!exemptSubmit) {
+                        return;
+                    }
+                    const ready = !!(exemptCategory && exemptCategory.value) &&
+                        !!(exemptDetail && exemptDetail.value.trim());
+                    exemptSubmit.disabled = !ready;
+                };
+                if (exemptCategory) {
+                    exemptCategory.addEventListener('change', updateExemptSubmitState);
+                }
+                if (exemptDetail) {
+                    exemptDetail.addEventListener('input', updateExemptSubmitState);
+                }
+
+                if (exemptSubmit) {
+                    exemptSubmit.addEventListener('click', function() {
+                        const category = exemptCategory ? exemptCategory.value : '';
+                        const detail = exemptDetail ? exemptDetail.value.trim() : '';
+                        const alternatives = exemptAlt ? exemptAlt.value.trim() : '';
+                        if (!category || !detail) {
+                            updateExemptSubmitState();
+                            return;
+                        }
+                        exemptSubmit.disabled = true;
+                        recordExemptDeclaration('noid', {
+                            category: category,
+                            detail: detail,
+                            alternatives: alternatives,
+                        }).done(function(res) {
+                            if (res.status === 'incomplete') {
+                                exemptSubmit.disabled = false;
+                                return;
+                            }
+                            const panel = document.getElementById('proctoring-idv-exempt-noid-sent');
+                            const form = document.querySelector('.proctoring-idv-exempt-form');
+                            if (form) {
+                                form.style.display = 'none';
+                            }
+                            if (panel) {
+                                const label = exemptCategory
+                                    ? exemptCategory.options[exemptCategory.selectedIndex].textContent
+                                    : '';
+                                buildExemptMailLink(panel, label, detail, alternatives);
+                                panel.style.display = 'block';
+                            }
+                        }).fail(function() {
+                            exemptSubmit.disabled = false;
+                        });
+                    });
+                }
+
                 $("#idverificationexempt").click(function(event) {
                     event.preventDefault();
-                    const button = event.currentTarget;
-                    const result = document.getElementById('id_exemption_result');
-                    button.disabled = true;
-                    Ajax.call([{
-                        methodname: 'quizaccess_proctoring_request_id_exemption',
-                        args: {
-                            courseid: parseInt(props.courseid, 10) || 0,
-                            cmid: parseInt(props.cmid, 10) || 0,
-                        }
-                    }])[0].done(function(res) {
-                        if (result) {
-                            result.textContent = res.message;
-                            result.style.display = 'block';
-                        }
-                        if (res.status !== 'sent' && res.status !== 'already') {
-                            button.disabled = false;
-                        }
-                    }).fail(function(error) {
-                        button.disabled = false;
-                        Notification.exception(error);
+                    if (!exemptTriage) {
+                        return;
+                    }
+                    const open = exemptTriage.style.display !== 'none';
+                    exemptTriage.style.display = open ? 'none' : 'block';
+                    event.currentTarget.setAttribute('aria-expanded', open ? 'false' : 'true');
+                });
+
+                $(".proctoring-idv-exempt-choice").click(function(event) {
+                    event.preventDefault();
+                    const reason = event.currentTarget.getAttribute('data-exempt-reason');
+                    document.querySelectorAll('.proctoring-idv-exempt-answer').forEach(function(panel) {
+                        panel.style.display = panel.getAttribute('data-exempt-answer') === reason ? 'block' : 'none';
                     });
+                    document.querySelectorAll('.proctoring-idv-exempt-choice').forEach(function(choice) {
+                        choice.classList.toggle('active', choice === event.currentTarget);
+                    });
+                    if (exemptResult) {
+                        exemptResult.textContent = '';
+                        exemptResult.style.display = 'none';
+                    }
+                    // Nothing is recorded by picking an answer. A no-ID request is filed by
+                    // its own submit button once the form is filled in, and a capture problem
+                    // is recorded further in, once the tips have not helped.
+                    if (reason === 'noid') {
+                        updateExemptSubmitState();
+                    }
+                });
+
+                $("#proctoring-idv-exempt-stuck").click(function(event) {
+                    event.preventDefault();
+                    const escalation = document.getElementById('proctoring-idv-exempt-capture-escalation');
+                    if (escalation) {
+                        escalation.style.display = 'block';
+                    }
+                    event.currentTarget.disabled = true;
+                    recordExemptDeclaration('capture');
                 });
 
                 $("#idverificationvalidate").click(async function(event) {

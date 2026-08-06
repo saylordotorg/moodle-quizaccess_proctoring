@@ -47,6 +47,51 @@ final class external_authorization_test extends advanced_testcase {
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 
     /**
+     * A no-ID request with no category or explanation is refused, not filed.
+     *
+     * @covers \quizaccess_proctoring_external
+     */
+    public function test_request_without_information_is_rejected(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        set_config('idverificationenabled', 1, 'quizaccess_proctoring');
+        set_config('idexemptioncontactemail', 'contact@saylor.org', 'quizaccess_proctoring');
+        [$course, , $cm] = $this->create_quiz_fixture();
+        $courseid = (int)$course->id;
+        $cmid = (int)$cm->id;
+        $this->setUser($this->create_enrolled_user($course));
+
+        // No category, no explanation.
+        $result = \quizaccess_proctoring_external::request_id_exemption($courseid, $cmid, 'noid', '', '');
+        $this->assertSame('incomplete', $result['status']);
+
+        // A category on its own is still not reviewable.
+        $result = \quizaccess_proctoring_external::request_id_exemption($courseid, $cmid, 'noid', 'never', '   ');
+        $this->assertSame('incomplete', $result['status']);
+        $this->assertSame(0, $DB->count_records('quizaccess_proctoring_events', [
+            'eventtype' => 'id_exemption_requested',
+        ]));
+
+        // With both, the request is filed and carries what the student wrote.
+        $result = \quizaccess_proctoring_external::request_id_exemption(
+            $courseid,
+            $cmid,
+            'noid',
+            'never',
+            'I have never been issued any photo ID.',
+            'I can send a birth certificate.'
+        );
+        $this->assertSame('recorded', $result['status']);
+
+        $pending = \quizaccess_proctoring\local\id_exception::pending_requests($cmid);
+        $this->assertCount(1, $pending);
+        $this->assertSame('never', $pending[0]['category']);
+        $this->assertSame('I have never been issued any photo ID.', $pending[0]['detail']);
+        $this->assertSame('I can send a birth certificate.', $pending[0]['alternatives']);
+    }
+
+    /**
      * Users without the webcam-submission capability must not log browser events.
      *
      * @covers \quizaccess_proctoring_external

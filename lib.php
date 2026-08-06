@@ -715,6 +715,39 @@ function quizaccess_proctoring_student_hold_notice_enabled(): bool {
 }
 
 /**
+ * Render one pending ID exception request's reason for a staff table cell.
+ *
+ * Shows the category the student picked, then their own words underneath - that
+ * explanation is the whole point of asking, so it belongs in the list rather than behind
+ * another click. Shared by the per-exam panel and the site-wide Proctoring reports tab.
+ *
+ * @param array $request One record from id_exception::pending_requests().
+ * @return string Safe HTML for the reason cell.
+ */
+function quizaccess_proctoring_render_id_exception_reason(array $request): string {
+    $component = 'quizaccess_proctoring';
+    $html = html_writer::div(
+        s(\quizaccess_proctoring\local\id_exception::reason_label($request)),
+        'font-weight-bold fw-bold'
+    );
+
+    if (trim((string)$request['detail']) !== '') {
+        $html .= html_writer::div(s($request['detail']), 'small');
+    }
+    if (trim((string)$request['alternatives']) !== '') {
+        $html .= html_writer::div(
+            s(get_string('idexemption:altlabel', $component)) . ' ' . s($request['alternatives']),
+            'small text-muted'
+        );
+    }
+    if (trim((string)$request['detail']) === '') {
+        $html .= html_writer::div(s(get_string('idexemption:nodetail', $component)), 'small text-muted');
+    }
+
+    return $html;
+}
+
+/**
  * Get the configured Student Affairs review window.
  *
  * @return int Review window in days. Zero disables automatic release.
@@ -1402,7 +1435,9 @@ function quizaccess_proctoring_get_student_risk_hold_notice_html(stdClass $hold)
         'days' => $days,
     ]);
     if ($deadline) {
-        $message .= ' ' . get_string('riskreview:studentnoticereviewwindow', 'quizaccess_proctoring', $days);
+        $message .= ' ' . ($days === 1
+            ? get_string('riskreview:studentnoticereviewwindowoneday', 'quizaccess_proctoring')
+            : get_string('riskreview:studentnoticereviewwindow', 'quizaccess_proctoring', $days));
         $message .= ' ' . get_string('riskreview:studentnoticedeadline', 'quizaccess_proctoring', userdate($deadline));
     } else {
         $message .= ' ' . get_string('riskreview:studentnoticenorelease', 'quizaccess_proctoring');
@@ -2521,6 +2556,13 @@ function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $deci
         $message->fullmessagehtml = text_to_html($body);
         $message->smallmessage = $subject;
         $message->notification = 1;
+        // Students reply to hold notices too, so point Reply-To at the staffed address
+        // instead of leaving replies to hit noreply.
+        $contact = \quizaccess_proctoring\local\support_contact::address();
+        if ($contact !== '') {
+            $message->replyto = $contact;
+            $message->replytoname = \quizaccess_proctoring\local\support_contact::name();
+        }
         if ($cm) {
             $message->contexturl = (new moodle_url('/mod/quiz/view.php', ['id' => $cm->id]))->out(false);
             $message->contexturlname = $a->quiz;

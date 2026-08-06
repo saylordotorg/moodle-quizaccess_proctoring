@@ -68,6 +68,8 @@ class send_daily_report_task extends scheduled_task {
         $end = time();
         $start = $end - DAYSECS;
         $from = core_user::get_noreply_user();
+        $replyto = \quizaccess_proctoring\local\support_contact::address();
+        $replytoname = $replyto === '' ? '' : \quizaccess_proctoring\local\support_contact::name();
 
         $sent = 0;
         $skippedempty = 0;
@@ -81,7 +83,20 @@ class send_daily_report_task extends scheduled_task {
             $subject = get_string('dailyreport:subject', 'quizaccess_proctoring', userdate($end, '%Y-%m-%d'));
             $messagetext = $this->render_text_report($data, $start, $end);
             $messagehtml = $this->render_html_report($data, $start, $end);
-            if (email_to_user($recipient, $from, $subject, $messagetext, $messagehtml)) {
+            // Recipients reply to the report asking about a specific attempt, so Reply-To
+            // points at the staffed address rather than the site noreply address.
+            if (email_to_user(
+                $recipient,
+                $from,
+                $subject,
+                $messagetext,
+                $messagehtml,
+                '',
+                '',
+                true,
+                $replyto,
+                $replytoname
+            )) {
                 $sent++;
             }
         }

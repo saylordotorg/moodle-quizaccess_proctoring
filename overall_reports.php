@@ -73,7 +73,12 @@ if ($riskmin > $riskmax) {
 // The cross-course held-certificate dashboard is a site-wide review surface, so it is guarded by
 // the review capability at the system context. Reviewers without it never see the toggle or view.
 $canviewheld = has_capability('quizaccess/proctoring:reviewriskholds', context_system::instance());
-if (!in_array($view, ['attempts', 'held'], true) || ($view === 'held' && !$canviewheld)) {
+// Same treatment for the cross-exam ID exception queue: staff need the override capability,
+// which is also what the per-request decision itself re-checks on the target quiz.
+$canviewexceptions = has_capability('quizaccess/proctoring:manageoverrides', context_system::instance());
+if (!in_array($view, ['attempts', 'held', 'idexceptions'], true)
+        || ($view === 'held' && !$canviewheld)
+        || ($view === 'idexceptions' && !$canviewexceptions)) {
     $view = 'attempts';
 }
 
@@ -95,8 +100,56 @@ $activefilters = [
     'risklevel' => $risklevel,
     'riskmin' => $riskmin,
     'riskmax' => $riskmax,
-    'riskmaxbound' => $scoremax,
 ];
+
+// Approve or decline pending ID exception requests, one row or a batch of them. Each
+// decision resolves its own quiz context, so a batch spanning several exams is fine and
+// every row is still capability-checked individually by the shared service.
+if ($action === 'decideexceptions') {
+    require_sesskey();
+    require_capability('quizaccess/proctoring:manageoverrides', context_system::instance());
+    $approved = optional_param('approve', 0, PARAM_BOOL);
+    $selected = optional_param_array('request', [], PARAM_RAW);
+    $exceptionsurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', [
+        'view' => 'idexceptions',
+    ]);
+
+    $decided = 0;
+    foreach ($selected as $token) {
+        // Each checkbox carries "cmid:userid" - the pair that identifies one request.
+        $parts = explode(':', (string)$token);
+        if (count($parts) !== 2 || (int)$parts[0] <= 0 || (int)$parts[1] <= 0) {
+            continue;
+        }
+        \quizaccess_proctoring\local\id_exception::decide((int)$parts[0], (int)$parts[1], (bool)$approved);
+        $decided++;
+    }
+
+    if ($decided === 0) {
+        redirect(
+            $exceptionsurl,
+            get_string('idexemption:noneselected', 'quizaccess_proctoring'),
+            null,
+            \core\output\notification::NOTIFY_WARNING
+        );
+    }
+
+    // One decision reads as one decision; only a real batch gets a count.
+    if ($decided === 1) {
+        $notice = get_string(
+            $approved ? 'idexemption:batchapprovedone' : 'idexemption:batchdeclinedone',
+            'quizaccess_proctoring'
+        );
+    } else {
+        $notice = get_string(
+            $approved ? 'idexemption:batchapproved' : 'idexemption:batchdeclined',
+            'quizaccess_proctoring',
+            $decided
+        );
+    }
+
+    redirect($exceptionsurl, $notice, null, \core\output\notification::NOTIFY_SUCCESS);
+}
 
 // Sign a flagged attempt off, or undo a sign-off. A flagged attempt has no hold to release, so this
 // is the only decision available on it; it changes no grade and notifies nobody, which is why it
@@ -160,8 +213,7 @@ if ($action === 'signoff' || $action === 'undosignoff') {
         get_string('overallreport:signoffundonenotice', 'quizaccess_proctoring'),
         null,
         \core\output\notification::NOTIFY_SUCCESS
-    );
-}
+    );}
 
 // Release or confirm a risk hold inline, then return to the same filtered view.
 if (($action === 'release' || $action === 'confirm') && $holdid > 0) {
@@ -202,28 +254,153 @@ if (($action === 'release' || $action === 'confirm') && $holdid > 0) {
     );
 }
 
-// Build a two-tab view toggle (attempts report vs held-certificate dashboard). The held tab is
-// only offered to reviewers holding the system-context review capability.
+// Build the view toggle (attempts report, held-certificate dashboard, ID exception queue).
+// Each extra tab is only offered to staff holding the matching system-context capability, so
+// the toggle never advertises a view its viewer cannot open.
 $viewtoggle = '';
-if ($canviewheld) {
+if ($canviewheld || $canviewexceptions) {
     $attemptsurl = new moodle_url(
         '/mod/quiz/accessrule/proctoring/overall_reports.php',
         $activefilters + ['view' => 'attempts']
     );
-    $heldurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', ['view' => 'held']);
     $tabs = [
         new tabobject(
             'attempts',
             $attemptsurl->out(false),
             get_string('heldcertificates:attemptsviewtoggle', 'quizaccess_proctoring')
         ),
-        new tabobject(
+    ];
+    if ($canviewheld) {
+        $heldurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', ['view' => 'held']);
+        $tabs[] = new tabobject(
             'held',
             $heldurl->out(false),
             get_string('heldcertificates:viewtoggle', 'quizaccess_proctoring')
-        ),
-    ];
+        );
+    }
+    if ($canviewexceptions) {
+        $exceptionsurl = new moodle_url(
+            '/mod/quiz/accessrule/proctoring/overall_reports.php',
+            ['view' => 'idexceptions']
+        );
+        $tabs[] = new tabobject(
+            'idexceptions',
+            $exceptionsurl->out(false),
+            get_string('idexemption:viewtoggle', 'quizaccess_proctoring')
+        );
+    }
     $viewtoggle = $OUTPUT->tabtree($tabs, $view);
+}
+
+// Cross-exam ID exception queue: every pending request in one table, so a batch of decisions
+// spanning several exams is one pass here rather than a visit to each quiz in turn.
+if ($view === 'idexceptions') {
+    $pendingrequests = \quizaccess_proctoring\local\id_exception::pending_requests();
+    $formurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php');
+
+    echo $OUTPUT->header();
+    echo $OUTPUT->heading(get_string('idexemption:pendingheading', 'quizaccess_proctoring'));
+    echo $viewtoggle;
+    echo html_writer::div(get_string('idexemption:pendingintro', 'quizaccess_proctoring'), 'text-muted mb-3');
+
+    if (empty($pendingrequests)) {
+        echo $OUTPUT->notification(
+            get_string('idexemption:nonepending', 'quizaccess_proctoring'),
+            \core\output\notification::NOTIFY_INFO
+        );
+        echo $OUTPUT->footer();
+        return;
+    }
+
+    $table = new html_table();
+    $table->attributes['class'] = 'generaltable proctoring-idexception-table';
+    $table->head = [
+        html_writer::checkbox('selectall', 1, false, '', [
+            'id' => 'proctoring-idexception-selectall',
+            'title' => get_string('idexemption:selectall', 'quizaccess_proctoring'),
+        ]),
+        get_string('override_targetstudent', 'quizaccess_proctoring'),
+        get_string('idexemption:coursecol', 'quizaccess_proctoring'),
+        get_string('idexemption:examcol', 'quizaccess_proctoring'),
+        get_string('idexemption:reasoncol', 'quizaccess_proctoring'),
+        get_string('idexemption:requestedcol', 'quizaccess_proctoring'),
+        get_string('override_actions', 'quizaccess_proctoring'),
+    ];
+    foreach ($pendingrequests as $request) {
+        $token = $request['cmid'] . ':' . $request['userid'];
+        $rowactions = html_writer::link(
+            new moodle_url($formurl, [
+                'view' => 'idexceptions',
+                'action' => 'decideexceptions',
+                'approve' => 1,
+                'request' => [$token],
+                'sesskey' => sesskey(),
+            ]),
+            get_string('idexemption:approvebutton', 'quizaccess_proctoring'),
+            ['class' => 'btn btn-primary btn-sm mr-2 me-2']
+        ) .
+        html_writer::link(
+            new moodle_url($formurl, [
+                'view' => 'idexceptions',
+                'action' => 'decideexceptions',
+                'approve' => 0,
+                'request' => [$token],
+                'sesskey' => sesskey(),
+            ]),
+            get_string('idexemption:declinebutton', 'quizaccess_proctoring'),
+            ['class' => 'btn btn-secondary btn-sm mr-2 me-2']
+        ) .
+        html_writer::link(
+            \quizaccess_proctoring\local\id_exception::overrides_url($request['cmid']),
+            get_string('idexemption:openexamlink', 'quizaccess_proctoring'),
+            ['class' => 'small']
+        );
+
+        $table->data[] = [
+            html_writer::checkbox('request[]', $token, false, '', ['class' => 'proctoring-idexception-select']),
+            s($request['student']) . ($request['email'] !== '' ? html_writer::tag(
+                'div',
+                s($request['email']),
+                ['class' => 'small text-muted']
+            ) : ''),
+            s($request['coursename']),
+            s($request['quizname']),
+            quizaccess_proctoring_render_id_exception_reason($request),
+            userdate($request['timerequested']),
+            $rowactions,
+        ];
+    }
+
+    echo html_writer::start_tag('form', ['method' => 'post', 'action' => $formurl->out(false)]);
+    echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+    echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'view', 'value' => 'idexceptions']);
+    echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'decideexceptions']);
+    echo html_writer::table($table);
+    echo html_writer::div(
+        html_writer::tag('button', get_string('idexemption:batchapprove', 'quizaccess_proctoring'), [
+            'type' => 'submit',
+            'name' => 'approve',
+            'value' => 1,
+            'class' => 'btn btn-primary mr-2 me-2',
+        ]) .
+        html_writer::tag('button', get_string('idexemption:batchdecline', 'quizaccess_proctoring'), [
+            'type' => 'submit',
+            'name' => 'approve',
+            'value' => 0,
+            'class' => 'btn btn-secondary',
+        ]),
+        'mt-2'
+    );
+    echo html_writer::end_tag('form');
+    $PAGE->requires->js_amd_inline(
+        "require(['jquery'], function($) {
+            $('#proctoring-idexception-selectall').on('change', function() {
+                $('.proctoring-idexception-select').prop('checked', $(this).prop('checked'));
+            });
+        });"
+    );
+    echo $OUTPUT->footer();
+    return;
 }
 
 if ($view === 'held') {
@@ -407,6 +584,9 @@ $templatecontext = [
     'risklevoptions' => \quizaccess_proctoring\local\overall_report::risk_level_options($risklevel),
     'riskmin' => $riskmin,
     'riskmax' => $riskmax,
+    // The highest score the range inputs accept. Not a filter, so it belongs here and not in
+    // $activefilters, where it would ride along on every link and leave the inputs with no max.
+    'riskmaxbound' => $scoremax,
     'minviolations' => $minviolations,
     'search' => $search,
     'tifirst' => $tifirst,
