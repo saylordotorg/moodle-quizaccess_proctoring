@@ -1208,5 +1208,22 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072125, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026072126) {
+        // The screen check marker became an admin setting, off by default, having previously
+        // been forced on for every desktop attempt. Record that explicitly rather than leaving
+        // it to "unset means off": the marker has to be visible in the captured frames, so
+        // anything in front of the quiz window - the browser's own share picker or sharing
+        // bubble, a notification, another app taking focus as the share is granted - was
+        // reported as sharing the wrong screen.
+        //
+        // Only fill it in when nothing is stored, so a site that has already made a choice
+        // keeps it. Sites that want the check back can tick the setting; students still have
+        // to share an entire screen either way, and desktop evidence is still captured.
+        if (get_config('quizaccess_proctoring', 'requirescreenmarker') === false) {
+            set_config('requirescreenmarker', 0, 'quizaccess_proctoring');
+        }
+        upgrade_plugin_savepoint(true, 2026072126, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
