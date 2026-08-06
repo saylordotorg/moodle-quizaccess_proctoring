@@ -43,9 +43,15 @@ $PAGE->set_title(get_string('screenmonitor:title', 'quizaccess_proctoring'));
 $PAGE->set_heading(get_string('screenmonitor:title', 'quizaccess_proctoring'));
 $PAGE->requires->css('/mod/quiz/accessrule/proctoring/styles.css');
 
+// Resolved from the site setting rather than a request parameter: a student must not be
+// able to switch the screen check off by editing the helper window's URL. Kept in step
+// with should_require_screen_marker() in rule.php, which is not autoloadable from here.
+$markerrequired = (int)get_config('quizaccess_proctoring', 'requirescreenmarker') === 1;
+
 $config = [
     'channel' => 'quizaccess_proctoring_screen_' . $key,
     'statuskey' => 'quizaccess_proctoring_screen_status_' . $key,
+    'markerrequired' => $markerrequired,
     'strings' => [
         'share' => get_string('screenmonitor:share', 'quizaccess_proctoring'),
         'ready' => get_string('screenmonitor:ready', 'quizaccess_proctoring'),
@@ -109,6 +115,40 @@ $js = <<<JS
         return x + ':' + y;
     };
 
+    // Size the marker search window, and the evidence it demands, from how large the
+    // marker lands in the captured frame. A fixed 6x4 tile window (96x64px of a 1280px
+    // frame) is narrower than the marker's 186 CSS px colour row on a typical laptop
+    // screen, so detection depended on clipping the outer two swatches to scrape past a
+    // flat 18-sample floor. Sizing the window to the row lets whole swatches land inside
+    // it, so the floor can scale with a real swatch's area -- stricter than the flat 18,
+    // which matters because a wider window would otherwise make coincidental matches on
+    // colourful desktop content easier. Kept in step with the AMD modules' copies.
+    const markerSearchGeometry = function(frameWidth, tileSize) {
+        const fallback = {tilesX: 6, tilesY: 4, minSamples: 18};
+        const screenWidth = window.screen ? window.screen.width : 0;
+        if (!screenWidth || !frameWidth || !tileSize) {
+            return fallback;
+        }
+
+        // Captured pixels per CSS pixel of the shared screen. Matches styles.css: three
+        // 58x24 swatches separated by two 6px gaps.
+        const scale = frameWidth / screenWidth;
+        const rowWidth = 186 * scale;
+        const swatchWidth = 58 * scale;
+        const swatchHeight = 24 * scale;
+        if (!(rowWidth > 0) || !(swatchHeight > 0)) {
+            return fallback;
+        }
+
+        return {
+            tilesX: Math.min(24, Math.max(6, Math.ceil(rowWidth / tileSize) + 1)),
+            tilesY: Math.min(12, Math.max(4, Math.ceil(swatchHeight / tileSize) + 1)),
+            minSamples: Math.max(18, Math.round(
+                Math.floor(swatchWidth / 2) * Math.floor(swatchHeight / 2) * 0.35
+            ))
+        };
+    };
+
     const drawFrame = function(imageDataOnly) {
         const sourceWidth = video ? video.videoWidth || 0 : 0;
         const sourceHeight = video ? video.videoHeight || 0 : 0;
@@ -166,6 +206,13 @@ $js = <<<JS
     };
 
     const sharedScreenContainsMarker = function() {
+        // Nothing is drawn over the quiz to look for, so an entire-screen share is all
+        // that was asked for. Reporting it as present keeps the quiz page's readiness
+        // check satisfied instead of holding its gate shut on a check nobody wants.
+        if (!config.markerrequired) {
+            return true;
+        }
+
         const imageData = drawFrame(true);
         if (!imageData) {
             return false;
@@ -175,13 +222,14 @@ $js = <<<JS
         const tiles = countMarkerTiles(imageData, tileSize);
         const maxTileX = Math.ceil(imageData.width / tileSize);
         const maxTileY = Math.ceil(imageData.height / tileSize);
+        const search = markerSearchGeometry(imageData.width, tileSize);
 
         for (let tileY = 0; tileY < maxTileY; tileY++) {
             for (let tileX = 0; tileX < maxTileX; tileX++) {
                 const totals = {magenta: 0, cyan: 0, yellow: 0};
 
-                for (let yOffset = 0; yOffset < 4; yOffset++) {
-                    for (let xOffset = 0; xOffset < 6; xOffset++) {
+                for (let yOffset = 0; yOffset < search.tilesY; yOffset++) {
+                    for (let xOffset = 0; xOffset < search.tilesX; xOffset++) {
                         const tile = tiles[tileKey(tileX + xOffset, tileY + yOffset)];
                         if (!tile) {
                             continue;
@@ -192,7 +240,8 @@ $js = <<<JS
                     }
                 }
 
-                if (totals.magenta >= 18 && totals.cyan >= 18 && totals.yellow >= 18) {
+                if (totals.magenta >= search.minSamples && totals.cyan >= search.minSamples &&
+                        totals.yellow >= search.minSamples) {
                     return true;
                 }
             }

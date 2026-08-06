@@ -556,6 +556,13 @@ if ($hassiteconfig) {
         1
     ));
 
+    $settings->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/requirescreenmarker',
+        get_string('setting:requirescreenmarker', 'quizaccess_proctoring'),
+        get_string('setting:requirescreenmarker_desc', 'quizaccess_proctoring'),
+        0
+    ));
+
     $settings->add(new admin_setting_configselect(
         'quizaccess_proctoring/multimonitormode',
         get_string('setting:multimonitormode', 'quizaccess_proctoring'),

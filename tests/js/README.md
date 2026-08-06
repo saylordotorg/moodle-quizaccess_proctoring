@@ -51,3 +51,20 @@ node --test tests/js/camera_lifecycle.test.js
   cancel / hide / `pagehide` / `beforeunload` (6.3).
 
   **Validates: Requirements 6.1, 6.2, 6.3**
+
+- `screen_share_marker_grace.test.js` — Screen-check tolerance for the in-page
+  desktop share during an attempt. Loads the real `amd/src/proctoring.js` with a
+  mocked `getDisplayMedia` and a controllable clock, then drives the gate's share
+  button to assert that a share granted while the marker is covered is kept and
+  re-checked rather than rejected, that it is accepted with no logged violation as
+  soon as the marker appears inside the grace period, that a marker missing for the
+  whole grace period is logged exactly once while the stream stays alive so bringing
+  the quiz forward recovers without a re-prompt, and that a share which never
+  delivers a frame reports an error instead of leaving the gate up with no message.
+
+  Also covers the search-window geometry, using frames at true capture proportions
+  (a 3456x2234 capture of a 1728px-wide screen, analysed at 1280x827): a full-size
+  marker is found even though its colour row is wider than the 96px window the
+  detector used to search, and colour blocks too small to be swatches are rejected —
+  they cleared the old flat 18-sample floor, so they stand in for the coincidental
+  match that widening the window would otherwise have made easier.
