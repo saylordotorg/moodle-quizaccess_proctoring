@@ -3311,6 +3311,11 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     color: #5f6c79;
 }
 
+.proctoring-overview-cell-risk {
+    /* The score badge is two stacked lines; keep it off a third. */
+    white-space: nowrap;
+}
+
 .proctoring-overview-cell-student {
     min-width: 190px;
 }
@@ -3318,6 +3323,27 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
 .proctoring-overview-cell-student .proctoring-overview-student,
 .proctoring-overview-cell-student .proctoring-overview-email {
     display: block;
+}
+
+/* The count the "Most detected events" sort and the minimum filter both act on. */
+.proctoring-overview-eventcount {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #eef2f5;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #46525f;
+    white-space: nowrap;
+}
+
+/* Who signed a flagged attempt off, and when. */
+.proctoring-overview-signoff {
+    margin: 0 0 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #2c5e36;
 }
 
 .proctoring-overview-cell-signals {
@@ -3415,6 +3441,31 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     font-size: 0.78rem;
     font-weight: 700;
     flex-shrink: 0;
+}
+
+.proctoring-overview-status-needs {
+    background: #fbe7e4;
+    color: #9c322b;
+}
+
+.proctoring-overview-status-reviewed {
+    background: #e8f2e9;
+    color: #2c5e36;
+}
+
+.proctoring-overview-status-escalated {
+    background: #1e2a35;
+    color: #fff;
+}
+
+.proctoring-overview-status-flagged {
+    background: #fdf3e0;
+    color: #7d5300;
+}
+
+.proctoring-overview-status-clean {
+    background: #eef1f4;
+    color: #5f6c79;
 }
 
 .proctoring-overview-signalrow {
