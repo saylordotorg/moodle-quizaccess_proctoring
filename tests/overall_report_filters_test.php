@@ -455,8 +455,11 @@ final class overall_report_filters_test extends advanced_testcase {
         $this->assertStringContainsString('year', $aged['accountage']);
         $this->assertNotSame('', $aged['accountcreated']);
 
-        // A brand-new account reads as "now" rather than as an empty cell.
-        $this->assertSame(format_time(0), $row['accountage']);
+        // A brand-new account reads as an age rather than as an empty cell. Not pinned to
+        // format_time(0) exactly: the generator stamps the account at "now", so a runner that
+        // takes a second to get here legitimately renders "1 sec" instead, and that is still the
+        // behaviour under test - an age, however small, rather than a blank.
+        $this->assertMatchesRegularExpression('/^(now|\d+ secs?)$/', $row['accountage']);
 
         // Straight into the attempt Moodle recorded.
         $this->assertStringContainsString('/mod/quiz/review.php', $row['attempturl']);

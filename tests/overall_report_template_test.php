@@ -169,9 +169,13 @@ final class overall_report_template_test extends advanced_testcase {
             }
         }
 
+        // The match has to stop at a CSS identifier boundary. A plain substring search would let
+        // ".proctoring-overview-tablewrap" vouch for ".proctoring-overview-table", so deleting the
+        // shorter rule would slip past the very check meant to catch it.
         $unstyled = [];
         foreach (array_keys($classes) as $class) {
-            if (strpos($css, '.' . $class) === false) {
+            $pattern = '/\.' . preg_quote($class, '/') . '(?![A-Za-z0-9_-])/';
+            if (!preg_match($pattern, $css)) {
                 $unstyled[] = $class;
             }
         }
