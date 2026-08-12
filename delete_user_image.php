@@ -31,8 +31,8 @@ global $CFG, $PAGE;
 
 require_login();
 
-// Only admin login.
-if (!is_siteadmin()) {
+// Reachable from the users list, so it accepts the same access as the proctoring settings pages.
+if (!quizaccess_proctoring_can_manage_admin_settings()) {
     redirect($CFG->wwwroot, get_string('no_permission', 'quizaccess_proctoring'), null, \core\output\notification::NOTIFY_ERROR);
 }
 

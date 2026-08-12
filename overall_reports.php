@@ -27,7 +27,7 @@ require_once($CFG->libdir . '/adminlib.php');
 require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
 require_login();
-require_capability('moodle/site:config', context_system::instance());
+quizaccess_proctoring_require_admin_settings_access();
 
 admin_externalpage_setup('quizaccess_proctoring_overall_reports');
 $PAGE->requires->css('/mod/quiz/accessrule/proctoring/styles.css');

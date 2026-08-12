@@ -1232,5 +1232,13 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072127, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026072128) {
+        // No schema changes. The student notice for a confirmed violation is strings and markup,
+        // and the new quizaccess/proctoring:manageadminsettings capability is installed from
+        // db/access.php by the same upgrade this savepoint records. No-op savepoint to advance the
+        // stored plugin version.
+        upgrade_plugin_savepoint(true, 2026072128, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

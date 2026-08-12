@@ -29,7 +29,7 @@ global $CFG, $PAGE, $OUTPUT, $DB;
 
 require_login();
 
-if (!is_siteadmin()) {
+if (!quizaccess_proctoring_can_manage_admin_settings()) {
     redirect(
         $CFG->wwwroot,
         get_string('no_permission', 'quizaccess_proctoring'),

@@ -2183,6 +2183,11 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 quizaccess_proctoring_get_student_risk_failure_notice_html($hold),
                 \core\output\notification::NOTIFY_ERROR
             );
+        } else if ($hold && (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED) {
+            \core\notification::add(
+                quizaccess_proctoring_get_student_risk_confirmed_notice_html($hold),
+                \core\output\notification::NOTIFY_ERROR
+            );
         }
 
         return true;

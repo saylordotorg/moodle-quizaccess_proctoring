@@ -101,4 +101,18 @@ $capabilities = [
             'manager' => CAP_ALLOW, // Managers can manage per-student overrides.
         ],
     ],
+
+    // This capability allows managers to open the plugin's site administration settings without
+    // holding moodle/site:config. It is a system-context capability because the settings are
+    // site-wide. Settings that store provider credentials (the API key and secret-key fields) and
+    // the AI review section remain gated on moodle/site:config, so this capability never exposes
+    // a secret; see settings.php.
+    'quizaccess/proctoring:manageadminsettings' => [
+        'riskbitmask' => RISK_CONFIG, // Holders change site-wide proctoring enforcement.
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_SYSTEM,
+        'archetypes' => [
+            'manager' => CAP_ALLOW, // Managers can administer the proctoring settings.
+        ],
+    ],
 ];

@@ -42,7 +42,17 @@ if (!class_exists('quizaccess_proctoring_admin_category', false)) {
     }
 }
 
-if ($hassiteconfig) {
+// Site administrators reach these pages through $hassiteconfig. The plugin's own system-context
+// capability lets other roles (a Student Affairs manager, for example) administer proctoring
+// without moodle/site:config. Everything that stores or reveals a provider credential -- the API
+// key and secret-key fields and the whole AI review section -- stays gated on $hassiteconfig
+// below, so a capability holder can tune enforcement but never read or rotate a secret.
+$proctoringadmincap = 'quizaccess/proctoring:manageadminsettings';
+$canmanageproctoring = $hassiteconfig
+    || has_capability($proctoringadmincap, context_system::instance());
+$proctoringpagecap = $hassiteconfig ? 'moodle/site:config' : $proctoringadmincap;
+
+if ($canmanageproctoring) {
     global $PAGE, $DB;
 
     $adminsections = [
@@ -87,6 +97,14 @@ if ($hassiteconfig) {
             'heading' => get_string('setting:retentionheading', 'quizaccess_proctoring'),
         ],
     ];
+
+    // The AI review section is only rendered for site administrators, so drop its jump-to nav
+    // entry for capability holders rather than leaving a tab that scrolls to nothing.
+    if (!$hassiteconfig) {
+        $adminsections = array_values(array_filter($adminsections, function ($section) {
+            return $section['key'] !== 'ai';
+        }));
+    }
 
     $PAGE->requires->js_call_amd('quizaccess_proctoring/adminSettings', 'init');
 
@@ -322,13 +340,16 @@ if ($hassiteconfig) {
         PARAM_TEXT
     ));
 
-    $settings->add(new admin_setting_configpasswordunmask(
-        'quizaccess_proctoring/turnstilesecretkey',
-        get_string('setting:turnstilesecretkey', 'quizaccess_proctoring'),
-        get_string('setting:turnstilesecretkey_desc', 'quizaccess_proctoring'),
-        '',
-        PARAM_TEXT
-    ));
+    // Credential field: site administrators only.
+    if ($hassiteconfig) {
+        $settings->add(new admin_setting_configpasswordunmask(
+            'quizaccess_proctoring/turnstilesecretkey',
+            get_string('setting:turnstilesecretkey', 'quizaccess_proctoring'),
+            get_string('setting:turnstilesecretkey_desc', 'quizaccess_proctoring'),
+            '',
+            PARAM_TEXT
+        ));
+    }
 
     $settings->add(new admin_setting_configcheckbox(
         'quizaccess_proctoring/fcheckstartchk',
@@ -394,13 +415,16 @@ if ($hassiteconfig) {
         PARAM_URL
     ));
 
-    $settings->add(new admin_setting_configpasswordunmask(
-        'quizaccess_proctoring/custom_api_key',
-        get_string('setting:custom_api_key', 'quizaccess_proctoring'),
-        get_string('setting:custom_api_key_desc', 'quizaccess_proctoring'),
-        '',
-        PARAM_TEXT
-    ));
+    // Credential field: site administrators only.
+    if ($hassiteconfig) {
+        $settings->add(new admin_setting_configpasswordunmask(
+            'quizaccess_proctoring/custom_api_key',
+            get_string('setting:custom_api_key', 'quizaccess_proctoring'),
+            get_string('setting:custom_api_key_desc', 'quizaccess_proctoring'),
+            '',
+            PARAM_TEXT
+        ));
+    }
 
     $settings->add(new admin_setting_heading(
         'quizaccess_proctoring_idverificationheading',
@@ -423,13 +447,16 @@ if ($hassiteconfig) {
         PARAM_URL
     ));
 
-    $settings->add(new admin_setting_configpasswordunmask(
-        'quizaccess_proctoring/idverificationapikey',
-        get_string('setting:idverificationapikey', 'quizaccess_proctoring'),
-        get_string('setting:idverificationapikey_desc', 'quizaccess_proctoring'),
-        '',
-        PARAM_TEXT
-    ));
+    // Credential field: site administrators only.
+    if ($hassiteconfig) {
+        $settings->add(new admin_setting_configpasswordunmask(
+            'quizaccess_proctoring/idverificationapikey',
+            get_string('setting:idverificationapikey', 'quizaccess_proctoring'),
+            get_string('setting:idverificationapikey_desc', 'quizaccess_proctoring'),
+            '',
+            PARAM_TEXT
+        ));
+    }
 
     $settings->add(new admin_setting_configtext(
         'quizaccess_proctoring/idexemptioncontactemail',
@@ -761,135 +788,139 @@ if ($hassiteconfig) {
         1
     ));
 
-    $settings->add(new admin_setting_heading(
-        'quizaccess_proctoring_aireviewheading',
-        get_string('setting:aireviewheading', 'quizaccess_proctoring'),
-        get_string('setting:aireviewheading_desc', 'quizaccess_proctoring')
-    ));
+    // The AI review section holds the provider API keys and controls paid external calls, so
+    // it stays site-administrator only. Capability holders see every other section.
+    if ($hassiteconfig) {
+        $settings->add(new admin_setting_heading(
+            'quizaccess_proctoring_aireviewheading',
+            get_string('setting:aireviewheading', 'quizaccess_proctoring'),
+            get_string('setting:aireviewheading_desc', 'quizaccess_proctoring')
+        ));
 
-    $settings->add(new admin_setting_configcheckbox(
-        'quizaccess_proctoring/aireviewenabled',
-        get_string('setting:aireviewenabled', 'quizaccess_proctoring'),
-        get_string('setting:aireviewenabled_desc', 'quizaccess_proctoring'),
-        0
-    ));
+        $settings->add(new admin_setting_configcheckbox(
+            'quizaccess_proctoring/aireviewenabled',
+            get_string('setting:aireviewenabled', 'quizaccess_proctoring'),
+            get_string('setting:aireviewenabled_desc', 'quizaccess_proctoring'),
+            0
+        ));
 
-    $settings->add(new admin_setting_configselect(
-        'quizaccess_proctoring/aireviewprovider',
-        get_string('setting:aireviewprovider', 'quizaccess_proctoring'),
-        get_string('setting:aireviewprovider_desc', 'quizaccess_proctoring'),
-        'none',
-        [
-            'none' => get_string('none', 'quizaccess_proctoring'),
-            'openai' => get_string('setting:aireviewprovider_openai', 'quizaccess_proctoring'),
-            'anthropic' => get_string('setting:aireviewprovider_anthropic', 'quizaccess_proctoring'),
-            'compatible' => get_string('setting:aireviewprovider_compatible', 'quizaccess_proctoring'),
-        ]
-    ));
+        $settings->add(new admin_setting_configselect(
+            'quizaccess_proctoring/aireviewprovider',
+            get_string('setting:aireviewprovider', 'quizaccess_proctoring'),
+            get_string('setting:aireviewprovider_desc', 'quizaccess_proctoring'),
+            'none',
+            [
+                'none' => get_string('none', 'quizaccess_proctoring'),
+                'openai' => get_string('setting:aireviewprovider_openai', 'quizaccess_proctoring'),
+                'anthropic' => get_string('setting:aireviewprovider_anthropic', 'quizaccess_proctoring'),
+                'compatible' => get_string('setting:aireviewprovider_compatible', 'quizaccess_proctoring'),
+            ]
+        ));
 
-    $settings->add(new admin_setting_configselect(
-        'quizaccess_proctoring/aireviewdesktopmode',
-        get_string('setting:aireviewdesktopmode', 'quizaccess_proctoring'),
-        get_string('setting:aireviewdesktopmode_desc', 'quizaccess_proctoring'),
-        'threshold',
-        [
-            'off' => get_string('setting:aireviewdesktopmode_off', 'quizaccess_proctoring'),
-            'threshold' => get_string('setting:aireviewdesktopmode_threshold', 'quizaccess_proctoring'),
-            'aitool' => get_string('setting:aireviewdesktopmode_aitool', 'quizaccess_proctoring'),
-            'all' => get_string('setting:aireviewdesktopmode_all', 'quizaccess_proctoring'),
-        ]
-    ));
+        $settings->add(new admin_setting_configselect(
+            'quizaccess_proctoring/aireviewdesktopmode',
+            get_string('setting:aireviewdesktopmode', 'quizaccess_proctoring'),
+            get_string('setting:aireviewdesktopmode_desc', 'quizaccess_proctoring'),
+            'threshold',
+            [
+                'off' => get_string('setting:aireviewdesktopmode_off', 'quizaccess_proctoring'),
+                'threshold' => get_string('setting:aireviewdesktopmode_threshold', 'quizaccess_proctoring'),
+                'aitool' => get_string('setting:aireviewdesktopmode_aitool', 'quizaccess_proctoring'),
+                'all' => get_string('setting:aireviewdesktopmode_all', 'quizaccess_proctoring'),
+            ]
+        ));
 
-    $settings->add(new admin_setting_configpasswordunmask(
-        'quizaccess_proctoring/aireviewopenaiapikey',
-        get_string('setting:aireviewopenaiapikey', 'quizaccess_proctoring'),
-        get_string('setting:aireviewopenaiapikey_desc', 'quizaccess_proctoring'),
-        '',
-        PARAM_TEXT
-    ));
+        $settings->add(new admin_setting_configpasswordunmask(
+            'quizaccess_proctoring/aireviewopenaiapikey',
+            get_string('setting:aireviewopenaiapikey', 'quizaccess_proctoring'),
+            get_string('setting:aireviewopenaiapikey_desc', 'quizaccess_proctoring'),
+            '',
+            PARAM_TEXT
+        ));
 
-    $settings->add(new admin_setting_configtext(
-        'quizaccess_proctoring/aireviewopenaimodel',
-        get_string('setting:aireviewopenaimodel', 'quizaccess_proctoring'),
-        get_string('setting:aireviewopenaimodel_desc', 'quizaccess_proctoring'),
-        'gpt-4.1-mini',
-        PARAM_TEXT
-    ));
+        $settings->add(new admin_setting_configtext(
+            'quizaccess_proctoring/aireviewopenaimodel',
+            get_string('setting:aireviewopenaimodel', 'quizaccess_proctoring'),
+            get_string('setting:aireviewopenaimodel_desc', 'quizaccess_proctoring'),
+            'gpt-4.1-mini',
+            PARAM_TEXT
+        ));
 
-    $settings->add(new admin_setting_configpasswordunmask(
-        'quizaccess_proctoring/aireviewanthropicapikey',
-        get_string('setting:aireviewanthropicapikey', 'quizaccess_proctoring'),
-        get_string('setting:aireviewanthropicapikey_desc', 'quizaccess_proctoring'),
-        '',
-        PARAM_TEXT
-    ));
+        $settings->add(new admin_setting_configpasswordunmask(
+            'quizaccess_proctoring/aireviewanthropicapikey',
+            get_string('setting:aireviewanthropicapikey', 'quizaccess_proctoring'),
+            get_string('setting:aireviewanthropicapikey_desc', 'quizaccess_proctoring'),
+            '',
+            PARAM_TEXT
+        ));
 
-    $settings->add(new admin_setting_configtext(
-        'quizaccess_proctoring/aireviewanthropicmodel',
-        get_string('setting:aireviewanthropicmodel', 'quizaccess_proctoring'),
-        get_string('setting:aireviewanthropicmodel_desc', 'quizaccess_proctoring'),
-        'claude-sonnet-4-5-20250929',
-        PARAM_TEXT
-    ));
+        $settings->add(new admin_setting_configtext(
+            'quizaccess_proctoring/aireviewanthropicmodel',
+            get_string('setting:aireviewanthropicmodel', 'quizaccess_proctoring'),
+            get_string('setting:aireviewanthropicmodel_desc', 'quizaccess_proctoring'),
+            'claude-sonnet-4-5-20250929',
+            PARAM_TEXT
+        ));
 
-    $settings->add(new admin_setting_configtext(
-        'quizaccess_proctoring/aireviewcompatibleendpoint',
-        get_string('setting:aireviewcompatibleendpoint', 'quizaccess_proctoring'),
-        get_string('setting:aireviewcompatibleendpoint_desc', 'quizaccess_proctoring'),
-        '',
-        PARAM_URL
-    ));
+        $settings->add(new admin_setting_configtext(
+            'quizaccess_proctoring/aireviewcompatibleendpoint',
+            get_string('setting:aireviewcompatibleendpoint', 'quizaccess_proctoring'),
+            get_string('setting:aireviewcompatibleendpoint_desc', 'quizaccess_proctoring'),
+            '',
+            PARAM_URL
+        ));
 
-    $settings->add(new admin_setting_configpasswordunmask(
-        'quizaccess_proctoring/aireviewcompatibleapikey',
-        get_string('setting:aireviewcompatibleapikey', 'quizaccess_proctoring'),
-        get_string('setting:aireviewcompatibleapikey_desc', 'quizaccess_proctoring'),
-        '',
-        PARAM_TEXT
-    ));
+        $settings->add(new admin_setting_configpasswordunmask(
+            'quizaccess_proctoring/aireviewcompatibleapikey',
+            get_string('setting:aireviewcompatibleapikey', 'quizaccess_proctoring'),
+            get_string('setting:aireviewcompatibleapikey_desc', 'quizaccess_proctoring'),
+            '',
+            PARAM_TEXT
+        ));
 
-    $settings->add(new admin_setting_configtext(
-        'quizaccess_proctoring/aireviewcompatiblemodel',
-        get_string('setting:aireviewcompatiblemodel', 'quizaccess_proctoring'),
-        get_string('setting:aireviewcompatiblemodel_desc', 'quizaccess_proctoring'),
-        '',
-        PARAM_TEXT
-    ));
+        $settings->add(new admin_setting_configtext(
+            'quizaccess_proctoring/aireviewcompatiblemodel',
+            get_string('setting:aireviewcompatiblemodel', 'quizaccess_proctoring'),
+            get_string('setting:aireviewcompatiblemodel_desc', 'quizaccess_proctoring'),
+            '',
+            PARAM_TEXT
+        ));
 
-    $settings->add(new admin_setting_configtext(
-        'quizaccess_proctoring/aireviewtriggerthreshold',
-        get_string('setting:aireviewtriggerthreshold', 'quizaccess_proctoring'),
-        get_string('setting:aireviewtriggerthreshold_desc', 'quizaccess_proctoring'),
-        80,
-        PARAM_INT
-    ));
+        $settings->add(new admin_setting_configtext(
+            'quizaccess_proctoring/aireviewtriggerthreshold',
+            get_string('setting:aireviewtriggerthreshold', 'quizaccess_proctoring'),
+            get_string('setting:aireviewtriggerthreshold_desc', 'quizaccess_proctoring'),
+            80,
+            PARAM_INT
+        ));
 
-    $settings->add(new admin_setting_configselect(
-        'quizaccess_proctoring/aireviewtriggermode',
-        get_string('setting:aireviewtriggermode', 'quizaccess_proctoring'),
-        get_string('setting:aireviewtriggermode_desc', 'quizaccess_proctoring'),
-        'threshold',
-        [
-            'everyattempt' => get_string('setting:aireviewtriggermode_everyattempt', 'quizaccess_proctoring'),
-            'threshold' => get_string('setting:aireviewtriggermode_threshold', 'quizaccess_proctoring'),
-        ]
-    ));
+        $settings->add(new admin_setting_configselect(
+            'quizaccess_proctoring/aireviewtriggermode',
+            get_string('setting:aireviewtriggermode', 'quizaccess_proctoring'),
+            get_string('setting:aireviewtriggermode_desc', 'quizaccess_proctoring'),
+            'threshold',
+            [
+                'everyattempt' => get_string('setting:aireviewtriggermode_everyattempt', 'quizaccess_proctoring'),
+                'threshold' => get_string('setting:aireviewtriggermode_threshold', 'quizaccess_proctoring'),
+            ]
+        ));
 
-    $settings->add(new admin_setting_configtext(
-        'quizaccess_proctoring/aireviewdecisionthreshold',
-        get_string('setting:aireviewdecisionthreshold', 'quizaccess_proctoring'),
-        get_string('setting:aireviewdecisionthreshold_desc', 'quizaccess_proctoring'),
-        80,
-        PARAM_INT
-    ));
+        $settings->add(new admin_setting_configtext(
+            'quizaccess_proctoring/aireviewdecisionthreshold',
+            get_string('setting:aireviewdecisionthreshold', 'quizaccess_proctoring'),
+            get_string('setting:aireviewdecisionthreshold_desc', 'quizaccess_proctoring'),
+            80,
+            PARAM_INT
+        ));
 
-    $settings->add(new admin_setting_configtext(
-        'quizaccess_proctoring/aireviewmaximages',
-        get_string('setting:aireviewmaximages', 'quizaccess_proctoring'),
-        get_string('setting:aireviewmaximages_desc', 'quizaccess_proctoring'),
-        6,
-        PARAM_INT
-    ));
+        $settings->add(new admin_setting_configtext(
+            'quizaccess_proctoring/aireviewmaximages',
+            get_string('setting:aireviewmaximages', 'quizaccess_proctoring'),
+            get_string('setting:aireviewmaximages_desc', 'quizaccess_proctoring'),
+            6,
+            PARAM_INT
+        ));
+    }
 
     $settings->add(new admin_setting_heading(
         'quizaccess_proctoring_reportingheading',
@@ -977,7 +1008,9 @@ if ($hassiteconfig) {
     $dbman = $DB->get_manager();
     $exists = $dbman->table_exists('quizaccess_proctoring_logs') &&
         $DB->record_exists('quizaccess_proctoring_logs', ['deletionprogress' => 0]);
-    if ($exists) {
+    // Site-wide deletion of every stored capture stays site-administrator only (trigger_delete.php
+    // still enforces is_siteadmin), so the button is not rendered for capability holders.
+    if ($exists && $hassiteconfig) {
         // Add the box containing the delete message and link.
         $settings->add(new admin_setting_description(
             'quizaccess_proctoring/deleteallimages',
@@ -991,6 +1024,9 @@ if ($hassiteconfig) {
     $proctoringcategory = 'quizaccess_proctoring_settings_category';
     $settings->visiblename = get_string('settings', 'quizaccess_proctoring');
     $settings->hidden = true;
+    // Core created this page requiring moodle/site:config. Relax it to whichever capability got
+    // the current user here, so a capability holder can open and save the page.
+    $settings->req_capability = $proctoringpagecap;
 
     $proctoringcategoryobject = new quizaccess_proctoring_admin_category(
         $proctoringcategory,
@@ -1008,7 +1044,7 @@ if ($hassiteconfig) {
         'quizaccess_proctoring_settings_link',
         get_string('settings', 'quizaccess_proctoring'),
         $proctoringcategoryobject->get_settings_page_url(),
-        'moodle/site:config'
+        $proctoringpagecap
     ));
 
     // 2. Overall reports (site-wide aggregate monitoring dashboard).
@@ -1016,7 +1052,7 @@ if ($hassiteconfig) {
         'quizaccess_proctoring_overall_reports',
         get_string('overallreports', 'quizaccess_proctoring'),
         new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'),
-        'moodle/site:config'
+        $proctoringpagecap
     ));
 
     // 3. Risk factor scoring (per-factor enable/points/cap and risk level boundaries).
@@ -1024,7 +1060,7 @@ if ($hassiteconfig) {
     $riskfactorspage = new admin_settingpage(
         'quizaccess_proctoring_riskfactors',
         get_string('riskfactorspage', 'quizaccess_proctoring'),
-        'moodle/site:config'
+        $proctoringpagecap
     );
 
     $riskfactorspage->add(new admin_setting_heading(
@@ -1145,7 +1181,8 @@ if ($hassiteconfig) {
 
     $ADMIN->add($proctoringcategory, $riskfactorspage);
 
-    // 4. Review diagnostics.
+    // 4. Review diagnostics. Kept site-administrator only: it reports provider request failures,
+    // which can echo credential and endpoint detail.
     $ADMIN->add($proctoringcategory, new admin_externalpage(
         'quizaccess_proctoring_ai_diagnostics',
         get_string('aireviewdiagnostics', 'quizaccess_proctoring'),
@@ -1153,7 +1190,7 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
 
-    // 5. Cost estimate.
+    // 5. Cost estimate. Kept site-administrator only alongside the rest of the AI review config.
     $ADMIN->add($proctoringcategory, new admin_externalpage(
         'quizaccess_proctoring_cost_estimate',
         get_string('costestimate', 'quizaccess_proctoring'),
@@ -1166,7 +1203,7 @@ if ($hassiteconfig) {
         'quizaccess_proctoring_userslist',
         get_string('users_list', 'quizaccess_proctoring'),
         new moodle_url('/mod/quiz/accessrule/proctoring/userslist.php'),
-        'moodle/site:config'
+        $proctoringpagecap
     ));
 
     $settings = null;

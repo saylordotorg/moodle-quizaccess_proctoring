@@ -48,8 +48,39 @@ defined('QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE') ||
     define('QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE', 2);
 defined('QUIZACCESS_PROCTORING_AI_REVIEW_FAILED') ||
     define('QUIZACCESS_PROCTORING_AI_REVIEW_FAILED', 3);
+defined('QUIZACCESS_PROCTORING_CAP_ADMIN_SETTINGS') ||
+    define('QUIZACCESS_PROCTORING_CAP_ADMIN_SETTINGS', 'quizaccess/proctoring:manageadminsettings');
 
 $token = "";
+
+/**
+ * Check whether the current user may administer the site-wide proctoring settings.
+ *
+ * Site administrators always qualify. Other roles qualify through the plugin's own system-context
+ * capability, which lets (for example) a Student Affairs manager tune proctoring without being
+ * granted moodle/site:config. Credential fields and the AI review section stay admin-only, so this
+ * never grants access to a provider key.
+ *
+ * @return bool True when the current user may open the proctoring settings pages.
+ */
+function quizaccess_proctoring_can_manage_admin_settings(): bool {
+    if (has_capability('moodle/site:config', context_system::instance())) {
+        return true;
+    }
+
+    return has_capability(QUIZACCESS_PROCTORING_CAP_ADMIN_SETTINGS, context_system::instance());
+}
+
+/**
+ * Require that the current user may administer the site-wide proctoring settings.
+ *
+ * @return void
+ */
+function quizaccess_proctoring_require_admin_settings_access(): void {
+    if (!quizaccess_proctoring_can_manage_admin_settings()) {
+        require_capability(QUIZACCESS_PROCTORING_CAP_ADMIN_SETTINGS, context_system::instance());
+    }
+}
 
 /**
  * Serves files for the quizaccess proctoring plugin.
@@ -174,7 +205,12 @@ function quizaccess_proctoring_can_serve_pluginfile(
             return true;
         }
 
-        if (has_capability('moodle/site:config', $context)) {
+        // Site administrators, plus the proctoring settings capability that grants access to the
+        // users list where these reference photos are displayed.
+        if (
+            has_capability('moodle/site:config', $context)
+            || has_capability(QUIZACCESS_PROCTORING_CAP_ADMIN_SETTINGS, $context)
+        ) {
             return true;
         }
 
@@ -1477,6 +1513,33 @@ function quizaccess_proctoring_get_student_risk_failure_notice_html(stdClass $ho
         'div',
         $title . html_writer::tag('div', s($message)),
         ['class' => 'alert alert-danger quizaccess-proctoring-risk-failure-notice', 'role' => 'alert']
+    );
+}
+
+/**
+ * Build the student-facing notice for an attempt whose proctoring violation was confirmed.
+ *
+ * Shown once a reviewer confirms the violation, so the interim "Certificate review in progress"
+ * notice is replaced by the outcome instead of silently disappearing from the quiz page.
+ *
+ * @param stdClass $hold Confirmed risk hold record.
+ * @return string Rendered Bootstrap alert HTML.
+ */
+function quizaccess_proctoring_get_student_risk_confirmed_notice_html(stdClass $hold): string {
+    $message = get_string('riskreview:confirmedstudentbody', 'quizaccess_proctoring', (object)[
+        'score' => (int)$hold->riskscore,
+        'threshold' => (int)$hold->threshold,
+    ]);
+    $title = html_writer::tag(
+        'strong',
+        s(get_string('riskreview:confirmedstudenttitle', 'quizaccess_proctoring')),
+        ['class' => 'd-block mb-1']
+    );
+
+    return html_writer::tag(
+        'div',
+        $title . html_writer::tag('div', s($message)),
+        ['class' => 'alert alert-danger quizaccess-proctoring-risk-confirmed-notice', 'role' => 'alert']
     );
 }
 
