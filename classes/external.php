@@ -1481,6 +1481,43 @@ class quizaccess_proctoring_external extends external_api {
     }
 
     /**
+     * Divide a byte allowance between images, taking it from the largest ones first.
+     *
+     * Shrinking every image by the same ratio is the obvious approach and the wrong one: when one
+     * oversized ID capture is what breached the budget, a proportional cut also strips most of the
+     * quality out of the selfie beside it, and that selfie is the face matcher's only input. This
+     * is max-min fair instead - each image is offered an equal share, anything already smaller than
+     * its share keeps its full size, and what it does not use is redistributed to the images that
+     * are over. So a 990 KB selfie next to an 8 MB document is left alone entirely and the document
+     * absorbs the reduction, which is also where there is the most redundant detail to lose.
+     *
+     * @param array $images Raw bytes keyed by role.
+     * @param int $allowance Total raw bytes available.
+     * @return array<string, int> Target byte count per role.
+     */
+    private static function allocate_image_budgets(array $images, int $allowance): array {
+        $sizes = [];
+        foreach ($images as $role => $bytes) {
+            $sizes[$role] = strlen($bytes);
+        }
+        // Smallest first, so each pass hands out the tightest share and frees the remainder.
+        asort($sizes);
+
+        $targets = [];
+        $remaining = $allowance;
+        $count = count($sizes);
+        foreach ($sizes as $role => $size) {
+            $share = $count > 0 ? (int)floor($remaining / $count) : 0;
+            $target = min($size, max(self::MIN_ID_IMAGE_TARGET_BYTES, $share));
+            $targets[$role] = $target;
+            $remaining -= $target;
+            $count--;
+        }
+
+        return $targets;
+    }
+
+    /**
      * Reduce the transmitted images until the whole request body fits the transport budget.
      *
      * Targets are proportional to each image's current size, so the capture that is actually
@@ -1512,8 +1549,9 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         // Work in raw bytes from here: base64 is a fixed 4/3 multiplier, so a raw allowance is the
-        // same constraint expressed in the units the encoders actually produce.
-        $rawallowance = (int)floor(($budget * 3) / 4);
+        // same constraint expressed in the units the encoders actually produce. 0.97 keeps a little
+        // headroom so a near-miss does not cost another pass.
+        $rawallowance = (int)floor((($budget * 3) / 4) * 0.97);
         $floors = [
             'id_image' => self::MIN_ID_DOCUMENT_LONG_EDGE,
             'id_back_image' => self::MIN_ID_DOCUMENT_LONG_EDGE,
@@ -1531,10 +1569,9 @@ class quizaccess_proctoring_external extends external_api {
                 break;
             }
 
-            // 0.95 keeps a little headroom so a near-miss does not cost another whole pass.
-            $factor = ($rawallowance / $rawtotal) * 0.95;
+            $targets = self::allocate_image_budgets($images, $rawallowance);
             foreach ($images as $role => $bytes) {
-                $target = max(self::MIN_ID_IMAGE_TARGET_BYTES, (int)floor(strlen($bytes) * $factor));
+                $target = $targets[$role] ?? strlen($bytes);
                 if (strlen($bytes) <= $target) {
                     continue;
                 }
