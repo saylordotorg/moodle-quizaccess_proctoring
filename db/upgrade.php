@@ -1289,5 +1289,11 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026081902, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026081904) {
+        // No schema changes: the only change is a missing language string that the course
+        // proctoring summary template referenced. No-op savepoint so the new string is picked up.
+        upgrade_plugin_savepoint(true, 2026081904, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
