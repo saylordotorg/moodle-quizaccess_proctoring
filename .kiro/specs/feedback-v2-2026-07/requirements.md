@@ -271,7 +271,35 @@ Not code, still owed:
   expected to be closed by the marker-grace work already on `master`; I4 (ID verification failing
   after first use, on two different machines) has no diagnosis yet.
 
-Not verified locally: PHPUnit. This checkout is not installed inside a Moodle tree, so the PHP
-tests were not run - `php -l` on every touched file and the three Node test files are what has been
-verified. The suites to run on a Moodle install are `report_order_by_test` (its allowlist mirror was
-updated for the new sort keys) and the privacy provider tests.
+### Verification
+
+Deployed to dev.sylr.org at `86f7056`; the plugin upgrade created
+`quizaccess_proctoring_notes` and applied the score-cap change (`riskscorecapenabled` reads 0).
+
+dev has no PHPUnit installed and no `phpunit_dataroot` configured, and setting that up on a shared
+box was out of scope, so verification there was done with two throwaway CLI scripts run through SSM
+and deleted afterwards. Both passed:
+
+- Every changed template renders against the example context in its own docblock, with no missing
+  language strings. `display_time` formats and blanks correctly and still shares its constant with
+  the exception emails. The notes table is present and both read paths run. All nine sort keys
+  resolve as specified, an unknown key still falls back to newest-first, the score cap reads off,
+  and the privacy metadata declares the new table.
+- Every dashboard queue, the minimum-events and risk-level filters, and the held-certificate query
+  all run against the real dev database and return the columns the feedback asked for.
+
+The headline fix is confirmed on the reviewer's own data: the attempt she reported as "724
+suspicious activities" has 726 stored event rows, of which **35** are event types that can score.
+That attempt's Findings column now leads with the findings the report body shows rather than 726.
+
+Also confirmed there: 22 ID verification records, all 22 with a stored ID image, so the new ID
+verification block has real evidence to display on the next review pass.
+
+One thing that looks like a bug and is not: account age renders blank for the `admin` account,
+because Moodle does not stamp `timecreated` on the account created at install. Ordinary accounts
+(including the reviewer's own) have one and show an age.
+
+Still not run: PHPUnit. `report_order_by_test` (whose allowlist mirror was updated for the new sort
+keys) and the privacy provider tests need a Moodle install with PHPUnit initialised - neither this
+checkout nor dev is one. The CLI checks above cover the same ground for the sort allowlist and the
+privacy metadata, but they are not a substitute for the suites.
