@@ -1289,5 +1289,11 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026081902, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026082000) {
+        // No schema changes: the ID verification request body is now budgeted before it is sent,
+        // which is code only. No-op savepoint so the new student-facing string is picked up.
+        upgrade_plugin_savepoint(true, 2026082000, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

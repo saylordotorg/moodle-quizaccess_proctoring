@@ -1,6 +1,19 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.8.1
+Fixed ID verification failing permanently once a student captured a large ID photo.
+
+- **The request was bigger than the endpoint accepts.** The plugin takes ID images up to 8 MB each, base64-encodes the front, back and live photo into one JSON body, and posts it to an endpoint that refuses anything over 6 MB — and refuses it before the function runs, so the rejection is instant and leaves no trace on the provider side. Nothing measured the assembled body. Every one of the 13 failures recorded on the dev site was over that limit and every one of the 9 checks that got a verdict was under it, with no exceptions either way; the provider logged a single invocation across the whole failure window.
+- It read as permanent rather than intermittent because the oversized capture was re-sent on every retry, byte-identical. One student's back-of-ID capture came out at 8.2 MB — essentially the plugin's own ceiling — and eleven consecutive retries all failed the same way. Nothing the student could do would have helped.
+- The body is now budgeted before it is sent: 5 MB, measured with the envelope included, with the transmitted copies of the images re-encoded to fit. **Only the transmitted copies** — the stored evidence keeps the resolution the camera produced.
+- Reduction spends quality before it spends detail, because an ID document's legibility depends far more on its pixel dimensions than on its JPEG quality. On the real captures that were failing, quality alone was enough: a 12.7 MB body came down to 4.1 MB with every image still at its original dimensions (4000x3000 stayed 4000x3000). Dimensions are only reduced when quality alone cannot reach the budget, and never below 1400px on an ID document's long edge or 480px on the live photo.
+- The allowance is taken from the largest images first (max-min fair), not shared out in proportion. A proportional cut would strip most of the quality out of the 990 KB selfie sitting next to an 8 MB document, and that selfie is the face matcher's only input; it is now left untouched while the document absorbs the reduction.
+- A body that already fits is returned byte-identical, so captures that worked before this change are not re-encoded and lose nothing.
+- **The HTTP status is no longer thrown away.** It was read and discarded, so every failure reached the student as "ID verification is unavailable. Please contact support." — including a size rejection, which is not a provider problem and is not the student's fault either. A 413 now gets its own message telling the student to retake the picture slightly further back, and the status and body size go to the debugging log so an administrator can tell a size rejection from a real outage without reading the provider's logs.
+- If a body still will not fit after re-encoding, it is not sent at all: spending a student's time on a request that is certain to be refused, and then reporting the refusal as an outage, is worse than saying what is wrong.
+- New `tests/id_verification_payload_test.php` covers the budgeting: a fitting body is untouched, an oversized one comes under budget, images stay decodable and above their floors, and a small image keeps its size when a large one is the problem.
+
 # v1.8.0
 The review dashboard now uses the review team's own vocabulary, and the report's event count agrees with the report.
 

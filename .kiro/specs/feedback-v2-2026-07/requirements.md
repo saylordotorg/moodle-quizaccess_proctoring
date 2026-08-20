@@ -201,7 +201,7 @@ to add a note."
 - **I3 (BUILD)** Nothing tells a student on a phone or tablet that the exam needs a laptop or
   desktop (Lindsay's comment). State the device requirement before setup starts, and detect the
   no-usable-camera case explicitly rather than failing at step 2.
-- **I4 (DIAGNOSED 20 Aug 2026 - the payload is too big for the endpoint to accept)** "After my
+- **I4 (FIXED in v1.8.1 - the payload was too big for the endpoint to accept)** "After my
   first exam attempt, I haven't been able to get ID verification to work again", and Lindsay's
   failures on a PC.
 
@@ -231,7 +231,7 @@ to add a note."
   unavailable. Please contact support.", sending the student to support for a limit the plugin
   chose and never checked.
 
-  **Fix to build:** budget the payload before the call. Re-encode down to a configured ceiling
+  **Fixed in v1.8.1.** The body is budgeted before the call. Re-encode down to a configured ceiling
   (default comfortably under 6 MB base64), preferring JPEG quality reduction over dimension
   reduction so the OCR sharpness added in 1.4.0 survives; fail with a distinct, actionable message
   if it still will not fit, and log that distinctly from a provider outage so an admin can tell the
@@ -304,8 +304,13 @@ Not code, still owed:
 
 - A7, E5, K1-K3, H4, F2 — answers and content/policy decisions, listed above.
 - H1 — needs a run on dev; expected to be closed by the marker-grace work already shipped.
-- I4 — **diagnosed, fix not yet built.** See the item above: the request payload exceeds the 6 MB
-  the endpoint accepts, and the plugin never measures it.
+- I4 — **fixed in v1.8.1.** The body is budgeted to 5 MB before it is sent, quality is spent before
+  detail (the real failing captures fit with their dimensions untouched), the allowance is taken
+  from the largest images first so the selfie the face matcher needs is not collateral damage, and a
+  413 no longer reports itself as a provider outage. Verified against the actual failing images on
+  dev: 16.9 MB encoded down to 4.1 MB, every previously-working capture byte-identical.
+  Still open from the same investigation: Lindsay's **name-threshold** problem, which is a policy
+  call, not a bug.
 
 ### Verification
 
