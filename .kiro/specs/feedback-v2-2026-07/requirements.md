@@ -67,8 +67,10 @@ Note on naming collision: the standalone **Held certificates** tab
 the same population as the Withheld certificates card, minus attempts in courses with no certificate
 activity. A8 keeps them from reading as two unrelated things.
 
-- **A8 (BUILD)** The Withheld certificates card links onward to the Held certificates tab, and the
-  Held certificates page says in one line how its population relates to the card.
+- **A8 (BUILD)** The bucket explainer links the Held certificates tab and says it is the same
+  withheld attempts seen one row per certificate; the Held certificates page says the same from its
+  side. (The link lives in the explainer rather than inside the card, because a pulse card is itself
+  a link and a link inside a link is not valid markup.)
 
 ## B. Attempts report — filters and table (P2)
 
@@ -239,3 +241,37 @@ realtime feedback if the feedback mechanism is placed closer to or in the activi
 7. H2, H3, I1 — front-end fixes.
 8. I2, I3, J1 — camera, device gate, feedback link.
 9. H1, I4 — reproduce on dev.
+
+---
+
+## Status, 19 August 2026
+
+Shipped in v1.8.0 (`07f8431`, `fe6b457`, `1d87843`):
+
+- A1-A6, A8 — buckets renamed and reordered, explainer added, Held certificates cross-linked.
+- B1, B2 — filter wording and help; one shared staff date helper (`local\display_time`).
+- C1-C6 — findings count fixed, Duration/Exam score/Account age columns, attempt link, email and
+  surname/first-name sorts, ID verification evidence on the report.
+- D1, D2 — review state on the report; reviewer notes (`quizaccess_proctoring_notes`) with a note
+  count on the list row, wired into the privacy provider.
+- E1-E4 — overrides and the ID exception queue: linked students, split identity columns, Eastern
+  dates with the zone named, justification column.
+- F1 — Attempt finished and Email address columns on Held certificates, both dates named in the
+  intro.
+- G1-G3 — score cap off by default and on upgrade; the speed finding states its own threshold; the
+  audio factor says it is a loudness threshold, not speech recognition.
+- H2, H3 — warning banner docked to the viewport; course index drawer collapsed for an attempt.
+- I1-I3 — empty Time limit heading removed, camera pillarboxing fixed, device notice before setup.
+- J1 — student feedback link in setup, behind a new (empty by default) URL setting.
+
+Not code, still owed:
+
+- A7, E5, K1-K3, H4, F2 — answers and content/policy decisions, listed above.
+- H1, I4 — need a run on dev before anything is specified. H1 (repeated screen-share prompts) is
+  expected to be closed by the marker-grace work already on `master`; I4 (ID verification failing
+  after first use, on two different machines) has no diagnosis yet.
+
+Not verified locally: PHPUnit. This checkout is not installed inside a Moodle tree, so the PHP
+tests were not run - `php -l` on every touched file and the three Node test files are what has been
+verified. The suites to run on a Moodle install are `report_order_by_test` (its allowlist mirror was
+updated for the new sort keys) and the privacy provider tests.
