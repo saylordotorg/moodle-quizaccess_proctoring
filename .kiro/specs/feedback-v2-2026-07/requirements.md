@@ -126,8 +126,10 @@ to add a note."
 - **D2 (BUILD)** Reviewer notes. A new append-only table keyed the same way sign-offs are
   (course/quiz/user/attempt, falling back to report id), with add and delete-own on the per-student
   report, author and timestamp on every note, and a note count on the dashboard row so a reviewer
-  can see there is context before opening. Notes are staff-only, never shown to the student,
-  exported by the privacy provider and deleted with the course.
+  can see there is context before opening. Notes are staff-only, never shown to the student, and
+  handled by the privacy provider the same way the existing reviewer-verdict table is: exported to
+  the student they are about and to their author, deleted outright when that student's module data
+  is deleted, and anonymised (author only) when the author's is.
 
 ## E. Manage overrides (P2)
 

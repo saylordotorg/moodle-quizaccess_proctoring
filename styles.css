@@ -1395,6 +1395,102 @@ body.quizaccess-proctoring-settings-page #admin-deleteallimages .btn-danger {
     margin: 0 auto;
 }
 
+/* Review state and reviewer notes (staff only). */
+.proctoring-review-card {
+    border: 1px solid #d9e1e7;
+    border-radius: 10px;
+    background: #fff;
+    padding: 14px 16px;
+}
+
+.proctoring-review-state {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eef2f6;
+}
+
+.proctoring-review-signedoff {
+    font-size: 0.9rem;
+    color: #1f6b3b;
+    font-weight: 600;
+}
+
+.proctoring-review-unreviewed {
+    font-size: 0.9rem;
+    color: #6b7a90;
+}
+
+.proctoring-review-notes {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+}
+
+.proctoring-review-note {
+    border-left: 3px solid #cfd7de;
+    padding: 2px 0 2px 10px;
+    margin-bottom: 12px;
+}
+
+.proctoring-review-notetext {
+    font-size: 0.9375rem;
+    line-height: 1.55;
+    color: #3f4a55;
+    white-space: pre-wrap;
+    max-width: 72ch;
+}
+
+.proctoring-review-noteby {
+    margin-top: 3px;
+    font-size: 0.78rem;
+    color: #6b7a90;
+}
+
+.proctoring-review-notedelete {
+    margin-left: 8px;
+}
+
+.proctoring-review-nonotes {
+    margin: 12px 0 0;
+    font-size: 0.9rem;
+    color: #6b7a90;
+}
+
+.proctoring-review-noteform {
+    margin-top: 14px;
+}
+
+.proctoring-review-notelabel {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #23405c;
+    margin-bottom: 4px;
+}
+
+.proctoring-review-noteactions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.proctoring-review-notehint {
+    font-size: 0.78rem;
+    color: #6b7a90;
+}
+
+.proctoring-overview-notecount {
+    display: inline-block;
+    margin-top: 3px;
+    font-size: 0.75rem;
+    color: #23405c;
+}
+
 .proctoring-report-tabs {
     border-bottom: 1px solid #d9e1e7;
     gap: 0.15rem;

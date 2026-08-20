@@ -127,6 +127,24 @@ class provider implements
             'privacy:metadata:quizaccess_proctoring_finding_reviews'
         );
 
+        $quizaccessproctoringnotes = [
+            'courseid' => 'privacy:metadata:courseid',
+            'quizid' => 'privacy:metadata:quizid',
+            'userid' => 'privacy:metadata:userid',
+            'attemptid' => 'privacy:metadata:attemptid',
+            'reportid' => 'privacy:metadata:reportid',
+            'notetext' => 'privacy:metadata:notetext',
+            'authorid' => 'privacy:metadata:noteauthorid',
+            'timecreated' => 'privacy:metadata:timecreated',
+            'timemodified' => 'privacy:metadata:timemodified',
+        ];
+
+        $collection->add_database_table(
+            'quizaccess_proctoring_notes',
+            $quizaccessproctoringnotes,
+            'privacy:metadata:quizaccess_proctoring_notes'
+        );
+
         $quizaccessproctoringaireviews = [
             'courseid' => 'privacy:metadata:courseid',
             'quizid' => 'privacy:metadata:quizid',
@@ -292,6 +310,14 @@ class provider implements
         $findingreviewparams['reviewerid'] = $userid;
         $contextlist->add_from_sql($sql, $findingreviewparams);
         $sql = "SELECT DISTINCT c.id
+                  FROM {quizaccess_proctoring_notes} qpn
+                  JOIN {context} c ON c.instanceid = qpn.quizid AND c.contextlevel = :context
+                 WHERE qpn.userid = :userid OR qpn.authorid = :authorid
+              GROUP BY c.id";
+        $noteparams = $params;
+        $noteparams['authorid'] = $userid;
+        $contextlist->add_from_sql($sql, $noteparams);
+        $sql = "SELECT DISTINCT c.id
                   FROM {quizaccess_proctoring_ai_reviews} qpar
                   JOIN {context} c ON c.instanceid = qpar.quizid AND c.contextlevel = :context
                  WHERE qpar.userid = :userid
@@ -400,6 +426,16 @@ class provider implements
         $sql = "SELECT DISTINCT qpfr.reviewerid AS userid
                   FROM {quizaccess_proctoring_finding_reviews} qpfr
                  WHERE qpfr.quizid = ? AND qpfr.reviewerid <> 0";
+        $userlist->add_from_sql('userid', $sql, $params);
+
+        $sql = "SELECT DISTINCT qpn.userid AS userid
+                  FROM {quizaccess_proctoring_notes} qpn
+                 WHERE qpn.quizid = ?";
+        $userlist->add_from_sql('userid', $sql, $params);
+
+        $sql = "SELECT DISTINCT qpn.authorid AS userid
+                  FROM {quizaccess_proctoring_notes} qpn
+                 WHERE qpn.quizid = ? AND qpn.authorid <> 0";
         $userlist->add_from_sql('userid', $sql, $params);
 
         $sql = "SELECT DISTINCT qpar.userid AS userid
@@ -643,6 +679,41 @@ class provider implements
                     writer::with_context($context)->export_data($subcontext, $data);
                 }
 
+                $notefields = 'id, courseid, quizid, userid, attemptid, reportid, notetext, authorid, ' .
+                    'timecreated, timemodified';
+                $notes = $DB->get_records_select(
+                    'quizaccess_proctoring_notes',
+                    "quizid $insql AND (userid = :participantid OR authorid = :noteauthorid)",
+                    $participantparams + ['noteauthorid' => $contextlist->get_user()->id],
+                    '',
+                    $notefields
+                );
+
+                $index = 0;
+                foreach ($notes as $note) {
+                    $index++;
+                    $subcontext = [
+                        get_string('quizaccess_proctoring', 'quizaccess_proctoring'),
+                        'proctoring_notes',
+                        $index,
+                    ];
+
+                    $data = (object)[
+                        'id' => $note->id,
+                        'courseid' => $note->courseid,
+                        'quizid' => $note->quizid,
+                        'userid' => $note->userid,
+                        'attemptid' => $note->attemptid,
+                        'reportid' => $note->reportid,
+                        'notetext' => $note->notetext,
+                        'authorid' => $note->authorid,
+                        'timecreated' => transform::datetime($note->timecreated),
+                        'timemodified' => transform::datetime($note->timemodified),
+                    ];
+
+                    writer::with_context($context)->export_data($subcontext, $data);
+                }
+
                 $aireviewfields = 'id, courseid, quizid, userid, attemptid, reportid, eventid, reviewtype, holdid, riskscore, ' .
                     'triggerthreshold, provider, model, reviewscore, decision, status, summary, evidence, ' .
                     'errormessage, timecreated, timemodified, timereviewed';
@@ -831,6 +902,10 @@ class provider implements
                 ['cmid' => $cmid]
             );
             $DB->delete_records('quizaccess_proctoring_idv', ['quizid' => $cmid]);
+            // A reviewer note is written about one student's attempt and is nothing but a
+            // description of that student's evidence, so it is deleted rather than anonymized:
+            // stripping the ids off it would leave the description behind.
+            $DB->delete_records('quizaccess_proctoring_notes', ['quizid' => $cmid]);
 
             $fs = get_file_storage();
             $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'picture');
@@ -964,6 +1039,22 @@ class provider implements
             'reviewerid',
             0,
             "quizid = :cmid AND reviewerid {$insql}",
+            $params
+        );
+
+        // Notes about these students go entirely: the note text describes their evidence. Notes
+        // they wrote about other students stay, with the authorship anonymized - the reasoning is
+        // still needed by whoever reviews that attempt next.
+        $DB->delete_records_select(
+            'quizaccess_proctoring_notes',
+            "quizid = :cmid AND userid {$insql}",
+            $params
+        );
+        $DB->set_field_select(
+            'quizaccess_proctoring_notes',
+            'authorid',
+            0,
+            "quizid = :cmid AND authorid {$insql}",
             $params
         );
 

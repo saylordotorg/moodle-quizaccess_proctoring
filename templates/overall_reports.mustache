@@ -42,7 +42,7 @@
                 "userid": 42, "profileurl": "#", "scorelabel": "17.00 / 20.00", "duration": "42 mins 6 secs",
                 "accountage": "2 years 145 days", "accountcreated": "14 March 2024  9:02 AM", "attempturl": "#",
                 "canact": true, "releaseurl": "#", "confirmurl": "#", "viewurl": "#",
-                "cansignoff": false, "signoffurl": "", "undosignoffurl": "", "signofflabel": ""
+                "cansignoff": false, "signoffurl": "", "undosignoffurl": "", "signofflabel": "", "notelabel": "2 reviewer notes"
             }
         ],
         "hasrows": true, "emptyqueue": false, "pagingbar": "<nav></nav>",
@@ -219,6 +219,8 @@
                     <td>
                         <span class="proctoring-overview-status proctoring-overview-status-{{reviewstate}}">{{statuslabel}}</span>
                         {{#signofflabel}}<span class="proctoring-overview-signoff">{{signofflabel}}</span>{{/signofflabel}}
+                        {{! There is context to read before deciding whether to open the report. }}
+                        {{#notelabel}}<span class="proctoring-overview-notecount">{{notelabel}}</span>{{/notelabel}}
                     </td>
                     <td class="proctoring-overview-cell-actions">
                         <a href="{{viewurl}}">{{#str}}overallreport:openreport, quizaccess_proctoring{{/str}}</a>

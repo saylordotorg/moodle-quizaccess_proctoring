@@ -286,6 +286,71 @@
 <div class="proctoring-verdict-footnote">{{#str}}verdict:disclaimer, quizaccess_proctoring{{/str}}</div>
 {{/riskscore}}
 
+{{! Who has looked at this attempt, and what they concluded. Staff-only: nothing here is ever
+    rendered on a student-facing page. }}
+{{#collaboration}}
+{{#canreview}}
+<h3 class="mt-4">{{#str}}notes:heading, quizaccess_proctoring{{/str}}</h3>
+<div class="proctoring-review-card">
+    <div class="proctoring-review-state">
+        {{#signoffbyline}}
+        <span class="proctoring-review-signedoff">{{signoffbyline}}</span>
+        {{/signoffbyline}}
+        {{^signoffbyline}}
+        <span class="proctoring-review-unreviewed">{{#str}}notes:noreviewyet, quizaccess_proctoring{{/str}}</span>
+        {{/signoffbyline}}
+        {{#cansignoff}}
+        <a class="btn btn-outline-secondary btn-sm" href="{{signoffurl}}">{{#str}}overallreport:signoff, quizaccess_proctoring{{/str}}</a>
+        {{/cansignoff}}
+        {{#undosignoffurl}}
+        <a class="btn btn-link btn-sm" href="{{undosignoffurl}}">{{#str}}overallreport:undosignoff, quizaccess_proctoring{{/str}}</a>
+        {{/undosignoffurl}}
+    </div>
+
+    {{#hasnotes}}
+    <ul class="proctoring-review-notes">
+        {{#notes}}
+        <li class="proctoring-review-note">
+            <div class="proctoring-review-notetext">{{text}}</div>
+            <div class="proctoring-review-noteby">
+                {{byline}}
+                {{#candelete}}
+                <a class="proctoring-review-notedelete" href="{{deleteurl}}"
+                   data-confirmation="modal"
+                   data-confirmation-type="delete"
+                   data-confirmation-title-str='["notes:deletetitle", "quizaccess_proctoring"]'
+                   data-confirmation-content-str='["notes:deletebody", "quizaccess_proctoring"]'
+                   data-confirmation-yes-button-str='["delete", "core"]'>{{#str}}delete{{/str}}</a>
+                {{/candelete}}
+            </div>
+        </li>
+        {{/notes}}
+    </ul>
+    {{/hasnotes}}
+    {{^hasnotes}}
+    <p class="proctoring-review-nonotes">{{#str}}notes:none, quizaccess_proctoring{{/str}}</p>
+    {{/hasnotes}}
+
+    <form method="post" action="{{addurl}}" class="proctoring-review-noteform">
+        <input type="hidden" name="courseid" value="{{courseid}}">
+        <input type="hidden" name="cmid" value="{{cmid}}">
+        <input type="hidden" name="studentid" value="{{studentid}}">
+        <input type="hidden" name="reportid" value="{{reportid}}">
+        <input type="hidden" name="noteaction" value="add">
+        <input type="hidden" name="sesskey" value="{{sesskey}}">
+        <label class="proctoring-review-notelabel" for="proctoring-note-{{reportid}}">{{#str}}notes:addlabel, quizaccess_proctoring{{/str}}</label>
+        <textarea id="proctoring-note-{{reportid}}" name="notetext" rows="3"
+                  maxlength="{{maxlength}}" class="form-control"
+                  placeholder="{{#str}}notes:placeholder, quizaccess_proctoring{{/str}}"></textarea>
+        <div class="proctoring-review-noteactions">
+            <button type="submit" class="btn btn-primary btn-sm">{{#str}}notes:addbutton, quizaccess_proctoring{{/str}}</button>
+            <span class="proctoring-review-notehint">{{#str}}notes:visibility, quizaccess_proctoring{{/str}}</span>
+        </div>
+    </form>
+</div>
+{{/canreview}}
+{{/collaboration}}
+
 {{#aireview}}
 <h3 class="mt-4">{{#str}}aireview:title, quizaccess_proctoring{{/str}}</h3>
 <div class="proctoring-ai-review-card {{#isflagged}}proctoring-ai-review-flagged{{/isflagged}}">

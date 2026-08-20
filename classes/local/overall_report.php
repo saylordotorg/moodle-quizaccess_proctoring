@@ -756,6 +756,10 @@ final class overall_report {
             )
             : [];
 
+        // How much context each row already carries, in one query. A reviewer deciding what to open
+        // next should be able to see that a colleague has already written something down.
+        $notecounts = attempt_note::counts_for($pagerows);
+
         // The reviewers named on signed-off rows, in one query rather than one per row.
         $reviewerids = [];
         foreach ($pagerows as $a) {
@@ -925,6 +929,14 @@ final class overall_report {
             // a blank cell would read as "we do not know".
             $accountage = $a['usercreated'] > 0 ? max(0, time() - (int)$a['usercreated']) : null;
 
+            $notecount = (int)($notecounts[attempt_review::key(
+                (int)$a['courseid'],
+                (int)$a['cmid'],
+                (int)$a['userid'],
+                (int)$a['attemptid'],
+                (int)$a['reportid']
+            )] ?? 0);
+
             $rows[] = [
                 // Name and email come from the set-wide pass in build(), so what the list shows is
                 // exactly what the search matched and the name/email sorts ordered on.
@@ -978,6 +990,9 @@ final class overall_report {
                 'canact' => $canact,
                 'releaseurl' => $releaseurl,
                 'confirmurl' => $confirmurl,
+                'notelabel' => $notecount === 0 ? '' : ($notecount === 1
+                    ? get_string('notes:countone', 'quizaccess_proctoring')
+                    : get_string('notes:count', 'quizaccess_proctoring', $notecount)),
                 'cansignoff' => $cansignoff,
                 'signoffurl' => $signoffurl,
                 'undosignoffurl' => $undosignoffurl,

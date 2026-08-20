@@ -43,6 +43,12 @@ $holdid = optional_param('holdid', 0, PARAM_INT);
 $fpaction = optional_param('fpaction', null, PARAM_ALPHA);
 $fpfactorkey = optional_param('factorkey', '', PARAM_ALPHANUMEXT);
 $fpid = optional_param('fpid', 0, PARAM_INT);
+// Reviewer notes and the attempt-level sign-off, both staff-only decisions taken from this page.
+$noteaction = optional_param('noteaction', null, PARAM_ALPHA);
+$notetext = optional_param('notetext', '', PARAM_TEXT);
+$noteid = optional_param('noteid', 0, PARAM_INT);
+$reviewaction = optional_param('reviewaction', null, PARAM_ALPHA);
+$signoffid = optional_param('signoffid', 0, PARAM_INT);
 $page = optional_param('page', 0, PARAM_INT);
 // Sort and filter parameters (Requirement 13). Sort keys are validated by
 // quizaccess_proctoring_report_order_by(); initial filters by quizaccess_proctoring_name_matches_initials().
@@ -390,6 +396,95 @@ if ($fpaction === 'undo' && $fpid > 0) {
         'studentid' => $studentid ?: $fpmark->userid,
         'reportid' => $reportid ?: $fpmark->reportid,
     ]), get_string('findingreview:undone', 'quizaccess_proctoring'), null, \core\output\notification::NOTIFY_SUCCESS);
+}
+
+// Reviewer notes. Same capability as every other decision on this page, and the note is scoped to
+// the attempt the report was opened with, so it follows the attempt rather than the student.
+if (($noteaction === 'add' || $noteaction === 'delete') && $studentid && $reportid) {
+    require_sesskey();
+    require_capability('quizaccess/proctoring:reviewriskholds', $context);
+
+    $noteattemptid = (int)$DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]);
+    $notereturn = new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
+        'courseid' => $courseid,
+        'cmid' => $cmid,
+        'studentid' => $studentid,
+        'reportid' => $reportid,
+    ]);
+
+    if ($noteaction === 'add') {
+        \quizaccess_proctoring\local\attempt_note::add(
+            (int)$courseid,
+            (int)$cmid,
+            (int)$studentid,
+            $noteattemptid,
+            (int)$reportid,
+            (int)$USER->id,
+            $notetext
+        );
+        redirect(
+            $notereturn,
+            get_string('notes:added', 'quizaccess_proctoring'),
+            null,
+            \core\output\notification::NOTIFY_SUCCESS
+        );
+    }
+
+    // Deleting someone else's note needs the override capability on top of the review one: a
+    // reviewer retracting their own reasoning is housekeeping, editing a colleague's record is not.
+    \quizaccess_proctoring\local\attempt_note::delete(
+        $noteid,
+        (int)$courseid,
+        (int)$cmid,
+        (int)$USER->id,
+        has_capability('quizaccess/proctoring:manageoverrides', $context, $USER->id)
+    );
+    redirect(
+        $notereturn,
+        get_string('notes:deleted', 'quizaccess_proctoring'),
+        null,
+        \core\output\notification::NOTIFY_SUCCESS
+    );
+}
+
+// Sign a flagged attempt off from the report itself. The site-wide list already offers this; a
+// reviewer who has just finished reading the evidence should not have to go back to the list to
+// record that they did.
+if (($reviewaction === 'signoff' || $reviewaction === 'undosignoff') && $studentid && $reportid) {
+    require_sesskey();
+    require_capability('quizaccess/proctoring:reviewriskholds', $context);
+
+    $signoffreturn = new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
+        'courseid' => $courseid,
+        'cmid' => $cmid,
+        'studentid' => $studentid,
+        'reportid' => $reportid,
+    ]);
+
+    if ($reviewaction === 'signoff') {
+        \quizaccess_proctoring\local\attempt_review::record(
+            (int)$courseid,
+            (int)$cmid,
+            (int)$studentid,
+            (int)$DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]),
+            (int)$reportid,
+            (int)$USER->id
+        );
+        redirect(
+            $signoffreturn,
+            get_string('overallreport:signedoffnotice', 'quizaccess_proctoring'),
+            null,
+            \core\output\notification::NOTIFY_SUCCESS
+        );
+    }
+
+    \quizaccess_proctoring\local\attempt_review::undo($signoffid, (int)$courseid, (int)$cmid, (int)$USER->id);
+    redirect(
+        $signoffreturn,
+        get_string('overallreport:signoffundonenotice', 'quizaccess_proctoring'),
+        null,
+        \core\output\notification::NOTIFY_SUCCESS
+    );
 }
 
 echo $OUTPUT->header();
@@ -1650,6 +1745,112 @@ if (
             'routine' => array_map($makerawrow, $grouped['routine']),
         ];
 
+        // Who has already looked at this attempt, and what they worked out. A sign-off answers the
+        // first question and was previously only visible on the site-wide list, so a reviewer
+        // opening a report could not tell whether a colleague had been here before them; the notes
+        // answer the second, which nothing recorded at all.
+        $reportattemptid = (int)($riskscore['attemptid'] ?? 0);
+        $reviewkey = \quizaccess_proctoring\local\attempt_review::key(
+            (int)$courseid,
+            (int)$cmid,
+            (int)$studentid,
+            $reportattemptid,
+            (int)$reportid
+        );
+        $reviewsignoffs = \quizaccess_proctoring\local\attempt_review::active_for([[
+            'courseid' => (int)$courseid,
+            'cmid' => (int)$cmid,
+            'userid' => (int)$studentid,
+            'attemptid' => $reportattemptid,
+            'reportid' => (int)$reportid,
+        ]]);
+        $reviewsignoff = $reviewsignoffs[$reviewkey] ?? null;
+        $reviewbaseparams = [
+            'courseid' => $courseid,
+            'cmid' => $cmid,
+            'studentid' => $studentid,
+            'reportid' => $reportid,
+            'sesskey' => sesskey(),
+        ];
+        $signoffbyline = '';
+        if ($reviewsignoff !== null) {
+            $signoffreviewer = core_user::get_user((int)$reviewsignoff->reviewerid);
+            $signoffbyline = get_string('overallreport:signedoffby', 'quizaccess_proctoring', (object)[
+                'reviewer' => $signoffreviewer
+                    ? fullname($signoffreviewer)
+                    : get_string('overallreport:unknownuser', 'quizaccess_proctoring'),
+                'date' => \quizaccess_proctoring\local\display_time::staff((int)$reviewsignoff->timecreated),
+            ]);
+        }
+        // A hold has release and confirm, which the banner above already offers; the sign-off is
+        // the decision available when there is no hold to act on.
+        $cansignoff = $canreviewfindings && $reviewsignoff === null && empty($riskscore['holdstatus']);
+
+        $notes = \quizaccess_proctoring\local\attempt_note::for_attempt(
+            (int)$courseid,
+            (int)$cmid,
+            (int)$studentid,
+            $reportattemptid,
+            (int)$reportid
+        );
+        $noteauthors = [];
+        foreach ($notes as $note) {
+            $noteauthors[(int)$note->authorid] = true;
+        }
+        $noteauthorrecords = !empty($noteauthors)
+            ? $DB->get_records_list('user', 'id', array_keys($noteauthors))
+            : [];
+        $canmanageothernotes = has_capability('quizaccess/proctoring:manageoverrides', $context, $USER->id);
+        $notescontext = [];
+        foreach ($notes as $note) {
+            $author = $noteauthorrecords[(int)$note->authorid] ?? null;
+            $notescontext[] = [
+                'text' => (string)$note->notetext,
+                'byline' => get_string('notes:byline', 'quizaccess_proctoring', (object)[
+                    'name' => $author
+                        ? fullname($author)
+                        : get_string('overallreport:unknownuser', 'quizaccess_proctoring'),
+                    'date' => \quizaccess_proctoring\local\display_time::staff((int)$note->timecreated),
+                ]),
+                'candelete' => $canreviewfindings
+                    && ((int)$note->authorid === (int)$USER->id || $canmanageothernotes),
+                'deleteurl' => (new moodle_url(
+                    '/mod/quiz/accessrule/proctoring/report.php',
+                    $reviewbaseparams + ['noteaction' => 'delete', 'noteid' => (int)$note->id]
+                ))->out(false),
+            ];
+        }
+
+        $collaboration = [
+            'canreview' => $canreviewfindings,
+            'signoffbyline' => $signoffbyline,
+            'cansignoff' => $cansignoff,
+            'signoffurl' => $cansignoff
+                ? (new moodle_url(
+                    '/mod/quiz/accessrule/proctoring/report.php',
+                    $reviewbaseparams + ['reviewaction' => 'signoff']
+                ))->out(false)
+                : '',
+            'undosignoffurl' => ($reviewsignoff !== null && $canreviewfindings)
+                ? (new moodle_url(
+                    '/mod/quiz/accessrule/proctoring/report.php',
+                    $reviewbaseparams + [
+                        'reviewaction' => 'undosignoff',
+                        'signoffid' => (int)$reviewsignoff->id,
+                    ]
+                ))->out(false)
+                : '',
+            'notes' => $notescontext,
+            'hasnotes' => !empty($notescontext),
+            'addurl' => (new moodle_url('/mod/quiz/accessrule/proctoring/report.php'))->out(false),
+            'courseid' => $courseid,
+            'cmid' => $cmid,
+            'studentid' => $studentid,
+            'reportid' => $reportid,
+            'sesskey' => sesskey(),
+            'maxlength' => \quizaccess_proctoring\local\attempt_note::MAX_LENGTH,
+        ];
+
         $analyzeurl = new moodle_url('/mod/quiz/accessrule/proctoring/analyzeimage.php');
         $userimageurl = quizaccess_proctoring_get_image_url($user->id);
         if (!$userimageurl) {
@@ -1677,6 +1878,7 @@ if (
             'captures' => $capturescontext,
             'activity' => $activitycontext,
             'hasevents' => !empty($eventrecords),
+            'collaboration' => $collaboration,
         ];
         echo $OUTPUT->render_from_template('quizaccess_proctoring/studentreport', $templatecontext);
     }

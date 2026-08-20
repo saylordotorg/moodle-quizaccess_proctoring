@@ -31,6 +31,11 @@ Scoring:
 - **The risk score is no longer capped at 100**, on new installs and on upgrade. The 100 boundary is a presentation choice, not a measurement; while the scoring model is still being evaluated the raw total is the useful number, and clamping it makes an attempt that scored 240 indistinguishable from one that scored 100. Reports keep the "score/100" label, so a display such as 135/100 is expected. Sites that want the cap back tick "Cap attempt risk score at 100" on the Risk factor scoring page.
 - "Voices or sounds detected" now says what it is: a loudness threshold, not speech recognition. It cannot tell a person talking from a television or a passing siren, nothing is recorded or transcribed, and a student reading questions aloud to themselves will trigger it. Read it as "something was audible", not as evidence of what was said.
 
+Collaboration (feedback v2, "Collaboration"):
+- **Reviewer notes.** New staff-only notes on a proctored attempt, in a new `quizaccess_proctoring_notes` table: add a note on the report, see who wrote each one and when, delete your own (deleting a colleague's additionally needs the override capability). Reviewing an attempt means reading evidence and reaching a judgement, and the judgement was the only part that survived - a sign-off records that somebody looked, never what they concluded, so the next reviewer repeated the reading. Notes are never rendered on any student-facing surface. The site-wide list shows a "2 reviewer notes" line on the row, so a reviewer can see there is context to read before opening anything.
+- **Review state on the report.** The per-student report now says whether anyone has recorded a review of the attempt, names them and the date if so, and offers the same "Mark reviewed - no concern" sign-off (and its undo) that the site-wide list offers. Previously the sign-off existed only on the list, so a reviewer opening a report could not tell whether a colleague had been there first.
+- Notes are covered by the privacy provider the way the reviewer-verdict table is: exported to the student they are about and to their author, deleted outright when that student's module data is deleted, and anonymised by author when the author's is.
+
 Also in this release, the work previously listed as unreleased:
 
 Desktop capture no longer fails students for looking away from their own screen.
