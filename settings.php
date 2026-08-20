@@ -1073,7 +1073,7 @@ if ($canmanageproctoring) {
         'quizaccess_proctoring/riskscorecapenabled',
         get_string('setting:riskscorecapenabled', 'quizaccess_proctoring'),
         get_string('setting:riskscorecapenabled_desc', 'quizaccess_proctoring'),
-        1
+        0
     ));
 
     foreach (\quizaccess_proctoring\local\risk_calculator::FACTOR_DEFAULTS as $factorkey => $factordefaults) {

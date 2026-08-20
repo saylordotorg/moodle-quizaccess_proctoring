@@ -320,6 +320,8 @@ if ($view === 'idexceptions') {
             'title' => get_string('idexemption:selectall', 'quizaccess_proctoring'),
         ]),
         get_string('override_targetstudent', 'quizaccess_proctoring'),
+        get_string('override_targetemail', 'quizaccess_proctoring'),
+        get_string('override_targetuserid', 'quizaccess_proctoring'),
         get_string('idexemption:coursecol', 'quizaccess_proctoring'),
         get_string('idexemption:examcol', 'quizaccess_proctoring'),
         get_string('idexemption:reasoncol', 'quizaccess_proctoring'),
@@ -358,15 +360,19 @@ if ($view === 'idexceptions') {
 
         $table->data[] = [
             html_writer::checkbox('request[]', $token, false, '', ['class' => 'proctoring-idexception-select']),
-            s($request['student']) . ($request['email'] !== '' ? html_writer::tag(
-                'div',
-                s($request['email']),
-                ['class' => 'small text-muted']
-            ) : ''),
+            html_writer::link(
+                new moodle_url('/user/profile.php', ['id' => $request['userid']]),
+                s($request['student'])
+            ),
+            $request['email'] !== '' ? s($request['email']) : '-',
+            html_writer::link(
+                new moodle_url('/user/profile.php', ['id' => $request['userid']]),
+                (int)$request['userid']
+            ),
             s($request['coursename']),
             s($request['quizname']),
             quizaccess_proctoring_render_id_exception_reason($request),
-            userdate($request['timerequested']),
+            \quizaccess_proctoring\local\display_time::staff((int)$request['timerequested']),
             $rowactions,
         ];
     }
@@ -480,15 +486,11 @@ $emptybodies = [
     'off' => 'overallreport:queueholdsoffbody',
 ];
 $risksettingsurl = (new moodle_url('/admin/settings.php', ['section' => 'modsettingsquizcatproctoring']))->out(false);
+// Order and vocabulary follow the review team's own words: the work is "withheld certificates" and
+// "confirmed violations", not "waiting for your review" and "escalated". All attempts leads because
+// it is the set every other card is a slice of; Clean has no card (nothing there is ever work) but
+// keeps its view pill, so no row is unreachable.
 $pulse = [
-    [
-        'num' => $summary['needsreview'],
-        'label' => get_string('overallreport:pulse_needs', 'quizaccess_proctoring'),
-        'hint' => get_string($needshints[$holdreachability], 'quizaccess_proctoring'),
-        'url' => $queueurl('needs'),
-        'iscritical' => $summary['needsreview'] > 0,
-        'isactive' => $queue === 'needs',
-    ],
     [
         'num' => $summary['totalattempts'],
         'label' => get_string('overallreport:pulse_attempts', 'quizaccess_proctoring'),
@@ -498,12 +500,20 @@ $pulse = [
         'isactive' => $queue === 'all',
     ],
     [
-        'num' => $summary['clean'],
-        'label' => get_string('overallreport:pulse_clean', 'quizaccess_proctoring'),
-        'hint' => get_string('overallreport:pulse_clean_hint', 'quizaccess_proctoring'),
-        'url' => $queueurl('clean'),
+        'num' => $summary['flagged'],
+        'label' => get_string('overallreport:pulse_flagged', 'quizaccess_proctoring'),
+        'hint' => get_string('overallreport:pulse_flagged_hint', 'quizaccess_proctoring'),
+        'url' => $queueurl('flagged'),
         'iscritical' => false,
-        'isactive' => $queue === 'clean',
+        'isactive' => $queue === 'flagged',
+    ],
+    [
+        'num' => $summary['needsreview'],
+        'label' => get_string('overallreport:pulse_needs', 'quizaccess_proctoring'),
+        'hint' => get_string($needshints[$holdreachability], 'quizaccess_proctoring'),
+        'url' => $queueurl('needs'),
+        'iscritical' => $summary['needsreview'] > 0,
+        'isactive' => $queue === 'needs',
     ],
     [
         'num' => $summary['escalated'],
@@ -518,9 +528,9 @@ $pulse = [
 // click always lights up a pill too.
 $views = [
     [
-        'label' => get_string('overallreport:view_needs', 'quizaccess_proctoring', $summary['needsreview']),
-        'url' => $queueurl('needs'),
-        'isactive' => $queue === 'needs',
+        'label' => get_string('overallreport:view_all', 'quizaccess_proctoring'),
+        'url' => $queueurl('all'),
+        'isactive' => $queue === 'all',
     ],
     [
         'label' => get_string('overallreport:view_flagged', 'quizaccess_proctoring', $summary['flagged']),
@@ -528,9 +538,9 @@ $views = [
         'isactive' => $queue === 'flagged',
     ],
     [
-        'label' => get_string('overallreport:view_reviewed', 'quizaccess_proctoring'),
-        'url' => $queueurl('reviewed'),
-        'isactive' => $queue === 'reviewed',
+        'label' => get_string('overallreport:view_needs', 'quizaccess_proctoring', $summary['needsreview']),
+        'url' => $queueurl('needs'),
+        'isactive' => $queue === 'needs',
     ],
     [
         'label' => get_string('overallreport:view_escalated', 'quizaccess_proctoring'),
@@ -538,14 +548,14 @@ $views = [
         'isactive' => $queue === 'escalated',
     ],
     [
+        'label' => get_string('overallreport:view_reviewed', 'quizaccess_proctoring'),
+        'url' => $queueurl('reviewed'),
+        'isactive' => $queue === 'reviewed',
+    ],
+    [
         'label' => get_string('overallreport:view_clean', 'quizaccess_proctoring'),
         'url' => $queueurl('clean'),
         'isactive' => $queue === 'clean',
-    ],
-    [
-        'label' => get_string('overallreport:view_all', 'quizaccess_proctoring'),
-        'url' => $queueurl('all'),
-        'isactive' => $queue === 'all',
     ],
 ];
 
@@ -602,6 +612,19 @@ $templatecontext = [
     'queue' => $queue,
     'pulse' => $pulse,
     'views' => $views,
+    // The withheld-certificate rows are also the Held certificates tab's population, so the
+    // explainer says so rather than leaving two names for one set of attempts.
+    'flowheldnote' => get_string(
+        'overallreport:flow_held',
+        'quizaccess_proctoring',
+        html_writer::link(
+            new moodle_url(
+                '/mod/quiz/accessrule/proctoring/overall_reports.php',
+                ['view' => 'held']
+            ),
+            get_string('heldcertificates:heading', 'quizaccess_proctoring')
+        )
+    ),
     'countnote' => get_string('overallreport:countnote', 'quizaccess_proctoring', (object)[
         'shown' => count($data['rows']),
         'total' => $summary['totalattempts'],

@@ -756,10 +756,6 @@ final class overall_report {
             )
             : [];
 
-        // Dates match the quiz Grades report, which lists these same attempts: reading one report
-        // against the other should not mean translating between two date formats.
-        $dateformat = str_replace(',', ' ', get_string('strftimedatetime'));
-
         // The reviewers named on signed-off rows, in one query rather than one per row.
         $reviewerids = [];
         foreach ($pagerows as $a) {
@@ -849,7 +845,7 @@ final class overall_report {
                     'reviewer' => $reviewer
                         ? fullname($reviewer)
                         : get_string('overallreport:unknownuser', 'quizaccess_proctoring'),
-                    'date' => userdate((int)$signoff->timecreated),
+                    'date' => display_time::staff((int)$signoff->timecreated),
                 ]);
             }
 
@@ -944,12 +940,12 @@ final class overall_report {
                 'scorelabel' => $scorelabel,
                 'duration' => $durationseconds > 0 ? format_time($durationseconds) : '',
                 'accountage' => $accountage === null ? '' : format_time($accountage),
-                'accountcreated' => $a['usercreated'] > 0 ? userdate((int)$a['usercreated'], $dateformat) : '',
+                'accountcreated' => $a['usercreated'] > 0 ? display_time::staff((int)$a['usercreated']) : '',
                 // Straight into the attempt Moodle recorded, which is the evidence behind the row.
                 'attempturl' => (int)$a['attemptid'] > 0
                     ? (new moodle_url('/mod/quiz/review.php', ['attempt' => (int)$a['attemptid']]))->out(false)
                     : '',
-                'lastactivity' => $a['lastactivity'] > 0 ? userdate($a['lastactivity'], $dateformat) : '',
+                'lastactivity' => display_time::staff((int)$a['lastactivity']),
                 'riskscore' => $risk['score'],
                 'risklevel' => $risk['level'],
                 'levelkey' => $risk['levelkey'] ?? '',
@@ -1094,6 +1090,19 @@ final class overall_report {
         // Same bulk scoring pass as the attempts list: this page shows live scores too.
         $pagescores = self::score_attempts($pagerows);
 
+        // The attempts behind the rows, so the table can show when the attempt itself finished.
+        // "Held since" is when the hold opened, which is a different moment, and a table with one
+        // unlabelled date invites the question of which one it is.
+        $attemptids = [];
+        foreach ($pagerows as $a) {
+            if ((int)$a['attemptid'] > 0) {
+                $attemptids[(int)$a['attemptid']] = true;
+            }
+        }
+        $quizattempts = !empty($attemptids)
+            ? $DB->get_records_list('quiz_attempts', 'id', array_keys($attemptids), '', 'id, timefinish')
+            : [];
+
         foreach ($pagerows as $rowkey => $a) {
             $user = $users[$a['userid']] ?? null;
             if (!isset($coursecache[$a['courseid']])) {
@@ -1115,12 +1124,16 @@ final class overall_report {
             ]);
             $userurl = new moodle_url('/user/view.php', ['id' => $a['userid'], 'course' => $a['courseid']]);
 
+            $attempt = $quizattempts[(int)$a['attemptid']] ?? null;
+
             $rows[] = [
                 'fullname' => $user ? fullname($user) : get_string('overallreport:unknownuser', 'quizaccess_proctoring'),
+                'email' => $user ? $user->email : '',
                 'userurl' => $userurl->out(false),
                 'course' => $coursecache[$a['courseid']],
                 'quiz' => $quizcache[$a['cmid']],
-                'heldsince' => $a['timecreated'] > 0 ? userdate($a['timecreated']) : '',
+                'attemptfinished' => $attempt ? display_time::staff((int)$attempt->timefinish) : '',
+                'heldsince' => display_time::staff((int)$a['timecreated']),
                 'riskscore' => $risk['score'],
                 'risklevel' => $risk['level'],
                 'riskbadgeclass' => $risk['badgeclass'],

@@ -2244,9 +2244,15 @@ function quizaccess_proctoring_certificate_date_for_release(int $timefinish, int
  *
  * Allowlisted sort keys map to columns exposed by the per-quiz report query (see report.php):
  *  - 'name'       -> student name (last name, then first name).
+ *  - 'lastname'   -> surname, then first name - the grade report's "Surname / First name" sort,
+ *                    which reviewers use to spot duplicate accounts.
+ *  - 'firstname'  -> first name, then surname.
+ *  - 'email'      -> email address, the identifier staff treat as unique.
  *  - 'date'       -> attempt/report activity time (`timemodified`).
  *  - 'risk'       -> computed risk score (`riskscore`).
- *  - 'violations' -> suspicious event count (`eventcount`).
+ *  - 'violations' -> scored findings, then the suspicious event count behind them.
+ *  - 'score'      -> the attempt's own grade (`score`).
+ *  - 'accountage' -> account creation time (`accountage`); ascending lists the oldest account first.
  *
  * @param string $sort Requested sort key.
  * @param string $dir Requested direction ('asc' or 'desc'); anything else defaults to descending.
@@ -2257,9 +2263,14 @@ function quizaccess_proctoring_report_order_by(string $sort, string $dir): strin
     // text ever reaches the returned fragment, so this cannot be used for SQL injection.
     $columns = [
         'name' => ['lastname', 'firstname'],
+        'lastname' => ['lastname', 'firstname'],
+        'firstname' => ['firstname', 'lastname'],
+        'email' => ['email'],
         'date' => ['timemodified'],
         'risk' => ['riskscore'],
-        'violations' => ['eventcount'],
+        'violations' => ['findingcount', 'eventcount'],
+        'score' => ['score'],
+        'accountage' => ['accountage'],
     ];
 
     // Newest-first default used for unknown/blank sort keys (Requirement 13.1).

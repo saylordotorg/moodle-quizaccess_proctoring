@@ -1,7 +1,38 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-# Unreleased
+# v1.8.0
+The review dashboard now uses the review team's own vocabulary, and the report's event count agrees with the report.
+
+Buckets, naming and flow (feedback v2, "Master Dashboard"):
+- The four pulse cards are reordered and renamed to what the work actually is: **All attempts → Flagged attempts → Withheld certificates → Confirmed violations**. "Waiting for your review" became **Withheld certificates** (Student Affairs has not settled what reviewing means, so the old title promised a process that does not exist yet), "Escalated cases" became **Confirmed violations** (they are closed cases, not cases waiting on someone else), and the Clean card is replaced by **Flagged attempts** — a bucket with something in it to read is worth a card, a bucket with nothing to do is not. Clean keeps its view pill, so no row became unreachable. Row statuses follow: "Needs review" now reads "Certificate withheld" and "Escalated" reads "Violation confirmed".
+- New collapsed "How an attempt gets here, and what to do with it" explainer above the queue, stating the whole lifecycle in one screen: score → hold → withheld certificate → released (Reviewed) or confirmed (Confirmed violations), with Flagged for signals that never opened a hold and Clean for nothing detected. It answers "What is the intended flow here?" and "After I have reviewed a report, what do I do with it?" where those questions get asked, instead of in a reply thread.
+- The explainer also links the **Held certificates** tab and says how it relates: the same withheld attempts, one row per certificate. The two names described one population and nothing said so.
+- The "Min. detected events" filter now says what it counts (suspicious browser events plus face mismatches, recovery events excluded) and names its two surprises: the period filter applies to the events, so an attempt can read Clean at "Last 7 days" and Flagged at "All time"; and a minimum of 1 or more necessarily makes the Clean count zero.
+
+The per-quiz proctoring report:
+- **Fixed the suspicious-activity count.** It totalled every stored event row, including recovery and informational events, so an attempt with four findings reported "724 suspicious activities" — a number that could not be reconciled with anything on the page. The column is now **Findings**: the scored findings the report body shows (minus any dismissed as false positives), with the suspicious-event total behind them ("from 187 suspicious events") and the full explanation on hover. Suspicious events are counted the same way the site-wide dashboard counts them.
+- New **Exam score** and **Account age** columns, and a per-row **View attempt** link into the student's own quiz attempt — the three things a reviewer previously had to open the grade report and the profile to find.
+- "Time taken" is now **Duration**, matching the grade report.
+- Sortable **Email address** column, and **Surname / First name** sort separately in the name column, as on the grade report — reviewers switch between the two to spot duplicate accounts. Exam score and Account age sort too.
+- The speed finding now states its own threshold: "Completed in 8 mins — about 9 secs per question across 50 questions, against a configured minimum of 15 secs per question." The factor was named "Unusually fast completion" and never said whether that meant a percentile or a clock; it is now "Faster than the minimum pace".
+
+Manage overrides and the ID exception queue:
+- Student names and Moodle IDs link to the profile, and identity is split into **Student / Email address / ID** columns instead of one "name · email" cell, matching other Moodle participant tables. Applied to the pending-requests table, the active-overrides table, and the site-wide ID exceptions queue.
+- The required **Justification** is now a column on the active-overrides table. It was captured on create and edit, written to the database, and then only discoverable through the audit trail.
+
+Dates:
+- Every date the plugin shows staff now goes through one helper: core's quiz-report format (so the proctoring reports and the Grades report do not need translating between each other) in Eastern time with the zone named. Request and expiry times previously fell back to the server timezone whenever the reader had no timezone on their profile, which is how they came to read as Central; a bare wall-clock time with no zone could not be checked by whoever read it next. This is the same decision the exception emails already made, and they now share the constant.
+
+Held certificates:
+- New **Attempt finished** and **Email address** columns. "Held since" is when the hold opened, which is a different moment from the submission, and a table with one unlabelled date invites the question of which one it is — both are now named in the intro line.
+
+Scoring:
+- **The risk score is no longer capped at 100**, on new installs and on upgrade. The 100 boundary is a presentation choice, not a measurement; while the scoring model is still being evaluated the raw total is the useful number, and clamping it makes an attempt that scored 240 indistinguishable from one that scored 100. Reports keep the "score/100" label, so a display such as 135/100 is expected. Sites that want the cap back tick "Cap attempt risk score at 100" on the Risk factor scoring page.
+- "Voices or sounds detected" now says what it is: a loudness threshold, not speech recognition. It cannot tell a person talking from a television or a passing siren, nothing is recorded or transcribed, and a student reading questions aloud to themselves will trigger it. Read it as "something was audible", not as evidence of what was said.
+
+Also in this release, the work previously listed as unreleased:
+
 Desktop capture no longer fails students for looking away from their own screen.
 - The "Desktop capture required" gate could refuse a perfectly correct entire-screen share and never let the student past. The screen check marker was sampled once, the instant the share was granted, and a miss both stopped the stream and put the gate back up — but at that moment the marker is routinely covered by something the student did not put there: the browser's own share picker closing, its "you are sharing your screen" bubble, a notification, the Dock, or another application that the desktop brings forward as the grant completes.
 - The marker check now tolerates that. The share is accepted the moment the marker appears, and only faulted once the marker has been missing for a full 30 seconds — the same grace the persistent helper window already applied. A fault no longer stops the stream either, so a student who brings the quiz window back to the front recovers without being prompted to share again, and repeated misses are logged once per grace period instead of on every check. The same one-sample check in the Start attempt precheck now retries for up to 10 seconds.
@@ -9,7 +40,7 @@ Desktop capture no longer fails students for looking away from their own screen.
 - The marker detector's search window is now sized from the marker's actual footprint in the captured frame instead of a fixed 96x64 pixels. The marker's colour row is 186 CSS pixels wide, which lands as roughly 138 pixels of the analysed frame on a typical laptop screen — wider than the window — so detection depended on a window that clipped the outer two swatches and still scraped past a flat 18-sample floor. The floor now scales with the area a whole swatch covers, which is deliberately stricter: a wider window would otherwise make it easier for unrelated colourful desktop content to satisfy all three colours by coincidence.
 - A desktop share that is granted but never delivers a video frame now reports that, instead of leaving the gate up with no message and no way forward.
 
-Also unreleased:
+Also:
 - Students whose proctoring violation is confirmed by a reviewer now see an on-page notice on the quiz page, instead of the interim "Certificate review in progress" alert silently disappearing. The quiz page previously rendered notices only for the active-hold and automatic-failure states, so after a reviewer confirmed a violation the outcome reached the student only through the notification email and the gradebook feedback line. The new red alert ("Proctoring violation confirmed") names the risk score, the threshold, and both consequences — grade zero and certificate eligibility withheld. Gated by the existing "Show high-risk hold notice to students" setting, like the other two notices.
 - New `quizaccess/proctoring:manageadminsettings` capability (system context, RISK_CONFIG, allowed for managers) lets a role administer the site-wide proctoring settings without `moodle/site:config`. It opens the settings page, the risk factor scoring page, Overall reports, and the users list (including the reference-photo upload and delete actions and the photos themselves). Credentials stay site-admin only: the Turnstile secret key, the custom AI API key, the ID verification API key, and the whole AI review section (provider, models, all three provider API keys) are still rendered only for `$hassiteconfig`, as are Review diagnostics, Cost estimate, and the site-wide "delete all images" button. The AI jump-to tab is dropped from the settings nav for capability holders so it can't scroll to a section that isn't there.
 

@@ -26,15 +26,16 @@
         "sortoptions": [{"value": "recent", "label": "Most recent activity", "selected": true}],
         "risklevoptions": [{"value": "", "label": "Any risk level", "selected": true}],
         "riskmin": 0, "riskmax": 100, "riskmaxbound": 100,
-        "pulse": [{"num": 2, "label": "Waiting for your review", "hint": "Flagged attempts", "url": "#", "iscritical": true, "isactive": true}],
-        "views": [{"label": "Needs review (2)", "url": "#", "isactive": true}],
+        "pulse": [{"num": 2, "label": "Withheld certificates", "hint": "Grade and certificate held, no decision yet", "url": "#", "iscritical": true, "isactive": true}],
+        "views": [{"label": "Withheld certificates (2)", "url": "#", "isactive": true}],
+        "flowheldnote": "The same withheld attempts are listed on the <a href=\"#\">Held certificates</a> tab.",
         "countnote": "Showing 2 of 12 attempts",
         "rows": [
             {
                 "fullname": "John Doe", "email": "john.doe@example.com", "userurl": "#", "course": "CS105", "quiz": "Final exam",
                 "violations": 7, "violationsbreakdown": "(5 events, 2 face mismatches)", "eventcountlabel": "7 detected events",
                 "lastactivity": "1 January 2026  10:00 AM", "riskscore": 85, "risklevel": "Critical", "levelkey": "critical",
-                "signalsummary": "AI tool (2) · Tab switching (5)", "statuslabel": "Needs review", "reviewstate": "needs",
+                "signalsummary": "AI tool (2) · Tab switching (5)", "statuslabel": "Certificate withheld", "reviewstate": "needs",
                 "isneeds": true, "hassignals": true,
                 "signals": [{"factor": "AI tool", "pts": "+30"}],
                 "breakdown": [{"factor": "AI tool", "pts": "+30"}],
@@ -101,9 +102,13 @@
                        aria-label="{{#str}}overallreport:filterriskmax, quizaccess_proctoring{{/str}}">
             </span>
         </div>
+        {{! The count this filters on is not obvious from its name, and two of its behaviours
+            surprise people often enough to be worth writing down next to the input. }}
         <label class="proctoring-overview-filter">
-            <span>{{#str}}overallreport:filterminviolations, quizaccess_proctoring{{/str}}</span>
-            <input type="number" min="0" name="minviolations" value="{{minviolations}}">
+            <span title="{{#str}}overallreport:filterminviolations_help, quizaccess_proctoring{{/str}}">{{#str}}overallreport:filterminviolations, quizaccess_proctoring{{/str}}</span>
+            <input type="number" min="0" name="minviolations" value="{{minviolations}}"
+                   aria-describedby="proctoring-minviolations-help-{{uniqid}}">
+            <small class="proctoring-overview-filterhelp" id="proctoring-minviolations-help-{{uniqid}}">{{#str}}overallreport:filterminviolations_hint, quizaccess_proctoring{{/str}}</small>
         </label>
         <button type="submit" class="btn btn-secondary proctoring-overview-apply">{{#str}}overallreport:apply, quizaccess_proctoring{{/str}}</button>
         {{#hasstudentfilter}}
@@ -127,6 +132,23 @@
         </a>
         {{/pulse}}
     </div>
+
+    {{! What the buckets mean and what a reviewer is expected to do with each one. Collapsed, so it
+        answers the question without taking space from the queue once the answer is known. }}
+    <details class="proctoring-overview-flow">
+        <summary>{{#str}}overallreport:flowtitle, quizaccess_proctoring{{/str}}</summary>
+        <div class="proctoring-overview-flowbody">
+            <p>{{#str}}overallreport:flowintro, quizaccess_proctoring{{/str}}</p>
+            <ul>
+                <li>{{#str}}overallreport:flow_flagged, quizaccess_proctoring{{/str}}</li>
+                <li>{{#str}}overallreport:flow_needs, quizaccess_proctoring{{/str}}</li>
+                <li>{{#str}}overallreport:flow_escalated, quizaccess_proctoring{{/str}}</li>
+                <li>{{#str}}overallreport:flow_reviewed, quizaccess_proctoring{{/str}}</li>
+                <li>{{#str}}overallreport:flow_clean, quizaccess_proctoring{{/str}}</li>
+            </ul>
+            <p>{{{flowheldnote}}}</p>
+        </div>
+    </details>
 
     {{! View pills. }}
     <div class="proctoring-overview-views">

@@ -1240,5 +1240,20 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072128, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026081900) {
+        // The attempt risk score is no longer capped at 100. The 100 boundary is a presentation
+        // choice rather than a measurement, and while the scoring model is still being evaluated
+        // the raw total is the useful number: clamping it makes an attempt that scored 240
+        // indistinguishable from one that scored 100, which is exactly the comparison the review
+        // team needs to make.
+        //
+        // Written unconditionally, once. The previous shipped default was 1, so a stored 1 cannot
+        // be told apart from "never touched" - and this is the change the review team asked for on
+        // the live site, not only on fresh installs. Sites that want the cap back tick "Cap attempt
+        // risk score at 100" on the Risk factor scoring page; nothing else about scoring changes.
+        set_config('riskscorecapenabled', 0, 'quizaccess_proctoring');
+        upgrade_plugin_savepoint(true, 2026081900, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

@@ -22,7 +22,8 @@
         "rows": [
             {
                 "fullname": "John Doe", "userurl": "https://example.com/user",
-                "course": "CS105", "quiz": "Final exam", "heldsince": "1 Jan 2026, 10:00",
+                "email": "john.doe@example.com", "course": "CS105", "quiz": "Final exam",
+                "attemptfinished": "1 January 2026  9:42 AM EST", "heldsince": "1 January 2026  9:43 AM EST",
                 "riskscore": 85, "risklevel": "Critical", "riskbadgeclass": "proctoring-risk-badge",
                 "holdlabel": "On hold", "holdclass": "proctoring-cert-held",
                 "viewurl": "https://example.com/report"
@@ -45,8 +46,10 @@
         <thead>
             <tr>
                 <th>{{#str}}heldcertificates:colstudent, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}heldcertificates:colemail, quizaccess_proctoring{{/str}}</th>
                 <th>{{#str}}heldcertificates:colcourse, quizaccess_proctoring{{/str}}</th>
                 <th>{{#str}}heldcertificates:colquiz, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}heldcertificates:colattemptfinished, quizaccess_proctoring{{/str}}</th>
                 <th>{{#str}}heldcertificates:colheldsince, quizaccess_proctoring{{/str}}</th>
                 <th>{{#str}}heldcertificates:colrisk, quizaccess_proctoring{{/str}}</th>
                 <th>{{#str}}heldcertificates:colcertificate, quizaccess_proctoring{{/str}}</th>
@@ -57,8 +60,10 @@
             {{#rows}}
             <tr>
                 <td><a href="{{userurl}}" target="_blank">{{fullname}}</a></td>
+                <td>{{email}}</td>
                 <td>{{course}}</td>
                 <td>{{quiz}}</td>
+                <td>{{attemptfinished}}</td>
                 <td>{{heldsince}}</td>
                 <td><span class="{{riskbadgeclass}}">{{riskscore}}/100 {{risklevel}}</span></td>
                 <td><span class="{{holdclass}}">{{holdlabel}}</span></td>

@@ -554,6 +554,9 @@ if (
                 continue;
             }
             $row = [];
+            // Carried on the row so the post-pass below can key the score and account-age lookups
+            // off it without re-reading the recordset.
+            $row['studentid'] = (int)$info->studentid;
             $row['userlink'] = $CFG->wwwroot . '/user/view.php?id=' . $info->studentid . '&course=' . $courseid;
             $row['fullname'] = $info->firstname . ' ' . $info->lastname;
             $row['email'] = $info->email;
@@ -568,12 +571,21 @@ if (
             // Identity Mismatch rendered as a localized Yes/No (Requirement 18.2). A present
             // face-match warning row (non-empty warningid) means the identity did not match.
             $row['identitymismatch'] = quizaccess_proctoring_identity_mismatch_label($info->warningid);
-            $row['eventcount'] = $DB->count_records('quizaccess_proctoring_events', [
-                'courseid' => $courseid,
-                'quizid' => $cmid,
-                'userid' => $info->studentid,
-            ]);
-            $row['eventwarning'] = $row['eventcount'] > 0;
+            // Count only the event types that can score, which is what the report body shows and
+            // what the site-wide dashboard counts. Counting every stored row instead made this
+            // column read "724 suspicious activities" for an attempt with four findings: the table
+            // was totalling recovery and informational events too, and no reviewer could reconcile
+            // that number with anything on the page.
+            [$evtsql, $evtparams] = $DB->get_in_or_equal(
+                \quizaccess_proctoring\local\overall_report::SUSPICIOUS_EVENT_TYPES,
+                SQL_PARAMS_NAMED,
+                'evt'
+            );
+            $row['eventcount'] = $DB->count_records_select(
+                'quizaccess_proctoring_events',
+                "courseid = :courseid AND quizid = :quizid AND userid = :userid AND eventtype {$evtsql}",
+                ['courseid' => $courseid, 'quizid' => $cmid, 'userid' => $info->studentid] + $evtparams
+            );
             $risk = quizaccess_proctoring_calculate_attempt_risk(
                 (int)$courseid,
                 (int)$cmid,
@@ -584,9 +596,41 @@ if (
             $row['risklevel'] = $risk['level'];
             $row['riskbadgeclass'] = $risk['badgeclass'];
             $row['timetaken'] = $risk['durationformatted'];
+            // The findings the report body actually shows: risk factors that scored, minus any a
+            // reviewer has already dismissed as a false positive. This is the number the reviewer
+            // is counting on screen, so it leads the column and the raw event total sits behind it.
+            $findingcount = 0;
+            foreach ($risk['factors'] as $factor) {
+                if (!empty($factor['falsepositive'])) {
+                    continue;
+                }
+                if ((int)($factor['points'] ?? 0) > 0) {
+                    $findingcount++;
+                }
+            }
+            $row['findingcount'] = $findingcount;
+            $row['findinglabel'] = $findingcount > 0
+                ? (string)$findingcount
+                : get_string('report:nofindings', 'quizaccess_proctoring');
+            $row['eventcountlabel'] = get_string(
+                'report:fromevents',
+                'quizaccess_proctoring',
+                (int)$row['eventcount']
+            );
+            $row['findingtitle'] = get_string('report:findingcounttitle', 'quizaccess_proctoring', (object)[
+                'findings' => $findingcount,
+                'events' => (int)$row['eventcount'],
+            ]);
+            $row['eventwarning'] = $findingcount > 0;
+            $row['attemptid'] = (int)$risk['attemptid'];
+            $row['attempturl'] = (int)$risk['attemptid'] > 0
+                ? (new moodle_url('/mod/quiz/review.php', ['attempt' => (int)$risk['attemptid']]))->out(false)
+                : '';
             // Raw values used only for the PHP-side column sort (Requirement 13.2).
             $row['sortriskscore'] = (int)$risk['score'];
             $row['sorteventcount'] = (int)$row['eventcount'];
+            $row['sortfindingcount'] = $findingcount;
+            $row['sortemail'] = \core_text::strtolower((string)$info->email);
             $hold = quizaccess_proctoring_get_risk_hold(
                 (int)$courseid,
                 (int)$cmid,
@@ -684,6 +728,55 @@ if (
             $rows[] = $row;
     }
 
+    // What the attempt scored and how old the account was. Both come from one query each over the
+    // whole result set rather than per row: a reviewer asks these two questions about every row,
+    // and until now had to open the grade report and the profile to answer them.
+    $rowattemptids = [];
+    $rowuserids = [];
+    foreach ($rows as $row) {
+        if (!empty($row['attemptid'])) {
+            $rowattemptids[(int)$row['attemptid']] = true;
+        }
+        if (!empty($row['studentid'])) {
+            $rowuserids[(int)$row['studentid']] = true;
+        }
+    }
+    // quiz_rescale_grade() turns a raw sumgrades into the grade the quiz reports show.
+    require_once($CFG->dirroot . '/mod/quiz/locallib.php');
+    $rowattempts = !empty($rowattemptids)
+        ? $DB->get_records_list('quiz_attempts', 'id', array_keys($rowattemptids), '', 'id, sumgrades')
+        : [];
+    $rowusers = !empty($rowuserids)
+        ? $DB->get_records_list('user', 'id', array_keys($rowuserids), '', 'id, timecreated')
+        : [];
+    foreach ($rows as $index => $row) {
+        $attempt = $rowattempts[(int)($row['attemptid'] ?? 0)] ?? null;
+        $rows[$index]['scorelabel'] = '';
+        $rows[$index]['sortscore'] = -1.0;
+        if ($attempt) {
+            $rows[$index]['scorelabel'] = $attempt->sumgrades === null
+                ? get_string('overallreport:notgraded', 'quizaccess_proctoring')
+                : get_string('overallreport:scoreoutof', 'quizaccess_proctoring', (object)[
+                    'score' => quiz_rescale_grade($attempt->sumgrades, $quiz, true),
+                    'max' => format_float($quiz->grade, $quiz->decimalpoints),
+                ]);
+            if ($attempt->sumgrades !== null) {
+                $rows[$index]['sortscore'] = (float)$attempt->sumgrades;
+            }
+        }
+
+        // Keyed off the signup date, not the elapsed time: an account created minutes ago has an
+        // age of about zero, which format_time() renders as "now" - the truth, where a blank cell
+        // would read as "we do not know".
+        $created = isset($rowusers[(int)($row['studentid'] ?? 0)])
+            ? (int)$rowusers[(int)$row['studentid']]->timecreated
+            : 0;
+        $rows[$index]['accountage'] = $created > 0 ? format_time(max(0, time() - $created)) : '';
+        $rows[$index]['accountcreated'] = \quizaccess_proctoring\local\display_time::staff($created);
+        // Older account first when sorting ascending, so the sort reads the way the column does.
+        $rows[$index]['sortaccountage'] = $created > 0 ? $created : PHP_INT_MAX;
+    }
+
     // Apply the selected column sort over the full result set (Requirement 13.2). The safe
     // ORDER BY fragment comes from the allowlist helper and is translated into an in-PHP sort so
     // that PHP-computed columns (risk score, violation count) sort consistently with SQL columns
@@ -692,9 +785,13 @@ if (
     $sortfieldmap = [
         'lastname' => 'sortlastname',
         'firstname' => 'sortfirstname',
+        'email' => 'sortemail',
         'timemodified' => 'sorttimemodified',
         'riskscore' => 'sortriskscore',
+        'findingcount' => 'sortfindingcount',
         'eventcount' => 'sorteventcount',
+        'score' => 'sortscore',
+        'accountage' => 'sortaccountage',
     ];
     $sortpairs = [];
     foreach (explode(',', $orderby) as $fragment) {
@@ -757,10 +854,16 @@ if (
     };
 
     $sortheaders = [
-        'name' => $makesortheader('name', 'user'),
+        // Surname and first name sort separately, as on the grade report: reviewers switch between
+        // the two to spot duplicate accounts, and one combined "Users" sort cannot do that.
+        'lastname' => $makesortheader('lastname', 'report:col_lastname'),
+        'firstname' => $makesortheader('firstname', 'report:col_firstname'),
+        'email' => $makesortheader('email', 'email'),
         'date' => $makesortheader('date', 'dateverified'),
-        'violations' => $makesortheader('violations', 'suspiciousactivity'),
+        'violations' => $makesortheader('violations', 'report:col_findings'),
         'risk' => $makesortheader('risk', 'riskscore'),
+        'score' => $makesortheader('score', 'report:col_score'),
+        'accountage' => $makesortheader('accountage', 'report:col_accountage'),
     ];
 
     // A–Z initial bars (Requirement 13.3): one for first name, one for last name.
@@ -1159,6 +1262,21 @@ if (
                 'factorkey' => $factorkey,
                 'isfalsepositive' => $isfalsepositive,
             ];
+            // The speed factor is the one finding whose threshold a reviewer cannot see anywhere on
+            // the page, and "unusually fast" invites the question of whether that means a percentile
+            // or a clock. State the attempt's own pace next to the configured minimum.
+            if ($factorkey === 'speed' && (int)($riskscore['questioncount'] ?? 0) > 0) {
+                $finding['evidence'] = get_string(
+                    'verdict:speedevidence',
+                    'quizaccess_proctoring',
+                    (object)[
+                        'duration' => $riskscore['durationformatted'],
+                        'perquestion' => (int)$riskscore['secondsperquestion'],
+                        'questions' => (int)$riskscore['questioncount'],
+                        'minimum' => (int)($riskscore['speedfloor'] ?? 0),
+                    ]
+                );
+            }
             if ($isfalsepositive && isset($fpmarks[$factorkey])) {
                 $fpmark = $fpmarks[$factorkey];
                 $fpreviewer = core_user::get_user((int)$fpmark->reviewerid);

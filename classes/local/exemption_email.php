@@ -52,12 +52,11 @@ class exemption_email {
     /**
      * @var string Timezone every date in these emails is shown in.
      *
-     * Not the server timezone and not the student's: staff and students need to read the
-     * same wall-clock time when they discuss a request, and the zone is printed alongside
-     * so a student elsewhere can convert it. Moodle would otherwise fall back to the
-     * server timezone whenever a student has not set one on their profile.
+     * Kept as an alias of {@see display_time::TIMEZONE} so the emails and the staff reports cannot
+     * drift apart: a reviewer and a student discussing the same request have to be reading the
+     * same wall-clock time.
      */
-    const DISPLAY_TIMEZONE = 'America/New_York';
+    const DISPLAY_TIMEZONE = display_time::TIMEZONE;
 
     /**
      * Sends the student the approval or decline decision.

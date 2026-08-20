@@ -127,14 +127,18 @@ final class risk_calculator {
     ];
 
     /**
-     * Determine whether the attempt risk score is capped at 100 (the default).
+     * Determine whether the attempt risk score is capped at 100.
+     *
+     * Off by default. The 100 boundary is a presentation choice, not a measurement: while the
+     * scoring model is still being evaluated, clamping to it hides how far past the threshold an
+     * attempt actually went, and two attempts scoring 100 and 240 are not the same attempt.
      *
      * @return bool True when the summed factor points are clamped to 100.
      */
     public static function score_cap_enabled(): bool {
         $value = get_config('quizaccess_proctoring', 'riskscorecapenabled');
         if ($value === false || $value === null || $value === '') {
-            return true;
+            return false;
         }
 
         return (int)$value === 1;
@@ -818,6 +822,10 @@ final class risk_calculator {
             'durationformatted' => $durationformatted,
             'secondsperquestion' => $secondsperquestion,
             'questioncount' => $questioncount,
+            // The pace the speed factor was judged against, so a report can state the threshold
+            // instead of asserting that something was "unusually fast" and leaving the reader to
+            // guess whether that means a percentile or a clock.
+            'speedfloor' => $speedfloor,
             'timetakenlabel' => $timetakenlabel,
         ];
     }

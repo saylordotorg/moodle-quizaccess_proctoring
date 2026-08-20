@@ -33,6 +33,7 @@ require_once(__DIR__ . '/../../../../config.php');
 require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
 use quizaccess_proctoring\form\override_form;
+use quizaccess_proctoring\local\display_time;
 use quizaccess_proctoring\local\id_exception;
 use quizaccess_proctoring\local\override_manager;
 use quizaccess_proctoring\local\override_resolver;
@@ -292,6 +293,8 @@ if (!empty($pendingrequests)) {
     $pendingtable = new html_table();
     $pendingtable->head = [
         get_string('override_targetstudent', $component),
+        get_string('override_targetemail', $component),
+        get_string('override_targetuserid', $component),
         get_string('idexemption:reasoncol', $component),
         get_string('idexemption:requestedcol', $component),
         get_string('override_actions', $component),
@@ -308,9 +311,17 @@ if (!empty($pendingrequests)) {
             'sesskey' => sesskey(),
         ]);
         $pendingtable->data[] = [
-            s($request['student']) . ($request['email'] !== '' ? ' · ' . s($request['email']) : ''),
+            html_writer::link(
+                new moodle_url('/user/profile.php', ['id' => $request['userid']]),
+                s($request['student'])
+            ),
+            $request['email'] !== '' ? s($request['email']) : '-',
+            html_writer::link(
+                new moodle_url('/user/profile.php', ['id' => $request['userid']]),
+                (int)$request['userid']
+            ),
             quizaccess_proctoring_render_id_exception_reason($request),
-            userdate($request['timerequested']),
+            display_time::staff((int)$request['timerequested']),
             html_writer::link(
                 $approveurl,
                 get_string('idexemption:approvebutton', $component),
@@ -339,6 +350,8 @@ if (empty($overrides)) {
 $table = new html_table();
 $table->head = [
     get_string('override_targetstudent', $component),
+    get_string('override_targetemail', $component),
+    get_string('override_targetuserid', $component),
     get_string('override_targetquiz', $component),
     get_string('override_nativeoverride', $component),
     get_string('override_affectedrequirements', $component),
@@ -349,6 +362,7 @@ $table->head = [
     get_string('override_multimonitorstate', $component),
     get_string('override_phonedetectionstate', $component),
     get_string('override_expiry', $component),
+    get_string('override_justification', $component),
     get_string('override_status', $component),
     get_string('override_actions', $component),
 ];
@@ -356,7 +370,17 @@ $table->data = [];
 
 foreach ($overrides as $override) {
     $student = $DB->get_record('user', ['id' => $override->userid]);
-    $studentname = $student ? fullname($student) : (string)$override->userid;
+    // Linked, and split into the columns other Moodle participant tables use: staff jump to the
+    // profile from here, and the email address is the identifier they match against other systems.
+    $studentname = html_writer::link(
+        new moodle_url('/user/profile.php', ['id' => (int)$override->userid]),
+        $student ? fullname($student) : (string)$override->userid
+    );
+    $studentemail = $student ? s($student->email) : '-';
+    $studentid = html_writer::link(
+        new moodle_url('/user/profile.php', ['id' => (int)$override->userid]),
+        (int)$override->userid
+    );
 
     $quizscope = ((int)$override->quizid === 0)
         ? get_string('override_scopecoursewide', $component)
@@ -385,7 +409,13 @@ foreach ($overrides as $override) {
         : $nativeoverrideexists((int)$override->userid, [(int)$override->quizid]);
     $nativecell = $native ? get_string('override_nativeexists', $component) : '-';
 
-    $expirycell = empty($override->expiry) ? '-' : userdate((int)$override->expiry);
+    $expirycell = empty($override->expiry) ? '-' : display_time::staff((int)$override->expiry);
+
+    // The justification is required when an override is created or edited, and until now was
+    // written to the database and never shown again - so the reason an exemption exists was only
+    // discoverable through the audit trail.
+    $justification = trim((string)$override->justification);
+    $justificationcell = $justification === '' ? '-' : s($justification);
 
     if ((int)$override->revoked === 1) {
         $status = get_string('override_status_revoked', $component);
@@ -401,6 +431,8 @@ foreach ($overrides as $override) {
 
     $table->data[] = [
         $studentname,
+        $studentemail,
+        $studentid,
         $quizscope,
         $nativecell,
         $affectedcell,
@@ -411,6 +443,7 @@ foreach ($overrides as $override) {
         $statecell($override->multimonitorstate),
         $statecell($override->phonedetectionstate),
         $expirycell,
+        $justificationcell,
         $status,
         $actions,
     ];

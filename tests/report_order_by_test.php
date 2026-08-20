@@ -57,9 +57,14 @@ final class report_order_by_test extends advanced_testcase {
      */
     private const ALLOWLIST = [
         'name' => ['lastname', 'firstname'],
+        'lastname' => ['lastname', 'firstname'],
+        'firstname' => ['firstname', 'lastname'],
+        'email' => ['email'],
         'date' => ['timemodified'],
         'risk' => ['riskscore'],
-        'violations' => ['eventcount'],
+        'violations' => ['findingcount', 'eventcount'],
+        'score' => ['score'],
+        'accountage' => ['accountage'],
     ];
 
     /**
@@ -149,10 +154,11 @@ final class report_order_by_test extends advanced_testcase {
      */
     private function generate_sort_key(): array {
         $known = array_keys(self::ALLOWLIST);
-        // Genuinely unknown keys only: note that column names like 'lastname'/'timemodified' are
-        // NOT allowlisted sort keys, and near-misses like 'names'/'risky' must not normalise to a
-        // known key after the helper trims and lower-cases the input.
-        $unknown = ['', '   ', 'email', 'lastname', 'DROP TABLE', 'timemodified', 'risk;', '123', 'names', 'risky'];
+        // Genuinely unknown keys only: note that column names like 'timemodified'/'eventcount' are
+        // NOT allowlisted sort keys (even where a same-named key exists for 'lastname', the key and
+        // the column are separate namespaces), and near-misses like 'names'/'risky' must not
+        // normalise to a known key after the helper trims and lower-cases the input.
+        $unknown = ['', '   ', 'DROP TABLE', 'timemodified', 'riskscore', 'risk;', '123', 'names', 'risky', 'eventcount'];
 
         if (mt_rand(0, 3) === 0) {
             // Unknown key branch (~1/4 of the time), exercises the newest-first default.
@@ -276,9 +282,13 @@ final class report_order_by_test extends advanced_testcase {
             $rows[] = [
                 'lastname' => $surnames[mt_rand(0, count($surnames) - 1)],
                 'firstname' => $givennames[mt_rand(0, count($givennames) - 1)],
+                'email' => 'user' . mt_rand(1, 40) . '@example.com',
                 'timemodified' => mt_rand(1, 2000000000),
                 'riskscore' => mt_rand(0, 100),
+                'findingcount' => mt_rand(0, 8),
                 'eventcount' => mt_rand(0, 50),
+                'score' => mt_rand(0, 100),
+                'accountage' => mt_rand(1, 2000000000),
             ];
         }
         return $rows;

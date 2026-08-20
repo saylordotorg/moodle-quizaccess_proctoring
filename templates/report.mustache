@@ -33,10 +33,17 @@
                 "userlink": "https://example.com/user/1",
                 "fullname": "John Doe",
                 "email": "john.doe@example.com",
-                "timemodified": "2024-01-01",
+                "timemodified": "1 January 2026  10:00 AM EST",
                 "identitymismatch": "No",
                 "eventwarning": true,
-                "eventcount": 2,
+                "findinglabel": "4",
+                "eventcountlabel": "from 187 suspicious events",
+                "findingtitle": "4 scored findings, from 187 suspicious events recorded during the attempt.",
+                "scorelabel": "17.00 / 20.00",
+                "timetaken": "42 mins 6 secs",
+                "accountage": "2 years 145 days",
+                "accountcreated": "14 March 2024  9:02 AM EDT",
+                "attempturl": "https://example.com/mod/quiz/review.php?attempt=9",
                 "riskbadgeclass": "badge badge-warning",
                 "riskscore": 70,
                 "risklevel": "Medium",
@@ -112,12 +119,22 @@
 <thead>
         <tr class="table-info">
             {{#showfilters}}
+            {{! Surname and first name sort separately, the way the grade report does it: reviewers
+                switch between the two to spot duplicate accounts. }}
             <th>
-                <a href="{{sortheaders.name.url}}" title="{{#str}}report_sort_by,quizaccess_proctoring,{{sortheaders.name.label}}{{/str}}">
-                    {{sortheaders.name.label}}{{#sortheaders.name.asc}} &#9650;{{/sortheaders.name.asc}}{{#sortheaders.name.desc}} &#9660;{{/sortheaders.name.desc}}
+                <a href="{{sortheaders.lastname.url}}" title="{{#str}}report_sort_by,quizaccess_proctoring,{{sortheaders.lastname.label}}{{/str}}">
+                    {{sortheaders.lastname.label}}{{#sortheaders.lastname.asc}} &#9650;{{/sortheaders.lastname.asc}}{{#sortheaders.lastname.desc}} &#9660;{{/sortheaders.lastname.desc}}
+                </a>
+                /
+                <a href="{{sortheaders.firstname.url}}" title="{{#str}}report_sort_by,quizaccess_proctoring,{{sortheaders.firstname.label}}{{/str}}">
+                    {{sortheaders.firstname.label}}{{#sortheaders.firstname.asc}} &#9650;{{/sortheaders.firstname.asc}}{{#sortheaders.firstname.desc}} &#9660;{{/sortheaders.firstname.desc}}
                 </a>
             </th>
-            <th>{{#str}}email,quizaccess_proctoring{{/str}}</th>
+            <th>
+                <a href="{{sortheaders.email.url}}" title="{{#str}}report_sort_by,quizaccess_proctoring,{{sortheaders.email.label}}{{/str}}">
+                    {{sortheaders.email.label}}{{#sortheaders.email.asc}} &#9650;{{/sortheaders.email.asc}}{{#sortheaders.email.desc}} &#9660;{{/sortheaders.email.desc}}
+                </a>
+            </th>
             <th>
                 <a href="{{sortheaders.date.url}}" title="{{#str}}report_sort_by,quizaccess_proctoring,{{sortheaders.date.label}}{{/str}}">
                     {{sortheaders.date.label}}{{#sortheaders.date.asc}} &#9650;{{/sortheaders.date.asc}}{{#sortheaders.date.desc}} &#9660;{{/sortheaders.date.desc}}
@@ -134,16 +151,32 @@
                     {{sortheaders.risk.label}}{{#sortheaders.risk.asc}} &#9650;{{/sortheaders.risk.asc}}{{#sortheaders.risk.desc}} &#9660;{{/sortheaders.risk.desc}}
                 </a>
             </th>
+            <th>
+                <a href="{{sortheaders.score.url}}" title="{{#str}}report_sort_by,quizaccess_proctoring,{{sortheaders.score.label}}{{/str}}">
+                    {{sortheaders.score.label}}{{#sortheaders.score.asc}} &#9650;{{/sortheaders.score.asc}}{{#sortheaders.score.desc}} &#9660;{{/sortheaders.score.desc}}
+                </a>
+            </th>
             {{/showfilters}}
             {{^showfilters}}
             <th>{{#str}}user,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}email,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}dateverified,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}identity_mismatch_label,quizaccess_proctoring{{/str}}</th>
-            <th>{{#str}}suspiciousactivity,quizaccess_proctoring{{/str}}</th>
+            <th>{{#str}}report:col_findings,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}riskscore,quizaccess_proctoring{{/str}}</th>
+            <th>{{#str}}report:col_score,quizaccess_proctoring{{/str}}</th>
             {{/showfilters}}
             <th>{{#str}}riskscore:timetaken,quizaccess_proctoring{{/str}}</th>
+            {{#showfilters}}
+            <th>
+                <a href="{{sortheaders.accountage.url}}" title="{{#str}}report_sort_by,quizaccess_proctoring,{{sortheaders.accountage.label}}{{/str}}">
+                    {{sortheaders.accountage.label}}{{#sortheaders.accountage.asc}} &#9650;{{/sortheaders.accountage.asc}}{{#sortheaders.accountage.desc}} &#9660;{{/sortheaders.accountage.desc}}
+                </a>
+            </th>
+            {{/showfilters}}
+            {{^showfilters}}
+            <th>{{#str}}report:col_accountage,quizaccess_proctoring{{/str}}</th>
+            {{/showfilters}}
             <th>{{#str}}aireview:shorttitle,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}actions,quizaccess_proctoring{{/str}}</th>
         </tr>
@@ -157,8 +190,11 @@
         <td>
             {{identitymismatch}}
         </td>
-        <td>
-            {{#eventwarning}}⚠️ {{/eventwarning}}{{eventcount}}
+        {{! The scored findings lead, with the raw suspicious-event total behind them: a bare event
+            total read as "724 suspicious activities" on an attempt with four findings. }}
+        <td title="{{findingtitle}}">
+            {{#eventwarning}}⚠️ {{/eventwarning}}{{findinglabel}}
+            <div class="text-muted small">{{eventcountlabel}}</div>
         </td>
         <td>
             <span class="{{riskbadgeclass}}">{{riskscore}}/100 {{risklevel}}</span>
@@ -166,9 +202,11 @@
                 <div class="proctoring-risk-hold-status {{#riskholdactive}}proctoring-risk-hold-active{{/riskholdactive}}">{{riskholdstatus}}</div>
             {{/riskholdstatus}}
         </td>
+        <td>{{#scorelabel}}{{scorelabel}}{{/scorelabel}}{{^scorelabel}}<span class="text-muted">&mdash;</span>{{/scorelabel}}</td>
         <td>
             {{#timetaken}}{{timetaken}}{{/timetaken}}{{^timetaken}}<span class="text-muted">&mdash;</span>{{/timetaken}}
         </td>
+        <td title="{{accountcreated}}">{{#accountage}}{{accountage}}{{/accountage}}{{^accountage}}<span class="text-muted">&mdash;</span>{{/accountage}}</td>
         <td>
             {{#aireview}}
                 {{#isfailed}}
@@ -187,6 +225,9 @@
         </td>
         <td>
             {{{actionmenu}}}
+            {{#attempturl}}
+            <a class="btn btn-link btn-sm p-0 d-block" href="{{attempturl}}">{{#str}}report:col_attemptlink,quizaccess_proctoring{{/str}}</a>
+            {{/attempturl}}
         </td>
     </tr>
 {{/rows}}
