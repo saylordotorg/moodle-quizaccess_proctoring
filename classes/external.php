@@ -58,6 +58,32 @@ class quizaccess_proctoring_external extends external_api {
     /** Maximum ID verification requests per user/module/window. */
     private const MAX_ID_VERIFICATIONS_PER_WINDOW = 12;
 
+    /**
+     * Maximum size of the assembled ID verification request body, in bytes.
+     *
+     * An AWS Lambda function URL - the shape of endpoint this integration is built against -
+     * refuses any request over 6 MB and does so before the function is invoked, so the rejection
+     * arrives instantly and leaves no trace on the provider side. The images are base64-encoded
+     * into JSON, which costs a third on top of their raw size, and the accepted input per image is
+     * measured in megabytes: three captures at the sizes students actually produce cleared 6 MB
+     * routinely, and every one of those attempts failed with "the provider is unavailable".
+     *
+     * So the body is budgeted before it is sent. 5 MB leaves room for the envelope and for any
+     * proxy that adds to a request in flight, and the transmitted copies of the images are
+     * re-encoded to fit it. Only the transmitted copies: the stored evidence keeps the full
+     * resolution the student's camera produced.
+     */
+    private const MAX_ID_VERIFICATION_PAYLOAD_BYTES = 5242880;
+
+    /** Smallest long edge an ID document is reduced to, in pixels. Below this the OCR suffers. */
+    private const MIN_ID_DOCUMENT_LONG_EDGE = 1400;
+
+    /** Smallest long edge the live comparison photo is reduced to, in pixels. */
+    private const MIN_ID_LIVE_LONG_EDGE = 480;
+
+    /** Floor for a single image's share of the payload budget, in bytes. */
+    private const MIN_ID_IMAGE_TARGET_BYTES = 122880;
+
     /** Common English name aliases accepted by the Moodle-side ID-name fuzzy fallback. */
     private const NAME_ALIAS_GROUPS = [
         ['alexander', 'alex', 'xander'],
@@ -1366,6 +1392,171 @@ class quizaccess_proctoring_external extends external_api {
      * @param string|null $idbackbytes Optional ID back document image bytes.
      * @return array Normalized result.
      */
+    /**
+     * The number of bytes a raw string costs once base64-encoded.
+     *
+     * @param int $rawbytes Raw byte count.
+     * @return int Encoded byte count.
+     */
+    private static function base64_encoded_size(int $rawbytes): int {
+        return (int)(ceil($rawbytes / 3) * 4);
+    }
+
+    /**
+     * Re-encode an image so it fits a byte ceiling, giving up quality before giving up detail.
+     *
+     * Quality is spent first because an ID document's legibility depends far more on its pixel
+     * dimensions than on its JPEG quality: a 60-quality 2000px scan still OCRs, a pristine 800px
+     * one often does not. Only when quality alone cannot reach the ceiling are dimensions reduced,
+     * and never below the caller's floor - past that point sending a smaller image just converts
+     * a transport failure into a verification failure, which is worse because it looks like the
+     * student's fault.
+     *
+     * @param string $bytes Raw image bytes.
+     * @param int $maxbytes Ceiling to fit under.
+     * @param int $minlongedge Smallest acceptable long edge, in pixels.
+     * @return string Re-encoded bytes, or the original when GD cannot read it or nothing helped.
+     */
+    private static function recompress_image_to_fit(string $bytes, int $maxbytes, int $minlongedge): string {
+        if (strlen($bytes) <= $maxbytes || !function_exists('imagecreatefromstring')) {
+            return $bytes;
+        }
+
+        $image = @imagecreatefromstring($bytes);
+        if ($image === false) {
+            return $bytes;
+        }
+
+        $best = $bytes;
+        $encode = static function ($resource, int $quality): string {
+            ob_start();
+            imagejpeg($resource, null, $quality);
+
+            return (string)ob_get_clean();
+        };
+
+        $current = $image;
+        $scales = [1.0, 0.8, 0.64, 0.5, 0.4];
+        foreach ($scales as $scale) {
+            if ($scale < 1.0) {
+                $width = (int)round(imagesx($image) * $scale);
+                $height = (int)round(imagesy($image) * $scale);
+                if (max($width, $height) < $minlongedge) {
+                    break;
+                }
+                $scaled = @imagescale($image, $width, $height);
+                if ($scaled === false) {
+                    break;
+                }
+                if ($current !== $image) {
+                    imagedestroy($current);
+                }
+                $current = $scaled;
+            }
+
+            foreach ([85, 75, 65, 55, 45] as $quality) {
+                $candidate = $encode($current, $quality);
+                if ($candidate !== '' && strlen($candidate) < strlen($best)) {
+                    $best = $candidate;
+                }
+                if ($candidate !== '' && strlen($candidate) <= $maxbytes) {
+                    if ($current !== $image) {
+                        imagedestroy($current);
+                    }
+                    imagedestroy($image);
+
+                    return $candidate;
+                }
+            }
+        }
+
+        if ($current !== $image) {
+            imagedestroy($current);
+        }
+        imagedestroy($image);
+
+        // Still over the ceiling, but the smallest version found is what the caller wants: it may
+        // fit once the other images have been reduced too.
+        return $best;
+    }
+
+    /**
+     * Reduce the transmitted images until the whole request body fits the transport budget.
+     *
+     * Targets are proportional to each image's current size, so the capture that is actually
+     * oversized absorbs most of the reduction and a modest one is left alone.
+     *
+     * @param array $images Raw bytes keyed by role: 'id_image', 'id_back_image', 'live_image'.
+     * @param int $reserve Bytes the rest of the request body occupies.
+     * @return array [$images, $fits, $note] - the (possibly re-encoded) images, whether the body
+     *               now fits, and a short description of what was done for the debugging log.
+     */
+    private static function fit_id_verification_images(array $images, int $reserve): array {
+        $budget = self::MAX_ID_VERIFICATION_PAYLOAD_BYTES - $reserve;
+        if ($budget <= 0) {
+            return [$images, false, 'no budget left after the request envelope'];
+        }
+
+        $encodedtotal = static function (array $set): int {
+            $total = 0;
+            foreach ($set as $bytes) {
+                $total += self::base64_encoded_size(strlen($bytes));
+            }
+
+            return $total;
+        };
+
+        $before = $encodedtotal($images);
+        if ($before <= $budget) {
+            return [$images, true, ''];
+        }
+
+        // Work in raw bytes from here: base64 is a fixed 4/3 multiplier, so a raw allowance is the
+        // same constraint expressed in the units the encoders actually produce.
+        $rawallowance = (int)floor(($budget * 3) / 4);
+        $floors = [
+            'id_image' => self::MIN_ID_DOCUMENT_LONG_EDGE,
+            'id_back_image' => self::MIN_ID_DOCUMENT_LONG_EDGE,
+            'live_image' => self::MIN_ID_LIVE_LONG_EDGE,
+        ];
+
+        // Three passes at most. Each pass re-targets against what the previous one achieved, which
+        // converges quickly and cannot loop forever on an image that will not shrink.
+        for ($pass = 0; $pass < 3; $pass++) {
+            $rawtotal = 0;
+            foreach ($images as $bytes) {
+                $rawtotal += strlen($bytes);
+            }
+            if ($rawtotal <= $rawallowance) {
+                break;
+            }
+
+            // 0.95 keeps a little headroom so a near-miss does not cost another whole pass.
+            $factor = ($rawallowance / $rawtotal) * 0.95;
+            foreach ($images as $role => $bytes) {
+                $target = max(self::MIN_ID_IMAGE_TARGET_BYTES, (int)floor(strlen($bytes) * $factor));
+                if (strlen($bytes) <= $target) {
+                    continue;
+                }
+                $images[$role] = self::recompress_image_to_fit(
+                    $bytes,
+                    $target,
+                    $floors[$role] ?? self::MIN_ID_LIVE_LONG_EDGE
+                );
+            }
+        }
+
+        $after = $encodedtotal($images);
+        $note = sprintf(
+            'request body reduced from %d to %d encoded bytes against a %d budget',
+            $before,
+            $after,
+            $budget
+        );
+
+        return [$images, $after <= $budget, $note];
+    }
+
     private static function call_id_verification_endpoint(
         string $idbytes,
         string $livebytes,
@@ -1403,8 +1594,10 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         $payloaddata = [
-            'id_image' => base64_encode($idbytes),
-            'live_image' => base64_encode($livebytes),
+            // Placeholders: the images are budgeted and inserted below, once the size of everything
+            // else in the body is known.
+            'id_image' => '',
+            'live_image' => '',
             'profile_firstname' => (string)($user->firstname ?? ''),
             'profile_lastname' => (string)($user->lastname ?? ''),
             'profile_fullname' => fullname($user),
@@ -1443,8 +1636,54 @@ class quizaccess_proctoring_external extends external_api {
             ],
         ];
         if ($idbackbytes !== null) {
-            $payloaddata['id_back_image'] = base64_encode($idbackbytes);
+            $payloaddata['id_back_image'] = '';
         }
+        // Measure the envelope with the image fields empty, then give the images what is left. The
+        // endpoint rejects an oversized body before it runs, so a body that does not fit is not a
+        // provider problem and must not be reported as one.
+        $envelope = json_encode($payloaddata);
+        if ($envelope === false) {
+            return self::make_id_verification_result(
+                'error',
+                0,
+                0,
+                '',
+                get_string('modal:idverificationprovidererror', 'quizaccess_proctoring')
+            );
+        }
+
+        $images = ['id_image' => $idbytes, 'live_image' => $livebytes];
+        if ($idbackbytes !== null && $idbackbytes !== '') {
+            $images['id_back_image'] = $idbackbytes;
+        }
+        [$images, $fits, $sizenote] = self::fit_id_verification_images($images, strlen($envelope));
+        if ($sizenote !== '') {
+            debugging(
+                'quizaccess_proctoring ID verification: ' . $sizenote,
+                DEBUG_DEVELOPER
+            );
+        }
+        if (!$fits) {
+            // Sending it anyway would spend the student's time on a request the transport will
+            // refuse, and report the refusal as an outage. Say what is actually wrong instead.
+            debugging(
+                'quizaccess_proctoring ID verification: request body still over '
+                    . self::MAX_ID_VERIFICATION_PAYLOAD_BYTES . ' bytes after re-encoding; not sent',
+                DEBUG_DEVELOPER
+            );
+
+            return self::make_id_verification_result(
+                'error',
+                0,
+                0,
+                '',
+                get_string('modal:idverificationimagetoolarge', 'quizaccess_proctoring')
+            );
+        }
+        foreach ($images as $role => $bytes) {
+            $payloaddata[$role] = base64_encode($bytes);
+        }
+
         $payload = json_encode($payloaddata);
 
         if ($payload === false) {
@@ -1479,12 +1718,29 @@ class quizaccess_proctoring_external extends external_api {
 
         $httpcode = (int)($curl->get_info()['http_code'] ?? 0);
         if ($httpcode < 200 || $httpcode >= 300) {
+            // The status was previously read and discarded, so every failure reached the student as
+            // "the provider is unavailable" - including the one failure that is not about the
+            // provider at all. 413 means the request was refused for its size before anything
+            // looked at it, which is actionable by the student and by an administrator; the rest
+            // genuinely is the provider, and the code goes to the debugging log either way so the
+            // two can be told apart without reading the provider's own logs.
+            debugging(
+                'quizaccess_proctoring ID verification: endpoint returned HTTP ' . $httpcode
+                    . ' for a ' . strlen($payload) . ' byte body',
+                DEBUG_DEVELOPER
+            );
+
+            $toolarge = ($httpcode === 413);
+
             return self::make_id_verification_result(
                 'error',
                 0,
                 0,
                 '',
-                get_string('modal:idverificationprovidererror', 'quizaccess_proctoring')
+                get_string(
+                    $toolarge ? 'modal:idverificationimagetoolarge' : 'modal:idverificationprovidererror',
+                    'quizaccess_proctoring'
+                )
             );
         }
 

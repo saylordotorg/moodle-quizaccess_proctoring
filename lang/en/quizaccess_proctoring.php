@@ -404,6 +404,7 @@ $string['modal:idverificationfailed_face'] = 'ID verification did not pass becau
 $string['modal:idverificationfailed_name'] = 'ID verification did not pass because the ID name did not match your Moodle profile name closely enough. ID name read: {$a->idname}. Moodle profile name: {$a->profilename}. Use an ID that matches your Moodle profile, or update your Moodle profile name if it is incorrect.';
 $string['modal:idverificationfailed_name_multilingual'] = 'ID verification did not pass because the ID name did not match your Moodle profile name closely enough. ID name read: {$a->idname}. Romanized name: {$a->romanizedname}. Moodle profile name: {$a->profilename}. Match details: {$a->reason}.';
 $string['modal:idverificationnameunknown'] = 'No name was read from the ID';
+$string['modal:idverificationimagetoolarge'] = 'Your ID photos are too large to check. Retake the ID picture a little further back so the document fills the guide without extra space around it, and try again. If it keeps happening, email student support - this is a limit on our side, not a problem with your ID.';
 $string['modal:idverificationpassed'] = 'ID verified.';
 $string['modal:idverificationprovidererror'] = 'ID verification is unavailable. Please contact support.';
 $string['modal:idverificationreasonunknown'] = 'No name match details were returned';
