@@ -136,6 +136,7 @@ $string['costestimate:students'] = 'Number of students';
 $string['costestimate:totalchecks'] = 'Total face-match checks';
 $string['costestimate:unitcost'] = 'Cost per face-match check';
 $string['course_proctoring_summary'] = 'Course Report';
+$string['coursenamequizname'] = 'Course / quiz name';
 $string['dailyreport:colcaptures'] = 'Captures';
 $string['dailyreport:colcourse'] = 'Course';
 $string['dailyreport:colevents'] = 'Events';
