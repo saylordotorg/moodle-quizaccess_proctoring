@@ -51,6 +51,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 },
                 {key: 'preflight:setupcomplete', component: 'quizaccess_proctoring'},
                 {key: 'screenmarkerchecking', component: 'quizaccess_proctoring'},
+                {key: 'devicenotice:handheld', component: 'quizaccess_proctoring'},
+                {key: 'devicenotice:nocamera', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -96,6 +98,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     progresscountpattern: strings[38],
                     setupcomplete: strings[39],
                     screenmarkerchecking: strings[40],
+                    devicenoticehandheld: strings[41],
+                    devicenoticenocamera: strings[42],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -802,9 +806,35 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     resetIdDocumentGuideProgress();
                 };
 
+                /**
+                 * Shape the preview box to the stream inside it.
+                 *
+                 * The box had a fixed 4:3 shape while the camera decides its own aspect ratio, and
+                 * object-fit: contain then paints bars down the sides (or across the top) of every
+                 * camera that disagrees - which is every 16:9 laptop camera. The crop maths already
+                 * accounts for those bars, so this is cosmetic, but "why is my camera in a small
+                 * box in the middle of a black rectangle" is a reasonable question to be spared.
+                 *
+                 * @param {HTMLVideoElement} video The preview video.
+                 */
+                const matchPreviewToStream = function(video) {
+                    if (!video || !video.videoWidth || !video.videoHeight) {
+                        return;
+                    }
+                    const box = video.closest('.proctoring-id-document-preview');
+                    if (!box) {
+                        return;
+                    }
+                    box.style.setProperty(
+                        '--proctoring-cam-ratio',
+                        String(video.videoWidth / video.videoHeight)
+                    );
+                };
+
                 const waitForVideoFrame = async function(video) {
                     for (let attempts = 0; attempts < 20; attempts++) {
                         if (video && video.videoWidth && video.videoHeight) {
+                            matchPreviewToStream(video);
                             return true;
                         }
                         await new Promise((resolve) => window.setTimeout(resolve, 100));
@@ -1468,11 +1498,17 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         setIdDocumentCaptureState('hidden', 'back');
                     }
                     stopIdLiveStream();
+                    // Landscape, because the camera taking this shot is a built-in laptop camera
+                    // and those are landscape. The old portrait ideal (960x1280) asked every one of
+                    // them for a mode they do not have, and what came back was either a rotated
+                    // frame or a landscape one padded to fit - which is what put bars down the
+                    // sides of the preview. 1280x720 is well within any camera the face matcher
+                    // needs, and the capture floors at 640 wide regardless.
                     idLiveStream = await navigator.mediaDevices.getUserMedia({
                         video: {
                             facingMode: 'user',
-                            width: {ideal: 960},
-                            height: {ideal: 1280}
+                            width: {ideal: 1280},
+                            height: {ideal: 720}
                         },
                         audio: false
                     }).catch(() => navigator.mediaDevices.getUserMedia({video: true, audio: false}));
@@ -1692,6 +1728,46 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                 };
 
+                // Say up front when the device cannot get through setup. Nothing in the precheck
+                // mentioned that a proctored exam needs a laptop or desktop with a camera, so a
+                // student on a phone found out at step 2 - by failing it, with no explanation of
+                // why - and a student on a camera-less machine failed the same way. This is a
+                // notice, not a gate: a touchscreen laptop is a perfectly good exam machine, and
+                // guessing wrong must not be able to lock anybody out.
+                (function() {
+                    const wrapper = document.querySelector('.quiz-check-form');
+                    const panel = wrapper ? wrapper.querySelector('.proctoring-preflight-panel') : null;
+                    if (!wrapper || !panel || document.getElementById('proctoring-device-notice')) {
+                        return;
+                    }
+
+                    const hasCamera = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+                    // Touch-only plus a phone-sized screen. Either signal alone is a false positive
+                    // waiting to happen: laptops have touchscreens, and a small window is just a
+                    // small window.
+                    const touchOnly = window.matchMedia
+                        && window.matchMedia('(any-pointer: coarse)').matches
+                        && !window.matchMedia('(any-pointer: fine)').matches;
+                    const smallScreen = Math.min(
+                        window.screen ? window.screen.width : window.innerWidth,
+                        window.screen ? window.screen.height : window.innerHeight
+                    ) <= 820;
+                    const looksHandheld = touchOnly && smallScreen;
+
+                    if (hasCamera && !looksHandheld) {
+                        return;
+                    }
+
+                    const notice = document.createElement('div');
+                    notice.id = 'proctoring-device-notice';
+                    notice.className = 'alert alert-warning proctoring-device-notice';
+                    notice.setAttribute('role', 'alert');
+                    notice.textContent = hasCamera
+                        ? strings.devicenoticehandheld
+                        : strings.devicenoticenocamera;
+                    panel.parentNode.insertBefore(notice, panel);
+                })();
+
                 // Rebuild the precheck as a two-pane stepper: the requirements checklist
                 // becomes a left rail with numbered dots, the active step fills the right
                 // pane, and the quiz's submit buttons move into a pinned footer. Purely
@@ -1732,9 +1808,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         timelimit.style.display = '';
                         footer.appendChild(timelimit);
                         // The footer line makes quizaccess_timelimit's own "Time limit"
-                        // header + paragraph in the same form redundant. Hide only its
-                        // message row and heading, not the whole fieldset, in case any
-                        // other rule's fields render inside it.
+                        // header + paragraph in the same form redundant. Hiding the
+                        // message row and the legend separately left the fieldset itself
+                        // behind, which reads as a heading with nothing under it - so the
+                        // whole fieldset goes, but only once it is established that no
+                        // other rule's fields are living inside it.
                         const timelimitmessage = document.getElementById('fitem_id_honestycheckmessage');
                         if (timelimitmessage) {
                             timelimitmessage.style.display = 'none';
@@ -1745,6 +1823,19 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 timelimitheader.querySelector('h3, .fheader');
                             if (timelimitlegend) {
                                 timelimitlegend.style.display = 'none';
+                            }
+                            // A Moodle form header renders as a fieldset wrapping every
+                            // element up to the next header, so it is only safe to hide
+                            // when the time-limit message was its only occupant.
+                            const remaining = Array.from(
+                                timelimitheader.querySelectorAll('.fitem, .form-group')
+                            ).filter(function(item) {
+                                return item !== timelimitmessage &&
+                                    !(timelimitmessage && timelimitmessage.contains(item)) &&
+                                    item.style.display !== 'none';
+                            });
+                            if (!remaining.length) {
+                                timelimitheader.style.display = 'none';
                             }
                         }
                     }

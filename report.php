@@ -1851,6 +1851,93 @@ if (
             'maxlength' => \quizaccess_proctoring\local\attempt_note::MAX_LENGTH,
         ];
 
+        // The ID verification check the student passed (or did not) before the attempt started.
+        // Its images and its name-match reasoning were being captured and stored and then shown
+        // nowhere, so the one piece of evidence that ties the attempt to a government document was
+        // invisible to the person deciding whether to trust it.
+        $idverification = null;
+        if ($DB->get_manager()->table_exists('quizaccess_proctoring_idv')) {
+            $idvconditions = ['courseid' => (int)$courseid, 'quizid' => (int)$cmid, 'userid' => (int)$studentid];
+            if ($reportattemptid > 0) {
+                // Prefer the check belonging to this attempt; fall back to the student's latest for
+                // this exam, since a check taken before an earlier attempt is still the document
+                // this student presented.
+                $idverification = $DB->get_records(
+                    'quizaccess_proctoring_idv',
+                    $idvconditions + ['attemptid' => $reportattemptid],
+                    'timemodified DESC, id DESC',
+                    '*',
+                    0,
+                    1
+                );
+                $idverification = $idverification ? reset($idverification) : null;
+            }
+            if ($idverification === null) {
+                $idvlatest = $DB->get_records(
+                    'quizaccess_proctoring_idv',
+                    $idvconditions,
+                    'timemodified DESC, id DESC',
+                    '*',
+                    0,
+                    1
+                );
+                $idverification = $idvlatest ? reset($idvlatest) : null;
+            }
+        }
+
+        $idvcontext = null;
+        if ($idverification !== null) {
+            $idvimages = [];
+            $idvimagefields = [
+                'idimageurl' => 'reportidv:imagefront',
+                'idbackimageurl' => 'reportidv:imageback',
+                'liveimageurl' => 'reportidv:imagelive',
+            ];
+            foreach ($idvimagefields as $field => $labelkey) {
+                $imageurl = trim((string)($idverification->$field ?? ''));
+                if ($imageurl === '') {
+                    continue;
+                }
+                $idvimages[] = [
+                    'url' => $imageurl,
+                    'label' => get_string($labelkey, 'quizaccess_proctoring'),
+                ];
+            }
+
+            $idvstatus = (string)$idverification->status;
+            // Only the statuses the check itself writes get their own wording; anything else is
+            // shown verbatim rather than mislabelled as a pass or a failure.
+            $idvstatuslabels = [
+                'pending' => 'reportidv:statuspending',
+                'pass' => 'reportidv:statuspass',
+                'failed' => 'reportidv:statusfailed',
+                'retry' => 'reportidv:statusretry',
+                'error' => 'reportidv:statuserror',
+                'disabled' => 'reportidv:statusdisabled',
+            ];
+            $idvcontext = [
+                'statuslabel' => isset($idvstatuslabels[$idvstatus])
+                    ? get_string($idvstatuslabels[$idvstatus], 'quizaccess_proctoring')
+                    : $idvstatus,
+                'statuskey' => isset($idvstatuslabels[$idvstatus]) ? $idvstatus : 'other',
+                'facescore' => (int)$idverification->facescore,
+                'namescore' => (int)$idverification->namescore,
+                'extractedname' => trim((string)($idverification->extractedname ?? '')),
+                'romanizedname' => trim((string)($idverification->romanizedname ?? '')),
+                'matchedprofilename' => trim((string)($idverification->matchedprofilename ?? '')),
+                'profilename' => trim((string)($idverification->profilename ?? '')),
+                'namematchreason' => trim((string)($idverification->namematchreason ?? '')),
+                'errormessage' => trim((string)($idverification->errormessage ?? '')),
+                'checkedat' => \quizaccess_proctoring\local\display_time::staff((int)$idverification->timemodified),
+                'images' => $idvimages,
+                'hasimages' => !empty($idvimages),
+                // A check recorded against another attempt is still worth showing, but the reader
+                // has to know it is not this attempt's check.
+                'isotherattempt' => $reportattemptid > 0
+                    && (int)$idverification->attemptid !== $reportattemptid,
+            ];
+        }
+
         $analyzeurl = new moodle_url('/mod/quiz/accessrule/proctoring/analyzeimage.php');
         $userimageurl = quizaccess_proctoring_get_image_url($user->id);
         if (!$userimageurl) {
@@ -1879,6 +1966,7 @@ if (
             'activity' => $activitycontext,
             'hasevents' => !empty($eventrecords),
             'collaboration' => $collaboration,
+            'idverification' => $idvcontext,
         ];
         echo $OUTPUT->render_from_template('quizaccess_proctoring/studentreport', $templatecontext);
     }

@@ -239,6 +239,46 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             return panel.querySelector('.proctoring-desktop-' + slot + '-slot');
         };
 
+        /**
+         * Collapse Boost's course index drawer, if the theme is showing one.
+         *
+         * Drawer state lives in a button's aria-expanded plus classes on <body>, and the
+         * drawer is rendered by the theme after our module runs on some pages, so the close
+         * is attempted now and once more after the drawer turns up.
+         */
+        const closeCourseIndexDrawer = function() {
+            const close = function() {
+                const toggle = document.querySelector('[data-toggler="drawers"][data-target="theme_boost-drawers-courseindex"]');
+                const drawer = document.getElementById('theme_boost-drawers-courseindex');
+                if (!drawer) {
+                    return false;
+                }
+                if (toggle && toggle.getAttribute('aria-expanded') === 'true') {
+                    // Click the theme's own toggle rather than hiding the drawer directly, so
+                    // the theme keeps its classes, focus handling and body padding consistent.
+                    toggle.click();
+                    return true;
+                }
+                return drawer.classList.contains('show') === false;
+            };
+
+            if (close()) {
+                return;
+            }
+
+            // The drawer was not in the DOM yet. Watch briefly, then give up rather than
+            // leaving an observer running for the whole attempt.
+            const observer = new MutationObserver(function() {
+                if (close()) {
+                    observer.disconnect();
+                }
+            });
+            observer.observe(document.body, {childList: true, subtree: true});
+            window.setTimeout(function() {
+                observer.disconnect();
+            }, 5000);
+        };
+
         const initSuspiciousActivityMonitoring = function(props, strings) {
             let lastLogged = {};
             let hiddenStarted = 0;
@@ -372,11 +412,17 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 warning.setAttribute('role', 'alert');
                 warning.style.display = 'none';
 
-                const main = document.getElementById('region-main') ||
-                    document.querySelector('[role="main"]') ||
-                    document.getElementById('page-content') ||
-                    document.body;
-                main.insertBefore(warning, main.firstChild);
+                // Docked to the body rather than inserted at the top of the content region.
+                // Students are almost never scrolled to the top of a quiz page, and the previous
+                // position: sticky inside #region-main could not help: sticky and fixed both
+                // resolve against the nearest transformed ancestor, and LMS themes routinely put a
+                // transform on a page wrapper, which pins the banner to the top of the document
+                // instead of the top of the viewport. The body has no such ancestor.
+                const dock = document.createElement('div');
+                dock.id = 'proctoring-attempt-warning-dock';
+                dock.className = 'proctoring-attempt-warning-dock';
+                dock.appendChild(warning);
+                document.body.appendChild(dock);
 
                 return warning;
             };
@@ -1568,6 +1614,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (backnav) {
                     backnav.style.display = 'none';
                 }
+                // Close the course index drawer for the attempt. It lists every activity in the
+                // course, so on a proctored attempt it is a row of links out of the exam - and
+                // leaving it open also squeezes the question area on smaller screens. Only the
+                // opening state is touched: a student who wants it can still open it, and the
+                // preference is left alone so it reopens on the next page outside the exam.
+                closeCourseIndexDrawer();
                 // Skip for summary page.
                 if (document.getElementById("page-mod-quiz-summary") !== null &&
                     document.getElementById("page-mod-quiz-summary").innerHTML.length) {

@@ -34,6 +34,19 @@
                 "face_match_status": "Face match score 98/100"
             }
         ],
+        "idverification": {
+            "statuslabel": "Verified", "statuskey": "pass", "facescore": 96, "namescore": 100,
+            "extractedname": "JOHN A DOE", "romanizedname": "", "profilename": "John Doe",
+            "matchedprofilename": "John Doe", "namematchreason": "First and last name matched exactly.",
+            "errormessage": "", "checkedat": "1 January 2026  9:38 AM EST", "isotherattempt": false,
+            "hasimages": true,
+            "images": [{"url": "https://example.com/id-front.jpg", "label": "ID document"}]
+        },
+        "collaboration": {
+            "canreview": true, "signoffbyline": "", "cansignoff": true, "signoffurl": "#",
+            "undosignoffurl": "", "hasnotes": false, "notes": [], "addurl": "#", "maxlength": 2000,
+            "courseid": 5, "cmid": 12, "studentid": 42, "reportid": 7, "sesskey": "abc123"
+        },
         "captures": {
             "verdictstate": "confirmed",
             "verdictheadline": "Identity confirmed",
@@ -406,6 +419,51 @@
 <div class="tab-pane fade" id="proctoring-report-captures" role="tabpanel" aria-labelledby="proctoring-report-captures-tab">
 {{#captures}}
 <div class="proctoring-captures-card">
+
+    {{! The pre-attempt ID check: the document the student presented, the selfie it was compared
+        against, and how the name on it was matched to the profile. Captured since 1.2.x and shown
+        nowhere until now. }}
+    {{#idverification}}
+    <div class="proctoring-idv proctoring-idv-{{statuskey}}">
+        <div class="proctoring-idv-head">
+            <span class="proctoring-idv-title">{{#str}}reportidv:heading, quizaccess_proctoring{{/str}}</span>
+            <span class="proctoring-idv-status proctoring-idv-status-{{statuskey}}">{{statuslabel}}</span>
+            {{#checkedat}}<span class="proctoring-idv-when">{{#str}}reportidv:checkedat, quizaccess_proctoring{{/str}} {{checkedat}}</span>{{/checkedat}}
+        </div>
+
+        {{#isotherattempt}}
+        <div class="proctoring-idv-note">{{#str}}reportidv:otherattempt, quizaccess_proctoring{{/str}}</div>
+        {{/isotherattempt}}
+
+        {{#hasimages}}
+        <div class="proctoring-idv-images">
+            {{#images}}
+            <figure class="proctoring-idv-image">
+                <a href="{{url}}" data-lightbox="proc-idv" data-title="{{label}}">
+                    <img src="{{url}}" alt="{{label}}" loading="lazy">
+                </a>
+                <figcaption>{{label}}</figcaption>
+            </figure>
+            {{/images}}
+        </div>
+        {{/hasimages}}
+        {{^hasimages}}
+        <div class="proctoring-idv-note">{{#str}}reportidv:noimages, quizaccess_proctoring{{/str}}</div>
+        {{/hasimages}}
+
+        <dl class="proctoring-idv-facts">
+            <div><dt>{{#str}}reportidv:facescore, quizaccess_proctoring{{/str}}</dt><dd>{{facescore}}</dd></div>
+            <div><dt>{{#str}}reportidv:namescore, quizaccess_proctoring{{/str}}</dt><dd>{{namescore}}</dd></div>
+            {{#extractedname}}<div><dt>{{#str}}reportidv:extractedname, quizaccess_proctoring{{/str}}</dt><dd>{{extractedname}}</dd></div>{{/extractedname}}
+            {{#romanizedname}}<div><dt>{{#str}}reportidv:romanizedname, quizaccess_proctoring{{/str}}</dt><dd>{{romanizedname}}</dd></div>{{/romanizedname}}
+            {{#profilename}}<div><dt>{{#str}}reportidv:profilename, quizaccess_proctoring{{/str}}</dt><dd>{{profilename}}</dd></div>{{/profilename}}
+            {{#matchedprofilename}}<div><dt>{{#str}}reportidv:matchedname, quizaccess_proctoring{{/str}}</dt><dd>{{matchedprofilename}}</dd></div>{{/matchedprofilename}}
+        </dl>
+
+        {{#namematchreason}}<div class="proctoring-idv-reason">{{namematchreason}}</div>{{/namematchreason}}
+        {{#errormessage}}<div class="proctoring-idv-reason">{{errormessage}}</div>{{/errormessage}}
+    </div>
+    {{/idverification}}
 
     {{! Identity verdict band: profile photo vs best capture, plain-language verdict, analyze action. }}
     <div class="proctoring-idband proctoring-idband-{{verdictstate}}">

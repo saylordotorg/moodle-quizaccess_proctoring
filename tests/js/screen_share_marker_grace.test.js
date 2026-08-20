@@ -226,7 +226,9 @@ function createEnvironment() {
 
     const document = {
         visibilityState: 'visible',
-        body: {nodeType: 1, insertBefore() {}, firstChild: null},
+        // The warning banner is docked to the body rather than inserted into the content
+        // region, so the stub body has to accept an appendChild the way a real one does.
+        body: {nodeType: 1, insertBefore() {}, appendChild() {}, firstChild: null},
         getElementById(id) {
             if (!gateAppended) {
                 return null;

@@ -291,6 +291,14 @@ if ($canmanageproctoring) {
         PARAM_TEXT
     ));
 
+    $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/feedbackurl',
+        get_string('setting:feedbackurl', 'quizaccess_proctoring'),
+        get_string('setting:feedbackurl_desc', 'quizaccess_proctoring'),
+        '',
+        PARAM_URL
+    ));
+
     $settings->add(new admin_setting_configcheckbox(
         'quizaccess_proctoring/privacynoticerequired',
         get_string('setting:privacynoticerequired', 'quizaccess_proctoring'),

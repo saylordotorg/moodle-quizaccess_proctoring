@@ -1281,5 +1281,13 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026081901, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026081902) {
+        // No schema changes: the ID verification block on the report, the docked in-exam banner,
+        // the device notice, the camera aspect-ratio fixes and the feedback link are markup, CSS
+        // and JavaScript. No-op savepoint so the new strings and the new "Student feedback form
+        // URL" setting's (empty) default are picked up.
+        upgrade_plugin_savepoint(true, 2026081902, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

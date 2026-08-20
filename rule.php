@@ -818,6 +818,41 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * Get the URL of the student feedback form, with the course and exam attached.
+     *
+     * The course feedback survey only reaches students who finish a course, which excludes exactly
+     * the students whose experience is worth hearing about: the ones who abandoned setup, could not
+     * make the technology work, or never passed an exam. So the link goes where they actually are.
+     *
+     * Empty by default - no URL configured means no link is rendered anywhere.
+     *
+     * @param string $source Which surface the student clicked from, for the form to segment on.
+     * @return string The feedback URL, or an empty string when none is configured.
+     */
+    private function get_feedback_url(string $source): string {
+        $url = get_config('quizaccess_proctoring', 'feedbackurl');
+        $url = trim((string)($url === false ? '' : $url));
+        if ($url === '') {
+            return '';
+        }
+
+        $url = clean_param($url, PARAM_URL);
+        if ($url === '') {
+            return '';
+        }
+
+        // The course and exam ride along so a response can be traced without having to ask the
+        // student what they were doing when it went wrong. No personal data: ids only.
+        $link = new moodle_url($url, [
+            'course' => (int)$this->quiz->course,
+            'exam' => (int)$this->quiz->cmid,
+            'source' => $source,
+        ]);
+
+        return $link->out(false);
+    }
+
+    /**
      * Get the configured agreement checkbox label for the integrity statement.
      *
      * @return string The checkbox label.
@@ -1275,6 +1310,20 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $profileimageurl = $USER->picture
             ? (new moodle_url("/user/pix.php/{$USER->id}/f1.jpg"))->out(false)
             : '';
+
+        // A way out for a student whose setup is not working. This is the only surface a student
+        // who abandons the exam ever sees, so it is the one place the feedback link has to be.
+        $feedbackurl = $this->get_feedback_url('setup');
+        if ($feedbackurl !== '') {
+            $mform->addElement('html', html_writer::div(
+                html_writer::link(
+                    $feedbackurl,
+                    get_string('feedbacklink:setup', 'quizaccess_proctoring'),
+                    ['target' => '_blank', 'rel' => 'noreferrer noopener']
+                ),
+                'proctoring-feedback-link'
+            ));
+        }
 
         $mform->addElement('html', "<div class='proctoring-preflight-steps'>");
 
