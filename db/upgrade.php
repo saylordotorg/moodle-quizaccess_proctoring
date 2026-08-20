@@ -1295,5 +1295,12 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026082000, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026082001) {
+        // No schema changes: the ID verification verdict is code, and the three new settings take
+        // their defaults from settings.php. No-op savepoint so those defaults are applied and the
+        // new strings are picked up.
+        upgrade_plugin_savepoint(true, 2026082001, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

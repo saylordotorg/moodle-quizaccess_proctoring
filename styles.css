@@ -1548,6 +1548,17 @@ body.quizaccess-proctoring-settings-page #admin-deleteallimages .btn-danger {
     color: #3f4a55;
 }
 
+.proctoring-idv-carried {
+    margin-top: 10px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: #f6eedb;
+    color: #6b4e0c;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    max-width: 72ch;
+}
+
 .proctoring-idv-reason {
     margin-top: 10px;
     font-size: 0.875rem;

@@ -1,6 +1,19 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.9.0
+A strong face match now carries a weak name read, so ID verification stops blocking students it has already identified.
+
+- **The two ID checks were gated independently**, each having to clear 80 out of 100, with either one falling short failing the attempt. That reads as two safeguards and behaves as one liability, because the checks do not measure comparable things. The face score is the identity control: the photo on the document has to match the person at the camera, which is what stops a student using someone else's card. The name score is a corroboration whose ceiling is set by how well a webcam can read text off a piece of plastic.
+- On the recorded attempts, the name check was the only thing rejecting legitimate students. Three attempts by one student matched her face at 94, 96 and 98 while the OCR read `RICE` (correct but partial), `4 1 LINDSAP INC` (her name mixed with card furniture) and `LINDSAS HOWARD X` (a misread of her own name). Not one failure was a name that disagreed — they were all failures to read the card. A fourth attempt read `SIGNATURE OF THE HOLDER`, a caption printed on the licence.
+- So the verdict is now: **pass when the face match is strong and the name is at least plausible**, even though the name fell short of its own threshold. Defaults are a face score of 90 (against a threshold of 80) and a name floor of 45. A face match that merely cleared its own threshold does not qualify — the rule exists because overwhelming face evidence makes a poor read irrelevant, and 85 is not overwhelming. A weak face match still faces the full name gate, so the name check keeps its force exactly where the identity evidence is thin, which is the only place it was doing work.
+- Lowering the name threshold was the obvious alternative and does not work: on these scores it would have to drop to 50 to admit them, and at 50 the margin over a meaningless read (41) is nine points. That is a coincidence, not a safeguard, and it loosens the check for genuine mismatches at the same time.
+- Three new settings under ID verification: **Let a strong face match carry a weak name read** (on by default — this is a behaviour change on upgrade; untick it to restore independent gates), **Face score that can carry a weak name read** (90), and **Minimum name score when the face match is strong** (45). The last two are clamped so no combination is incoherent: the carry bar can never sit below the face threshold, and the floor can never sit above the name threshold.
+- **The verdict now lives in one place** (`local\id_verification_decision`). The web service that recorded the attempt and the message that explained it to the student each derived pass/fail separately, so a student could be told the name check failed on an attempt the name check had not decided.
+- The per-student report says when a pass was carried: a row reading "Verified, name 57" otherwise looks like something is broken. The note explains that the name read did not match on its own and points the reviewer at the images, which are on the same tab.
+- The carry is also recorded in the developer debugging log, so a site can audit how often it fires.
+- New `tests/id_verification_decision_test.php` covers the rule against the real recorded scores, both boundaries (an adequate-but-not-strong face, a name below the floor), and that switching the carry off restores the previous behaviour exactly.
+
 # v1.8.1
 Fixed ID verification failing permanently once a student captured a large ID photo.
 

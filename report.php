@@ -1929,6 +1929,13 @@ if (
                 'namematchreason' => trim((string)($idverification->namematchreason ?? '')),
                 'errormessage' => trim((string)($idverification->errormessage ?? '')),
                 'checkedat' => \quizaccess_proctoring\local\display_time::staff((int)$idverification->timemodified),
+                // A pass whose name score is under the threshold was carried by the face match.
+                // Without saying so, the row reads as "verified, name 57" and invites the reviewer
+                // to wonder whether something is broken.
+                'namecarried' => $idvstatus === 'pass' && \quizaccess_proctoring\local\id_verification_decision::evaluate(
+                    (int)$idverification->facescore,
+                    (int)$idverification->namescore
+                )['namecarried'],
                 'images' => $idvimages,
                 'hasimages' => !empty($idvimages),
                 // A check recorded against another attempt is still worth showing, but the reader

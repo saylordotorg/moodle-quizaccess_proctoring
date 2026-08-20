@@ -39,6 +39,7 @@
             "extractedname": "JOHN A DOE", "romanizedname": "", "profilename": "John Doe",
             "matchedprofilename": "John Doe", "namematchreason": "First and last name matched exactly.",
             "errormessage": "", "checkedat": "1 January 2026  9:38 AM EST", "isotherattempt": false,
+            "namecarried": false,
             "hasimages": true,
             "images": [{"url": "https://example.com/id-front.jpg", "label": "ID document"}]
         },
@@ -460,6 +461,9 @@
             {{#matchedprofilename}}<div><dt>{{#str}}reportidv:matchedname, quizaccess_proctoring{{/str}}</dt><dd>{{matchedprofilename}}</dd></div>{{/matchedprofilename}}
         </dl>
 
+        {{#namecarried}}
+        <div class="proctoring-idv-carried">{{#str}}reportidv:namecarried, quizaccess_proctoring{{/str}}</div>
+        {{/namecarried}}
         {{#namematchreason}}<div class="proctoring-idv-reason">{{namematchreason}}</div>{{/namematchreason}}
         {{#errormessage}}<div class="proctoring-idv-reason">{{errormessage}}</div>{{/errormessage}}
     </div>

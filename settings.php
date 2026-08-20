@@ -497,6 +497,29 @@ if ($canmanageproctoring) {
     ));
 
     $settings->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/idverificationfacecarriesname',
+        get_string('setting:idverificationfacecarriesname', 'quizaccess_proctoring'),
+        get_string('setting:idverificationfacecarriesname_desc', 'quizaccess_proctoring'),
+        1
+    ));
+
+    $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/idverificationstrongfacescore',
+        get_string('setting:idverificationstrongfacescore', 'quizaccess_proctoring'),
+        get_string('setting:idverificationstrongfacescore_desc', 'quizaccess_proctoring'),
+        \quizaccess_proctoring\local\id_verification_decision::DEFAULT_STRONG_FACE,
+        PARAM_INT
+    ));
+
+    $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/idverificationnamefloor',
+        get_string('setting:idverificationnamefloor', 'quizaccess_proctoring'),
+        get_string('setting:idverificationnamefloor_desc', 'quizaccess_proctoring'),
+        \quizaccess_proctoring\local\id_verification_decision::DEFAULT_NAME_FLOOR,
+        PARAM_INT
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
         'quizaccess_proctoring/idverificationcheckname',
         get_string('setting:idverificationcheckname', 'quizaccess_proctoring'),
         get_string('setting:idverificationcheckname_desc', 'quizaccess_proctoring'),

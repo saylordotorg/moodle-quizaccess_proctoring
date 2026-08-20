@@ -1865,8 +1865,18 @@ class quizaccess_proctoring_external extends external_api {
 
         $rawstatus = strtolower((string)($decoded['status'] ?? $decoded['decision'] ?? ''));
         $status = 'pass';
-        if (($checkface && $facescore < $facethreshold) || ($checkname && $namescore < $namethreshold)) {
+        // One shared decision, so the verdict recorded here and the explanation the student is
+        // given below cannot disagree about which check decided the attempt.
+        $decision = \quizaccess_proctoring\local\id_verification_decision::evaluate($facescore, $namescore);
+        if (!$decision['passed']) {
             $status = 'failed';
+        }
+        if ($decision['namecarried']) {
+            debugging(
+                'quizaccess_proctoring ID verification: name score ' . $namescore
+                    . ' below threshold but carried by a face score of ' . $facescore,
+                DEBUG_DEVELOPER
+            );
         }
         if ($status !== 'pass' && in_array($rawstatus, ['retry', 'manual', 'error'], true)) {
             $status = $rawstatus === 'manual' ? 'failed' : $rawstatus;
@@ -2201,13 +2211,14 @@ class quizaccess_proctoring_external extends external_api {
             return get_string('modal:idverificationfailed', 'quizaccess_proctoring');
         }
 
-        $faceconfig = get_config('quizaccess_proctoring', 'idverificationfacethreshold');
-        $nameconfig = get_config('quizaccess_proctoring', 'idverificationnamethreshold');
-        $facethreshold = max(1, min(100, $faceconfig === false ? 80 : (int)$faceconfig));
-        $namethreshold = max(1, min(100, $nameconfig === false ? 80 : (int)$nameconfig));
-        [$checkface, $checkname] = self::get_id_verification_checks();
-        $facefailed = $checkface && (int)($result['facescore'] ?? 0) < $facethreshold;
-        $namefailed = $checkname && (int)($result['namescore'] ?? 0) < $namethreshold;
+        // The same evaluation the verdict came from: a student told "the name did not match" on an
+        // attempt the name check did not decide is being told the wrong thing about their own ID.
+        $decision = \quizaccess_proctoring\local\id_verification_decision::evaluate(
+            (int)($result['facescore'] ?? 0),
+            (int)($result['namescore'] ?? 0)
+        );
+        $facefailed = $decision['facefailed'];
+        $namefailed = $decision['namefailed'];
 
         if ($facefailed && $namefailed) {
             return get_string('modal:idverificationfailed_both', 'quizaccess_proctoring');
