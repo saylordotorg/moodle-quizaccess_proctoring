@@ -201,10 +201,46 @@ to add a note."
 - **I3 (BUILD)** Nothing tells a student on a phone or tablet that the exam needs a laptop or
   desktop (Lindsay's comment). State the device requirement before setup starts, and detect the
   no-usable-camera case explicitly rather than failing at step 2.
-- **I4 (REPRO)** "After my first exam attempt, I haven't been able to get ID verification to work
-  again" and Lindsay's blur-loop plus failed upload on a PC. Two reports of the ID step failing
-  after first use; the screenshots name an error string that will identify the path. Reproduce
-  before specifying.
+- **I4 (DIAGNOSED 20 Aug 2026 - the payload is too big for the endpoint to accept)** "After my
+  first exam attempt, I haven't been able to get ID verification to work again", and Lindsay's
+  failures on a PC.
+
+  The plugin accepts ID images up to `MAX_ID_DOCUMENT_IMAGE_BYTES` = 8 MB each
+  (`classes/external.php:44`) and sends front + back + live, base64-encoded, in one JSON body to a
+  Lambda function URL - which rejects any request over **6 MB** before the function runs. Base64
+  inflates by a third, so the plugin's own accepted input is roughly four times what the transport
+  can carry, and nothing measures the assembled payload before the call.
+
+  Evidence from dev, all 22 stored checks: every one of the 13 `error` results has an estimated
+  payload **over** 6 MB, and every one of the 9 `pass`/`failed`/`retry` results is **under** it.
+  No exceptions in either direction. CloudWatch confirms the mechanism: across the failure window
+  (2026-07-28 23:33-23:43 UTC) the function logged exactly **one** invocation - the one attempt that
+  got a verdict - with 0 errors and 0 throttles. The eleven failures never reached Lambda.
+
+  Why it looked permanent rather than intermittent: the reviewer's back-of-ID capture came out at
+  8,200,922 bytes, essentially the plugin's own 8 MB ceiling, and all eleven retries re-sent the
+  identical stored front and back (byte-identical sizes across every row). Once an oversized capture
+  existed, every retry failed the same way. Her successful check that morning carried a 1.7 MB
+  payload.
+
+  The back image is what blew the budget: 8.2 MB of her 12.7 MB. Dev still has
+  `idverificationrequireback = 1` even though the v2 request to default it off is marked closed - had
+  it been off, her payload would have been about 4.5 MB and would have gone through.
+
+  The student-facing consequence is the worst part: an oversized capture reports "ID verification is
+  unavailable. Please contact support.", sending the student to support for a limit the plugin
+  chose and never checked.
+
+  **Fix to build:** budget the payload before the call. Re-encode down to a configured ceiling
+  (default comfortably under 6 MB base64), preferring JPEG quality reduction over dimension
+  reduction so the OCR sharpness added in 1.4.0 survives; fail with a distinct, actionable message
+  if it still will not fit, and log that distinctly from a provider outage so an admin can tell the
+  two apart. Lower `MAX_ID_DOCUMENT_IMAGE_BYTES` to something the transport can actually carry.
+
+  Separately, Lindsay's *rejections* were never about her photo: records 15, 16 and 19 show face
+  scores of 94-98 against a threshold of 80, failing on **name** OCR - "RICE", "4 1 LINDSAP INC",
+  "LINDSAS HOWARD X" - with name scores of 50-67. Whether to lower the name threshold, or accept a
+  strong face match when name OCR is unreadable, is a policy call and its own item.
 
 ## J. Student feedback (P2)
 
@@ -267,9 +303,9 @@ Shipped in v1.8.0 (`07f8431`, `fe6b457`, `1d87843`):
 Not code, still owed:
 
 - A7, E5, K1-K3, H4, F2 — answers and content/policy decisions, listed above.
-- H1, I4 — need a run on dev before anything is specified. H1 (repeated screen-share prompts) is
-  expected to be closed by the marker-grace work already on `master`; I4 (ID verification failing
-  after first use, on two different machines) has no diagnosis yet.
+- H1 — needs a run on dev; expected to be closed by the marker-grace work already shipped.
+- I4 — **diagnosed, fix not yet built.** See the item above: the request payload exceeds the 6 MB
+  the endpoint accepts, and the plugin never measures it.
 
 ### Verification
 
