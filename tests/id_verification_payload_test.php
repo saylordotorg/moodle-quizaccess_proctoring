@@ -24,10 +24,9 @@
 
 namespace quizaccess_proctoring;
 
-defined('MOODLE_INTERNAL') || die();
+use quizaccess_proctoring\local\id_verification_payload;
 
-global $CFG;
-require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/classes/external.php');
+defined('MOODLE_INTERNAL') || die();
 
 /**
  * The endpoint refuses a request over 6 MB before it runs, so the body is budgeted before it is
@@ -35,33 +34,9 @@ require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/classes/external.p
  * fits is not touched, a body that does not fit is brought under the budget, and the reduction is
  * taken from the images that are actually oversized rather than spread across all of them.
  *
- * @covers \quizaccess_proctoring_external
+ * @covers \quizaccess_proctoring\local\id_verification_payload
  */
 final class id_verification_payload_test extends \basic_testcase {
-
-    /**
-     * Call a private static method on the external class.
-     *
-     * @param string $name Method name.
-     * @param array $args Arguments.
-     * @return mixed The return value.
-     */
-    private function call(string $name, array $args) {
-        $method = new \ReflectionMethod('quizaccess_proctoring_external', $name);
-        $method->setAccessible(true);
-
-        return $method->invokeArgs(null, $args);
-    }
-
-    /**
-     * Read a constant from the external class.
-     *
-     * @param string $name Constant name.
-     * @return mixed The value.
-     */
-    private function constant(string $name) {
-        return (new \ReflectionClass('quizaccess_proctoring_external'))->getConstant($name);
-    }
 
     /**
      * Build a JPEG of roughly a target size, with enough noise that it will not compress away.
@@ -110,7 +85,7 @@ final class id_verification_payload_test extends \basic_testcase {
             $raw = str_repeat('x', $length);
             $this->assertSame(
                 strlen(base64_encode($raw)),
-                $this->call('base64_encoded_size', [$length]),
+                id_verification_payload::encoded_size($length),
                 'encoded size mismatch for a ' . $length . ' byte string'
             );
         }
@@ -129,7 +104,7 @@ final class id_verification_payload_test extends \basic_testcase {
             'id_image' => $this->noisy_jpeg(400, 300, 80),
             'live_image' => $this->noisy_jpeg(200, 200, 80),
         ];
-        [$fitted, $fits, $note] = $this->call('fit_id_verification_images', [$images, 2048]);
+        [$fitted, $fits, $note] = id_verification_payload::fit($images, 2048);
 
         $this->assertTrue($fits);
         $this->assertSame('', $note, 'a body that fits should report no reduction');
@@ -143,7 +118,7 @@ final class id_verification_payload_test extends \basic_testcase {
     public function test_an_oversized_body_is_reduced_under_the_budget(): void {
         $this->require_gd();
 
-        $budget = (int)$this->constant('MAX_ID_VERIFICATION_PAYLOAD_BYTES');
+        $budget = id_verification_payload::MAX_PAYLOAD_BYTES;
         $reserve = 2048;
         $images = [
             'id_image' => $this->noisy_jpeg(2200, 1700),
@@ -153,7 +128,7 @@ final class id_verification_payload_test extends \basic_testcase {
 
         $before = 0;
         foreach ($images as $bytes) {
-            $before += $this->call('base64_encoded_size', [strlen($bytes)]);
+            $before += id_verification_payload::encoded_size(strlen($bytes));
         }
         $this->assertGreaterThan(
             $budget,
@@ -161,11 +136,11 @@ final class id_verification_payload_test extends \basic_testcase {
             'the fixture must start over the budget or the test proves nothing'
         );
 
-        [$fitted, $fits, $note] = $this->call('fit_id_verification_images', [$images, $reserve]);
+        [$fitted, $fits, $note] = id_verification_payload::fit($images, $reserve);
 
         $after = 0;
         foreach ($fitted as $bytes) {
-            $after += $this->call('base64_encoded_size', [strlen($bytes)]);
+            $after += id_verification_payload::encoded_size(strlen($bytes));
         }
 
         $this->assertTrue($fits, 'the body should fit after reduction: ' . $note);
@@ -184,12 +159,12 @@ final class id_verification_payload_test extends \basic_testcase {
             'id_back_image' => $this->noisy_jpeg(2200, 1700),
             'live_image' => $this->noisy_jpeg(800, 1000),
         ];
-        [$fitted] = $this->call('fit_id_verification_images', [$images, 2048]);
+        [$fitted] = id_verification_payload::fit($images, 2048);
 
         $floors = [
-            'id_image' => (int)$this->constant('MIN_ID_DOCUMENT_LONG_EDGE'),
-            'id_back_image' => (int)$this->constant('MIN_ID_DOCUMENT_LONG_EDGE'),
-            'live_image' => (int)$this->constant('MIN_ID_LIVE_LONG_EDGE'),
+            'id_image' => id_verification_payload::MIN_DOCUMENT_LONG_EDGE,
+            'id_back_image' => id_verification_payload::MIN_DOCUMENT_LONG_EDGE,
+            'live_image' => id_verification_payload::MIN_LIVE_LONG_EDGE,
         ];
         foreach ($fitted as $role => $bytes) {
             $info = getimagesizefromstring($bytes);
@@ -214,10 +189,10 @@ final class id_verification_payload_test extends \basic_testcase {
         $large = str_repeat('l', 8000000);
         $allowance = 3000000;
 
-        $targets = $this->call('allocate_image_budgets', [
+        $targets = id_verification_payload::allocate_budgets(
             ['id_image' => $large, 'live_image' => $small],
-            $allowance,
-        ]);
+            $allowance
+        );
 
         $this->assertSame(
             strlen($small),
@@ -240,11 +215,11 @@ final class id_verification_payload_test extends \basic_testcase {
      * With no room left for images at all, the body is reported as not fitting rather than sent.
      */
     public function test_no_remaining_budget_reports_failure(): void {
-        $budget = (int)$this->constant('MAX_ID_VERIFICATION_PAYLOAD_BYTES');
-        [, $fits, $note] = $this->call('fit_id_verification_images', [
+        $budget = id_verification_payload::MAX_PAYLOAD_BYTES;
+        [, $fits, $note] = id_verification_payload::fit(
             ['id_image' => 'x', 'live_image' => 'y'],
-            $budget + 1,
-        ]);
+            $budget + 1
+        );
 
         $this->assertFalse($fits);
         $this->assertNotSame('', $note);

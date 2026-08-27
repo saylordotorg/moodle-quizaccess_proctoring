@@ -471,14 +471,18 @@ final class overall_report_filters_test extends advanced_testcase {
      */
     public function test_dates_use_the_quiz_grades_report_format(): void {
         $row = reset($this->build()['rows']);
-        $expected = userdate(
-            $row === false ? 0 : $this->lastactivity_of($row['fullname']),
-            str_replace(',', ' ', get_string('strftimedatetime'))
+        // The format is the quiz grades report's, and the zone is the institution's with its name
+        // printed - staff read these reports against each other, and a bare wall-clock time that
+        // silently followed the server timezone is what made request times read as Central.
+        $expected = \quizaccess_proctoring\local\display_time::staff(
+            $row === false ? 0 : $this->lastactivity_of($row['fullname'])
         );
 
         $this->assertSame($expected, $row['lastactivity']);
         // The old format led with a weekday name; the grades report format does not.
         $this->assertStringNotContainsString('day,', $row['lastactivity']);
+        // And the zone is named, so nobody has to guess which one it is.
+        $this->assertMatchesRegularExpression('/[A-Z]{2,5}$/', $row['lastactivity']);
     }
 
     /**
