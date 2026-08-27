@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.9.1
+Restores a green CI run. No behaviour changes.
+
+- **The PHPUnit suites had been failing since 1.8.0**, and the first cause hid the others: the ID verification payload test loaded the web service class, which requires Moodle's `lib/externallib.php`, which calls `require_phpunit_isolation()` - so every run died with a fatal before a single test executed. The payload budgeting is pure byte and image work with no dependency on the web service layer, so it moved to `local\id_verification_payload` and the test calls it directly, with no reflection and no isolation. This mirrors how the verdict logic in `local\id_verification_decision` is already arranged.
+- Two test expectations had gone stale against deliberate 1.8.0 behaviour changes. The attempts-report date test asserted the bare grades-report format, but staff dates are now rendered in Eastern with the zone named. The risk-ceiling test hardcoded a bound of 101, which is only the bound while the score cap is on - and the cap now ships off, making the real bound the sum of the enabled factor caps plus one.
+- The risk-ceiling "default" test was additionally asserting a branch that is never reached: `settings.php` ships `riskreviewceiling` with a default of 101 and installing the plugin stores it, so the unset-config path never ran and the test was passing by reading that stored default back. It now clears the setting first, and checks the sentinel against both score-cap states.
+- CI now runs 193 tests (up from 173) across Moodle 4.05, 5.02 and 5.03 on PHP 8.1 to 8.4 with PostgreSQL, MySQL and MariaDB.
+
 # v1.9.0
 A strong face match now carries a weak name read, so ID verification stops blocking students it has already identified.
 

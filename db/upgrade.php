@@ -1302,5 +1302,13 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026082001, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026082700) {
+        // No schema changes and no behaviour changes: the ID verification payload budgeting moved
+        // from the web service class into local\id_verification_payload so it can be unit tested
+        // without an isolated process, and three test expectations were corrected. No-op savepoint
+        // to advance the stored version.
+        upgrade_plugin_savepoint(true, 2026082700, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
