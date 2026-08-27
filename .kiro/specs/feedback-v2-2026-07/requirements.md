@@ -340,7 +340,18 @@ One thing that looks like a bug and is not: account age renders blank for the `a
 because Moodle does not stamp `timecreated` on the account created at install. Ordinary accounts
 (including the reviewer's own) have one and show an age.
 
-Still not run: PHPUnit. `report_order_by_test` (whose allowlist mirror was updated for the new sort
-keys) and the privacy provider tests need a Moodle install with PHPUnit initialised - neither this
-checkout nor dev is one. The CLI checks above cover the same ground for the sort allowlist and the
-privacy metadata, but they are not a substitute for the suites.
+PHPUnit **is** run, by GitHub Actions - `.github/workflows/moodle-ci.yml`, across Moodle 4.05, 5.02
+and 5.03 on PHP 8.1 to 8.4 with PostgreSQL, MySQL and MariaDB. Neither this checkout nor dev can run
+it locally, so **CI is the only place the PHP suites execute: check `gh run list` after every
+push.** It was red from the 1.8.0 push until 1.9.1 for three reasons, all in this work:
+
+1. The payload test loaded the web service class, which requires `lib/externallib.php`, which calls
+   `require_phpunit_isolation()` - a fatal that aborted every run before any test executed, hiding
+   the other two. Fixed by moving the budgeting into `local\id_verification_payload`.
+2. The attempts-report date test still asserted the bare grades-report format, not the Eastern
+   zone-named format B2 introduced.
+3. The risk-ceiling test hardcoded a bound of 101, which only holds while the score cap is on - and
+   G1 turned the cap off. It was also asserting an unset-config branch that a shipped default of 101
+   means is never reached.
+
+Green as of v1.9.1: `OK (193 tests, 67563 assertions)` on all seven jobs.
