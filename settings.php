@@ -497,6 +497,13 @@ if ($canmanageproctoring) {
     ));
 
     $settings->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/idverificationnameblocks',
+        get_string('setting:idverificationnameblocks', 'quizaccess_proctoring'),
+        get_string('setting:idverificationnameblocks_desc', 'quizaccess_proctoring'),
+        0
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
         'quizaccess_proctoring/idverificationfacecarriesname',
         get_string('setting:idverificationfacecarriesname', 'quizaccess_proctoring'),
         get_string('setting:idverificationfacecarriesname_desc', 'quizaccess_proctoring'),

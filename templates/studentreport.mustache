@@ -39,7 +39,8 @@
             "extractedname": "JOHN A DOE", "romanizedname": "", "profilename": "John Doe",
             "matchedprofilename": "John Doe", "namematchreason": "First and last name matched exactly.",
             "errormessage": "", "checkedat": "1 January 2026  9:38 AM EST", "isotherattempt": false,
-            "namecarried": false,
+            "namecarried": false, "nameadvisory": true, "namenotchecked": false,
+            "namescorelabel": "57",
             "hasimages": true,
             "images": [{"url": "https://example.com/id-front.jpg", "label": "ID document"}]
         },
@@ -454,7 +455,7 @@
 
         <dl class="proctoring-idv-facts">
             <div><dt>{{#str}}reportidv:facescore, quizaccess_proctoring{{/str}}</dt><dd>{{facescore}}</dd></div>
-            <div><dt>{{#str}}reportidv:namescore, quizaccess_proctoring{{/str}}</dt><dd>{{namescore}}</dd></div>
+            <div><dt>{{#str}}reportidv:namescore, quizaccess_proctoring{{/str}}</dt><dd>{{namescorelabel}}</dd></div>
             {{#extractedname}}<div><dt>{{#str}}reportidv:extractedname, quizaccess_proctoring{{/str}}</dt><dd>{{extractedname}}</dd></div>{{/extractedname}}
             {{#romanizedname}}<div><dt>{{#str}}reportidv:romanizedname, quizaccess_proctoring{{/str}}</dt><dd>{{romanizedname}}</dd></div>{{/romanizedname}}
             {{#profilename}}<div><dt>{{#str}}reportidv:profilename, quizaccess_proctoring{{/str}}</dt><dd>{{profilename}}</dd></div>{{/profilename}}
@@ -464,6 +465,12 @@
         {{#namecarried}}
         <div class="proctoring-idv-carried">{{#str}}reportidv:namecarried, quizaccess_proctoring{{/str}}</div>
         {{/namecarried}}
+        {{#nameadvisory}}
+        <div class="proctoring-idv-carried">{{#str}}reportidv:nameadvisory, quizaccess_proctoring{{/str}}</div>
+        {{/nameadvisory}}
+        {{#namenotchecked}}
+        <div class="proctoring-idv-note">{{#str}}reportidv:namenotcheckednote, quizaccess_proctoring{{/str}}</div>
+        {{/namenotchecked}}
         {{#namematchreason}}<div class="proctoring-idv-reason">{{namematchreason}}</div>{{/namematchreason}}
         {{#errormessage}}<div class="proctoring-idv-reason">{{errormessage}}</div>{{/errormessage}}
     </div>

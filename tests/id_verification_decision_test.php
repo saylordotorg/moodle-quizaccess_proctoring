@@ -51,6 +51,9 @@ final class id_verification_decision_test extends \advanced_testcase {
             'facecarries' => true,
             'strongfacescore' => 90,
             'namefloor' => 45,
+            // These tests describe the blocking regime, which is where the carry rule lives. The
+            // shipped default is advisory - covered separately below.
+            'nameblocks' => true,
         ], $overrides);
     }
 
@@ -184,6 +187,62 @@ final class id_verification_decision_test extends \advanced_testcase {
         $this->assertFalse($result['passed']);
         $this->assertTrue($result['namefailed']);
         $this->assertFalse($result['namecarried']);
+    }
+
+
+    /**
+     * By default a name shortfall is advisory: recorded, shown, and not a reason to refuse anybody.
+     *
+     * This is the shipped behaviour, because a certificate here does not need a name backed by a
+     * government document. The face match is the identity control.
+     */
+    public function test_a_name_shortfall_is_advisory_by_default(): void {
+        $config = $this->config(['nameblocks' => false]);
+
+        // Including the cases the carry rule would have had to rescue, and one it would not have.
+        foreach ([[96, 67], [94, 50], [98, 57], [85, 10], [99, 0]] as [$face, $name]) {
+            $result = id_verification_decision::evaluate($face, $name, $config);
+            $this->assertTrue($result['passed'], "face {$face} name {$name} should pass");
+            $this->assertFalse($result['namefailed']);
+            $this->assertTrue($result['nameadvisory'], 'the shortfall should be reported as advisory');
+            // Nothing had to carry it, so nothing claims to have.
+            $this->assertFalse($result['namecarried']);
+        }
+    }
+
+    /**
+     * Advisory applies to the name only: a failing face still fails the attempt.
+     */
+    public function test_advisory_names_do_not_rescue_a_failed_face(): void {
+        $result = id_verification_decision::evaluate(20, 100, $this->config(['nameblocks' => false]));
+
+        $this->assertFalse($result['passed']);
+        $this->assertTrue($result['facefailed']);
+        $this->assertFalse($result['nameadvisory'], 'the name cleared its threshold, so there is nothing to advise');
+    }
+
+    /**
+     * A name that clears its threshold is not flagged as advisory.
+     */
+    public function test_a_matching_name_is_not_flagged_advisory(): void {
+        $result = id_verification_decision::evaluate(99, 100, $this->config(['nameblocks' => false]));
+
+        $this->assertTrue($result['passed']);
+        $this->assertFalse($result['nameadvisory']);
+        $this->assertFalse($result['namecarried']);
+    }
+
+    /**
+     * config() reads the shipped default, which is advisory rather than blocking.
+     */
+    public function test_config_defaults_to_advisory(): void {
+        $this->resetAfterTest(true);
+
+        unset_config('idverificationnameblocks', 'quizaccess_proctoring');
+        $this->assertFalse(id_verification_decision::config()['nameblocks']);
+
+        set_config('idverificationnameblocks', 1, 'quizaccess_proctoring');
+        $this->assertTrue(id_verification_decision::config()['nameblocks']);
     }
 
     /**

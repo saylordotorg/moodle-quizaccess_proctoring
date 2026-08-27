@@ -1887,6 +1887,12 @@ if (
 
         $idvcontext = null;
         if ($idverification !== null) {
+            $idvdecision = \quizaccess_proctoring\local\id_verification_decision::evaluate(
+                (int)$idverification->facescore,
+                (int)$idverification->namescore
+            );
+            $idvnamenotchecked = (int)$idverification->namescore >= 100
+                && trim((string)($idverification->extractedname ?? '')) === '';
             $idvimages = [];
             $idvimagefields = [
                 'idimageurl' => 'reportidv:imagefront',
@@ -1929,13 +1935,19 @@ if (
                 'namematchreason' => trim((string)($idverification->namematchreason ?? '')),
                 'errormessage' => trim((string)($idverification->errormessage ?? '')),
                 'checkedat' => \quizaccess_proctoring\local\display_time::staff((int)$idverification->timemodified),
-                // A pass whose name score is under the threshold was carried by the face match.
-                // Without saying so, the row reads as "verified, name 57" and invites the reviewer
-                // to wonder whether something is broken.
-                'namecarried' => $idvstatus === 'pass' && \quizaccess_proctoring\local\id_verification_decision::evaluate(
-                    (int)$idverification->facescore,
-                    (int)$idverification->namescore
-                )['namecarried'],
+                // A pass whose name score is under the threshold was either carried by the face
+                // match or never able to block in the first place. Without saying which, the row
+                // reads as "verified, name 57" and invites the reviewer to wonder what is broken.
+                'namecarried' => $idvstatus === 'pass' && $idvdecision['namecarried'],
+                'nameadvisory' => $idvdecision['nameadvisory'],
+                // The provider skips reading the name when the name check is switched off, and
+                // answers with a score of 100 and no name at all. Showing that as "100" would be
+                // reporting a perfect match nobody measured, so an unread name says so instead. A
+                // real 100 always carries the name it matched, which is what distinguishes them.
+                'namenotchecked' => $idvnamenotchecked,
+                'namescorelabel' => $idvnamenotchecked
+                    ? get_string('reportidv:namenotchecked', 'quizaccess_proctoring')
+                    : (string)(int)$idverification->namescore,
                 'images' => $idvimages,
                 'hasimages' => !empty($idvimages),
                 // A check recorded against another attempt is still worth showing, but the reader

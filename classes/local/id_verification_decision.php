@@ -47,6 +47,14 @@ namespace quizaccess_proctoring\local;
  *
  * Lowering the name threshold instead cannot solve this: on the recorded failures it would have to
  * drop to 50 to admit them, and at 50 the margin over a meaningless read (41) is nine points.
+ *
+ * Whether a name shortfall may fail an attempt at all is separate, and off by default. Saylor's
+ * certificates do not need a name backed by a government document, so on that site the name is
+ * evidence for whoever reads the report rather than a gate - but it is still measured, still stored
+ * and still shown. That distinction matters more than it looks: switching the check off entirely
+ * makes the verification provider skip the text recognition and answer with a name score of 100 and
+ * an empty name, so "off" would silently replace the evidence with a perfect score that was never
+ * measured. Advisory keeps the measurement and drops only the consequence.
  */
 final class id_verification_decision {
 
@@ -93,6 +101,8 @@ final class id_verification_decision {
             'checkname' => $checkname,
             'facethreshold' => $facethreshold,
             'namethreshold' => $namethreshold,
+            // Whether a name shortfall may fail the attempt. Off by default: see the class comment.
+            'nameblocks' => $bool('idverificationnameblocks', false),
             'facecarries' => $bool('idverificationfacecarriesname', true),
             // Never a weaker bar than the face gate itself: carrying a name on a face score that
             // would not have passed on its own is not corroboration, it is nothing.
@@ -113,7 +123,8 @@ final class id_verification_decision {
      * @param int $facescore Face match score, 0-100.
      * @param int $namescore Name match score, 0-100.
      * @param array|null $config Decision configuration; read from settings when omitted.
-     * @return array{passed: bool, facefailed: bool, namefailed: bool, namecarried: bool}
+     * @return array{passed: bool, facefailed: bool, namefailed: bool, namecarried: bool,
+     *               nameadvisory: bool}
      */
     public static function evaluate(int $facescore, int $namescore, ?array $config = null): array {
         $config = $config ?? self::config();
@@ -121,6 +132,7 @@ final class id_verification_decision {
         $facefailed = !empty($config['checkface']) && $facescore < (int)$config['facethreshold'];
         $namefailed = false;
         $namecarried = false;
+        $nameadvisory = false;
 
         if (!empty($config['checkname']) && $namescore < (int)$config['namethreshold']) {
             // The carry needs face evidence to lean on: with the face check switched off there is
@@ -130,7 +142,11 @@ final class id_verification_decision {
                 && !$facefailed
                 && $facescore >= (int)$config['strongfacescore']
                 && $namescore >= (int)$config['namefloor'];
-            if ($carried) {
+            if (empty($config['nameblocks'])) {
+                // Measured, recorded, shown on the report - and not a reason to refuse anybody.
+                // Reported as advisory rather than carried, because nothing had to carry it.
+                $nameadvisory = true;
+            } else if ($carried) {
                 $namecarried = true;
             } else {
                 $namefailed = true;
@@ -142,6 +158,7 @@ final class id_verification_decision {
             'facefailed' => $facefailed,
             'namefailed' => $namefailed,
             'namecarried' => $namecarried,
+            'nameadvisory' => $nameadvisory,
         ];
     }
 }
