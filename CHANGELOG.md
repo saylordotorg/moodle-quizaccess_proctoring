@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.10.0
+A name mismatch no longer fails an ID check. It is still read, scored, stored and shown — it just stops deciding who sits an exam.
+
+- Student Affairs confirmed that a certificate here does not need a name backed by a government document. That was the name check's last remaining purpose: identity is the face match's job — the photo on the document has to match the person at the camera, which is what stops someone using another person's card — and a name score whose ceiling is set by how well a webcam read a piece of plastic should not decide who takes an exam.
+- New setting **"A name mismatch can fail the attempt"**, off by default. With it off, a name shortfall is recorded as advisory: the report shows the score, the text read off the document, and both images, and the attempt passes. Ticking it restores a blocking name gate, where the strong-face carry from 1.9.0 still applies.
+- **"Off" is not the same as unticking "Check the name on the ID", and the difference is a trap.** Switching the check off makes the verification provider skip text recognition entirely and answer with a name score of **100 and an empty name** — so the report would show a perfect match that was never measured. Advisory keeps the measurement and drops only the consequence, which is why it is a separate setting rather than a reuse of the existing toggle.
+- The report is now honest about an unread name: where the stored result carries a score of 100 with no name text — the signature of a check that never ran — it shows "Not checked" instead of a score, and says why. A genuine 100 always carries the name it matched, which is what distinguishes the two.
+- The per-student report distinguishes the two ways a weak name can survive: *carried* by a strong face match (blocking mode) and *advisory* (no consequence configured). A reviewer seeing "Verified, name 57" is told which.
+- Four new tests cover advisory mode, including that a failing face still fails, that a matching name is not flagged advisory, and that the shipped default is advisory rather than blocking.
+
 # v1.9.1
 Restores a green CI run. No behaviour changes.
 

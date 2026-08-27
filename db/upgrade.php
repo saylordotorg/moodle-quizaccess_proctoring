@@ -1310,5 +1310,12 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026082700, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026082701) {
+        // No schema changes. A name mismatch no longer fails an attempt by default: the new
+        // idverificationnameblocks setting takes its default of 0 from settings.php, and the
+        // verdict, the report and the strings are code. No-op savepoint so the default is applied.
+        upgrade_plugin_savepoint(true, 2026082701, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
