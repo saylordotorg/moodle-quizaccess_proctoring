@@ -482,7 +482,7 @@ final class overall_report_filters_test extends advanced_testcase {
         // The old format led with a weekday name; the grades report format does not.
         $this->assertStringNotContainsString('day,', $row['lastactivity']);
         // And the zone is named, so nobody has to guess which one it is.
-        $this->assertMatchesRegularExpression('/[A-Z]{2,5}$/', $row['lastactivity']);
+        $this->assertMatchesRegularExpression('/ [A-Z]{2,5}$/', $row['lastactivity']);
     }
 
     /**

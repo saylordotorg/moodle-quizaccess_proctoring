@@ -58,6 +58,12 @@ final class settings_accessors_test extends advanced_testcase {
     public function test_risk_review_ceiling_defaults_to_one_above_the_maximum(): void {
         $this->resetAfterTest();
 
+        // settings.php ships this setting with a default of 101, and installing the plugin stores
+        // it - so it is never actually absent on a real site or in a test run. Clearing it is the
+        // only way to exercise the "nothing configured" branch rather than reading that stored 101
+        // back and calling it the default.
+        unset_config('riskreviewceiling', 'quizaccess_proctoring');
+
         set_config('riskscorecapenabled', 1, 'quizaccess_proctoring');
         $this->assertSame(101, quizaccess_proctoring_get_risk_review_ceiling());
 
