@@ -1824,20 +1824,18 @@ body.quizaccess-proctoring-settings-page #admin-deleteallimages .btn-danger {
     grid-column: 1 / -1;
 }
 
-#proctoring-check-multimonitor .proctoring-preflight-status {
-    flex: 1 1 auto;
-    line-height: 1.2;
-    min-width: 0;
-    overflow-wrap: anywhere;
-    white-space: normal;
-}
-
 .proctoring-preflight-label {
     color: #1f2933;
     font-weight: 700;
 }
 
 .proctoring-preflight-status {
+    /* Whatever a caller passes, this stays one short line beside the label rather than wrapping
+       across it. The explanation for a state belongs in the step body, not in this pill. */
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     border-radius: 999px;
     display: inline-block;
     flex: 0 0 auto;

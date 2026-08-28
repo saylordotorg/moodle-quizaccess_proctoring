@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.10.1
+- **Fixed step 7 of the Start attempt checklist rendering on top of its own label.** The monitor step wrote the full sentence "Disconnect or disable extra monitors before starting the quiz." into the small status pill beside the step name — a pill sized for the word "Pending" — and a rule specific to that step let the sentence wrap instead of overflow, so it wrapped across "Use one monitor" in red capitals. The pill now carries only the short status ("Pending", "Complete", "Action needed"); the explanation was already being shown in the step body, where every other step puts it. The pill is also capped to one line, so no future caller can put a paragraph in the rail.
+- **The Cancel button now sits beside the start button in the card footer** on desktop, to the right of "Complete precheck first", instead of being stranded below the card as an unstyled default button. Moodle groups Cancel with the submit button, but only themes that keep that grouping brought it along when the footer was assembled; it is now placed explicitly, which works either way. It stays inside the form, so it still cancels. On narrow screens the start button still stretches with Cancel beside it.
+- **The screen monitor helper window no longer steals focus when it is already open.** Answering the share prompt re-attaches to the existing helper, and the re-attach called focus() unconditionally — pulling the helper in front of the exam every time, which reads as the quiz losing focus. Focus is now taken only when the window is genuinely created, which is the one time the student needs to see it. The helper does not need focus to keep working: it answers status requests through message handlers, which browsers do not throttle in background windows.
+
 # v1.10.0
 A name mismatch no longer fails an ID check. It is still read, scored, stored and shown — it just stops deciding who sits an exam.
 

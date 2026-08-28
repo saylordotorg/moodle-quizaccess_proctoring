@@ -340,6 +340,18 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         .replace(/'/g, '&#39;');
                 };
 
+                /**
+                 * Set a checklist item's state and the short status word beside it.
+                 *
+                 * The status is a pill in a narrow rail: it holds "Pending", "Complete" or "Action
+                 * needed", and nothing longer. A full sentence here wraps across the item and lands
+                 * on top of the step's own label - which is what a monitor warning did to step 7.
+                 * Explanations belong in the step body, where every step already puts them.
+                 *
+                 * @param {String} key Requirement key.
+                 * @param {String} state One of pending, complete, action.
+                 * @param {String} [message] Short override for the status word.
+                 */
                 const setRequirementStatus = function(key, state, message) {
                     const item = document.getElementById('proctoring-check-' + key);
                     const status = document.getElementById('proctoring-check-' + key + '-status');
@@ -487,7 +499,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         setMultiMonitorConfirmed(true);
                         setMultiMonitorResult(strings.multimonitorunavailable, true);
                         if (multiMonitorBlocks) {
-                            setRequirementStatus('multimonitor', 'complete', strings.multimonitorunavailable);
+                            setRequirementStatus('multimonitor', 'complete');
                         }
                         updatePreflightGate();
                         return;
@@ -505,14 +517,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         setMultiMonitorConfirmed(!multiMonitorBlocks);
                         setMultiMonitorResult(strings.multimonitordetected, false);
                         if (multiMonitorBlocks) {
-                            setRequirementStatus('multimonitor', 'action', strings.multimonitorblockmessage);
+                            setRequirementStatus('multimonitor', 'action');
                         }
                     } else {
                         multiMonitorReady = true;
                         setMultiMonitorConfirmed(true);
                         setMultiMonitorResult(strings.multimonitorsingle, true);
                         if (multiMonitorBlocks) {
-                            setRequirementStatus('multimonitor', 'complete', strings.multimonitorsingle);
+                            setRequirementStatus('multimonitor', 'complete');
                         }
                     }
 
@@ -1852,6 +1864,19 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     if (actionRow && actionRow !== wrapper && !wrapper.contains(actionRow)) {
                         actionRow.classList.add('proctoring-stepper-actions');
                         footer.appendChild(actionRow);
+
+                        // Cancel belongs beside the button it is the alternative to. Core groups it
+                        // with the submit, but only themes that keep that grouping bring it along
+                        // when the row moves - elsewhere it was left behind below the card, styled
+                        // as a stray default button. Placing it explicitly works either way, and
+                        // moving it is safe because the footer is still inside the form, so the
+                        // button still submits. It goes after the submit so it reads as the quieter
+                        // of the two.
+                        const cancelNode = document.getElementById('id_cancel');
+                        if (cancelNode && !actionRow.contains(cancelNode)) {
+                            (submitNode.parentNode === actionRow ? actionRow : submitNode.parentNode)
+                                .insertBefore(cancelNode, submitNode.nextSibling);
+                        }
                     }
                     wrapper.appendChild(footer);
 

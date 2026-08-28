@@ -137,12 +137,22 @@ define([], function() {
                         return null;
                     }
 
+                    // window.open() with a name returns the existing helper when one is already
+                    // running, so this is both "create" and "re-attach". Only a window we actually
+                    // had to point at the monitor URL is new.
                     const currentUrl = monitorWindow.location.href || '';
-                    if (currentUrl === 'about:blank' ||
-                            currentUrl.indexOf('/mod/quiz/accessrule/proctoring/screenmonitor.php') === -1) {
+                    const isNewWindow = currentUrl === 'about:blank' ||
+                        currentUrl.indexOf('/mod/quiz/accessrule/proctoring/screenmonitor.php') === -1;
+                    if (isNewWindow) {
                         monitorWindow.location.href = monitorUrl;
+                        // Focus only on creation, so the student sees the window they were just
+                        // asked to allow. Focusing an already-running helper pulls it in front of
+                        // the exam for no reason - and because this runs whenever the share gate is
+                        // answered, that reads as the quiz losing focus over and over. The helper
+                        // does not need focus to keep working: it answers status requests through
+                        // message handlers, which browsers do not throttle in background windows.
+                        monitorWindow.focus();
                     }
-                    monitorWindow.focus();
                 } catch (error) {
                     monitorWindow = window.open(monitorUrl, windowName, popupFeatures);
                     if (!monitorWindow) {

@@ -1317,5 +1317,11 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026082701, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026082702) {
+        // No schema changes: Start attempt stepper layout and the screen monitor helper's focus
+        // behaviour are JavaScript and CSS. No-op savepoint to advance the stored version.
+        upgrade_plugin_savepoint(true, 2026082702, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
