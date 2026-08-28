@@ -75,52 +75,63 @@ final class admin_settings_access_test extends advanced_testcase {
 
 
     /**
-     * The settings page itself grants access, not just the helper the other pages use.
+     * The settings page itself grants a site administrator, not just the helper.
      *
-     * The helper was covered; the admin tree was not, and that is where the page actually decides.
-     * admin_settingpage::check_access() iterates req_capability, so the property has to hold an
-     * array - assigning a bare string to it (which skips the constructor's own wrapping) makes the
-     * loop iterate nothing and refuse everybody, site administrators included. That is exactly what
-     * shipped, and no test noticed because none of them built the tree.
-     *
-     * @param string $who Which kind of user to run as.
-     * @dataProvider settings_page_access_provider
+     * The helper was covered; the admin tree was not, and the tree is where the page actually
+     * decides. admin_settingpage::check_access() iterates req_capability, so the property has to
+     * hold an array - assigning a bare string to it (which skips the constructor's own wrapping)
+     * makes the loop iterate nothing and refuse everybody, site administrators included. That is
+     * what shipped in 1.8.0, and no test noticed because none of them built the tree.
      */
-    public function test_the_settings_page_grants_access(string $who): void {
-        global $CFG, $DB;
+    public function test_the_settings_page_grants_a_site_admin(): void {
+        global $CFG;
         require_once($CFG->libdir . '/adminlib.php');
 
         $this->resetAfterTest(true);
-
-        if ($who === 'siteadmin') {
-            $this->setAdminUser();
-        } else {
-            $user = $this->getDataGenerator()->create_user();
-            $managerrole = $DB->get_record('role', ['shortname' => 'manager'], '*', MUST_EXIST);
-            role_assign($managerrole->id, $user->id, context_system::instance()->id);
-            $this->setUser($user);
-        }
+        $this->setAdminUser();
 
         $page = admin_get_root(true, true)->locate('modsettingsquizcatproctoring');
 
         $this->assertNotNull($page, 'the proctoring settings page should be in the admin tree');
         $this->assertIsArray(
             $page->req_capability,
-            'req_capability must be an array; check_access() foreach-es over it'
+            'req_capability must be an array; check_access() iterates it'
         );
-        $this->assertTrue($page->check_access(), $who . ' should be able to open the settings page');
+        $this->assertTrue($page->check_access());
     }
 
     /**
-     * The two kinds of user who may administer proctoring.
+     * A manager holding the capability is granted wherever the plugin does its own checking.
      *
-     * @return array[] Test cases.
+     * Note what this does *not* claim. Core builds the module settings tree only for users with
+     * moodle/site:config, so mod/quiz/settings.php - and therefore this plugin's settings.php - is
+     * never included for a manager, and /admin/settings.php?section=modsettingsquizcatproctoring is
+     * not in their tree to be granted. No req_capability on the page can change that, because the
+     * code setting it never runs. The capability still governs every surface that checks it
+     * directly, which is what this asserts; the settings page for capability holders is a separate
+     * question against core's gating.
      */
-    public static function settings_page_access_provider(): array {
-        return [
-            'site administrator' => ['siteadmin'],
-            'manager holding the plugin capability' => ['manager'],
-        ];
+    public function test_a_manager_is_granted_where_the_plugin_checks_for_itself(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/adminlib.php');
+
+        $this->resetAfterTest(true);
+
+        $user = $this->getDataGenerator()->create_user();
+        $managerrole = $DB->get_record('role', ['shortname' => 'manager'], '*', MUST_EXIST);
+        role_assign($managerrole->id, $user->id, context_system::instance()->id);
+        $this->setUser($user);
+
+        $this->assertFalse(has_capability('moodle/site:config', context_system::instance()));
+        $this->assertTrue(quizaccess_proctoring_can_manage_admin_settings());
+
+        // And if core ever does put the page in a capability holder's tree, it must grant them
+        // rather than refuse - which is the bug this pair of tests exists to catch.
+        $page = admin_get_root(true, true)->locate('modsettingsquizcatproctoring');
+        if ($page !== null) {
+            $this->assertIsArray($page->req_capability);
+            $this->assertTrue($page->check_access());
+        }
     }
 
     /**
@@ -133,14 +144,8 @@ final class admin_settings_access_test extends advanced_testcase {
         $this->resetAfterTest(true);
         $this->setUser($this->getDataGenerator()->create_user());
 
-        // The page is only added to the tree for users who may manage proctoring, so being absent
-        // is itself a refusal - but if it is present it must still say no.
         $page = admin_get_root(true, true)->locate('modsettingsquizcatproctoring');
-        if ($page !== null) {
-            $this->assertFalse($page->check_access());
-        } else {
-            $this->assertNull($page);
-        }
+        $this->assertTrue($page === null || $page->check_access() === false);
     }
 
     /**
