@@ -1062,9 +1062,15 @@ if ($canmanageproctoring) {
     $proctoringcategory = 'quizaccess_proctoring_settings_category';
     $settings->visiblename = get_string('settings', 'quizaccess_proctoring');
     $settings->hidden = true;
-    // Core created this page requiring moodle/site:config. Relax it to whichever capability got
-    // the current user here, so a capability holder can open and save the page.
-    $settings->req_capability = $proctoringpagecap;
+    // Core created this page requiring moodle/site:config. Relax it so a capability holder can open
+    // and save the page too.
+    //
+    // This must be an array. The constructor wraps a bare string for you, but assigning the
+    // property directly skips that, and check_access() then foreach-es over a string - which
+    // iterates nothing and refuses everybody, site administrators included. Listing both
+    // capabilities is also more robust than picking one from $hassiteconfig: check_access() grants
+    // on any match, so it no longer depends on which user the admin tree happened to be built for.
+    $settings->req_capability = ['moodle/site:config', $proctoringadmincap];
 
     $proctoringcategoryobject = new quizaccess_proctoring_admin_category(
         $proctoringcategory,

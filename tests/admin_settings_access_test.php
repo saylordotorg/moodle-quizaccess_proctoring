@@ -73,6 +73,76 @@ final class admin_settings_access_test extends advanced_testcase {
         $this->assertTrue(quizaccess_proctoring_can_manage_admin_settings());
     }
 
+
+    /**
+     * The settings page itself grants access, not just the helper the other pages use.
+     *
+     * The helper was covered; the admin tree was not, and that is where the page actually decides.
+     * admin_settingpage::check_access() iterates req_capability, so the property has to hold an
+     * array - assigning a bare string to it (which skips the constructor's own wrapping) makes the
+     * loop iterate nothing and refuse everybody, site administrators included. That is exactly what
+     * shipped, and no test noticed because none of them built the tree.
+     *
+     * @param string $who Which kind of user to run as.
+     * @dataProvider settings_page_access_provider
+     */
+    public function test_the_settings_page_grants_access(string $who): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/adminlib.php');
+
+        $this->resetAfterTest(true);
+
+        if ($who === 'siteadmin') {
+            $this->setAdminUser();
+        } else {
+            $user = $this->getDataGenerator()->create_user();
+            $managerrole = $DB->get_record('role', ['shortname' => 'manager'], '*', MUST_EXIST);
+            role_assign($managerrole->id, $user->id, context_system::instance()->id);
+            $this->setUser($user);
+        }
+
+        $page = admin_get_root(true, true)->locate('modsettingsquizcatproctoring');
+
+        $this->assertNotNull($page, 'the proctoring settings page should be in the admin tree');
+        $this->assertIsArray(
+            $page->req_capability,
+            'req_capability must be an array; check_access() foreach-es over it'
+        );
+        $this->assertTrue($page->check_access(), $who . ' should be able to open the settings page');
+    }
+
+    /**
+     * The two kinds of user who may administer proctoring.
+     *
+     * @return array[] Test cases.
+     */
+    public static function settings_page_access_provider(): array {
+        return [
+            'site administrator' => ['siteadmin'],
+            'manager holding the plugin capability' => ['manager'],
+        ];
+    }
+
+    /**
+     * A user with neither route cannot open the settings page.
+     */
+    public function test_the_settings_page_refuses_everyone_else(): void {
+        global $CFG;
+        require_once($CFG->libdir . '/adminlib.php');
+
+        $this->resetAfterTest(true);
+        $this->setUser($this->getDataGenerator()->create_user());
+
+        // The page is only added to the tree for users who may manage proctoring, so being absent
+        // is itself a refusal - but if it is present it must still say no.
+        $page = admin_get_root(true, true)->locate('modsettingsquizcatproctoring');
+        if ($page !== null) {
+            $this->assertFalse($page->check_access());
+        } else {
+            $this->assertNull($page);
+        }
+    }
+
     /**
      * An ordinary user, and a teacher without the capability, are both refused.
      */
