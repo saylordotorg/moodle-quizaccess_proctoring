@@ -99,6 +99,7 @@ $string['attemptpanel:heading'] = 'Proctoring summary';
 $string['attemptwarning:multiplemonitors'] = 'Multiple monitors were detected. Use one monitor during this quiz.';
 $string['attemptwarning:quiznotinview'] = 'The quiz window lost focus. Keep the quiz visible and active during the attempt.';
 $string['attemptwarning:screensharestopped'] = 'Screen sharing stopped. Share your entire screen again to continue.';
+$string['attemptwarning:sessionlost'] = 'Your Moodle login session has changed or expired, so exam monitoring has stopped recording. Do not close this exam. Open a new browser tab, log in to Moodle again with your own account, then return here and reload the page to continue.';
 $string['attemptwarning:title'] = 'Saylor proctoring notice';
 $string['attemptwarning:wrongscreen'] = 'The shared screen does not show this quiz page. Share the monitor containing the quiz and screen check marker.';
 $string['back'] = 'Back';

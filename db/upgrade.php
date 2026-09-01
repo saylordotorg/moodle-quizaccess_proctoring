@@ -1329,5 +1329,12 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026082800, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026082801) {
+        // No schema changes: a dead login session behind the quiz tab now surfaces as one
+        // actionable banner instead of a permissions modal per failed upload. JavaScript and a
+        // string; no-op savepoint so the string is picked up.
+        upgrade_plugin_savepoint(true, 2026082801, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

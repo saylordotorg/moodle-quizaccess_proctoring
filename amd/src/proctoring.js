@@ -34,6 +34,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'attemptwarning:title', component: 'quizaccess_proctoring'},
                 {key: 'attemptwarning:wrongscreen', component: 'quizaccess_proctoring'},
                 {key: 'screenmarkerchecking', component: 'quizaccess_proctoring'},
+                {key: 'attemptwarning:sessionlost', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -65,6 +66,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     attemptwarningtitle: strings[24],
                     attemptwarningwrongscreen: strings[25],
                     screenmarkerchecking: strings[26],
+                    attemptwarningsessionlost: strings[27],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -237,6 +239,70 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             }
 
             return panel.querySelector('.proctoring-desktop-' + slot + '-slot');
+        };
+
+        /**
+         * Whether a web service failure means the login session behind this tab has changed.
+         *
+         * That happens mid-exam more than it sounds like it should: the session expires, or the
+         * student signs out or switches accounts in another tab - and with guest auto-login on,
+         * the tab quietly becomes the guest user, who holds no proctoring capability. Every
+         * periodic upload then fails the same way, and the raw exception surfaces as a
+         * "you do not have permissions (Proctoring send webcam photo)" modal every 30 seconds,
+         * which tells the student nothing they can act on.
+         *
+         * @param {Object} error The rejection from Ajax.call.
+         * @return {Boolean} True when this is an authentication failure, not a service fault.
+         */
+        const isAuthFailure = function(error) {
+            const code = (error && (error.errorcode || (error.exception && error.exception.errorcode))) || '';
+            return ['nopermissions', 'requireloginerror', 'servicerequireslogin',
+                'invalidsesskey', 'sessionerror', 'sessionexpired', 'loggedout'].indexOf(code) !== -1;
+        };
+
+        let sessionLostNotified = false;
+
+        /**
+         * Tell the student once, in place, that their login session is gone - then stay quiet.
+         *
+         * One persistent banner beats a modal per failed upload: the failure repeats every capture
+         * interval, and each modal steals focus from the attempt the student is trying to save.
+         *
+         * @param {String} message Localized explanation with the recovery step.
+         */
+        const showSessionLostBanner = function(message) {
+            if (sessionLostNotified || !message) {
+                return;
+            }
+            sessionLostNotified = true;
+
+            let dock = document.getElementById('proctoring-attempt-warning-dock');
+            if (!dock) {
+                dock = document.createElement('div');
+                dock.id = 'proctoring-attempt-warning-dock';
+                dock.className = 'proctoring-attempt-warning-dock';
+                document.body.appendChild(dock);
+            }
+            const banner = document.createElement('div');
+            banner.id = 'proctoring-session-lost-banner';
+            banner.className = 'alert alert-danger proctoring-attempt-warning';
+            banner.setAttribute('role', 'alert');
+            banner.textContent = message;
+            dock.appendChild(banner);
+        };
+
+        /**
+         * Failure handler for the periodic proctoring uploads.
+         *
+         * @param {Object} strings Localized strings.
+         * @param {Object} error The rejection from Ajax.call.
+         */
+        const handleUploadFailure = function(strings, error) {
+            if (isAuthFailure(error)) {
+                showSessionLostBanner(strings.attemptwarningsessionlost);
+                return;
+            }
+            Notification.exception(error);
         };
 
         /**
@@ -1215,8 +1281,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 Ajax.call([{
                     methodname: 'quizaccess_proctoring_log_event',
                     args: args
-                }])[0].fail(function() {
-                    // Do not interrupt the quiz attempt if activity logging is unavailable.
+                }])[0].fail(function(error) {
+                    // A service fault must not interrupt the attempt - but a dead session means
+                    // nothing this page sends is being recorded, and the student should hear that
+                    // once rather than find out from a permissions modal on the next capture.
+                    if (isAuthFailure(error)) {
+                        showSessionLostBanner(strings.attemptwarningsessionlost);
+                    }
                 });
             };
 
@@ -1850,7 +1921,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                     });
                                 }
                             }
-                        }).fail(Notification.exception);
+                        }).fail(function(error) {
+                            handleUploadFailure(strings, error);
+                        });
                     } else {
                         clearphoto();
                     }
@@ -2001,7 +2074,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                     type: 'error'
                                 });
                             }
-                        }).fail(Notification.exception);
+                        }).fail(function(error) {
+                            handleUploadFailure(strings, error);
+                        });
 
                     } else {
                         clearphoto();
