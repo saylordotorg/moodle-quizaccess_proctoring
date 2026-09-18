@@ -329,6 +329,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const idDocumentAutoCaptureRequiredScore = 8;
                 const idDocumentAutoCaptureInterval = 400;
                 const idDocumentMinCaptureSharpness = 1.8;
+                // Widest ID capture kept, in pixels. Fine print on a card stays legible well
+                // past 1920, so a still photo from a phone or a 4K webcam should not be scaled
+                // away; 2560 keeps a cropped, quality-0.92 JPEG comfortably inside the 8 MB the
+                // server accepts. Above that the extra bytes buy no legibility.
+                const idDocumentMaxCaptureWidth = 2560;
+                // Largest still requested from the camera's photo pipeline, on its long edge.
+                // Phone sensors offer stills of 50 MP and more; decoding one of those into a
+                // bitmap can exhaust a tab's memory for detail the capture would discard anyway.
+                const idDocumentMaxPhotoEdge = 4096;
                 const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
 
                 const escapeHtml = function(text) {
@@ -1261,12 +1270,26 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             typeof window.createImageBitmap !== 'function') {
                         return null;
                     }
-                    try {
-                        const capturer = new window.ImageCapture(track);
-                        const blob = await Promise.race([
-                            capturer.takePhoto(),
+                    const withTimeout = function(promise) {
+                        return Promise.race([
+                            promise.catch(() => null),
                             new Promise((resolve) => window.setTimeout(() => resolve(null), 3000)),
                         ]);
+                    };
+                    try {
+                        const capturer = new window.ImageCapture(track);
+                        // Without settings, takePhoto() returns the current photo size, which
+                        // on most devices is simply the video resolution. Ask for the sensor's
+                        // largest still instead - phones shoot far above their stream - and
+                        // fall back to the default photo when the camera refuses the request.
+                        let blob = null;
+                        const settings = await getIdDocumentPhotoSettings(capturer, withTimeout);
+                        if (settings) {
+                            blob = await withTimeout(capturer.takePhoto(settings));
+                        }
+                        if (!blob) {
+                            blob = await withTimeout(capturer.takePhoto());
+                        }
                         if (!blob) {
                             return null;
                         }
@@ -1274,6 +1297,31 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     } catch (error) {
                         return null;
                     }
+                };
+
+                const getIdDocumentPhotoSettings = async function(capturer, withTimeout) {
+                    if (!capturer || typeof capturer.getPhotoCapabilities !== 'function') {
+                        return null;
+                    }
+                    const capabilities = await withTimeout(capturer.getPhotoCapabilities());
+                    const widthRange = capabilities ? capabilities.imageWidth : null;
+                    const heightRange = capabilities ? capabilities.imageHeight : null;
+                    if (!widthRange || !heightRange || !(widthRange.max > 0) || !(heightRange.max > 0)) {
+                        return null;
+                    }
+                    // Keep the sensor's aspect ratio when capping, so the camera is asked for a
+                    // size it actually offers rather than one it has to approximate.
+                    const scale = Math.min(1, idDocumentMaxPhotoEdge / Math.max(widthRange.max, heightRange.max));
+                    const fitToRange = function(range, target) {
+                        const min = range.min > 0 ? range.min : 1;
+                        const step = range.step > 0 ? range.step : 1;
+                        const stepped = min + (Math.floor((target - min) / step) * step);
+                        return Math.max(min, Math.min(range.max, stepped));
+                    };
+                    return {
+                        imageWidth: fitToRange(widthRange, Math.round(widthRange.max * scale)),
+                        imageHeight: fitToRange(heightRange, Math.round(heightRange.max * scale)),
+                    };
                 };
 
                 const trimLetterboxBars = function(canvas) {
@@ -1342,7 +1390,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     const sourceWidth = photo ? photo.width : (video.videoWidth || 0);
                     const sourceHeight = photo ? photo.height : (video.videoHeight || 0);
                     if (!rect) {
-                        const fallbackWidth = Math.min(1920, sourceWidth || 1280);
+                        const fallbackWidth = Math.min(idDocumentMaxCaptureWidth, sourceWidth || 1280);
                         const fallbackHeight = sourceWidth
                             ? Math.max(1, Math.round(fallbackWidth * (sourceHeight / sourceWidth)))
                             : Math.round(fallbackWidth / (4 / 3));
@@ -1360,7 +1408,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     const cropY = rect.y * scaleY;
                     const cropWidth = Math.max(1, rect.width * scaleX);
                     const cropHeight = Math.max(1, rect.height * scaleY);
-                    const targetWidth = Math.min(1920, Math.max(640, Math.round(cropWidth)));
+                    const targetWidth = Math.min(idDocumentMaxCaptureWidth, Math.max(640, Math.round(cropWidth)));
                     const targetHeight = Math.max(1, Math.round(targetWidth * (cropHeight / cropWidth)));
                     canvas.width = targetWidth;
                     canvas.height = targetHeight;
