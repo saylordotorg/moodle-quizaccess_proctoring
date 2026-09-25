@@ -2022,6 +2022,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     public function description() {
         global $PAGE;
 
+        // The Moodle app fetches these messages through mod_quiz_get_quiz_access_information,
+        // which declares them PARAM_TEXT and rejects any value that cleaning would change, so
+        // the <strong> in the header or the report button's markup fails the whole call with
+        // "Invalid response value detected". Web services get the header as plain text only:
+        // the button cannot be rendered as text, and there is no page to attach the JS to.
+        if ($this->is_web_service_request()) {
+            return [clean_param(get_string('proctoringheader', 'quizaccess_proctoring'), PARAM_TEXT)];
+        }
+
         // Localized strings for user messages.
         $record = (object)[
             'allowcamerawarning' => get_string('warning:cameraallowwarning', 'quizaccess_proctoring'),
@@ -2039,6 +2048,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         ];
 
         return $messages;
+    }
+
+    /**
+     * Whether this request is a web service or AJAX call rather than a rendered page.
+     *
+     * @return bool True when output is validated against an external function's return description.
+     */
+    protected function is_web_service_request(): bool {
+        return (defined('WS_SERVER') && WS_SERVER) || (defined('AJAX_SCRIPT') && AJAX_SCRIPT);
     }
 
     /**
