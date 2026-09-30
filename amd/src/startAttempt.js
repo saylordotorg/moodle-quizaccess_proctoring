@@ -53,6 +53,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'screenmarkerchecking', component: 'quizaccess_proctoring'},
                 {key: 'devicenotice:handheld', component: 'quizaccess_proctoring'},
                 {key: 'devicenotice:nocamera', component: 'quizaccess_proctoring'},
+                {key: 'preflight:servererrors', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -100,6 +101,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     screenmarkerchecking: strings[40],
                     devicenoticehandheld: strings[41],
                     devicenoticenocamera: strings[42],
+                    preflightservererrors: strings[43],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -300,7 +302,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     props.multimonitormode : 'off';
                 const multiMonitorBlocks = multiMonitorMode === 'block';
                 const submitButtonDefaultLabel = submitButton.is('input') ? submitButton.val() : submitButton.text();
-                let faceReady = !faceRequired;
+                let faceReady = !faceRequired || parseInt(props.facevalidationpassed || 0, 10) === 1;
                 let screenReady = !screenRequired;
                 let privacyReady = !privacyRequired;
                 let honorReady = !honorRequired;
@@ -1698,12 +1700,22 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 const setFaceValidationAction = function(message) {
                     const video = document.getElementById('video');
+                    const validateButton = document.getElementById('fcvalidate');
                     if (video) {
                         $("#video").css("border", "10px solid red");
+                    }
+                    if (validateButton) {
+                        validateButton.style.display = 'flex';
                     }
                     setFaceValidationResult(message, false);
                     faceReady = false;
                     setRequirementStatus('face', 'action');
+                    updatePreflightGate();
+                };
+
+                const setFaceValidationPending = function() {
+                    faceReady = false;
+                    setRequirementStatus('face', 'pending');
                     updatePreflightGate();
                 };
 
@@ -1775,7 +1787,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         return true;
                     }
 
-                    setRequirementStatus('face', 'pending');
+                    setFaceValidationPending();
                     setFaceValidationSpinner(true);
                     try {
                         const res = await submitFaceValidation(webcamPicture, faceImage, faceFound);
@@ -1826,6 +1838,38 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         ? strings.devicenoticehandheld
                         : strings.devicenoticenocamera;
                     panel.parentNode.insertBefore(notice, panel);
+                })();
+
+                // Keep server validation errors visible even when their completed step is collapsed.
+                (function() {
+                    const wrapper = document.querySelector('.quiz-check-form');
+                    const form = wrapper ? wrapper.closest('form') : null;
+                    if (!form || !wrapper.parentNode || document.getElementById('proctoring-server-errors')) {
+                        return;
+                    }
+                    const errors = Array.from(form.querySelectorAll('.invalid-feedback'))
+                        .map(node => (node.textContent || '').trim())
+                        .filter(Boolean);
+                    if (!errors.length) {
+                        return;
+                    }
+                    const summary = document.createElement('div');
+                    summary.id = 'proctoring-server-errors';
+                    summary.className = 'alert alert-danger proctoring-preflight-errors';
+                    summary.setAttribute('role', 'alert');
+                    const heading = document.createElement('p');
+                    heading.className = 'mb-1';
+                    heading.textContent = strings.preflightservererrors || strings.preflightactionneeded;
+                    summary.appendChild(heading);
+                    const list = document.createElement('ul');
+                    list.className = 'mb-0';
+                    Array.from(new Set(errors)).forEach(function(message) {
+                        const item = document.createElement('li');
+                        item.textContent = message;
+                        list.appendChild(item);
+                    });
+                    summary.appendChild(list);
+                    wrapper.parentNode.insertBefore(summary, wrapper);
                 })();
 
                 // Rebuild the precheck as a two-pane stepper: the requirements checklist
@@ -2015,7 +2059,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     setIdVerificationConfirmed(identityReady);
                 }
                 if (faceRequired) {
-                    setRequirementStatus('face', 'pending');
+                    if (faceReady) {
+                        setFaceValidationComplete(strings.preflightcomplete);
+                    } else {
+                        setRequirementStatus('face', 'pending');
+                    }
                 }
                 if (screenRequired) {
                     setRequirementStatus('screen', 'pending');
@@ -2815,7 +2863,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 $("#fcvalidate").click(async function(event) {
 
                     event.preventDefault();
-                    setRequirementStatus('face', 'pending');
+                    setFaceValidationPending();
                     const photo = document.getElementById('photo');
                     const canvas = document.getElementById('canvas');
                     const video = document.getElementById('video');

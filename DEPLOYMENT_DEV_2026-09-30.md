@@ -68,6 +68,14 @@ Live HTTPS checks passed: homepage and login return **200**, anonymous readiness
 
 Real cameras, screen-selection dialogs, and real-ID verification through the complete Moodle-to-AWS flow have **not** been tested. A representative student test should still cover device permissions, preflight, attempt resume, interrupted evidence uploads and coverage reports. Provider reachability confirms authentication and connectivity, not successful biometric comparison. The full cross-version CI matrix was not run during this deployment.
 
+## Preflight submission correction — September 30, 2026
+
+The laptop walkthrough exposed missing IDs on hidden preflight controls: screen sharing completed in the browser but its submitted confirmation stayed `0`. The correction adds explicit IDs, restores fresh server-validated face state on form redisplay, and displays server errors above the stepper. The face evidence lifetime, requirement enforcement, identity policy and verification service are unchanged.
+
+Five runtime files (`rule.php`, the English language file, and the `startAttempt` source, build and source map) were deployed with archive SHA-256 `3fc9c3fac508428439ebb4a57f36c8b1f45bbd4265db374efd488572b9b13707`. SSM command `95233d96-2304-4a12-8c00-af23f59f694c` succeeded. The exact site root, release version, maintenance state and absence of recent active attempts were checked before a brief maintenance interval. All before/after hashes passed, PHP syntax passed, caches were purged and maintenance was disabled. A private file-level rollback copy is at `/var/backups/moodle-proctoring/dev.sylr.org/20260930-preflight-fix`; no database/schema or Lambda update was needed.
+
+Local validation passed 102 JavaScript cases and 12 focused Moodle cases / 61 assertions. The new real-form test failed on the prior missing-ID markup and passed on the corrected markup. It covers browser-selected controls reaching the actual POST, student and administrator preview forms, failed/missing CAPTCHA, and unconfirmed-screen rejection. Physical-device start/review acceptance remains pending the user's retry.
+
 ## Manual rollback cautions
 
 Stop or drain scheduled jobs and other writers before restoration. Restore the database snapshot and matching prior plugin code together; a code-only rollback does not reverse the schema or settings upgrade. Restoring the snapshot loses database writes made after it was taken, so assess subsequent activity first. Recover the original provider URLs and settings from the database backup, then restore the recorded maintenance and cron state and verify the site. The dedicated dev Lambda and the unchanged shared Lambda must remain clearly distinguished.

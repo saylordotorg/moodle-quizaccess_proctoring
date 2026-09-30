@@ -623,6 +623,7 @@ $string['preflight:requirementsheading'] = 'Setup checklist';
 $string['preflight:requirementsintro'] = 'Complete each required item below. The Start attempt button unlocks after every item is complete.';
 $string['preflight:screenshare'] = 'Share your entire screen';
 $string['preflight:securitycheck'] = 'Pass the security check';
+$string['preflight:servererrors'] = 'Review these errors before starting the quiz:';
 $string['preflight:setupcomplete'] = 'Setup complete — ready to start';
 $string['preflight:singlemonitor'] = 'Use one monitor';
 $string['preflight:stepcounter'] = 'Step {$a->current} of {$a->total}';

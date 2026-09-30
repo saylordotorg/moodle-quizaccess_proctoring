@@ -56,10 +56,15 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const test = require('node:test');
+const nodeTest = require('node:test');
 const assert = require('node:assert');
 
-const SOURCE_PATH = path.resolve(__dirname, '..', '..', 'amd', 'src', 'startAttempt.js');
+for (const [variant, relativePath] of [
+    ['source', '../../amd/src/startAttempt.js'],
+    ['shipped AMD', '../../amd/build/startAttempt.min.js'],
+]) {
+const test = (name, ...args) => nodeTest(variant + ': ' + name, ...args);
+const SOURCE_PATH = path.resolve(__dirname, relativePath);
 const SOURCE = fs.readFileSync(SOURCE_PATH, 'utf8');
 
 // The seven preflight step keys, in the gate's evaluation order. The five
@@ -76,6 +81,7 @@ function makeEl(id, opts) {
     const classes = new Set(opts.classes || []);
     const attrs = Object.assign({}, opts.attrs || {});
     const listeners = {};
+    const children = [];
     const ctx2d = {
         fillStyle: '',
         fillRect() {},
@@ -130,7 +136,12 @@ function makeEl(id, opts) {
             (listeners[t] = listeners[t] || []).push(fn);
         },
         removeEventListener() {},
-        appendChild() {},
+        children,
+        appendChild(child) {
+            children.push(child);
+            child.parentNode = this;
+            return child;
+        },
         getContext() {
             return ctx2d;
         },
@@ -153,7 +164,7 @@ function makeEl(id, opts) {
  * nodes, the ready node and the consent checkboxes, plus mocked Moodle AMD deps
  * and a submit-button spy.
  */
-function buildEnv() {
+function buildEnv(options = {}) {
     const byId = {};
     const byClass = {};
     const byName = {};
@@ -189,6 +200,7 @@ function buildEnv() {
     register(makeEl('id_multimonitorconfirmed', {tag: 'input'}));
     register(makeEl('id_entirescreenconfirmed', {tag: 'input'}));
     register(makeEl('id_idverificationconfirmed', {tag: 'input'}));
+    ['fcvalidate', 'video', 'photo', 'canvas', 'validate-cropimg'].forEach((id) => register(makeEl(id)));
 
     const privacyCheckbox = makeEl('proctoringprivacy', {tag: 'input'});
     const honorCheckbox = makeEl('proctoring', {tag: 'input'});
@@ -247,6 +259,25 @@ function buildEnv() {
     };
 
     const navigator = {mediaDevices: {}};
+    const summaries = [];
+    if (options.serverErrors) {
+        const errors = options.serverErrors.map((message) => {
+            const node = makeEl('', {classes: ['invalid-feedback']});
+            node.textContent = message;
+            return node;
+        });
+        const form = makeEl('mod_quiz_preflight_form', {tag: 'form'});
+        form.querySelectorAll = (selector) => selector === '.invalid-feedback' ? errors : [];
+        const wrapper = register(makeEl('preflight-wrapper', {classes: ['quiz-check-form']}));
+        wrapper.closest = (selector) => selector === 'form' ? form : null;
+        wrapper.querySelector = () => null;
+        wrapper.parentNode = form;
+        form.insertBefore = (node, reference) => {
+            assert.strictEqual(reference, wrapper, 'Server errors belong before the entire stepper');
+            node.parentNode = form;
+            summaries.push(node);
+        };
+    }
 
     // Submit-button spy. The module treats it as a <button> (is('input') -> false),
     // so it reads/writes the label via text(); prop('disabled', ...) is the gate signal.
@@ -319,12 +350,19 @@ function buildEnv() {
         genericJq[m] = () => (m === 'is' ? false : genericJq);
     });
 
+    const clickHandlers = {}, html = {};
     const $ = function(sel) {
         if (typeof sel === 'function') {
             return $;
         }
         if (sel === '#id_submitbutton') {
             return submitJq;
+        }
+        if (typeof sel === 'string' && sel.startsWith('#')) {
+            const chain = Object.create(genericJq);
+            chain.click = (callback) => { clickHandlers[sel] = callback; return chain; };
+            chain.html = (value) => { html[sel] = value; return chain; };
+            return chain;
         }
         return genericJq;
     };
@@ -339,13 +377,18 @@ function buildEnv() {
             exceptions.push(e);
         },
     };
+    const requests = [];
     const Ajax = {
-        call() {
+        call(calls) {
+            const request = {calls};
+            requests.push(request);
             const result = {
-                done() {
+                done(callback) {
+                    request.resolve = callback;
                     return result;
                 },
-                fail() {
+                fail(callback) {
+                    request.reject = callback;
                     return result;
                 },
             };
@@ -378,8 +421,11 @@ function buildEnv() {
         document,
         navigator,
         // Test handles.
-        dom: {steps, items, status, readyNode, privacyCheckbox, honorCheckbox},
+        dom: {steps, items, status, readyNode, privacyCheckbox, honorCheckbox, summaries},
         submitState,
+        clickHandlers,
+        html,
+        requests,
         notifications,
         exceptions,
     };
@@ -392,7 +438,8 @@ function buildEnv() {
 function loadModule(env) {
     let moduleExport = null;
     const sandbox = {
-        define(deps, factory) {
+        define(...args) {
+            const factory = args.at(-1), deps = args.at(-2);
             moduleExport = factory.apply(null, deps.map((d) => env.deps[d]));
         },
         navigator: env.navigator,
@@ -545,3 +592,86 @@ test('R5.5 - an all-waived config with no consent required leaves Start unlocked
     assert.strictEqual(env.notifications.length, 0, 'no notifications raised');
     assert.strictEqual(env.exceptions.length, 0, 'no exceptions raised');
 });
+
+test('a fresh server face pass survives redisplay while another requirement remains unmet', async () => {
+    const env = buildEnv();
+    await loadModule(env).setup(props({faceidcheck: '1', facevalidationpassed: '1', privacyrequired: '1'}), null);
+    await flush();
+    assert.ok(env.dom.status.face._classes.has('is-complete'));
+    assert.ok(!env.dom.steps.face._classes.has('is-active'));
+    assert.ok(env.dom.steps.privacy._classes.has('is-active'));
+    assert.strictEqual(env.document.getElementById('fcvalidate').style.display, 'none');
+    assert.match(env.html['#face_validation_result'], /preflight:complete/);
+    assert.strictEqual(env.submitState.disabled, true, 'Restoring face must not waive the unmet requirement');
+    env.dom.privacyCheckbox.checked = true;
+    env.dom.privacyCheckbox._fire('change');
+    await flush();
+    assert.strictEqual(env.submitState.disabled, false, 'Completing the remaining requirement must allow submission');
+    assert.strictEqual(env.requests.length, 0, 'A fresh server result must not cause another face request');
+});
+
+test('missing or expired server face results still require face validation', async () => {
+    for (const facevalidationpassed of [undefined, 0, '0']) {
+        const env = buildEnv();
+        await loadModule(env).setup(props({faceidcheck: '1', facevalidationpassed}), null);
+        await flush();
+        assert.strictEqual(env.submitState.disabled, true);
+        assert.ok(env.dom.steps.face._classes.has('is-active'));
+        assert.ok(env.dom.status.face._classes.has('is-pending'));
+        assert.notStrictEqual(env.document.getElementById('fcvalidate').style.display, 'none');
+    }
+});
+
+test('an intentional face retry invalidates restored readiness until the new request passes', async () => {
+    const env = buildEnv();
+    await loadModule(env).setup(props({faceidcheck: '1', facevalidationpassed: '1'}), null);
+    await flush();
+    assert.strictEqual(env.submitState.disabled, false);
+    const retry = env.clickHandlers['#fcvalidate']({preventDefault() {}});
+    await flush();
+    assert.strictEqual(env.requests.length, 1);
+    assert.strictEqual(env.requests[0].calls[0].methodname, 'quizaccess_proctoring_validate_face');
+    assert.strictEqual(env.submitState.disabled, true, 'A pending retry cannot reuse the restored server pass');
+    assert.ok(env.dom.status.face._classes.has('is-pending'));
+    env.requests[0].resolve({status: 'failed', warnings: []});
+    await retry;
+    assert.strictEqual(env.submitState.disabled, true);
+    assert.ok(env.dom.status.face._classes.has('is-action'));
+    assert.strictEqual(env.document.getElementById('fcvalidate').style.display, 'flex',
+        'A failed retry must expose the validation button again');
+    const successfulRetry = env.clickHandlers['#fcvalidate']({preventDefault() {}});
+    await flush();
+    assert.strictEqual(env.submitState.disabled, true);
+    env.requests[1].resolve({status: 'success', warnings: []});
+    await successfulRetry;
+    assert.strictEqual(env.submitState.disabled, false);
+    assert.ok(env.dom.status.face._classes.has('is-complete'));
+});
+
+test('server errors remain readable above completed hidden steps and are rendered as plain text', async () => {
+    const message = '<img src=x onerror=alert(1)> Server rejected the submitted field.';
+    const env = buildEnv({serverErrors: [message, '  ', message, 'Another validation error.']});
+    await loadModule(env).setup(props({faceidcheck: '1', facevalidationpassed: '1'}), null);
+    await flush();
+    assert.ok(env.dom.status.face._classes.has('is-complete'));
+    assert.ok(!env.dom.steps.face._classes.has('is-active'));
+    assert.strictEqual(env.submitState.disabled, false, 'The summary must not replace or alter validation gates');
+    assert.strictEqual(env.dom.summaries.length, 1);
+    const summary = env.dom.summaries[0];
+    assert.strictEqual(summary._attrs.role, 'alert');
+    assert.strictEqual(summary.parentNode.id, 'mod_quiz_preflight_form');
+    assert.strictEqual(summary.children[0].textContent, 'preflight:servererrors');
+    const items = summary.children[1].children;
+    assert.deepStrictEqual(items.map(item => item.textContent), [message, 'Another validation error.']);
+    assert.ok(items.every(item => item.innerHTML === undefined && item.children.length === 0),
+        'Server messages must never be interpreted as HTML');
+});
+
+test('empty validation placeholders do not create a server error summary', async () => {
+    const env = buildEnv({serverErrors: ['', ' \n ']});
+    await loadModule(env).setup(props(), null);
+    await flush();
+    assert.strictEqual(env.dom.summaries.length, 0);
+    assert.strictEqual(env.submitState.disabled, false);
+});
+}

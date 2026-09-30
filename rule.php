@@ -1286,6 +1286,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             'examurl' => $examurl->out(false),
             'registerface' => $registerface ? 1 : 0,
             'faceidcheck' => $faceidcheck === '1' ? 1 : 0,
+            'facevalidationpassed' => quizaccess_proctoring_has_face_preflight_passed((int)$coursedata['cmid']) ? 1 : 0,
             'requireentirescreen' => $requireentirescreen,
             'privacyrequired' => $privacyrequired ? 1 : 0,
             'honorrequired' => $honorrequired ? 1 : 0,
@@ -1763,12 +1764,22 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         );
         $mform->addElement('html', '</div>');
 
-        // Add hidden inputs.
-        $mform->addElement('hidden', 'entirescreenconfirmed', 0);
+        // Hidden elements do not receive generated IDs; the browser updates these exact controls.
+        $mform->addElement('hidden', 'entirescreenconfirmed', 0, ['id' => 'id_entirescreenconfirmed']);
         $mform->setType('entirescreenconfirmed', PARAM_INT);
-        $mform->addElement('hidden', 'multimonitorconfirmed', $multimonitormode === self::MULTI_MONITOR_BLOCK ? 0 : 1);
+        $mform->addElement(
+            'hidden',
+            'multimonitorconfirmed',
+            $multimonitormode === self::MULTI_MONITOR_BLOCK ? 0 : 1,
+            ['id' => 'id_multimonitorconfirmed']
+        );
         $mform->setType('multimonitorconfirmed', PARAM_INT);
-        $mform->addElement('hidden', 'idverificationconfirmed', $idverificationpassed ? 1 : 0);
+        $mform->addElement(
+            'hidden',
+            'idverificationconfirmed',
+            $idverificationpassed ? 1 : 0,
+            ['id' => 'id_idverificationconfirmed']
+        );
         $mform->setType('idverificationconfirmed', PARAM_INT);
 
         // Close the form wrapper.
