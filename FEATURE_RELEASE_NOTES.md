@@ -68,4 +68,4 @@ The earlier audit's HTTPS/TLS and server-preflight requirements also apply; see 
 
 Test cleanup restored the original Moodle configuration and PHPUnit XML byte-for-byte, removed the temporary plugin junction and stopped the isolated database listener. The existing database services and plugin source were preserved.
 
-The complete plugin suite and GitHub PHP/database matrix have not been run for this feature release. Live cameras, screen-selection dialogs, visual layout and third-party providers require a deployment-environment smoke test; offline tests do not establish those flows.
+The focused results above predate the subsequent full GitHub matrix: all six Moodle environments ran 264 tests with 67,920 assertions successfully, as recorded in [release validation](RELEASE_VALIDATION_2026-09-30.md). Live cameras, screen-selection dialogs, visual layout and real biometric comparisons still require the student acceptance walkthrough; offline tests and provider readiness probes do not establish those flows.

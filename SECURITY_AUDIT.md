@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-Reviewed the local quizaccess_proctoring plugin, its browser code and built AMD assets, external/AJAX functions, report and override pages, file access, outbound integrations, background processing and Moodle Privacy API. The fixes are local working-tree changes; this audit does not deploy them or certify a live installation.
+Reviewed the local quizaccess_proctoring plugin, its browser code and built AMD assets, external/AJAX functions, report and override pages, file access, outbound integrations, background processing and Moodle Privacy API. At the end of the original audit, the fixes were local working-tree changes. Subsequent versioning, dev deployment and validation are recorded below; this source audit does not certify a live installation.
 
 Baseline: commit 59afe62 on master, plugin release 1.10.5. The audit fixes and selected feature follow-ups are recorded under 1.11.0 in CHANGELOG.md. This document's validation section records the original audit run; see [FEATURE_RELEASE_NOTES.md](FEATURE_RELEASE_NOTES.md) for subsequent feature validation.
 
