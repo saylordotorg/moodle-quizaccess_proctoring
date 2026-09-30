@@ -47,6 +47,8 @@ A reachable endpoint is not proof that verification will succeed. Browser/device
 
 ## Upgrade and rollout
 
+See [release validation](RELEASE_VALIDATION_2026-09-30.md) for the subsequent full GitHub CI results and [dev acceptance checks](DEV_ACCEPTANCE_2026-09-30.md) for the remaining real-device walkthrough. The [storage review](STORAGE_REVIEW_DEV_2026-09-30.md) records a confirmed gap for evidence whose attempt no longer exists; no retention cleanup was performed in that review.
+
 1. Back up the Moodle database and the installed plugin directory.
 2. Deploy the complete plugin, including rebuilt `amd/build` files. This release sets version `2026093000` and adds identity snapshots, capture metadata and duplicate-request indexes.
 3. From the Moodle root, run `php admin/cli/upgrade.php --non-interactive`, then `php admin/cli/purge_caches.php`.

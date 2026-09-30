@@ -223,7 +223,7 @@ jobs:
         working-directory: moodle
         # Moodle generates a configuration matching its bundled PHPUnit version.
         # The plugin's legacy standalone config targets PHPUnit 9 only.
-        run: vendor/bin/phpunit --configuration phpunit.xml --testsuite quizaccess_proctoring_testsuite --fail-on-risky --testdox
+        run: vendor/bin/phpunit --configuration phpunit.xml --testsuite quizaccess_proctoring_testsuite --fail-on-risky --fail-on-empty-test-suite --testdox
 
   verification-service:
     name: Verification service security regressions

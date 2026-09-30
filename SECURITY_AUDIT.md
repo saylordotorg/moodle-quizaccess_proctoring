@@ -6,6 +6,8 @@ Reviewed the local quizaccess_proctoring plugin, its browser code and built AMD 
 
 Baseline: commit 59afe62 on master, plugin release 1.10.5. The audit fixes and selected feature follow-ups are recorded under 1.11.0 in CHANGELOG.md. This document's validation section records the original audit run; see [FEATURE_RELEASE_NOTES.md](FEATURE_RELEASE_NOTES.md) for subsequent feature validation.
 
+Subsequent release preparation is recorded in [RELEASE_VALIDATION_2026-09-30.md](RELEASE_VALIDATION_2026-09-30.md), including full GitHub matrix results, the dev deployment, and outstanding device acceptance and retention findings. The optional service is now versioned under `tools/verification_service`; the sibling copy described below is the original audit source.
+
 The optional sibling ai_service Python bridge was also reviewed and patched. It sits outside the proctoring Git repository and must be deployed separately if used.
 
 Severity below describes the pre-fix behavior. Findings are grouped by security boundary; some groups contain multiple related defects. The review used source inspection and regression testing. It is not an exhaustive penetration test of a running production site or of third-party providers.

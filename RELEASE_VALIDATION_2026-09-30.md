@@ -1,0 +1,34 @@
+# Release validation — 2026-09-30
+
+Release 1.11.0 is recorded in draft [PR #29](https://github.com/saylordotorg/moodle-quizaccess_proctoring/pull/29). The plugin and optional verification-service source are versioned together; the service is deployed separately. The committed Lambda source matches the source in the deployed dev archive exactly.
+
+## GitHub CI
+
+The first complete plugin-suite run uses release commit `fc26d74366ea93fc5963fb5ba58a7bfe4eadf4cf` in [workflow run 36783698036](https://github.com/saylordotorg/moodle-quizaccess_proctoring/actions/runs/36783698036). The PR checks show the status of subsequent commits.
+
+| Environment | Result |
+| --- | --- |
+| Moodle 4.5 / PHP 8.1 / MariaDB 10.11 | 264 tests, 67,920 assertions passed |
+| Moodle 4.5 / PHP 8.3 / MySQL 8.4 | 264 tests, 67,920 assertions passed |
+| Moodle 4.5 / PHP 8.3 / PostgreSQL 16 | 264 tests, 67,920 assertions passed |
+| Moodle 5.2 / PHP 8.3 / MySQL 8.4 | 264 tests, 67,920 assertions passed |
+| Moodle 5.2 / PHP 8.4 / PostgreSQL 16 | 264 tests, 67,920 assertions passed |
+| Experimental Moodle main / PHP 8.4 / PostgreSQL 17 | 264 tests, 67,920 assertions passed |
+| JavaScript regressions | 51 tests passed |
+| Verification service / Python 3.12 | 13 offline tests passed; no skips |
+
+The PHP rows repeat the same 264-case plugin suite across different supported environments; they are not distinct added tests. Positive test counts were verified from job logs, including the new identity, monitoring-coverage, and readiness cases. CI uses each Moodle installation's generated root configuration rather than the plugin's legacy PHPUnit 9 configuration. The follow-up workflow also rejects an empty test suite explicitly.
+
+Required PHP lint, plugin validation, upgrade-savepoint, and Mustache checks passed. The existing informational codechecker step still reports style errors/warnings and is nonblocking; a green workflow does not mean the repository is style-clean. Newer Moodle lanes report 156 nonblocking PHPUnit deprecations; those are compatibility-maintenance work, not a claimed clean deprecation result. The full Linux runs completed the database-heavy property cases that had made the earlier Windows run slow.
+
+Locally, JavaScript tests were rerun successfully, PHP 8.1 syntax checks passed, and the verification service's 13 cases and optional server-adapter checks passed. A read-only dependency advisory scan with pip-audit 2.10.1 reported no known vulnerabilities for the pinned service requirements. No dependency audit guarantees the absence of undiscovered vulnerabilities.
+
+## Dev policy and remaining acceptance
+
+The user-approved dev pilot enables rechecks after profile-name and identity-policy changes. Expiry remains unlimited and every-attempt verification remains off. Settings were read back successfully and their previous values were saved privately. One legacy successful ID record lacks fingerprints and therefore needs a fresh check before a new attempt under these policies. Distribution defaults and periodic screen storage remain unchanged.
+
+The [student acceptance checklist](DEV_ACCEPTANCE_2026-09-30.md) remains pending an authenticated test-student session, a selected quiz, and real camera/ID/screen interactions. Browser sign-in was opened; no student credentials or identity evidence were requested in chat or written to this repository. Deployment connectivity, authentication, schema, registration, and asset checks passed, but those do not establish a successful real biometric comparison.
+
+The [storage review](STORAGE_REVIEW_DEV_2026-09-30.md) confirmed 92% disk utilization, mostly shared-host allocations, and a retention gap for evidence whose attempt no longer exists. No evidence was deleted, retention semantics changed, or volume resized. The current rollback backup remains available.
+
+Keep the PR in draft until the current-head CI and manual acceptance results are reviewed. No production deployment or merge was performed in this release-preparation pass.

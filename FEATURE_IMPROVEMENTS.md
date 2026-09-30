@@ -1,6 +1,6 @@
 # Feature improvements to choose
 
-Choices **1, 2 and 4** are implemented in the local 1.11.0 changes. See [FEATURE_RELEASE_NOTES.md](FEATURE_RELEASE_NOTES.md) for settings, defaults and upgrade instructions. The remaining choices below are proposals awaiting selection. Effort is relative: small means a localized change; medium spans UI, storage or workflow; large requires a broader design and integration work.
+Choices **1, 2 and 4** are implemented in 1.11.0 and deployed to dev. See [FEATURE_RELEASE_NOTES.md](FEATURE_RELEASE_NOTES.md) for settings, defaults and upgrade instructions, and [release validation](RELEASE_VALIDATION_2026-09-30.md) for CI and remaining acceptance checks. The remaining choices below are proposals awaiting selection. Effort is relative: small means a localized change; medium spans UI, storage or workflow; large requires a broader design and integration work.
 
 | Choice | Improvement | What you would get | Priority | Effort |
 | --- | --- | --- | --- | --- |
