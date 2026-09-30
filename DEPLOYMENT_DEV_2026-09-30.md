@@ -19,6 +19,12 @@ The cutover ran on September 30, 2026 from 21:42:44 to 21:45:56 UTC (4:42–4:45
 
 Deployment scripts, manifests and detailed verification results are retained in an operator-managed workspace outside this repository. At cutover, the runtime artifact was built from the working tree, including new files; its checksum identifies the deployed contents independently of a later Git commit or release tag.
 
+### Live-walkthrough correction
+
+The student walkthrough exposed a readiness check that could report success without decoded video frames and screen-monitor errors that hid the failing stage. A five-file correction was deployed afterward through SSM command `a796c856-9ebb-40fd-81e1-0774ecc59242` (`Success`): readiness source/build, readiness string preloads, English strings, and the screen-monitor page. Camera/screen readiness now requires playback and decoded frames within five seconds. Monitor playback is also bounded and reports separate permission, capture, playback, and missing-frame failures; whole-screen and marker requirements stay enforced.
+
+The correction archive SHA-256 is `562e6e130c359466189c8f845605f7ae30c12546ddc3ad904169675105ce6eff`. All five previous file hashes matched the original deployment before replacement, and all five updated hashes were verified afterward. PHP lint and **88 JavaScript tests** passed, including the same readiness cases against source and shipped AMD. The dev-only guard verified no recent active attempts; caches were purged and maintenance was disabled successfully. The five prior files are backed up under `/var/backups/moodle-proctoring/dev.sylr.org/20260930-preview-fix`. No schema, version, policy, Lambda, or other-site change was needed for this correction. Live acceptance remains tracked separately in [the acceptance checklist](DEV_ACCEPTANCE_2026-09-30.md).
+
 ## Dedicated AWS verification endpoint
 
 The dev Lambda is `moodle-proctoring-face-verify-dev`, alias `dev`, published version `1`. The existing shared Lambda was left unchanged.

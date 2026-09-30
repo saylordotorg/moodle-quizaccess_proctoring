@@ -3,14 +3,21 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const test = require('node:test');
+const nodeTest = require('node:test');
 const assert = require('node:assert/strict');
-const source = fs.readFileSync(path.join(__dirname, '../../amd/src/deviceReadiness.js'), 'utf8');
+
+// Run identical behavioral assertions against the editable source and the shipped AMD artifact.
+for (const [variant, filename] of [
+    ['source', '../../amd/src/deviceReadiness.js'],
+    ['shipped AMD', '../../amd/build/deviceReadiness.min.js'],
+]) {
+const source = fs.readFileSync(path.join(__dirname, filename), 'utf8');
+const test = (name, ...args) => nodeTest(variant + ': ' + name, ...args);
 
 function load(environment = {}) {
     let module;
     vm.runInNewContext(source, {
-        define(deps, factory) { module = factory({}); },
+        define(...args) { module = args.at(-1)({}); },
         setTimeout, clearTimeout, setInterval, clearInterval, Uint8Array,
         ...environment,
     });
@@ -29,11 +36,13 @@ function stream(kind = 'camera', surface = 'monitor') {
 }
 function setup(mediaDevices, extra = {}, environment = {}) {
     const statuses = [], streams = [];
+    const preview = {readyState: 2, videoWidth: 640, videoHeight: 480, play: () => Promise.resolve()};
     const controller = load(environment).createDeviceTests({
         mediaDevices, onStatus(...args) { statuses.push(args); },
-        onStream(...args) { streams.push(args); }, ...extra,
+        onStream(...args) { streams.push(args); return args[0] && args[1] !== 'microphone' ? preview : null; },
+        ...extra,
     });
-    return {controller, statuses, streams};
+    return {controller, statuses, streams, preview};
 }
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -137,8 +146,136 @@ function timers() {
     const entries = new Map();
     return {entries,
         setTimeout(fn, delay) { entries.set(++id, {fn, delay}); return id; },
-        clearTimeout(key) { entries.delete(key); }};
+        clearTimeout(key) { entries.delete(key); },
+        fire(delay) {
+            const entry = [...entries].find(([, value]) => value.delay === delay);
+            assert.ok(entry, 'Expected an active ' + delay + 'ms timer');
+            entries.delete(entry[0]);
+            entry[1].fn();
+        }};
 }
+
+test('camera and screen playback rejection cannot pass and releases preview resources', async () => {
+    for (const kind of ['camera', 'screen']) {
+        const clock = timers(), media = stream(kind);
+        const env = setup({getUserMedia: () => Promise.resolve(media),
+            getDisplayMedia: () => Promise.resolve(media)}, {}, clock);
+        env.preview.play = () => Promise.reject({name: 'NotAllowedError'});
+        await env.controller.run(kind);
+        assert.equal(env.statuses.some(row => row[1] === 'passed'), false, kind);
+        assert.deepEqual(env.statuses.at(-1), [kind, 'previewfailed']);
+        assert.equal(media.track.stopped, 1);
+        assert.deepEqual(env.streams.at(-1), [null, '']);
+        assert.equal(clock.entries.size, 0);
+        env.controller.dispose();
+    }
+});
+
+test('camera and screen require fulfilled playback and nonzero decoded frames before passing', async () => {
+    for (const kind of ['camera', 'screen']) {
+        const clock = timers(), media = stream(kind);
+        const env = setup({getUserMedia: () => Promise.resolve(media),
+            getDisplayMedia: () => Promise.resolve(media)}, {}, clock);
+        let play;
+        env.preview.play = () => new Promise(resolve => { play = resolve; });
+        const pending = env.controller.run(kind);
+        await settle();
+        assert.deepEqual(env.statuses.at(-1), [kind, 'checking'], 'Dimensions alone cannot pass before play resolves');
+        env.preview.readyState = 1;
+        play();
+        await settle();
+        assert.deepEqual(env.statuses.at(-1), [kind, 'checking'], 'Metadata is not a decoded frame');
+        env.preview.readyState = 2;
+        env.preview.videoHeight = 0;
+        clock.fire(100);
+        await settle();
+        assert.deepEqual(env.statuses.at(-1), [kind, 'checking'], 'Both frame dimensions must be nonzero');
+        env.preview.videoHeight = 480;
+        clock.fire(100);
+        await pending;
+        assert.deepEqual(env.statuses.at(-1), [kind, 'passed']);
+        assert.equal(media.track.stopped, 0);
+        assert.equal(clock.entries.size, 1, 'Only the automatic preview-stop timer remains');
+        env.controller.dispose();
+        assert.equal(media.track.stopped, 1);
+        assert.equal(clock.entries.size, 0);
+    }
+});
+
+test('a permitted camera or screen without decoded frames fails within five seconds', async () => {
+    for (const kind of ['camera', 'screen']) {
+        const clock = timers(), media = stream(kind);
+        const env = setup({getUserMedia: () => Promise.resolve(media),
+            getDisplayMedia: () => Promise.resolve(media)}, {}, clock);
+        env.preview.readyState = 1;
+        const pending = env.controller.run(kind);
+        await settle();
+        assert.equal(env.statuses.some(row => row[1] === 'passed'), false);
+        clock.fire(5000);
+        await pending;
+        assert.deepEqual(env.statuses.at(-1), [kind, 'noframes']);
+        assert.equal(media.track.stopped, 1);
+        assert.deepEqual(env.streams.at(-1), [null, '']);
+        assert.equal(clock.entries.size, 0);
+        env.controller.dispose();
+    }
+});
+
+test('a hanging preview playback promise is bounded and cannot pass after timeout', async () => {
+    const clock = timers(), media = stream();
+    const env = setup({getUserMedia: () => Promise.resolve(media)}, {}, clock);
+    let play;
+    env.preview.play = () => new Promise(resolve => { play = resolve; });
+    const pending = env.controller.run('camera');
+    await settle();
+    clock.fire(5000);
+    await pending;
+    assert.deepEqual(env.statuses.at(-1), ['camera', 'noframes']);
+    assert.equal(media.track.stopped, 1);
+    play();
+    await settle();
+    assert.equal(env.statuses.some(row => row[1] === 'passed'), false);
+    assert.equal(clock.entries.size, 0);
+    env.controller.dispose();
+});
+
+test('Stop settles pending playback immediately and ignores its late resolution', async () => {
+    const clock = timers(), media = stream();
+    const env = setup({getUserMedia: () => Promise.resolve(media)}, {}, clock);
+    let play;
+    env.preview.play = () => new Promise(resolve => { play = resolve; });
+    let finished = false;
+    const pending = env.controller.run('camera').then(() => { finished = true; });
+    await settle();
+    env.controller.stop();
+    await settle();
+    assert.equal(finished, true);
+    assert.equal(media.track.stopped, 1);
+    assert.deepEqual(env.streams.at(-1), [null, '']);
+    assert.deepEqual(env.statuses.at(-1), ['camera', 'stopped']);
+    assert.equal(clock.entries.size, 0);
+    play();
+    await pending;
+    await settle();
+    assert.equal(env.statuses.some(row => row[1] === 'passed'), false);
+    env.controller.dispose();
+});
+
+test('Stop cancels the decoded-frame polling timer and releases the camera', async () => {
+    const clock = timers(), media = stream();
+    const env = setup({getUserMedia: () => Promise.resolve(media)}, {}, clock);
+    env.preview.readyState = 0;
+    const pending = env.controller.run('camera');
+    await settle();
+    assert.equal(clock.entries.size, 2, 'Frame polling and deadline are both active');
+    env.controller.stop();
+    await pending;
+    assert.equal(media.track.stopped, 1);
+    assert.deepEqual(env.statuses.at(-1), ['camera', 'stopped']);
+    assert.equal(env.statuses.some(row => row[1] === 'passed'), false);
+    assert.equal(clock.entries.size, 0);
+    env.controller.dispose();
+});
 
 test('stopping an ignored permission prompt settles immediately and clears its wait timer', async () => {
     const clock = timers();
@@ -171,7 +308,7 @@ function page(preloadStrings = false) {
     };
     const nodes = {};
     const node = key => nodes[key] || (nodes[key] = {hidden: false, disabled: false, value: 0, listeners: {},
-        pause() {}, play: () => Promise.resolve(),
+        readyState: 2, videoWidth: 640, videoHeight: 480, pause() {}, play: () => Promise.resolve(),
         getAttribute() { return key; }, addEventListener(name, callback) { this.listeners[name] = callback; }});
     const root = {
         querySelector(selector) {
@@ -183,8 +320,8 @@ function page(preloadStrings = false) {
     let module;
     load({
         ...clock,
-        define(deps, factory) {
-            module = factory({call(...args) {
+        define(...args) {
+            module = args.at(-1)({call(...args) {
                 const entry = {args};
                 const result = new Promise(resolve => { entry.resolve = resolve; });
                 requests.push(entry);
@@ -220,6 +357,32 @@ test('readiness history restore releases previous previews and keeps device butt
     env.nodes.camera.listeners.click();
     await settle();
     assert.equal(env.previews.length, 2);
+    assert.equal(env.previews[1].track.stopped, 0);
+    env.controller.dispose();
+    assert.equal(env.previews[1].track.stopped, 1);
+    assert.equal(env.clock.entries.size, 0);
+});
+
+test('pagehide during pending playback releases media and history restore allows a fresh preview', async () => {
+    const env = page();
+    let play;
+    env.nodes.preview.play = () => new Promise(resolve => { play = resolve; });
+    env.nodes.camera.listeners.click();
+    await settle();
+    assert.equal(env.nodes.camerastatus.textContent, 'checking');
+    env.events.pagehide();
+    await settle();
+    assert.equal(env.previews[0].track.stopped, 1);
+    assert.equal(env.nodes.preview.srcObject, null);
+    assert.equal(env.clock.entries.size, 0);
+    play();
+    await settle();
+    assert.equal(env.nodes.camerastatus.textContent, 'stopped');
+    env.events.pageshow({persisted: true});
+    env.nodes.preview.play = () => Promise.resolve();
+    env.nodes.camera.listeners.click();
+    await settle();
+    assert.equal(env.nodes.camerastatus.textContent, 'passed');
     assert.equal(env.previews[1].track.stopped, 0);
     env.controller.dispose();
     assert.equal(env.previews[1].track.stopped, 1);
@@ -267,3 +430,4 @@ test('preloaded Moodle strings support offline device checks without string argu
     assert.equal(env.nodes.facestatus.textContent, 'reachable');
     env.controller.dispose();
 });
+}

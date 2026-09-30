@@ -31,6 +31,7 @@ define(['core/ajax'], function(Ajax) {
 
     /**
      * Own test streams independently of the quiz's actual preflight/monitoring streams.
+     * The onStream callback attaches and returns a video preview for camera/screen tests.
      *
      * @param {Object} options Media devices and lifecycle callbacks.
      * @returns {Object} Device test controller.
@@ -52,6 +53,55 @@ define(['core/ajax'], function(Ajax) {
             stopTracks(stream);
             stream = null;
             options.onStream(null, '');
+        };
+        const waitForPreview = function(preview, kind, token) {
+            return new Promise(function(resolve) {
+                let finished = false;
+                let frameTimer = null;
+                let timeout = null;
+                const finish = function(status) {
+                    if (finished) {
+                        return;
+                    }
+                    finished = true;
+                    clearTimeout(frameTimer);
+                    clearTimeout(timeout);
+                    if (cancelPending === cancel) {
+                        cancelPending = null;
+                    }
+                    resolve(status);
+                };
+                const cancel = function(reportStopped) {
+                    if (reportStopped) {
+                        options.onStatus(kind, 'stopped');
+                    }
+                    finish('stopped');
+                };
+                const checkFrame = function() {
+                    if (finished) {
+                        return;
+                    }
+                    if (disposed || token !== generation) {
+                        finish('stopped');
+                    } else if (preview.readyState >= 2 && preview.videoWidth > 0 && preview.videoHeight > 0) {
+                        finish('passed');
+                    } else {
+                        frameTimer = setTimeout(checkFrame, 100);
+                    }
+                };
+                cancelPending = cancel;
+                // Bound both a hanging play() promise and the first decoded frame.
+                timeout = setTimeout(function() {
+                    finish('noframes');
+                }, options.previewTimeout || 5000);
+                try {
+                    Promise.resolve(preview.play()).then(checkFrame, function() {
+                        finish('previewfailed');
+                    });
+                } catch (error) {
+                    finish('previewfailed');
+                }
+            });
         };
         return {
             stop: stop,
@@ -110,6 +160,9 @@ define(['core/ajax'], function(Ajax) {
                         }),
                     ]);
                     clearTimeout(timeout);
+                    if (cancelPending === cancel) {
+                        cancelPending = null;
+                    }
                     if (!acquired || disposed || token !== generation) {
                         stopTracks(acquired);
                         return;
@@ -129,20 +182,32 @@ define(['core/ajax'], function(Ajax) {
                         }
                     }
                     stream = acquired;
-                    options.onStream(stream, kind);
-                    options.onStatus(kind, 'passed');
+                    const preview = options.onStream(stream, kind);
                     track.addEventListener('ended', function() {
                         if (token === generation) {
                             stop();
                             options.onStatus(kind, 'stopped');
                         }
                     }, {once: true});
+                    if (kind !== 'microphone') {
+                        const previewStatus = await waitForPreview(preview, kind, token);
+                        if (disposed || token !== generation) {
+                            return;
+                        }
+                        if (previewStatus !== 'passed') {
+                            stop();
+                            options.onStatus(kind, previewStatus);
+                            return;
+                        }
+                    }
+                    options.onStatus(kind, 'passed');
                     autoStop = setTimeout(stop, options.previewDuration || 8000);
                 } catch (error) {
                     clearTimeout(timeout);
                     if (disposed || token !== generation) {
                         return;
                     }
+                    stop();
                     const name = error && error.name;
                     options.onStatus(kind, name === 'NotAllowedError' || name === 'SecurityError' ? 'permission' :
                         name === 'NotFoundError' ? 'missing' :
@@ -216,17 +281,16 @@ define(['core/ajax'], function(Ajax) {
             onStream: function(stream, kind) {
                 cleanupPreview();
                 if (!stream) {
-                    return;
+                    return null;
                 }
                 if (kind !== 'microphone') {
                     video.hidden = false;
                     video.srcObject = stream;
-                    video.play().catch(function() {});
-                    return;
+                    return video;
                 }
                 const Context = window.AudioContext || window.webkitAudioContext;
                 if (!Context) {
-                    return;
+                    return null;
                 }
                 try {
                     audioContext = new Context();
@@ -248,6 +312,7 @@ define(['core/ajax'], function(Ajax) {
                     // Permission still succeeded; a level meter is an optional visual aid.
                     cleanupPreview();
                 }
+                return null;
             },
         });
         root.querySelectorAll('[data-readiness-device]').forEach(function(button) {

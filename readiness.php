@@ -38,7 +38,8 @@ $PAGE->set_title(get_string('readiness:title', 'quizaccess_proctoring'));
 $PAGE->set_heading(format_string($course->fullname));
 $PAGE->requires->strings_for_js([
     'readiness:secure', 'readiness:unsupported', 'readiness:checking', 'readiness:timeout',
-    'readiness:unavailable', 'readiness:wrongscreen', 'readiness:screenunknown', 'readiness:passed',
+    'readiness:unavailable', 'readiness:previewfailed', 'readiness:noframes',
+    'readiness:wrongscreen', 'readiness:screenunknown', 'readiness:passed',
     'readiness:stopped', 'readiness:permission', 'readiness:missing', 'readiness:inuse', 'readiness:reachable',
     'readiness:notrequired', 'readiness:notconfigured', 'readiness:authentication', 'readiness:busy',
     'readiness:slow', 'readiness:roundtrip', 'readiness:networkerror', 'readiness:notchecked',
