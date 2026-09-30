@@ -1,0 +1,278 @@
+<?php
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+namespace quizaccess_proctoring;
+
+defined('MOODLE_INTERNAL') || die();
+
+/**
+ * Security regressions for browser evidence and provider verification responses.
+ *
+ * @package    quizaccess_proctoring
+ * @copyright  2026 Saylor Academy
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ * @covers \quizaccess_proctoring_external
+ */
+final class external_security_audit_test extends \advanced_testcase {
+    /** A valid PNG, usable without any external image files. */
+    private const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+
+    /**
+     * Browser captures cannot masquerade as staff/reference face rows.
+     */
+    public function test_camshot_cannot_create_reference_face_row(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        [$course, $cm, $user] = $this->create_fixture();
+        set_config('continuousfacecheck', 0, 'quizaccess_proctoring');
+        $reportid = $DB->insert_record('quizaccess_proctoring_logs', (object)[
+            'courseid' => $course->id,
+            'quizid' => $cm->id,
+            'userid' => $user->id,
+            'webcampicture' => '',
+            'status' => 0,
+            'timemodified' => time(),
+        ]);
+        $image = $this->make_image();
+
+        $result = \quizaccess_proctoring_external::send_camshot(
+            $course->id,
+            $reportid,
+            $cm->id,
+            $image,
+            1,
+            'admin_image',
+            $image,
+            1
+        );
+
+        $face = $DB->get_record('quizaccess_proctoring_face_images', ['id' => $result['screenshotid']], '*', MUST_EXIST);
+        $this->assertSame('camshot_image', $face->parent_type);
+        $this->assertFalse($DB->record_exists('quizaccess_proctoring_face_images', ['parent_type' => 'admin_image']));
+    }
+
+    /**
+     * Preflight evidence has no attempt id and failed validation revokes an earlier pass.
+     */
+    public function test_failed_validation_cannot_create_reference_or_keep_a_pass(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        [$course, $cm, $user] = $this->create_fixture();
+        $DB->insert_record('quizaccess_proctoring_user_images', (object)[
+            'user_id' => $user->id,
+            'photo_draft_id' => 0,
+        ]);
+        \quizaccess_proctoring_set_face_preflight_passed((int)$cm->id);
+        $image = $this->make_image();
+
+        $result = \quizaccess_proctoring_external::validate_face(
+            $course->id,
+            $cm->id,
+            '',
+            $image,
+            'admin_image',
+            $image,
+            1
+        );
+
+        $this->assertSame('photonotuploaded', $result['status']);
+        $this->assertSame(0, (int)$DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $result['screenshotid']]));
+        $this->assertFalse($DB->record_exists('quizaccess_proctoring_face_images', ['parent_type' => 'admin_image']));
+        $this->assertFalse(\quizaccess_proctoring_has_face_preflight_passed((int)$cm->id));
+    }
+
+    /**
+     * Registration still records server-side preflight evidence for a first-time student.
+     */
+    public function test_registration_records_preflight_pass(): void {
+        $this->resetAfterTest();
+        [$course, $cm] = $this->create_fixture();
+        $image = $this->make_image();
+
+        $result = \quizaccess_proctoring_external::validate_face(
+            $course->id,
+            $cm->id,
+            '',
+            $image,
+            'camshot_image',
+            $image,
+            1
+        );
+
+        $this->assertSame('registered', $result['status']);
+        $this->assertTrue(\quizaccess_proctoring_has_face_preflight_passed((int)$cm->id));
+    }
+
+    /**
+     * A string false or arbitrary truthy value cannot synthesize missing scores of 100.
+     */
+    public function test_false_provider_verdicts_do_not_pass(): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        foreach (['false', 'no', 'failed', 2, ['unexpected']] as $verdict) {
+            $result = $this->verify_provider_response($user, ['verified' => $verdict]);
+            $this->assertSame('failed', $result['status']);
+            $this->assertSame(0, $result['facescore']);
+        }
+    }
+
+    /**
+     * A final negative verification verdict cannot be replaced by a positive partial match.
+     */
+    public function test_negative_verification_takes_precedence_over_partial_match(): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $result = $this->verify_provider_response($user, ['verified' => false, 'match' => true]);
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame(0, $result['facescore']);
+    }
+
+    /**
+     * Boolean-only provider integrations remain supported.
+     */
+    public function test_explicit_positive_provider_verdict_passes(): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $result = $this->verify_provider_response($user, ['verified' => true]);
+        $this->assertSame('pass', $result['status']);
+        $this->assertSame(100, $result['facescore']);
+    }
+
+    /**
+     * Preliminary high scores do not overrule an incomplete or failed provider operation.
+     */
+    public function test_incomplete_provider_results_do_not_pass(): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        foreach (['retry' => 'retry', 'error' => 'error', 'manual' => 'failed'] as $status => $expected) {
+            $result = $this->verify_provider_response($user, [
+                'status' => $status,
+                'face_score' => 99,
+                'name_score' => 99,
+            ]);
+            $this->assertSame($expected, $result['status']);
+        }
+    }
+
+    /**
+     * Unsupported raster types cannot bypass the declared MIME allowlist.
+     */
+    public function test_mislabeled_gif_is_rejected(): void {
+        $this->expectException(\invalid_parameter_exception::class);
+        $this->invoke_external('decode_base64_image_data', [
+            'data:image/png;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+        ]);
+    }
+
+    /**
+     * Even allowed image formats must match the data URI's declaration.
+     */
+    public function test_mime_mismatch_is_rejected(): void {
+        $this->expectException(\invalid_parameter_exception::class);
+        $this->invoke_external('decode_base64_image_data', ['data:image/jpeg;base64,' . self::PNG]);
+    }
+
+    /**
+     * Malformed data URI metadata cannot be stripped to bypass its MIME validation.
+     */
+    public function test_malformed_image_prefix_is_rejected(): void {
+        $this->expectException(\invalid_parameter_exception::class);
+        $this->invoke_external('decode_base64_image_data', ['data:text/html;ignored,' . self::PNG]);
+    }
+
+    /**
+     * Whitespace cannot evade the size check and force unbounded preprocessing copies.
+     */
+    public function test_oversized_encoded_request_is_rejected_before_whitespace_removal(): void {
+        $this->expectException(\invalid_parameter_exception::class);
+        $this->invoke_external('decode_base64_image_data', [str_repeat(' ', 2000) . self::PNG, 128]);
+    }
+
+    /**
+     * Raw base64 and correctly declared PNG input remain valid.
+     */
+    public function test_valid_png_encodings_are_accepted(): void {
+        $expected = base64_decode(self::PNG);
+        $this->assertSame($expected, $this->invoke_external('decode_base64_image_data', [self::PNG]));
+        $this->assertSame($expected, $this->invoke_external('decode_base64_image_data', ['data:image/png;base64,' . self::PNG]));
+    }
+
+    /**
+     * Run a provider response through the real decision path without any network request.
+     *
+     * @param \stdClass $user User whose identity is being checked.
+     * @param array $response Provider response.
+     * @return array Normalized verification result.
+     */
+    private function verify_provider_response(\stdClass $user, array $response): array {
+        set_config('idverificationendpoint', 'https://8.8.8.8/verify', 'quizaccess_proctoring');
+        set_config('idverificationapikey', 'security-test-key', 'quizaccess_proctoring');
+        \curl::mock_response(json_encode($response));
+        return $this->invoke_external('call_id_verification_endpoint', [base64_decode(self::PNG), base64_decode(self::PNG), $user]);
+    }
+
+    /**
+     * Invoke an internal parser without broadening its production API.
+     *
+     * @param string $method Method to call.
+     * @param array $arguments Arguments.
+     * @return mixed Method return value.
+     */
+    private function invoke_external(string $method, array $arguments) {
+        $reflection = new \ReflectionMethod(\quizaccess_proctoring_external::class, $method);
+        $reflection->setAccessible(true);
+        return $reflection->invokeArgs(null, $arguments);
+    }
+
+    /**
+     * Create an enrolled student and accessible quiz.
+     *
+     * @return array Course, module and student.
+     */
+    private function create_fixture(): array {
+        $course = $this->getDataGenerator()->create_course();
+        $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id]);
+        $cm = get_coursemodule_from_id('quiz', $quiz->cmid, $course->id, false, MUST_EXIST);
+        $user = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($user->id, $course->id, 'student');
+        $this->setUser($user);
+        return [$course, $cm, $user];
+    }
+
+    /**
+     * Make a well-lit, sharp fixture accepted by the server's reference quality checks.
+     *
+     * @return string PNG data URI.
+     */
+    private function make_image(): string {
+        if (!function_exists('imagecreatetruecolor')) {
+            $this->markTestSkipped('GD is required to store webcam captures.');
+        }
+        $image = imagecreatetruecolor(80, 80);
+        for ($x = 0; $x < 80; $x++) {
+            $level = $x % 2 === 0 ? 70 : 190;
+            $colour = imagecolorallocate($image, $level, $level, $level);
+            imageline($image, $x, 0, $x, 79, $colour);
+        }
+        ob_start();
+        imagepng($image);
+        $bytes = ob_get_clean();
+        imagedestroy($image);
+        return 'data:image/png;base64,' . base64_encode($bytes);
+    }
+}

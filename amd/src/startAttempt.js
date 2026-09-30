@@ -2416,6 +2416,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                         if (res.status === 'pass') {
                             identityReady = true;
+                            const staleReason = document.getElementById('id-verification-recheck-reason');
+                            if (staleReason) {
+                                staleReason.hidden = true;
+                            }
                             setIdVerificationConfirmed(true);
                             setIdVerificationResult(strings.idverificationpassed, true);
                             setRequirementStatus('identity', 'complete');

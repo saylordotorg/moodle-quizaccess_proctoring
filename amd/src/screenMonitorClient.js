@@ -58,6 +58,7 @@ define([], function() {
             let screenshotTimer = null;
             let latestScreenshot = '';
             let lastWrongScreenLogged = 0;
+            let running = false;
             const mobileClient = isMobileClient();
 
             const postMessage = function(message) {
@@ -174,6 +175,9 @@ define([], function() {
             if (channelName && window.BroadcastChannel) {
                 channel = new BroadcastChannel(channelName);
                 channel.onmessage = function(event) {
+                    if (!running) {
+                        return;
+                    }
                     const message = event.data || {};
                     if (message.type === 'status') {
                         handleStatus(message);
@@ -194,13 +198,14 @@ define([], function() {
             }
 
             window.addEventListener('storage', function(event) {
-                if (event.key === statusKey) {
+                if (running && event.key === statusKey) {
                     handleStatus(parseStatus(event.newValue));
                 }
             });
 
             return {
                 start: function() {
+                    running = true;
                     if (mobileClient) {
                         return;
                     }
@@ -220,6 +225,14 @@ define([], function() {
                         window.clearInterval(screenshotTimer);
                     }
                     screenshotTimer = window.setInterval(requestScreenshot, screenshotPollMs);
+                },
+                stop: function() {
+                    running = false;
+                    window.clearInterval(statusTimer);
+                    window.clearInterval(screenshotTimer);
+                    statusTimer = null;
+                    screenshotTimer = null;
+                    latestScreenshot = '';
                 },
                 open: open,
                 requestStatus: requestStatus,

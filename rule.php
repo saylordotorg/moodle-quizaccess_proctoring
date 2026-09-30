@@ -75,10 +75,32 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @return bool True if a preflight check is required, false otherwise.
      */
     public function is_preflight_check_required($attemptid) {
-        $script = $this->get_topmost_script();
-        $base = basename($script);
+        // Moodle also asks here from startattempt.php and web services. A view-page-only
+        // check lets a direct start request skip every preflight requirement.
+        return empty($attemptid) || in_array(basename($this->get_topmost_script()), ['view.php', 'startattempt.php'], true);
+    }
 
-        return ($base === 'view.php');
+    /**
+     * Consume the face check after Moodle accepts the preflight form.
+     *
+     * @param int|null $attemptid Current attempt ID, if resuming.
+     */
+    public function notify_preflight_check_passed($attemptid) {
+        global $USER;
+        if (empty($attemptid)) {
+            $requirements = $this->effective_preflight_requirements($attemptid);
+            if (!empty($requirements[\quizaccess_proctoring\local\override_resolver::REQ_IDVERIFICATION])) {
+                $accepted = \quizaccess_proctoring\local\identity_recheck_policy::prepare_attempt(
+                    (int)$this->quiz->course,
+                    (int)$this->quiz->cmid,
+                    (int)$USER->id
+                );
+                if (!$accepted) {
+                    throw new moodle_exception('idrecheckrequired', 'quizaccess_proctoring');
+                }
+            }
+        }
+        quizaccess_proctoring_clear_face_preflight((int)$this->quiz->cmid);
     }
 
     /**
@@ -768,6 +790,49 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * Resolve the same requirements for form rendering and server-side enforcement.
+     *
+     * @param int|null $attemptid Current attempt ID, if resuming.
+     * @return array Effective preflight requirements, keyed by override requirement.
+     */
+    private function effective_preflight_requirements($attemptid): array {
+        global $USER;
+
+        $resolver = '\quizaccess_proctoring\local\override_resolver';
+        $states = [
+            $resolver::REQ_CAPTCHA => $this->should_require_captcha($attemptid),
+            $resolver::REQ_WEBCAM => (int)get_config('quizaccess_proctoring', 'fcheckstartchk') === 1,
+            $resolver::REQ_IDVERIFICATION => $this->should_require_id_verification($attemptid),
+            $resolver::REQ_SCREENSHARE => (bool)$this->requires_entire_screen(),
+            $resolver::REQ_MULTIMONITOR => self::multi_monitor_mode() !== self::MULTI_MONITOR_OFF,
+        ];
+        if (empty($attemptid) && !empty($this->quiz->course) && !empty($this->quiz->id)) {
+            $states = $resolver::resolve_all(
+                (int)$this->quiz->course,
+                (int)$this->quiz->id,
+                (int)$USER->id,
+                time(),
+                $states
+            );
+        }
+        return $states;
+    }
+
+    /**
+     * Turn a forced monitor requirement into an enforceable mode even if the site default is off.
+     *
+     * @param array $requirements Effective preflight requirements.
+     * @return string Monitor mode.
+     */
+    private function effective_preflight_monitor_mode(array $requirements): string {
+        if (empty($requirements[\quizaccess_proctoring\local\override_resolver::REQ_MULTIMONITOR])) {
+            return self::MULTI_MONITOR_OFF;
+        }
+        $mode = self::multi_monitor_mode();
+        return $mode === self::MULTI_MONITOR_OFF ? self::MULTI_MONITOR_BLOCK : $mode;
+    }
+
+    /**
      * Determine whether students must accept the pre-quiz integrity statement.
      *
      * @return bool True if the integrity statement checkbox is required.
@@ -938,6 +1003,12 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         }
         if ((int)$requireentirescreen === 1 || (int)get_config('quizaccess_proctoring', 'captureviolationdesktop') === 1) {
             $items[] = get_string('privacynotice:item_desktop', 'quizaccess_proctoring');
+        }
+        if (
+            self::site_captures_violation_desktop() &&
+                (int)get_config('quizaccess_proctoring', 'monitoringcoveragescreens') === 1
+        ) {
+            $items[] = get_string('privacynotice:item_periodicscreen', 'quizaccess_proctoring');
         }
         if ((int)get_config('quizaccess_proctoring', 'monitorbrowseractivity') === 1) {
             $items[] = get_string('privacynotice:item_browseractivity', 'quizaccess_proctoring');
@@ -1176,58 +1247,20 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         ]);
         $camshotdelay = !empty($delaydata) ? ((int)$delaydata->value * 1000) : 30000; // Default to 30 seconds if not configured.
 
-        // Fetch face ID check setting.
-        $faceidrow = $DB->get_record('config_plugins', [
-            'plugin' => 'quizaccess_proctoring',
-            'name' => 'fcheckstartchk',
-        ]);
-        $faceidcheck = $faceidrow->value ?? 0;
-
         // Fetch image width configuration.
         $imagewidth = get_config('quizaccess_proctoring', 'autoreconfigureimagewidth') ?? '';
         $hasreferenceimage = $DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $USER->id]);
         $privacyrequired = self::privacy_notice_required();
         $honorrequired = self::honor_statement_required();
 
-        // Compute the five base (site-default -> per-quiz) requirement states. Per-student overrides
-        // are layered on top of these below, at the new-attempt gate only.
-        $requireentirescreen = $this->requires_entire_screen() ? 1 : 0;
-        $captcharequired = $this->should_require_captcha($attemptid);
-        $idverificationrequired = $this->should_require_id_verification($attemptid);
-        $multimonitormode = self::multi_monitor_mode();
-
-        // Per-student override resolution runs only at the new-attempt gate ($attemptid empty), so an
-        // in-progress attempt keeps the requirement state snapshotted when its attempt started. When no
-        // applicable override exists, resolve_all() returns the base states unchanged.
-        if (empty($attemptid)) {
-            $resolver = '\quizaccess_proctoring\local\override_resolver';
-            $basestates = [
-                $resolver::REQ_CAPTCHA => (bool)$captcharequired,
-                $resolver::REQ_WEBCAM => ((string)$faceidcheck === '1'),
-                $resolver::REQ_IDVERIFICATION => (bool)$idverificationrequired,
-                $resolver::REQ_SCREENSHARE => ((int)$requireentirescreen === 1),
-                $resolver::REQ_MULTIMONITOR => ($multimonitormode !== self::MULTI_MONITOR_OFF),
-            ];
-
-            $resolved = $resolver::resolve_all(
-                (int)$coursedata['courseid'],
-                (int)$coursedata['quizid'],
-                (int)$USER->id,
-                time(),
-                $basestates
-            );
-
-            // Write the resolved booleans back into the config flags consumed by startAttempt.js.
-            $captcharequired = $resolved[$resolver::REQ_CAPTCHA];
-            $idverificationrequired = $resolved[$resolver::REQ_IDVERIFICATION];
-            $requireentirescreen = $resolved[$resolver::REQ_SCREENSHARE] ? 1 : 0;
-            $faceidcheck = $resolved[$resolver::REQ_WEBCAM] ? '1' : '0';
-
-            // A disabled effective multi-monitor state forces the mode OFF.
-            if (!$resolved[$resolver::REQ_MULTIMONITOR]) {
-                $multimonitormode = self::MULTI_MONITOR_OFF;
-            }
-        }
+        // Use the same resolved requirements as validate_preflight_check().
+        $resolved = $this->effective_preflight_requirements($attemptid);
+        $resolver = '\quizaccess_proctoring\local\override_resolver';
+        $requireentirescreen = $resolved[$resolver::REQ_SCREENSHARE] ? 1 : 0;
+        $captcharequired = $resolved[$resolver::REQ_CAPTCHA];
+        $idverificationrequired = $resolved[$resolver::REQ_IDVERIFICATION];
+        $faceidcheck = $resolved[$resolver::REQ_WEBCAM] ? '1' : '0';
+        $multimonitormode = $this->effective_preflight_monitor_mode($resolved);
 
         // Derive the values that depend on the (possibly overridden) requirement states.
         $registerface = ((string)$faceidcheck === '1' && !$hasreferenceimage);
@@ -1279,6 +1312,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
         // Add HTML wrapper for the form.
         $mform->addElement('html', "<div class='quiz-check-form'>");
+        if (\quizaccess_proctoring\local\readiness::enabled()) {
+            $mform->addElement('html', html_writer::div(html_writer::link(
+                new moodle_url('/mod/quiz/accessrule/proctoring/readiness.php', ['cmid' => (int)$coursedata['cmid']]),
+                get_string('readiness:open', 'quizaccess_proctoring'),
+                ['target' => '_blank', 'rel' => 'noopener', 'class' => 'btn btn-outline-secondary mb-3']
+            )));
+        }
         $mform->addElement(
             'html',
             self::make_preflight_requirements_panel(
@@ -1595,6 +1635,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                     get_string('preflightstep:idverification:desc', 'quizaccess_proctoring')
                 ) .
                 $alreadyverified .
+                (!$idverificationpassed ? html_writer::div(
+                    s(\quizaccess_proctoring\local\identity_recheck_policy::status(
+                        (int)$coursedata['courseid'],
+                        (int)$coursedata['cmid'],
+                        (int)$USER->id
+                    )['message']),
+                    'alert alert-warning',
+                    ['id' => 'id-verification-recheck-reason']
+                ) : '') .
                 $idverificationhtml .
                 '</section>'
             );
@@ -1629,6 +1678,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             );
             // Render modal content.
             $modalcontent = $this->make_modal_content($quizform, $faceidcheck);
+            // Give server-side face errors a visible form element to attach to.
+            $mform->addElement('static', 'facevalidation', '', '');
             // Add modal content and action buttons to the form.
             $mform->addElement('html', $modalcontent);
             $mform->addElement('html', $hiddenvalue);
@@ -1750,28 +1801,40 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $errors['proctoring'] = get_string('youmustagree', 'quizaccess_proctoring');
         }
 
-        if ($this->requires_entire_screen() && empty($data['entirescreenconfirmed'])) {
+        $requirements = $this->effective_preflight_requirements($attemptid);
+        $resolver = '\quizaccess_proctoring\local\override_resolver';
+        if ($requirements[$resolver::REQ_SCREENSHARE] && empty($data['entirescreenconfirmed'])) {
             $errorkey = self::honor_statement_required() ? 'proctoring' : 'entirescreenconfirmed';
             if (empty($errors[$errorkey])) {
                 $errors[$errorkey] = get_string('entirescreenrequired', 'quizaccess_proctoring');
             }
         }
 
-        if (self::multi_monitor_mode() === self::MULTI_MONITOR_BLOCK && empty($data['multimonitorconfirmed'])) {
+        if (
+            $this->effective_preflight_monitor_mode($requirements) === self::MULTI_MONITOR_BLOCK &&
+                empty($data['multimonitorconfirmed'])
+        ) {
             $errorkey = self::honor_statement_required() ? 'proctoring' : 'multimonitorconfirmed';
             if (empty($errors[$errorkey])) {
                 $errors[$errorkey] = get_string('multimonitor:blockmessage', 'quizaccess_proctoring');
             }
         }
 
-        if ($this->should_require_id_verification($attemptid) && !$this->current_user_has_passed_id_verification()) {
+        if (
+            $requirements[$resolver::REQ_WEBCAM] &&
+                !quizaccess_proctoring_has_face_preflight_passed((int)($this->quiz->cmid ?? 0))
+        ) {
+            $errors['facevalidation'] = get_string('modal:faceverificationrequired', 'quizaccess_proctoring');
+        }
+
+        if ($requirements[$resolver::REQ_IDVERIFICATION] && !$this->current_user_has_passed_id_verification()) {
             $errorkey = self::honor_statement_required() ? 'proctoring' : 'idverificationconfirmed';
             if (empty($errors[$errorkey])) {
                 $errors[$errorkey] = get_string('modal:idverificationfailed', 'quizaccess_proctoring');
             }
         }
 
-        if ($this->should_require_captcha($attemptid)) {
+        if ($requirements[$resolver::REQ_CAPTCHA]) {
             if (!self::captcha_configured()) {
                 $errors['proctoringcaptchaunavailable'] = self::captcha_not_configured_message();
             } else if (self::captcha_provider() === 'turnstile') {
@@ -1787,9 +1850,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                         'secret' => trim((string)get_config('quizaccess_proctoring', 'turnstilesecretkey')),
                         'response' => $response,
                         'remoteip' => getremoteaddr(),
+                    ], [
+                        'CURLOPT_TIMEOUT' => 15,
+                        'CURLOPT_FOLLOWLOCATION' => false,
+                        'CURLOPT_SSL_VERIFYPEER' => true,
+                        'CURLOPT_SSL_VERIFYHOST' => 2,
+                        'CURLOPT_PROTOCOLS' => CURLPROTO_HTTPS,
                     ]);
                     $result = json_decode($rawresponse);
-                    if (empty($result->success)) {
+                    if ($curl->get_errno() || ($result->success ?? false) !== true) {
                         $errors['proctoringcaptcha'] = get_string('captcha:verificationfailed', 'quizaccess_proctoring');
                     }
                 }
@@ -1801,16 +1870,21 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                     $errors['proctoringcaptcha'] = get_string('missingrecaptchachallengefield');
                 } else {
                     require_once($CFG->libdir . '/recaptchalib_v2.php');
-                    $result = recaptcha_check_response(
-                        RECAPTCHA_VERIFY_URL,
-                        $CFG->recaptchaprivatekey,
-                        getremoteaddr(),
-                        $response
-                    );
-                    if (empty($result['isvalid'])) {
-                        $errors['proctoringcaptcha'] = !empty($result['error'])
-                            ? $result['error']
-                            : get_string('incorrectpleasetryagain', 'auth');
+                    $curl = new curl();
+                    $rawresponse = $curl->post(RECAPTCHA_VERIFY_URL, [
+                        'secret' => $CFG->recaptchaprivatekey,
+                        'response' => $response,
+                        'remoteip' => getremoteaddr(),
+                    ], [
+                        'CURLOPT_TIMEOUT' => 15,
+                        'CURLOPT_FOLLOWLOCATION' => false,
+                        'CURLOPT_SSL_VERIFYPEER' => true,
+                        'CURLOPT_SSL_VERIFYHOST' => 2,
+                        'CURLOPT_PROTOCOLS' => CURLPROTO_HTTPS,
+                    ]);
+                    $result = json_decode($rawresponse);
+                    if ($curl->get_errno() || ($result->success ?? false) !== true) {
+                        $errors['proctoringcaptcha'] = get_string('incorrectpleasetryagain', 'auth');
                     }
                 }
             }
@@ -2046,6 +2120,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             get_string('proctoringheader', 'quizaccess_proctoring'),
             $this->get_download_config_button(),
         ];
+        if (\quizaccess_proctoring\local\readiness::enabled()) {
+            $messages[] = html_writer::link(
+                new moodle_url('/mod/quiz/accessrule/proctoring/readiness.php', ['cmid' => (int)$this->quiz->cmid]),
+                get_string('readiness:open', 'quizaccess_proctoring'),
+                ['class' => 'btn btn-outline-secondary']
+            );
+        }
 
         return $messages;
     }
@@ -2109,12 +2190,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             // Add additional data to the record.
             $quizurl = new moodle_url('/mod/quiz/view.php', ['id' => $cmid]);
             $record->camshotdelay = $camshotdelay;
+            $record->servertime = time();
             $record->image_width = $imagewidth;
             $record->quizurl = $quizurl->out();
             $record->monitorbrowseractivity = (int)(get_config('quizaccess_proctoring', 'monitorbrowseractivity') ?? 1);
             $record->monitormouseactivity = self::monitors_desktop_mouse_activity() ? 1 : 0;
             $record->blockclipboard = (int)(get_config('quizaccess_proctoring', 'blockclipboard') ?? 1);
             $record->captureviolationdesktop = $this->should_capture_violation_desktop() ? 1 : 0;
+            $record->coveragescreens = !empty($record->captureviolationdesktop) &&
+                (int)get_config('quizaccess_proctoring', 'monitoringcoveragescreens') === 1 ? 1 : 0;
             $record->multimonitormode = self::multi_monitor_mode();
             // Log and Warn are explicit "allow extra monitors" policies, so they win
             // over the blur checkbox: the blur enforcement only runs when the mode is
@@ -2184,6 +2268,22 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 'quizaccess_proctoring_screen_status_' . $screenmonitorkey : '';
             $record->screenmonitorwindowname = $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '';
 
+            $coveragepolicy = \quizaccess_proctoring\local\monitoring_coverage::start_attempt(
+                (int)$COURSE->id,
+                (int)$cmid,
+                (int)$USER->id,
+                (int)$attempt,
+                true,
+                // Only the attempt-start observer can opt a new attempt into periodic screen collection.
+                false,
+                max(5, (int)($camshotdelay / 1000))
+            );
+            // A policy enabled mid-attempt must not silently expand the student's initial data collection.
+            $record->coveragescreens = !empty($record->coveragescreens) && !empty($coveragepolicy['screen']) ? 1 : 0;
+            if (!empty($coveragepolicy['interval'])) {
+                $record->camshotdelay = max(5, (int)$coveragepolicy['interval']) * 1000;
+            }
+
             // Configure face model URL and include JS.
             $fcmethod = get_config('quizaccess_proctoring', 'fcmethod');
             $modelurl = ($fcmethod === 'customapi' || !empty($record->blurquizwithoutface))
@@ -2195,7 +2295,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             }
 
             // Initialise the proctoring setup with JavaScript.
-            $page->requires->js_call_amd('quizaccess_proctoring/proctoring', 'setup', [$record, $modelurl]);
+            $browserconfig = clone $record;
+            // Keep database-only attributes and an unused navigation URL out of the browser configuration.
+            unset($browserconfig->userid, $browserconfig->timemodified, $browserconfig->quizurl);
+            $page->requires->js_call_amd('quizaccess_proctoring/proctoring', 'setup', [$browserconfig, $modelurl]);
         }
     }
 

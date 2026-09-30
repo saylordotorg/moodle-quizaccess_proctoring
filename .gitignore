@@ -9,3 +9,6 @@ sonar-project.properties
 .vscode/
 test.json
 .phpunit.result.cache
+__pycache__/
+*.py[cod]
+.venv/

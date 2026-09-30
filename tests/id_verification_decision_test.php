@@ -34,7 +34,6 @@ defined('MOODLE_INTERNAL') || die();
  * @covers \quizaccess_proctoring\local\id_verification_decision
  */
 final class id_verification_decision_test extends \advanced_testcase {
-
     /**
      * The shipped defaults, as an explicit array rather than read from settings, so these tests
      * describe the intended rule instead of whatever a site happens to be configured with.
@@ -187,6 +186,36 @@ final class id_verification_decision_test extends \advanced_testcase {
         $this->assertFalse($result['passed']);
         $this->assertTrue($result['namefailed']);
         $this->assertFalse($result['namecarried']);
+    }
+
+    /**
+     * Disabling face checks must not leave an advisory-only identity gate that accepts anybody.
+     */
+    public function test_name_only_verification_requires_a_matching_name(): void {
+        $config = $this->config(['checkface' => false, 'nameblocks' => false]);
+        foreach ([0, 50, 79] as $namescore) {
+            $result = id_verification_decision::evaluate(0, $namescore, $config);
+            $this->assertFalse($result['passed']);
+            $this->assertTrue($result['namefailed']);
+            $this->assertFalse($result['nameadvisory']);
+        }
+
+        $result = id_verification_decision::evaluate(0, 80, $config);
+        $this->assertTrue($result['passed']);
+        $this->assertFalse($result['namefailed']);
+    }
+
+    /**
+     * The effective settings expose the mandatory name gate when face verification is disabled.
+     */
+    public function test_config_enforces_name_gate_when_face_is_disabled(): void {
+        $this->resetAfterTest();
+        set_config('idverificationcheckface', 0, 'quizaccess_proctoring');
+        set_config('idverificationcheckname', 1, 'quizaccess_proctoring');
+        set_config('idverificationnameblocks', 0, 'quizaccess_proctoring');
+
+        $this->assertTrue(id_verification_decision::config()['nameblocks']);
+        $this->assertFalse(id_verification_decision::evaluate(0, 0)['passed']);
     }
 
 

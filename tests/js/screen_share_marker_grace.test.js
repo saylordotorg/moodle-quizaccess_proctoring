@@ -167,10 +167,12 @@ function createEnvironment() {
         frameLayout: 'blank',
         frameArrives: true,
         now: 1700000000000,
+        wallSkew: 0,
         loggedEvents: [],
         intervals: [],
         displayMediaCalls: 0,
         tracks: [],
+        windowEvents: {},
     };
 
     const makeTrack = () => {
@@ -266,7 +268,9 @@ function createEnvironment() {
         matchMedia() {
             return {matches: false, addEventListener() {}};
         },
-        addEventListener() {},
+        addEventListener(name, callback) {
+            (env.windowEvents[name] = env.windowEvents[name] || []).push(callback);
+        },
         removeEventListener() {},
         setInterval(fn, delay) {
             env.intervals.push({fn, delay});
@@ -322,7 +326,8 @@ function createEnvironment() {
                 fail() {
                     return this;
                 },
-                done() {
+                done(callback) {
+                    callback({warnings: []});
                     return {fail() {}};
                 },
             }];
@@ -399,7 +404,8 @@ function loadModule(env) {
         window: env.window,
         document: env.document,
         // Controllable clock: the module only ever reads Date.now().
-        Date: {now: () => env.now},
+        Date: {now: () => env.now + env.wallSkew},
+        performance: {now: () => env.now - 1700000000000},
         MutationObserver: class {
             observe() {}
             disconnect() {}
@@ -421,6 +427,9 @@ function loadModule(env) {
         queueMicrotask,
     };
     vm.createContext(sandbox);
+    // Load the actual bounded uploader used by the attempt module.
+    vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../../amd/src/evidenceQueue.js'), 'utf8'), sandbox);
+    env.deps['quizaccess_proctoring/evidenceQueue'] = moduleExport;
     vm.runInContext(SOURCE, sandbox, {filename: 'proctoring.js'});
     return moduleExport;
 }
@@ -576,4 +585,57 @@ test('a share that never delivers a frame reports an error instead of stalling t
     assert.strictEqual(env.liveTracks().length, 0, 'the unusable stream must be released');
     assert.strictEqual(env.markerMissingEvents().length, 0,
         'a missing frame is not evidence the student shared the wrong screen');
+});
+
+test('periodic screen evidence keeps its capture time and retry ID with browser activity logging off', async () => {
+    const env = await bootWithShare({screenmarkerrequired: 0, monitorbrowseractivity: 0, coveragescreens: 1});
+    const heartbeat = env.intervals.find(interval => interval.delay === PROPS.camshotdelay);
+    assert.ok(heartbeat, 'screen sharing needs a periodic coverage sample');
+    env.advance(PROPS.camshotdelay);
+    heartbeat.fn();
+    await flush();
+    const samples = env.loggedEvents.filter(event => event.eventtype === 'screen_capture');
+    assert.equal(samples.length, 1);
+    assert.ok(samples[0].screenshot.startsWith('data:image/jpeg;base64,'));
+    assert.equal(samples[0].capturedat, Math.floor(env.now / 1000));
+    assert.match(samples[0].requestid, /^[a-zA-Z0-9_-]+$/);
+    assert.equal(samples[0].attemptid, PROPS.status);
+});
+
+test('a muted screen track does not produce misleading coverage evidence', async () => {
+    const env = await bootWithShare({screenmarkerrequired: 0, coveragescreens: 1});
+    env.tracks[0].muted = true;
+    env.advance(PROPS.camshotdelay);
+    env.intervals.find(interval => interval.delay === PROPS.camshotdelay).fn();
+    await flush();
+    assert.equal(env.loggedEvents.filter(event => event.eventtype === 'screen_capture').length, 0);
+});
+
+test('capture timestamps follow server time when the device clock is a day ahead or behind', async () => {
+    for (const skew of [-86400000, 86400000]) {
+        const env = await bootWithShare({screenmarkerrequired: 0, servertime: 1700000000, coveragescreens: 1}, env => {
+            env.wallSkew = skew;
+        });
+        env.advance(PROPS.camshotdelay);
+        env.intervals.find(interval => interval.delay === PROPS.camshotdelay).fn();
+        await flush();
+        const sample = env.loggedEvents.find(event => event.eventtype === 'screen_capture');
+        assert.equal(sample.capturedat, 1700000030);
+        assert.notEqual(sample.capturedat, Math.floor((env.now + skew) / 1000));
+    }
+});
+
+test('routine screenshots require explicit opt-in while existing event screenshots remain available', async () => {
+    for (const enabled of [undefined, 0]) {
+        const env = await bootWithShare({screenmarkerrequired: 0, coveragescreens: enabled});
+        assert.equal(env.intervals.some(interval => interval.delay === PROPS.camshotdelay), false,
+            'the default and explicit disabled setting must not start periodic screen collection');
+        env.advance(20000); // Pass the focus-loss grace period for the browser share picker.
+        env.windowEvents.blur.forEach(callback => callback());
+        await flush();
+        assert.equal(env.loggedEvents.filter(event => event.eventtype === 'screen_capture').length, 0);
+        const existingEvent = env.loggedEvents.find(event => event.eventtype === 'focus_lost');
+        assert.ok(existingEvent, 'existing browser activity monitoring remains enabled');
+        assert.ok(existingEvent.screenshot.startsWith('data:image/jpeg;base64,'));
+    }
 });

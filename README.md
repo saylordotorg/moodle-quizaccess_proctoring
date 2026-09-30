@@ -11,14 +11,18 @@ mod/quiz/accessrule/proctoring
 ## Features
 
 - Webcam capture during proctored quiz attempts.
+- Bounded upload recovery after short connection interruptions, with evidence coverage and delayed-upload details for reviewers.
+- A device-readiness page for local camera, microphone and whole-screen tests before starting an attempt.
 - Optional face registration and pre-attempt face validation using the configured Saylor AI face-match endpoint.
 - Optional pre-attempt ID verification with front ID image, optional back ID image, live face image, face threshold, and name threshold.
+- Configurable ID-check expiry and rechecks for new attempts, profile-name changes or identity-policy changes.
 - Optional honor statement and privacy notice steps before the attempt starts.
 - Optional CAPTCHA before new attempts using Cloudflare Turnstile or Moodle reCAPTCHA.
 - Optional entire-screen sharing before quiz start and during attempts.
 - Browser activity logging for tab visibility, focus loss, page exit, clipboard actions, right-click, shortcuts, possible AI-tool interactions, audio events, screen-share events, and monitor checks.
 - Optional clipboard blocking.
 - Optional desktop violation screenshots for configured suspicious events.
+- Optional periodic screen captures for coverage reporting, disabled by default and excluded from risk scoring and AI review.
 - Optional face-in-view blur behavior while the quiz is open.
 - Risk scoring based on webcam, face, screen-share, monitor, clipboard, tab/focus, shortcut, audio, and possible AI-tool evidence.
 - Optional high-risk grade/certificate review holds, automatic hold release, and retake lockouts.
@@ -43,6 +47,10 @@ Optional integrations:
 - Cloudflare Turnstile site key and secret key, or Moodle site-wide reCAPTCHA keys.
 - OpenAI, Anthropic, or OpenAI-compatible vision API credentials for advisory AI image review.
 
+The optional AWS Lambda and FastAPI verification-service source is versioned in
+[tools/verification_service](tools/verification_service/README.md). Deploy that service separately from Moodle;
+its README documents the request contract, offline tests, and the Lambda version deployed to dev.
+
 ## Installation
 
 Install the plugin from this repository or from a ZIP built from this repository.
@@ -51,7 +59,7 @@ From the Moodle root:
 
 ```bash
 cd mod/quiz/accessrule
-git clone https://github.com/dta121/saylorprocotring.git proctoring
+git clone https://github.com/saylordotorg/moodle-quizaccess_proctoring.git proctoring
 cd ../../..
 php admin/cli/upgrade.php --non-interactive
 php admin/cli/purge_caches.php
@@ -70,6 +78,8 @@ php admin/cli/purge_caches.php
 
 After installation, verify that Moodle cron is running. Several features depend on scheduled tasks.
 
+Development tools, tests, local environments, and deployment credentials are not required in a Moodle runtime archive.
+
 ## Upgrade
 
 1. Back up the Moodle database and the existing `mod/quiz/accessrule/proctoring` directory.
@@ -84,6 +94,8 @@ php admin/cli/purge_caches.php
 4. Confirm that Site administration does not show pending plugin upgrades.
 5. Review scheduled tasks and site settings after the upgrade.
 
+Version 1.11.0 adds database fields and indexes, so deploy the complete plugin including `amd/build`, run the upgrade, and purge caches. See [FEATURE_RELEASE_NOTES.md](FEATURE_RELEASE_NOTES.md) for the new settings and validation record.
+
 ## Site Configuration
 
 Open Site administration and search for `Saylor Proctored Quiz` if the navigation path differs by Moodle version.
@@ -94,6 +106,7 @@ Configure the site-wide defaults before enabling the plugin on quizzes.
 
 Use these settings to control the pre-attempt steps shown before students can start a proctored quiz:
 
+- Device readiness check (enabled by default): offers a separate test page from the quiz and preflight pages.
 - Honor statement requirement, statement text, and agreement label.
 - Privacy notice requirement, notice text, and agreement label.
 - CAPTCHA before attempt.
@@ -127,8 +140,14 @@ Use these settings to require identity document verification before the attempt 
 - Face and name thresholds.
 - Whether to show failure details to students.
 - ID verification image retention days.
+- Maximum age of a passed ID check (zero means unlimited).
+- Verify ID for every new attempt.
+- Repeat ID verification after a profile name change.
+- Repeat ID verification after a policy change.
 
 When enabled, students must complete the ID step successfully before Moodle allows the proctored attempt to start.
+
+The four recheck controls preserve existing reuse by default. When verification for every new attempt is enabled, the student must pass in the current session and start within ten minutes. The pass is consumed when preflight is accepted and linked to the created attempt. Recheck policies govern new attempts; they do not interrupt an exam already in progress. Existing approved requirement waivers still apply.
 
 ### Monitoring
 
@@ -140,11 +159,14 @@ Use these settings to control browser and screen monitoring:
 - Multi-monitor handling: off, log, warn, or block.
 - Screen-share persistence mode: auto, main quiz page, or helper window.
 - Capture desktop screenshots for violation events.
+- Record periodic screen coverage (off by default; requires desktop capture to be enabled).
 - Mobile and tablet screen-share behavior: bypass, require, or block.
 - Blur quiz content when no face is detected.
 - Face blur thresholds and grace period.
 
 Screen sharing requires a browser that supports the Screen Capture API. Students should select the entire screen, not a browser tab or application window, when the entire-screen requirement is enabled.
+
+Webcam and opted-in screen coverage reports estimate gaps in evidence received by Moodle. Connection recovery retains at most four queued payloads within a 4 MiB budget for up to two minutes, in memory only; reloading or closing the page discards pending evidence. Gaps and routine screen captures do not themselves add misconduct points or enter AI review. Periodic screen images use the existing evidence-retention policy and increase storage use.
 
 ### Risk Review
 
@@ -202,6 +224,8 @@ Save the quiz settings. The pre-attempt checks appear the next time a student st
 
 ## Student Attempt Flow
 
+Students can open **Check devices and connection** from the quiz page before starting. Camera, microphone and screen previews stay on the student's device; the connection test sends synthetic data and probes configured services without images. Readiness does not start an attempt, pause an existing timer or replace mandatory preflight checks.
+
 When proctoring is required, students may be asked to complete these steps before the quiz starts:
 
 1. Accept the privacy notice.
@@ -223,8 +247,9 @@ Users with report access can open proctoring reports from the quiz or the plugin
 Reports include:
 
 - Webcam captures and face crops.
-- Desktop violation screenshots.
+- Desktop event screenshots and optional periodic screen captures.
 - Browser activity events.
+- Monitoring coverage, delayed uploads and estimated intervals without received evidence. Historical attempts without a saved monitoring policy show unknown coverage.
 - Risk score and risk factors.
 - Face-match status.
 - ID verification status when enabled.
@@ -270,12 +295,14 @@ Depending on enabled settings, the plugin may store:
 - Reference face images.
 - ID document images.
 - Live ID verification face images.
-- Desktop violation screenshots.
+- Desktop event screenshots and optional periodic screen captures.
+- Capture/receipt times, retry tokens and the monitoring policy saved for an attempt.
+- Verification timestamps and profile-name/identity-policy fingerprints.
 - Browser activity events.
 - Risk scores and review decisions.
 - AI image review summaries and evidence notes.
 
-Pluginfile access is restricted to the owning student or users with report capability in the relevant Moodle context. Outbound AI and ID verification endpoints are validated server-side before proctoring images are sent.
+Pluginfile access is restricted to the owning student or users with report capability in the relevant Moodle context. Outbound AI and ID verification endpoints must use publicly routable HTTPS with a trusted TLS certificate. Destinations are validated and pinned before proctoring images are sent; private-network endpoints and redirects are rejected.
 
 Administrators should configure privacy notice text, retention windows, report recipient rules, and external AI endpoints according to institutional policy.
 

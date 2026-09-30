@@ -323,21 +323,56 @@ function quizaccess_proctoring_user_has_report_access_for_user(int $targetuserid
  * @param int $courseid Course ID.
  * @param int $cmid Quiz course module ID.
  * @param int $userid User ID.
- * @return bool True when a passing ID verification row exists.
+ * @param int $attemptid Existing attempt, or zero for a new attempt.
+ * @return bool True when a passed check satisfies the current reuse policy.
  */
-function quizaccess_proctoring_user_has_passed_id_verification(int $courseid, int $cmid, int $userid): bool {
-    global $DB;
+function quizaccess_proctoring_user_has_passed_id_verification(
+    int $courseid,
+    int $cmid,
+    int $userid,
+    int $attemptid = 0
+): bool {
+    return \quizaccess_proctoring\local\identity_recheck_policy::status($courseid, $cmid, $userid, $attemptid)['passed'];
+}
 
-    if ($courseid <= 0 || $cmid <= 0 || $userid <= 0) {
-        return false;
-    }
+/**
+ * Record a completed server-side face preflight step in this user's session.
+ *
+ * @param int $cmid Quiz course module ID.
+ */
+function quizaccess_proctoring_set_face_preflight_passed(int $cmid): void {
+    global $SESSION, $USER;
 
-    return $DB->record_exists('quizaccess_proctoring_idv', [
-        'courseid' => $courseid,
-        'quizid' => $cmid,
-        'userid' => $userid,
-        'status' => 'pass',
-    ]);
+    $SESSION->quizaccess_proctoring_facechecks[$cmid] = [
+        'userid' => (int)$USER->id,
+        'timecreated' => time(),
+    ];
+}
+
+/**
+ * Forget a previous face check when retrying or consuming a preflight result.
+ *
+ * @param int $cmid Quiz course module ID.
+ */
+function quizaccess_proctoring_clear_face_preflight(int $cmid): void {
+    global $SESSION;
+
+    unset($SESSION->quizaccess_proctoring_facechecks[$cmid]);
+}
+
+/**
+ * Require fresh face-check evidence for the current user, session and quiz.
+ *
+ * @param int $cmid Quiz course module ID.
+ * @return bool Whether a successful check was recorded in the last ten minutes.
+ */
+function quizaccess_proctoring_has_face_preflight_passed(int $cmid): bool {
+    global $SESSION, $USER;
+
+    $check = $SESSION->quizaccess_proctoring_facechecks[$cmid] ?? [];
+    $created = (int)($check['timecreated'] ?? 0);
+    return $cmid > 0 && !empty($USER->id) && (int)($check['userid'] ?? 0) === (int)$USER->id &&
+        $created <= time() && $created >= time() - 10 * MINSECS;
 }
 
 /**
@@ -481,7 +516,13 @@ function quizaccess_proctoring_get_image_file($userid) {
                 $DB->delete_records('quizaccess_proctoring_user_images', ['user_id' => $userid]);
 
                 // Delete associated row from proctoring_face_images table.
-                $DB->delete_records('quizaccess_proctoring_face_images', ['parentid' => $recordid]);
+                if ($recordid) {
+                    $conditions = ['parentid' => $recordid, 'parent_type' => 'admin_image'];
+                    foreach ($DB->get_records('quizaccess_proctoring_face_images', $conditions) as $face) {
+                        quizaccess_proctoring_delete_pluginfile_url((string)$face->faceimage);
+                    }
+                    $DB->delete_records('quizaccess_proctoring_face_images', $conditions);
+                }
 
                 return $file;
             }
@@ -1071,7 +1112,13 @@ function quizaccess_proctoring_get_ai_event_review(int $eventid) {
  * @return bool True when the event should be queued.
  */
 function quizaccess_proctoring_should_queue_event_ai_review(stdClass $event, array $settings): bool {
-    if (empty($event->screenshoturl)) {
+    if (
+        empty($event->screenshoturl) || in_array(
+            (string)$event->eventtype,
+            \quizaccess_proctoring\local\monitoring_coverage::NEUTRAL_EVENTS,
+            true
+        )
+    ) {
         return false;
     }
 
@@ -2792,7 +2839,13 @@ function quizaccess_proctoring_collect_ai_review_images(
             ['id' => $eventid],
             'id, eventtype, screenshoturl, timemodified'
         );
-        if (!$event || empty($event->screenshoturl)) {
+        if (
+            !$event || empty($event->screenshoturl) || in_array(
+                (string)$event->eventtype,
+                \quizaccess_proctoring\local\monitoring_coverage::NEUTRAL_EVENTS,
+                true
+            )
+        ) {
             return [];
         }
 
@@ -2811,13 +2864,19 @@ function quizaccess_proctoring_collect_ai_review_images(
     }
 
     if ((string)($settings['desktopmode'] ?? 'threshold') !== 'off') {
+        [$neutralsql, $neutralparams] = $DB->get_in_or_equal(
+            \quizaccess_proctoring\local\monitoring_coverage::NEUTRAL_EVENTS,
+            SQL_PARAMS_NAMED,
+            'neutral',
+            false
+        );
         $eventwhere = "courseid = :courseid AND quizid = :quizid AND userid = :userid
-            AND COALESCE(screenshoturl, '') <> ''";
+            AND COALESCE(screenshoturl, '') <> '' AND eventtype {$neutralsql}";
         $eventparams = [
             'courseid' => (int)$review->courseid,
             'quizid' => (int)$review->quizid,
             'userid' => (int)$review->userid,
-        ];
+        ] + $neutralparams;
         if ($attemptid > 0) {
             $eventwhere .= ' AND attemptid = :attemptid';
             $eventparams['attemptid'] = $attemptid;
@@ -3185,6 +3244,10 @@ function quizaccess_proctoring_call_openai_image_review(stdClass $review, array 
     $curl = new curl();
     $options = [
         'CURLOPT_TIMEOUT' => 45,
+        'CURLOPT_FOLLOWLOCATION' => false,
+        'CURLOPT_SSL_VERIFYPEER' => true,
+        'CURLOPT_SSL_VERIFYHOST' => 2,
+        'CURLOPT_PROTOCOLS' => CURLPROTO_HTTPS,
         'CURLOPT_HTTPHEADER' => [
             'Authorization: Bearer ' . $settings['openaiapikey'],
             'Content-Type: application/json',
@@ -3277,6 +3340,10 @@ function quizaccess_proctoring_call_anthropic_image_review(stdClass $review, arr
     $curl = new curl();
     $options = [
         'CURLOPT_TIMEOUT' => 45,
+        'CURLOPT_FOLLOWLOCATION' => false,
+        'CURLOPT_SSL_VERIFYPEER' => true,
+        'CURLOPT_SSL_VERIFYHOST' => 2,
+        'CURLOPT_PROTOCOLS' => CURLPROTO_HTTPS,
         'CURLOPT_HTTPHEADER' => [
             'x-api-key: ' . $settings['anthropicapikey'],
             'anthropic-version: 2023-06-01',
@@ -3379,6 +3446,7 @@ function quizaccess_proctoring_call_openai_compatible_image_review(
         'CURLOPT_HTTPHEADER' => $headers,
     ];
     $endpoint = quizaccess_proctoring_validate_outbound_endpoint((string)$settings['compatibleendpoint']);
+    $options = \quizaccess_proctoring\local\outbound_endpoint_validator::request_options($endpoint) + $options;
     $response = $curl->post($endpoint, json_encode($payload), $options);
 
     if ($curl->get_errno()) {
@@ -4254,6 +4322,7 @@ function quizaccess_proctoring_check_similarity_customapi(
         ],
     ];
 
+    $options = \quizaccess_proctoring\local\outbound_endpoint_validator::request_options($endpoint) + $options;
     $response = $curl->post($endpoint, $payload, $options);
 
     if ($curl->get_errno()) {

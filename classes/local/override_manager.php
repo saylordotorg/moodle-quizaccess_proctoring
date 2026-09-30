@@ -53,6 +53,29 @@ class override_manager {
     const MAX_JUSTIFICATION_LENGTH = 2000;
 
     /**
+     * Check the capability where an override takes effect, including course-wide overrides.
+     *
+     * @param \context_module $context Context used to open the management page.
+     * @param int $courseid Override course.
+     * @param int $quizid Quiz instance ID, or zero for a course-wide override.
+     */
+    public static function require_scope(\context_module $context, int $courseid, int $quizid): void {
+        if ($courseid !== (int)$context->get_course_context()->instanceid || $quizid < 0) {
+            throw new \moodle_exception('error:overridenotfound', self::COMPONENT);
+        }
+        if ($quizid === 0) {
+            $targetcontext = $context->get_course_context();
+        } else {
+            $cm = get_coursemodule_from_instance('quiz', $quizid, $courseid, false, IGNORE_MISSING);
+            if (!$cm) {
+                throw new \moodle_exception('error:overridenotfound', self::COMPONENT);
+            }
+            $targetcontext = \context_module::instance((int)$cm->id);
+        }
+        require_capability('quizaccess/proctoring:manageoverrides', $targetcontext);
+    }
+
+    /**
      * Validate that the override target identifies exactly one existing student enrolled in the
      * course context in which the override is created.
      *
@@ -215,6 +238,7 @@ class override_manager {
         $courseid = (int)$context->get_course_context()->instanceid;
         $quizid = isset($data->quizid) ? (int)$data->quizid : 0;
         $userid = isset($data->userid) ? (int)$data->userid : 0;
+        self::require_scope($context, $courseid, $quizid);
 
         // Collect the five per-requirement tri-states, defaulting unset ones to inherit (R2.6).
         $states = [];
@@ -294,6 +318,7 @@ class override_manager {
             if (!$existing) {
                 throw new \moodle_exception('error:overridenotfound', self::COMPONENT);
             }
+            self::require_scope($context, (int)$existing->courseid, (int)$existing->quizid);
 
             // Build the candidate new values: use submitted values, else keep the stored ones.
             $states = [];
@@ -395,6 +420,7 @@ class override_manager {
             if (!$existing) {
                 throw new \moodle_exception('error:overridenotfound', self::COMPONENT);
             }
+            self::require_scope($context, (int)$existing->courseid, (int)$existing->quizid);
 
             $update = new \stdClass();
             $update->id = (int)$existing->id;

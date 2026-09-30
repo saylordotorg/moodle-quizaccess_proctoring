@@ -85,18 +85,20 @@ class send_daily_report_task extends scheduled_task {
             $messagehtml = $this->render_html_report($data, $start, $end);
             // Recipients reply to the report asking about a specific attempt, so Reply-To
             // points at the staffed address rather than the site noreply address.
-            if (email_to_user(
-                $recipient,
-                $from,
-                $subject,
-                $messagetext,
-                $messagehtml,
-                '',
-                '',
-                true,
-                $replyto,
-                $replytoname
-            )) {
+            if (
+                email_to_user(
+                    $recipient,
+                    $from,
+                    $subject,
+                    $messagetext,
+                    $messagehtml,
+                    '',
+                    '',
+                    true,
+                    $replyto,
+                    $replytoname
+                )
+            ) {
                 $sent++;
             }
         }
@@ -381,12 +383,19 @@ class send_daily_report_task extends scheduled_task {
             (int)$attempt->reportid
         );
         $activehold = $hold && (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
-        $eventcount = $DB->count_records('quizaccess_proctoring_events', [
+        $eventcount = $DB->count_records_select(
+            'quizaccess_proctoring_events',
+            'courseid = :courseid AND quizid = :quizid AND userid = :userid AND attemptid = :attemptid
+                AND eventtype NOT IN (:coveragestart, :coveragecapture)',
+            [
             'courseid' => (int)$attempt->courseid,
             'quizid' => (int)$attempt->cmid,
             'userid' => (int)$attempt->userid,
             'attemptid' => (int)$attempt->attemptid,
-        ]);
+            'coveragestart' => 'monitoring_started',
+            'coveragecapture' => 'screen_capture',
+            ]
+        );
         $capturecount = $DB->count_records('quizaccess_proctoring_logs', [
             'courseid' => (int)$attempt->courseid,
             'quizid' => (int)$attempt->cmid,

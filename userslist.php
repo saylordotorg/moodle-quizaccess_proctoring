@@ -224,7 +224,8 @@ foreach ($users as $user) {
 
 
         // Show initials or full name in styled circle if no image is available.
-        $initials = strtoupper($user->firstname[0] . $user->lastname[0]);
+        $initials = s(core_text::strtoupper(core_text::substr($user->firstname, 0, 1) .
+            core_text::substr($user->lastname, 0, 1)));
         $userpic = html_writer::span($initials, 'userpicture', [
             'style' => '
                 background-color: #e9ecef;
@@ -250,11 +251,11 @@ foreach ($users as $user) {
 
     // Prepare the profile link and user name.
     $profileurl = new moodle_url('/user/view.php', ['id' => $user->id]);
-    $usercell = html_writer::link($profileurl, $fullname, ['class' => 'd-inline-flex align-items-center gap-2']);
+    $usercell = html_writer::link($profileurl, s($fullname), ['class' => 'd-inline-flex align-items-center gap-2']);
 
     // Combine user picture and name.
     $row[] = $userpic . ' ' . $usercell;
-    $row[] = $user->email;
+    $row[] = s($user->email);
 
     // Finally, render the menu and add it to the row.
     $row[] = $OUTPUT->render($actionmenu);

@@ -42,7 +42,7 @@ define(['jquery'],
             If the caption data is user submitted or from some other untrusted source, then set this to true
             to prevent xss and other injection attacks.
              */
-            sanitizeTitle: false
+            sanitizeTitle: true
         };
 
         Lightbox.prototype.option = function(options) {

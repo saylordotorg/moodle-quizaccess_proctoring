@@ -26,6 +26,14 @@ defined('MOODLE_INTERNAL') || die();
 
 $observers = [
     [
+        'eventname' => '\\mod_quiz\\event\\attempt_started',
+        'callback' => '\\quizaccess_proctoring\\local\\monitoring_coverage::attempt_started',
+    ],
+    [
+        'eventname' => '\\mod_quiz\\event\\attempt_started',
+        'callback' => '\\quizaccess_proctoring\\local\\identity_recheck_policy::attempt_started',
+    ],
+    [
         'eventname' => '\mod_quiz\event\attempt_submitted',
         'callback' => '\quizaccess_proctoring\proctoring_observer::handle_quiz_attempt_submitted',
     ],

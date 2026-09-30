@@ -56,6 +56,8 @@ if (!quizaccess_proctoring_can_manage_admin_settings()) {
 $PAGE->set_pagelayout('admin');
 
 $userid = required_param('id', PARAM_INT);
+$context = context_system::instance();
+$targetuser = $DB->get_record('user', ['id' => $userid, 'deleted' => 0], 'id, firstname, lastname', MUST_EXIST);
 
 $mform = new image_upload_form();
 
@@ -82,13 +84,13 @@ if ($mform->is_cancelled()) {
     // Store or update $student.
     file_save_draft_area_files(
         $data->user_photo,
-        $data->context_id,
+        $context->id,
         'quizaccess_proctoring',
         'user_photo',
-        $data->id,
+        $userid,
         [
             'subdirs' => 0,
-            'maxfiles' => 50,
+            'maxfiles' => 1,
         ]
     );
 
@@ -189,7 +191,7 @@ if ($mform->is_cancelled()) {
 }
 
 $context = context_system::instance();
-$username = $DB->get_record_select('user', 'id=:id', ['id' => $userid], 'firstname ,lastname');
+$username = $targetuser;
 
 // Prepare image file.
 if (empty($user->id)) {

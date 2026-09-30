@@ -137,8 +137,12 @@ $table->setup();
 // Filter quiz summary data for the current course.
 foreach ($quizsummary as $quiz) {
     if ($course->id == $quiz->courseid) {
+        $targetcontext = context_module::instance((int)$quiz->quizid, IGNORE_MISSING);
+        if (!$targetcontext || !has_capability('quizaccess/proctoring:viewreport', $targetcontext)) {
+            continue;
+        }
         $row = [];
-        $row[] = $quiz->name;
+        $row[] = format_string($quiz->name, true, ['context' => $targetcontext]);
         $row[] = $quiz->camshotcount;
 
         $deleteparams = [
@@ -148,8 +152,7 @@ foreach ($quizsummary as $quiz) {
             'sesskey' => sesskey(),
         ];
 
-        $targetcontext = context_module::instance((int)$quiz->quizid, IGNORE_MISSING);
-        if ($targetcontext && has_capability('quizaccess/proctoring:deletecamshots', $targetcontext)) {
+        if (has_capability('quizaccess/proctoring:deletecamshots', $targetcontext)) {
             $row[] = $deletebutton(
                 $deleteparams,
                 $OUTPUT->pix_icon('t/delete', get_string('delete')) . ' ' . get_string('delete'),

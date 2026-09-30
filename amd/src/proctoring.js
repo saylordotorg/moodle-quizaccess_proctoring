@@ -3,8 +3,9 @@ let isCameraAllowed = false;
 // Module-scoped handle to the MediaStream acquired for the Pre-Check modal (Req 6.2).
 let precheckStream = null;
 
-define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proctoring/screenMonitorClient'],
-    function($, Ajax, Notification, Str, ScreenMonitorClient) {
+define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proctoring/screenMonitorClient',
+    'quizaccess_proctoring/evidenceQueue'],
+    function($, Ajax, Notification, Str, ScreenMonitorClient, EvidenceQueue) {
         const loadStrings = async function() {
             const stringkeys = [
                 {key: 'facenotfoundoncam', component: 'quizaccess_proctoring'},
@@ -35,6 +36,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'attemptwarning:wrongscreen', component: 'quizaccess_proctoring'},
                 {key: 'screenmarkerchecking', component: 'quizaccess_proctoring'},
                 {key: 'attemptwarning:sessionlost', component: 'quizaccess_proctoring'},
+                {key: 'coverage:connection', component: 'quizaccess_proctoring'},
+                {key: 'coverage:lost', component: 'quizaccess_proctoring'},
+                {key: 'coverage:recovered', component: 'quizaccess_proctoring'},
+                {key: 'coverage:device', component: 'quizaccess_proctoring'},
+                {key: 'coverage:rejected', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -67,6 +73,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     attemptwarningwrongscreen: strings[25],
                     screenmarkerchecking: strings[26],
                     attemptwarningsessionlost: strings[27],
+                    coverageconnection: strings[28],
+                    coveragelost: strings[29],
+                    coveragerecovered: strings[30],
+                    coveragedevice: strings[31],
+                    coveragerejected: strings[32],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -305,6 +316,103 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             Notification.exception(error);
         };
 
+        /** Keep capture timestamps on the server clock despite a misconfigured device clock. */
+        const createCaptureClock = function(props) {
+            const serverMs = Number(props.servertime) * 1000;
+            if (!Number.isFinite(serverMs) || serverMs <= 0) {
+                return Date.now;
+            }
+            const monotonic = typeof performance !== 'undefined' && performance.now ?
+                () => performance.now() : Date.now;
+            const started = monotonic();
+            return () => serverMs + Math.max(0, monotonic() - started);
+        };
+
+        /** One upload queue and an accessible, neutral coverage status for the attempt page. */
+        const createUploadController = function(strings, captureClock) {
+            let queue;
+            let banner = null;
+            let inactive = false;
+            let cameraMissing = false;
+            let screenMissing = false;
+            const render = function(state) {
+                let text = '';
+                if (state.auth) {
+                    text = strings.attemptwarningsessionlost;
+                } else if (state.offline || state.retrying) {
+                    text = strings.coverageconnection;
+                } else if (state.problem === 'rejected') {
+                    text = strings.coveragerejected;
+                } else if (cameraMissing || screenMissing) {
+                    text = strings.coveragedevice;
+                } else if (state.dropped) {
+                    text = strings.coveragelost;
+                } else if (state.recovered) {
+                    text = strings.coveragerecovered;
+                }
+                if (!banner && text) {
+                    banner = document.createElement('div');
+                    banner.id = 'proctoring-coverage-status';
+                    banner.className = 'alert alert-warning proctoring-attempt-warning';
+                    banner.setAttribute('role', 'status');
+                    banner.setAttribute('aria-live', 'polite');
+                    let dock = document.getElementById('proctoring-attempt-warning-dock');
+                    if (!dock) {
+                        dock = document.createElement('div');
+                        dock.id = 'proctoring-attempt-warning-dock';
+                        dock.className = 'proctoring-attempt-warning-dock';
+                        document.body.appendChild(dock);
+                    }
+                    dock.appendChild(banner);
+                }
+                if (banner) {
+                    banner.textContent = text || '';
+                    banner.style.display = text ? '' : 'none';
+                }
+            };
+            const start = function() {
+                inactive = false;
+                queue = EvidenceQueue.create({
+                    now: captureClock,
+                    online: () => navigator.onLine !== false,
+                    onState: render,
+                    send: request => new Promise((resolve, reject) => {
+                        // Handle session loss in place rather than core/ajax redirecting an active exam.
+                        Ajax.call([request], true, true, true, 15000)[0].done(resolve).fail(reject);
+                    })
+                });
+                render(queue.snapshot());
+            };
+            start();
+            const connectionChanged = function() {
+                if (!inactive) {
+                    queue.flush();
+                }
+            };
+            window.addEventListener('online', connectionChanged);
+            window.addEventListener('offline', connectionChanged);
+            return {
+                submit: function(request, capturedat) {
+                    return !inactive && queue.enqueue(request, capturedat);
+                },
+                device: function(device, missing) {
+                    if (device === 'camera') {
+                        cameraMissing = missing;
+                    } else {
+                        screenMissing = missing;
+                    }
+                    if (!inactive) {
+                        render(queue.snapshot());
+                    }
+                },
+                suspend: function() {
+                    inactive = true;
+                    queue.dispose();
+                },
+                resume: start
+            };
+        };
+
         /**
          * Collapse Boost's course index drawer, if the theme is showing one.
          *
@@ -345,7 +453,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             }, 5000);
         };
 
-        const initSuspiciousActivityMonitoring = function(props, strings) {
+        const initSuspiciousActivityMonitoring = function(props, strings, uploads, captureClock) {
+            let monitoringActive = true;
+            const intervals = [];
+            const monitorInterval = function(callback, delay) {
+                const entry = {callback: callback, delay: delay};
+                entry.id = monitoringActive ? window.setInterval(callback, delay) : null;
+                intervals.push(entry);
+                return entry.id;
+            };
             let lastLogged = {};
             let hiddenStarted = 0;
             const throttleMs = 5000;
@@ -353,6 +469,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             const monitorActivity = parseInt(props.monitorbrowseractivity, 10) === 1;
             const blockClipboard = parseInt(props.blockclipboard, 10) === 1;
             const captureDesktop = parseInt(props.captureviolationdesktop, 10) === 1;
+            const coverageScreens = captureDesktop && parseInt(props.coveragescreens, 10) === 1;
             const desktopPointerEnvironment = !(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i)
                 .test(navigator.userAgent || '') &&
                 !(window.matchMedia &&
@@ -398,6 +515,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 'screen_share_stopped'
             ];
             const desktopCaptureEvents = [
+                'screen_capture',
                 'tab_hidden',
                 'focus_lost',
                 'clipboard_copy',
@@ -413,6 +531,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 'multiple_monitors_detected'
             ];
             let screenStream = null;
+            let screenShareGeneration = 0;
             let screenVideo = null;
             let screenCanvas = null;
             let screenReady = false;
@@ -423,6 +542,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let screenGateTimer = null;
             let screenMonitorClient = null;
             let latestDesktopFrame = '';
+            let latestDesktopTime = 0;
             let multiMonitorLastState = '';
             let focusLostSince = 0;
             let suppressFocusLossUntil = 0;
@@ -484,11 +604,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 // resolve against the nearest transformed ancestor, and LMS themes routinely put a
                 // transform on a page wrapper, which pins the banner to the top of the document
                 // instead of the top of the viewport. The body has no such ancestor.
-                const dock = document.createElement('div');
-                dock.id = 'proctoring-attempt-warning-dock';
-                dock.className = 'proctoring-attempt-warning-dock';
+                let dock = document.getElementById('proctoring-attempt-warning-dock');
+                if (!dock) {
+                    dock = document.createElement('div');
+                    dock.id = 'proctoring-attempt-warning-dock';
+                    dock.className = 'proctoring-attempt-warning-dock';
+                    document.body.appendChild(dock);
+                }
                 dock.appendChild(warning);
-                document.body.appendChild(dock);
 
                 return warning;
             };
@@ -610,7 +733,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 window.addEventListener('scroll', function() {
                     positionScreenMarker(markerElement);
                 }, true);
-                window.setInterval(function() {
+                monitorInterval(function() {
                     positionScreenMarker(markerElement);
                 }, 1500);
             };
@@ -650,6 +773,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }
 
                 if (!screenVideo) {
+                    return '';
+                }
+                const screenTracks = screenStream && screenStream.getVideoTracks ? screenStream.getVideoTracks() : [];
+                if (!screenTracks.length || screenTracks.every(track => track.readyState === 'ended' || track.muted)) {
                     return '';
                 }
 
@@ -876,6 +1003,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             };
 
             const stopScreenStream = function() {
+                screenShareGeneration++;
                 if (markerCheckTimer) {
                     window.clearInterval(markerCheckTimer);
                     markerCheckTimer = null;
@@ -883,6 +1011,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (screenStream) {
                     screenStream.getTracks().forEach((track) => track.stop());
                     screenStream = null;
+                }
+                if (screenVideo) {
+                    screenVideo.srcObject = null;
+                }
+                if (screenCanvas) {
+                    screenCanvas.width = 0;
+                    screenCanvas.height = 0;
                 }
                 screenReady = false;
             };
@@ -965,6 +1100,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (event) {
                     event.preventDefault();
                 }
+                if (!monitoringActive) {
+                    return;
+                }
 
                 // The helper window (or the browser's share picker) is about to take
                 // focus at our own request; that must not count against the student.
@@ -982,16 +1120,24 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }
 
                 stopScreenStream();
+                const generation = screenShareGeneration;
 
                 try {
-                    screenStream = await navigator.mediaDevices.getDisplayMedia({
+                    const granted = await navigator.mediaDevices.getDisplayMedia({
                         video: {
                             displaySurface: 'monitor'
                         },
                         audio: false
                     });
+                    if (!monitoringActive || generation !== screenShareGeneration) {
+                        granted.getTracks().forEach(track => track.stop());
+                        return;
+                    }
+                    screenStream = granted;
                 } catch (error) {
-                    setScreenShareStatus(strings.screensharedenied, 'danger');
+                    if (monitoringActive && generation === screenShareGeneration) {
+                        setScreenShareStatus(strings.screensharedenied, 'danger');
+                    }
                     return;
                 }
 
@@ -1012,18 +1158,28 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 try {
                     await screenVideo.play();
                 } catch (error) {
+                    if (!monitoringActive || generation !== screenShareGeneration) {
+                        return;
+                    }
                     stopScreenStream();
                     setScreenShareStatus(strings.screensharedenied, 'danger');
                     return;
                 }
 
-                if (!await waitForScreenFrame()) {
+                const hasFrame = await waitForScreenFrame();
+                if (!monitoringActive || generation !== screenShareGeneration) {
+                    return;
+                }
+                if (!hasFrame) {
                     stopScreenStream();
                     setScreenShareStatus(strings.screensharedenied, 'danger');
                     return;
                 }
 
                 videoTrack.addEventListener('ended', function() {
+                    if (!monitoringActive || generation !== screenShareGeneration) {
+                        return;
+                    }
                     stopScreenStream();
                     setScreenShareStatus(strings.screensharestopped, 'danger');
                     clearAttemptWarning('wrongscreen');
@@ -1075,7 +1231,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
             const checkPhoneFrame = async function() {
                 const video = document.getElementById('video');
-                if (!phoneModel || !video || !video.videoWidth || !video.videoHeight ||
+                if (!monitoringActive || !phoneModel || !video || !video.videoWidth || !video.videoHeight ||
                         document.visibilityState === 'hidden') {
                     return;
                 }
@@ -1084,6 +1240,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 try {
                     predictions = await phoneModel.detect(video) || [];
                 } catch (error) {
+                    return;
+                }
+                if (!monitoringActive) {
                     return;
                 }
 
@@ -1133,7 +1292,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return;
                 }
 
-                window.setInterval(checkPhoneFrame, phoneCheckIntervalMs);
+                monitorInterval(checkPhoneFrame, phoneCheckIntervalMs);
             };
 
             const initScreenShareGate = function() {
@@ -1195,6 +1354,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         },
                         onScreenshot: function(message) {
                             latestDesktopFrame = message.image || '';
+                            // Both windows share the device clock. Convert frame age once, then use
+                            // the server-relative monotonic clock for freshness and evidence time.
+                            const timestamp = Number(message.ts) || 0;
+                            latestDesktopTime = timestamp ?
+                                captureClock() - Math.max(0, Date.now() - timestamp) : 0;
                         },
                         onOpenBlocked: function() {
                             setScreenShareStatus(strings.screenmonitorpopupblocked, 'danger');
@@ -1249,7 +1413,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             };
 
             const logEvent = function(eventType, detail) {
+                if (!monitoringActive) {
+                    return;
+                }
+                if (eventType === 'screen_capture' && !coverageScreens) {
+                    return;
+                }
                 if (!monitorActivity && !(blockClipboard && clipboardEvents.includes(eventType)) &&
+                        !(coverageScreens && eventType === 'screen_capture') &&
                         !(captureDesktop && screenShareEvents.includes(eventType)) &&
                         !(monitorDetectionEnabled && multiMonitorEvents.includes(eventType)) &&
                         !(monitorMouseActivity && mouseEvents.includes(eventType)) &&
@@ -1277,18 +1448,23 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     currenturl: window.location.href,
                     screenshot: eventType === 'phone_detected' ? phoneEvidenceFrame : captureDesktopFrame(eventType)
                 };
-
-                Ajax.call([{
+                let capturedat = Math.floor(captureClock() / 1000);
+                if (eventType === 'screen_capture') {
+                    // A helper window frame can be stale after suspension; never label it as a fresh capture.
+                    if (screenMonitorClient) {
+                        args.screenshot = captureClock() - latestDesktopTime <= 15000 ? latestDesktopFrame : '';
+                        capturedat = Math.floor(latestDesktopTime / 1000);
+                    }
+                    const missing = !screenReady || !args.screenshot;
+                    uploads.device('screen', missing);
+                    if (missing) {
+                        return;
+                    }
+                }
+                uploads.submit({
                     methodname: 'quizaccess_proctoring_log_event',
                     args: args
-                }])[0].fail(function(error) {
-                    // A service fault must not interrupt the attempt - but a dead session means
-                    // nothing this page sends is being recorded, and the student should hear that
-                    // once rather than find out from a permissions modal on the next capture.
-                    if (isAuthFailure(error)) {
-                        showSessionLostBanner(strings.attemptwarningsessionlost);
-                    }
-                });
+                }, capturedat);
             };
 
             const getPointerBoundary = function(event) {
@@ -1444,10 +1620,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             };
 
             initScreenShareGate();
+            if (coverageScreens) {
+                monitorInterval(function() {
+                    logEvent('screen_capture', {reason: 'scheduled_coverage_capture'});
+                }, Math.max(5000, parseInt(props.camshotdelay, 10) || 30000));
+            }
             initPhoneDetection();
             checkMultiMonitorSetup();
             if (monitorDetectionEnabled) {
-                window.setInterval(checkMultiMonitorSetup, 60000);
+                monitorInterval(checkMultiMonitorSetup, 60000);
                 window.addEventListener('focus', checkMultiMonitorSetup, true);
             }
 
@@ -1662,10 +1843,42 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     });
                 }, true);
             }
+            return {
+                suspend: function() {
+                    monitoringActive = false;
+                    intervals.forEach(entry => window.clearInterval(entry.id));
+                    if (screenGateTimer) {
+                        window.clearTimeout(screenGateTimer);
+                    }
+                    Object.values(attemptWarningTimers).forEach(timer => window.clearTimeout(timer));
+                    stopScreenStream();
+                    latestDesktopFrame = '';
+                    latestDesktopTime = 0;
+                    phoneEvidenceFrame = '';
+                    if (phoneCanvas) {
+                        phoneCanvas.width = 0;
+                        phoneCanvas.height = 0;
+                    }
+                    if (screenMonitorClient && screenMonitorClient.stop) {
+                        screenMonitorClient.stop();
+                    }
+                },
+                resume: function() {
+                    monitoringActive = true;
+                    intervals.forEach(entry => { entry.id = window.setInterval(entry.callback, entry.delay); });
+                    if (screenMonitorClient) {
+                        screenMonitorClient.start();
+                    } else if (captureDesktop) {
+                        showScreenShareGate();
+                    }
+                }
+            };
         };
 
         return {
             async setup(props, modelurl) {
+                // Anchor before strings/models load; retries preserve each frame's original time.
+                const captureClock = createCaptureClock(props);
                 const strings = await loadStrings();
                 let faceModelReady = false;
                 if (modelurl !== null) {
@@ -1677,7 +1890,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         Notification.exception(error);
                     }
                 }
-                takepicturedelay = props.camshotdelay;
+                takepicturedelay = Math.max(5000, parseInt(props.camshotdelay, 10) || 30000);
                 // Quiz core renders a lone tertiary-nav "Back" link during attempts;
                 // on a proctored attempt it only walks students out of the exam
                 // mid-attempt (and fires focus-loss violations on the way).
@@ -1701,6 +1914,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return false;
                 }
 
+                const uploads = createUploadController(strings, captureClock);
+                let monitoring = null;
+                let pageActive = true;
+                let pageGeneration = 0;
+                let captureBusy = false;
+                let cameraStream = null;
+                let captureTimer = null;
+                let firstCaptureTimer = null;
                 if (parseInt(props.monitorbrowseractivity, 10) === 1 ||
                         parseInt(props.blockclipboard, 10) === 1 ||
                         parseInt(props.monitormouseactivity || 0, 10) === 1 ||
@@ -1708,7 +1929,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         parseInt(props.blurquizwithmultiplemonitors || 0, 10) === 1 ||
                         parseInt(props.detectphone || 0, 10) === 1 ||
                         ['log', 'warn', 'block'].includes(props.multimonitormode)) {
-                    initSuspiciousActivityMonitoring(props, strings);
+                    monitoring = initSuspiciousActivityMonitoring(props, strings, uploads, captureClock);
                 }
 
                 const width = Math.max(240, parseInt(props.image_width, 10) || 480);
@@ -1867,79 +2088,132 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 };
 
                 const takepicture = async() => {
-                    const context = canvas.getContext('2d');
-                    if (width && height) {
-                        canvas.width = width;
-                        canvas.height = height;
-                        context.drawImage(video, 0, 0, width, height);
-                        data = canvas.toDataURL('image/png');
-                        photo.setAttribute('src', data);
-                        props.webcampicture = data;
+                    if (!pageActive || captureBusy) {
+                        return;
+                    }
+                    const tracks = video && video.srcObject && video.srcObject.getVideoTracks
+                        ? video.srcObject.getVideoTracks() : [];
+                    if (!tracks.length || tracks.every(track => track.readyState === 'ended' || track.muted) ||
+                            !video.videoWidth || !video.videoHeight || video.paused || video.ended) {
+                        uploads.device('camera', true);
+                        return;
+                    }
+                    captureBusy = true;
+                    const capturedat = Math.floor(captureClock() / 1000);
+                    const generation = pageGeneration;
+                    try {
+                        const context = canvas.getContext('2d');
+                        if (width && height) {
+                            canvas.width = width;
+                            canvas.height = height;
+                            context.drawImage(video, 0, 0, width, height);
+                            data = canvas.toDataURL('image/png');
+                            photo.setAttribute('src', data);
+                            props.webcampicture = data;
 
-                        let croppedImage = $('#cropimg');
-                        if (faceModelReady) {
-                            await detectface(photo, croppedImage);
-                        }
-                        let faceFound;
-                        let faceImage;
-                        if (croppedImage.src) {
-                            if (faceModelReady) {
-                                removeNotifications();
+                            let croppedImage = document.getElementById('cropimg');
+                            if (croppedImage) {
+                                croppedImage.removeAttribute('src');
                             }
-                            faceFound = 1;
-                            faceImage = croppedImage.src;
-                        } else {
                             if (faceModelReady) {
-                                showNotification(strings.facenotfoundoncam, 'error');
+                                await detectface(photo, croppedImage);
                             }
-                            faceFound = 0;
-                            faceImage = "";
-                        }
-                        var wsfunction = 'quizaccess_proctoring_send_camshot';
-                        var params = {
-                            'courseid': props.courseid,
-                            'screenshotid': props.id,
-                            'quizid': props.quizid,
-                            'webcampicture': data,
-                            'imagetype': 1,
-                            'parenttype': 'camshot_image',
-                            'faceimage': faceImage,
-                            'facefound': faceFound,
-                        };
-
-                        var request = {
-                            methodname: wsfunction,
-                            args: params
-                        };
-
-                        Ajax.call([request])[0].done(function(res) {
-                            if (res.warnings.length >= 1) {
-                                if (video) {
-                                    Notification.addNotification({
-                                        message: strings.wrongduringtakingimage,
-                                        type: 'error'
-                                    });
+                            if (!pageActive || generation !== pageGeneration) {
+                                if (croppedImage) {
+                                    croppedImage.removeAttribute('src');
                                 }
+                                return;
                             }
-                        }).fail(function(error) {
-                            handleUploadFailure(strings, error);
-                        });
-                    } else {
-                        clearphoto();
+                            let faceFound;
+                            let faceImage;
+                            if (croppedImage && croppedImage.getAttribute('src')) {
+                                if (faceModelReady) {
+                                    removeNotifications();
+                                }
+                                faceFound = 1;
+                                faceImage = croppedImage.src;
+                            } else {
+                                if (faceModelReady) {
+                                    showNotification(strings.facenotfoundoncam, 'error');
+                                }
+                                faceFound = 0;
+                                faceImage = "";
+                            }
+                            var wsfunction = 'quizaccess_proctoring_send_camshot';
+                            var params = {
+                                'courseid': props.courseid,
+                                'screenshotid': props.id,
+                                'quizid': props.quizid,
+                                'webcampicture': data,
+                                'imagetype': 1,
+                                'parenttype': 'camshot_image',
+                                'faceimage': faceImage,
+                                'facefound': faceFound,
+                            };
+
+                            var request = {
+                                methodname: wsfunction,
+                                args: params
+                            };
+
+                            if (pageActive) {
+                                uploads.device('camera', false);
+                                uploads.submit(request, capturedat);
+                            }
+                        } else {
+                            uploads.device('camera', true);
+                            clearphoto();
+                        }
+                    } catch (error) {
+                        if (pageActive && generation === pageGeneration) {
+                            uploads.device('camera', true);
+                        }
+                    } finally {
+                        captureBusy = false;
                     }
                 };
 
-                requestUserCamera()
+                const startCamera = function() {
+                    const generation = pageGeneration;
+                    requestUserCamera()
                     // eslint-disable-next-line promise/always-return
-                    .then(function(stream) {
+                    .then(async function(stream) {
+                        if (!pageActive || generation !== pageGeneration) {
+                            stream.getTracks().forEach(track => track.stop());
+                            return;
+                        }
+                        cameraStream = stream;
                         video.srcObject = stream;
-                        video.play();
+                        await video.play();
+                        if (!pageActive || generation !== pageGeneration) {
+                            return;
+                        }
                         isCameraAllowed = true;
                         initFaceVisibilityBlur();
+                        const reportCamera = missing => {
+                            if (pageActive && generation === pageGeneration) {
+                                uploads.device('camera', missing);
+                            }
+                        };
+                        stream.getVideoTracks().forEach(track => {
+                            track.addEventListener('ended', () => reportCamera(true));
+                            track.addEventListener('mute', () => reportCamera(true));
+                            track.addEventListener('unmute', () => reportCamera(false));
+                        });
                     })
                     .catch(function() {
+                        if (!pageActive || generation !== pageGeneration) {
+                            return;
+                        }
+                        if (cameraStream) {
+                            cameraStream.getTracks().forEach(track => track.stop());
+                            cameraStream = null;
+                        }
+                        uploads.device('camera', true);
                         hideButtons();
                     });
+                };
+                startCamera();
 
                 if (video) {
                     video.addEventListener('canplay', function() {
@@ -1963,11 +2237,61 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         await takepicture();
                         ev.preventDefault();
                     }, false);
-                    setTimeout(takepicture, firstcalldelay);
-                    setInterval(takepicture, takepicturedelay);
+                    firstCaptureTimer = window.setTimeout(takepicture, firstcalldelay);
+                    captureTimer = window.setInterval(takepicture, takepicturedelay);
                 } else {
                     hideButtons();
                 }
+
+                window.addEventListener('pagehide', function() {
+                    pageActive = false;
+                    pageGeneration++;
+                    uploads.suspend();
+                    if (monitoring) {
+                        monitoring.suspend();
+                    }
+                    window.clearTimeout(firstCaptureTimer);
+                    window.clearInterval(captureTimer);
+                    if (faceBlurTimer) {
+                        window.clearInterval(faceBlurTimer);
+                        faceBlurTimer = null;
+                    }
+                    if (cameraStream) {
+                        cameraStream.getTracks().forEach(track => track.stop());
+                        cameraStream = null;
+                    }
+                    if (video) {
+                        video.srcObject = null;
+                    }
+                    streaming = false;
+                    if (canvas) {
+                        canvas.width = 0;
+                        canvas.height = 0;
+                    }
+                    // Release the last displayed/base64 captures too, not only the recovery queue.
+                    data = null;
+                    delete props.webcampicture;
+                    if (photo) {
+                        photo.removeAttribute('src');
+                    }
+                    const crop = document.getElementById('cropimg');
+                    if (crop) {
+                        crop.removeAttribute('src');
+                    }
+                });
+                window.addEventListener('pageshow', function(event) {
+                    if (!event.persisted || pageActive) {
+                        return;
+                    }
+                    pageActive = true;
+                    uploads.resume();
+                    if (monitoring) {
+                        monitoring.resume();
+                    }
+                    startCamera();
+                    firstCaptureTimer = window.setTimeout(takepicture, firstcalldelay);
+                    captureTimer = window.setInterval(takepicture, takepicturedelay);
+                });
 
                 return true;
             },

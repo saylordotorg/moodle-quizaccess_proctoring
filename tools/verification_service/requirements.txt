@@ -1,0 +1,5 @@
+# Validated direct dependencies for the optional ASGI service; not bundled in the deployed Lambda ZIP.
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+boto3==1.42.82
+mangum==0.22.0
