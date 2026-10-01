@@ -125,6 +125,22 @@ Six runtime files were deployed at 02:59:32 UTC on October 1 (9:59 p.m. America/
 
 Locally, 108 JavaScript tests pass. The three new quiz-page cases cover a stale status followed by a ready reply (no event), a fresh stop (immediate event with diagnostics) and a silent helper (one event after 10 s). They fail on the prior code. Three new client cases cover the 5-second startup freshness rule; one of them fails on the prior code. The new cases also pass against the shipped minified builds. The builds were produced with terser 5. The fix has not yet been confirmed on a real attempt.
 
+## Away-event desktop capture correction — September 30, 2026
+
+In attempt `4748` (cmid `1968`), desktop screenshots were being stored. They were full-screen captures that included the menu bar and Dock. However, the image attached to `focus_lost` showed the quiz page, not what the student switched to. `focus_lost` and `tab_hidden` fire as the switch starts, before the other app is drawn. In helper-window mode the attached frame was also the helper's cached one, refreshed only every 5 seconds. The same attempt stored 107 screenshots for `mouse_left_window` and `mouse_returned_window` alone.
+
+Commit `464c356` makes three changes:
+
+- **Away events wait for a later frame.** `focus_lost` and `tab_hidden` keep their event time, but attach a frame taken about 2 seconds later. If the student returns first, the frame comes from the moment of return. In helper mode, the frame must come from the helper after the student left. In main-page mode, it is read from the share track with `ImageCapture.grabFrame()`, falling back to the page's video element.
+- **The event is never lost.** If no newer frame arrives within 3 seconds, or the page is left, the frame from the event itself is used. `screenshottiming` in the event detail records `after_leaving` or `at_event`.
+- **No screenshots for cursor movement.** Mouse-edge events are still logged, without screenshots.
+
+Event types, report labels and risk scoring are unchanged.
+
+Three runtime files (the `proctoring` source, build and source map) were deployed at 03:13:05 UTC on October 1 (10:13 p.m. America/Chicago) through SSM command `6dccaed9-92d5-4484-a83a-3f65983ab6e8` (`Success`). The site root, release version and all prior hashes were verified first. Each file was fetched at commit `464c356` and matched its expected SHA-256 before and after installation. Caches were purged, the homepage returned **200**, and the live build contains the change. The rollback copy is at `/var/backups/moodle-proctoring/dev.sylr.org/20261001-031305-away-capture`.
+
+Locally, 112 JavaScript tests pass. The four new cases cover the helper frame after the switch, the fallback when no newer frame arrives, a pending event on pagehide, and mouse-edge events without screenshots. All four fail on the prior code and pass against the shipped minified build. The change has not yet been confirmed on a real attempt.
+
 ## Manual rollback cautions
 
 Stop or drain scheduled jobs and other writers before restoration. Restore the database snapshot and matching prior plugin code together; a code-only rollback does not reverse the schema or settings upgrade. Restoring the snapshot loses database writes made after it was taken, so assess subsequent activity first. Recover the original provider URLs and settings from the database backup, then restore the recorded maintenance and cron state and verify the site. The dedicated dev Lambda and the unchanged shared Lambda must remain clearly distinguished.
