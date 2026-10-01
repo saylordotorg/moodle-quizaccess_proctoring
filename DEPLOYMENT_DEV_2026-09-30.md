@@ -76,6 +76,25 @@ Five runtime files (`rule.php`, the English language file, and the `startAttempt
 
 Local validation passed 102 JavaScript cases and 12 focused Moodle cases / 61 assertions. The new real-form test failed on the prior missing-ID markup and passed on the corrected markup. It covers browser-selected controls reaching the actual POST, student and administrator preview forms, failed/missing CAPTCHA, and unconfirmed-screen rejection. Physical-device start/review acceptance remains pending the user's retry.
 
+## Attempt-page layout correction — September 30, 2026
+
+A Chrome walkthrough of attempt `4745` (cmid `1967`) showed the webcam, a second face image and the screen-check marker crowding each other under the quiz navigation. The second image was the face-detection crop (`#cropimg`), which had no hiding style on the attempt page. The marker was pinned to the navigation block's bottom edge, the same spot the docked webcam occupies, while the status panel's screen slot stayed empty. Commit `e50427f` hides the crop, which is still produced and uploaded, and reserves the marker's height in the screen slot so the webcam sits below it. The marker stays fixed outside the panel and falls back to its previous position whenever the slot is not fully in view, so it never leaves the shared screen. Marker verification, the whole-screen requirement and every upload are unchanged.
+
+Four runtime files (the `proctoring` source, build and source map, and `styles.css`) were deployed at 00:50:30 UTC on October 1 (7:50 p.m. America/Chicago) through SSM command `5c6a9aaf-d715-4f2e-b3f7-54041a839cbd` (`Success`). An earlier attempt, `1551fccc-f3e8-4cdd-b139-b67ab9f6eb13`, failed under the default `sh` shell before touching any file. The host fetched each file from the public repository at commit `e50427f`. Before replacement, the site root, release version `2026093000` and all four prior hashes were verified against commit `f297671`. Each download matched its expected SHA-256 before installation and again after installation, and caches were purged. Maintenance mode was not used: this was a JavaScript and CSS change with no schema or version change, and the only active attempt was the tester's own. A private file-level rollback copy is at `/var/backups/moodle-proctoring/dev.sylr.org/20261001-005030-layout-fix`. The live site serves the updated build and stylesheet.
+
+| File | SHA-256 after deployment |
+| --- | --- |
+| `amd/src/proctoring.js` | `f6b4090521a2a4c72f85ba449b99e5255c04ec1760dfc48eae5d6ce8862d4949` |
+| `amd/build/proctoring.min.js` | `fc06f5af3f96c1677608e9aee6da2d8a58da568812ab57ae87771654c74348de` |
+| `amd/build/proctoring.min.js.map` | `0267e8529cc38e85c88a1480245d672be7b2e767ffdf8319d7cb5f04608f0912` |
+| `styles.css` | `867b1221111ab08b3430f0ad404560a662d2f8028962b49cbac045c795bc6f87` |
+
+Local validation passed 102 JavaScript cases, and the rebuilt AMD file parsed. No Grunt toolchain was available, so the build was produced with terser 5. The corrected layout has not yet been confirmed visually on a physical device.
+
+### Open finding: Safari camera coverage
+
+An earlier Safari 26.6 walkthrough of the same attempt showed the coverage-gap banner. Its preflight camshot uploaded, but the attempt page made no `send_camshot` calls while sending 151 activity events. The 1.11.0 capture guard skips frames from muted or paused camera tracks. The suspected cause is that Safari mutes the attempt page's camera while the screen-monitor helper window holds the screen capture. This has not been confirmed. The retest options are Chrome on the same device, or Safari with `screensharepersistencemode=main`. No setting was changed.
+
 ## Manual rollback cautions
 
 Stop or drain scheduled jobs and other writers before restoration. Restore the database snapshot and matching prior plugin code together; a code-only rollback does not reverse the schema or settings upgrade. Restoring the snapshot loses database writes made after it was taken, so assess subsequent activity first. Recover the original provider URLs and settings from the database backup, then restore the recorded maintenance and cron state and verify the site. The dedicated dev Lambda and the unchanged shared Lambda must remain clearly distinguished.
