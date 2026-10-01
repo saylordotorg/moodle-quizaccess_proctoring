@@ -103,6 +103,12 @@ Only `rule.php` was deployed, at 01:19:45 UTC on October 1 (8:19 p.m. America/Ch
 
 Locally, `test_startattempt_preflight_page_does_not_start_monitoring` fails on the prior code and passes on the fix. `monitoring_coverage_test.php` (13 tests / 63 assertions) and `preflight_form_integration_test.php` (6 tests / 42 assertions) pass. The Safari camera finding above still needs a clean retest after this correction.
 
+## ID capture guide correction — September 30, 2026
+
+In Safari 26.6 on a MacBook Pro, **Capture ID image** stayed disabled. A console probe showed the ID camera live at 1920×1920, the guide displayed at 352×222 with "ID not in window", and the button disabled with that title. The red guide rectangle was not visible in the student's view: Safari composited the playing `<video>` above the absolutely positioned guide, so there was no target to hold the card in. Commit `28c0b61` gives the video `z-index: 0` and the guide `z-index: 1`. Detection thresholds and capture logic are unchanged. The black face-camera box on that step is expected; it starts only when **Verify ID** is pressed.
+
+Only `styles.css` was deployed, at 01:31:11 UTC on October 1 (8:31 p.m. America/Chicago), through SSM command `0cadfff9-f5d5-4858-bf79-091084f00a4c` (`Success`). The site root, release version and prior hash `867b1221111ab08b3430f0ad404560a662d2f8028962b49cbac045c795bc6f87` were verified first. The file was fetched at commit `28c0b61` and matched `84461a121b0c5ce4876ac541deab078f08cd0d0a7892cd08fddfad15ae590b76` before and after installation. Caches were purged, the homepage returned **200**, and the live stylesheet contains the change. The rollback copy is at `/var/backups/moodle-proctoring/dev.sylr.org/20261001-013111-id-guide-fix`. The fix has not yet been confirmed in Safari. If the card is still not detected once the guide is visible, the detection heuristics are the next suspect.
+
 ## Manual rollback cautions
 
 Stop or drain scheduled jobs and other writers before restoration. Restore the database snapshot and matching prior plugin code together; a code-only rollback does not reverse the schema or settings upgrade. Restoring the snapshot loses database writes made after it was taken, so assess subsequent activity first. Recover the original provider URLs and settings from the database backup, then restore the recorded maintenance and cron state and verify the site. The dedicated dev Lambda and the unchanged shared Lambda must remain clearly distinguished.
