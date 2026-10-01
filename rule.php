@@ -2175,6 +2175,14 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             return;
         }
 
+        // Moodle also calls this from startattempt.php, which renders the preflight form as a
+        // full page (for example "Start a new preview", or a redisplay after a failed check).
+        // No attempt is running there, and live monitoring would hide the preflight panels and
+        // compete with the preflight's own camera, so leave that page to startAttempt.js.
+        if (basename($this->get_topmost_script()) === 'startattempt.php') {
+            return;
+        }
+
         if ($cmid) {
             // Fetch the course module record for the quiz.
             $contextquiz = $DB->get_record('course_modules', ['id' => $cmid]);

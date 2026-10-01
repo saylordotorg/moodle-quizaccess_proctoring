@@ -164,6 +164,45 @@ final class monitoring_coverage_test extends \advanced_testcase {
     }
 
     /**
+     * The full-page preflight on startattempt.php must not start live attempt monitoring.
+     */
+    public function test_startattempt_preflight_page_does_not_start_monitoring(): void {
+        global $COURSE, $DB;
+        $this->resetAfterTest();
+        [$course, $quiz, $student, $attemptid] = $this->fixture();
+        $savedget = $_GET;
+        $savedpost = $_POST;
+        $savedcourse = $COURSE;
+        try {
+            $_GET['cmid'] = $quiz->cmid;
+            unset($_GET['attempt'], $_POST['cmid'], $_POST['attempt']);
+            $COURSE = $course;
+            $page = new \moodle_page();
+            $page->set_context(\context_module::instance($quiz->cmid));
+            $page->set_course($course);
+            $page->set_url('/mod/quiz/startattempt.php', ['cmid' => $quiz->cmid]);
+            $quizsettings = \mod_quiz\quiz_settings::create($quiz->id, $student->id);
+            $rule = new class($quizsettings, time()) extends \quizaccess_proctoring {
+                /** @return string Pretend Moodle's start-attempt script is the entry point. */
+                public function get_topmost_script() {
+                    return '/var/www/moodle/mod/quiz/startattempt.php';
+                }
+            };
+            $logsbefore = $DB->count_records('quizaccess_proctoring_logs', ['quizid' => $quiz->cmid]);
+            $rule->setup_attempt_page($page);
+            $this->assertSame($logsbefore, $DB->count_records('quizaccess_proctoring_logs', ['quizid' => $quiz->cmid]));
+            $this->assertFalse($DB->record_exists('quizaccess_proctoring_events', [
+                'quizid' => $quiz->cmid, 'eventtype' => 'monitoring_started',
+            ]));
+            $this->assertStringNotContainsString('quizaccess_proctoring/proctoring', $page->requires->get_end_code());
+        } finally {
+            $_GET = $savedget;
+            $_POST = $savedpost;
+            $COURSE = $savedcourse;
+        }
+    }
+
+    /**
      * A wrong owner, preview or unproctored quiz must not create monitoring records.
      */
     public function test_attempt_observer_requires_a_real_proctored_owner_attempt(): void {
