@@ -522,8 +522,6 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 'clipboard_cut',
                 'clipboard_paste',
                 'contextmenu',
-                'mouse_left_window',
-                'mouse_returned_window',
                 'shortcut',
                 'possible_ai_tool',
                 'page_exit',
@@ -807,9 +805,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return '';
                 }
 
-                const sourceWidth = screenVideo.videoWidth || 0;
-                const sourceHeight = screenVideo.videoHeight || 0;
-                if (!sourceWidth || !sourceHeight) {
+                return drawDesktopImage(screenVideo, screenVideo.videoWidth || 0, screenVideo.videoHeight || 0);
+            };
+
+            const drawDesktopImage = function(source, sourceWidth, sourceHeight) {
+                if (!source || !sourceWidth || !sourceHeight) {
                     return '';
                 }
 
@@ -821,9 +821,91 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const targetHeight = Math.round(sourceHeight * (targetWidth / sourceWidth));
                 screenCanvas.width = targetWidth;
                 screenCanvas.height = targetHeight;
-                screenCanvas.getContext('2d').drawImage(screenVideo, 0, 0, targetWidth, targetHeight);
+                screenCanvas.getContext('2d').drawImage(source, 0, 0, targetWidth, targetHeight);
 
                 return screenCanvas.toDataURL('image/jpeg', 0.75);
+            };
+
+            // The browser reports leaving the quiz as the switch starts, before the other app is
+            // drawn, so a frame grabbed then only ever shows the quiz. Away events wait for a frame
+            // taken after the switch; whatever happens, the frame from the event itself is kept.
+            const awayCaptureEvents = ['focus_lost', 'tab_hidden'];
+            const awayCaptureDelayMs = 2000;
+            const awayCaptureTimeoutMs = 3000;
+            const awayCaptureMinLeadMs = 1000;
+            const pendingAwayCaptures = new Set();
+
+            const grabSharedScreenFrame = async function(eventMs) {
+                if (!monitoringActive || !screenReady) {
+                    return '';
+                }
+                if (screenMonitorClient) {
+                    // Ask the helper for a new frame and accept only one taken after the switch
+                    // (or after the request, when the student came straight back).
+                    const notBefore = Math.min(captureClock(), eventMs + awayCaptureMinLeadMs);
+                    screenMonitorClient.getLatestScreenshot();
+                    const started = Date.now();
+                    while (Date.now() - started < awayCaptureTimeoutMs) {
+                        if (latestDesktopFrame && latestDesktopTime >= notBefore) {
+                            return latestDesktopFrame;
+                        }
+                        await new Promise(resolve => window.setTimeout(resolve, 250));
+                        if (!monitoringActive) {
+                            return '';
+                        }
+                    }
+                    return '';
+                }
+                // A hidden tab may stop painting its <video>; read the share track directly when possible.
+                const track = screenStream && screenStream.getVideoTracks ? screenStream.getVideoTracks()[0] : null;
+                if (track && track.readyState !== 'ended' && typeof window.ImageCapture === 'function') {
+                    try {
+                        const bitmap = await new window.ImageCapture(track).grabFrame();
+                        const frame = drawDesktopImage(bitmap, bitmap.width, bitmap.height);
+                        if (bitmap.close) {
+                            bitmap.close();
+                        }
+                        if (frame) {
+                            return frame;
+                        }
+                    } catch (error) {
+                        // Fall back to the page's video element below.
+                    }
+                }
+                return captureDesktopFrame('focus_lost');
+            };
+
+            const captureAwayFrame = function(eventMs) {
+                return new Promise(resolve => {
+                    const pending = {settled: false, timer: null};
+                    const finish = frame => {
+                        if (pending.settled) {
+                            return;
+                        }
+                        pending.settled = true;
+                        window.clearTimeout(pending.timer);
+                        pendingAwayCaptures.delete(pending);
+                        resolve(frame || '');
+                    };
+                    // Returning to the quiz, or leaving the page, settles the capture early.
+                    pending.grabNow = () => {
+                        window.clearTimeout(pending.timer);
+                        grabSharedScreenFrame(eventMs).then(finish, () => finish(''));
+                    };
+                    pending.abandon = () => finish('');
+                    pendingAwayCaptures.add(pending);
+                    pending.timer = window.setTimeout(pending.grabNow, awayCaptureDelayMs);
+                });
+            };
+
+            const settleAwayCaptures = function(useFrames) {
+                Array.from(pendingAwayCaptures).forEach(pending => {
+                    if (useFrames) {
+                        pending.grabNow();
+                    } else {
+                        pending.abandon();
+                    }
+                });
             };
 
             const drawScreenFrame = function() {
@@ -1513,10 +1595,23 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         return;
                     }
                 }
-                uploads.submit({
+                const request = {
                     methodname: 'quizaccess_proctoring_log_event',
                     args: args
-                }, capturedat);
+                };
+                if (awayCaptureEvents.includes(eventType) && args.screenshot) {
+                    // Keep the event's own time; only the attached frame comes from after the switch.
+                    const eventFrame = args.screenshot;
+                    captureAwayFrame(captureClock()).then(function(awayFrame) {
+                        args.screenshot = awayFrame || eventFrame;
+                        args.eventdetail = JSON.stringify(Object.assign({}, detail || {}, {
+                            screenshottiming: awayFrame ? 'after_leaving' : 'at_event'
+                        }));
+                        uploads.submit(request, capturedat);
+                    });
+                    return;
+                }
+                uploads.submit(request, capturedat);
             };
 
             const getPointerBoundary = function(event) {
@@ -1712,6 +1807,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }, true);
 
                 window.addEventListener('focus', function() {
+                    // Back already: the frame at the moment of return is the closest to where they went.
+                    settleAwayCaptures(true);
                     if (focusLostSince) {
                         setAttemptWarning('quiznotinview', strings.attemptwarningquiznotinview, 'warning', 12000);
                     }
@@ -1895,6 +1992,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     });
                 }, true);
             }
+            // Leaving the page must not drop an away event still waiting for its frame: submit it
+            // now, before the upload queue is suspended, with the frame from the event itself.
+            window.addEventListener('pagehide', function() {
+                settleAwayCaptures(false);
+            }, true);
+
             return {
                 suspend: function() {
                     monitoringActive = false;

@@ -646,8 +646,12 @@ test('routine screenshots require explicit opt-in while existing event screensho
  * The fake client hands back the callbacks proctoring.js registers, so each test can feed
  * it exactly the status sequence a throttled or stopped helper window would produce.
  */
-async function bootWithHelper(readyAtStart) {
+async function bootWithHelper(readyAtStart, overrides, envSetup) {
     const env = createEnvironment();
+    env.cachedShot = '';
+    if (envSetup) {
+        envSetup(env);
+    }
     env.deps['quizaccess_proctoring/screenMonitorClient'] = {
         create(props, callbacks) {
             env.monitorCallbacks = callbacks;
@@ -657,7 +661,8 @@ async function bootWithHelper(readyAtStart) {
                 open() {},
                 requestStatus() {},
                 getLatestScreenshot() {
-                    return '';
+                    env.screenshotRequests = (env.screenshotRequests || 0) + 1;
+                    return env.cachedShot;
                 },
                 isReady() {
                     return readyAtStart;
@@ -668,7 +673,7 @@ async function bootWithHelper(readyAtStart) {
     const mod = loadModule(env);
     await Promise.resolve(mod.setup(Object.assign({}, PROPS, {
         screenmonitorurl: 'https://example.org/mod/quiz/accessrule/proctoring/screenmonitor.php',
-    }), null)).catch(() => {});
+    }, overrides || {}), null)).catch(() => {});
     await flush();
     env.stoppedEvents = () => env.loggedEvents.filter((e) => e.eventtype === 'screen_share_stopped');
     return env;
@@ -734,4 +739,86 @@ test('a helper that stays silent is reported once the grace period has passed', 
     env.monitorCallbacks.onUnavailable(stale());
     await flush();
     assert.strictEqual(env.stoppedEvents().length, 1, 'the stop is reported once, not on every poll');
+});
+
+/** Leave the quiz window after the share-picker focus grace, as a student switching apps does. */
+async function leaveQuizWindow(env) {
+    env.advance(20000);
+    env.windowEvents.blur.forEach(callback => callback());
+    await flush();
+}
+
+const focusLostEvents = env => env.loggedEvents.filter(event => event.eventtype === 'focus_lost');
+
+test('leaving the quiz attaches a helper frame taken after the switch, not the cached one', async () => {
+    const env = await bootWithHelper(true);
+    env.cachedShot = 'data:image/jpeg;base64,QUIZ';
+    env.monitorCallbacks.onScreenshot({image: env.cachedShot, ts: env.now});
+
+    await leaveQuizWindow(env);
+    assert.strictEqual(focusLostEvents(env).length, 0, 'the event waits for a frame from after the switch');
+
+    // The helper answers the fresh request with what is now on screen.
+    env.monitorCallbacks.onScreenshot({image: 'data:image/jpeg;base64,OTHERAPP', ts: env.now + 1500});
+    env.advance(1500);
+    await flush(10);
+
+    const events = focusLostEvents(env);
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].screenshot, 'data:image/jpeg;base64,OTHERAPP');
+    assert.strictEqual(JSON.parse(events[0].eventdetail).screenshottiming, 'after_leaving');
+    assert.strictEqual(events[0].capturedat, Math.floor((env.now - 1500) / 1000),
+        'the event keeps the time the student left');
+});
+
+test('an away event falls back to its own frame when no newer frame arrives', async () => {
+    const env = await bootWithHelper(true);
+    env.cachedShot = 'data:image/jpeg;base64,QUIZ';
+    env.monitorCallbacks.onScreenshot({image: env.cachedShot, ts: env.now});
+
+    await leaveQuizWindow(env);
+    env.advance(3001);
+    await flush(10);
+
+    const events = focusLostEvents(env);
+    assert.strictEqual(events.length, 1, 'a silent helper must not lose the event');
+    assert.strictEqual(events[0].screenshot, 'data:image/jpeg;base64,QUIZ');
+    assert.strictEqual(JSON.parse(events[0].eventdetail).screenshottiming, 'at_event');
+});
+
+test('leaving the page submits a waiting away event straight away', async () => {
+    const env = await bootWithHelper(true);
+    env.cachedShot = 'data:image/jpeg;base64,QUIZ';
+    env.monitorCallbacks.onScreenshot({image: env.cachedShot, ts: env.now});
+
+    await leaveQuizWindow(env);
+    for (const callback of env.windowEvents.pagehide || []) {
+        callback({});
+        await flush(1);
+    }
+
+    const events = focusLostEvents(env);
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(JSON.parse(events[0].eventdetail).screenshottiming, 'at_event');
+});
+
+test('mouse movements across the window edge are logged without desktop screenshots', async () => {
+    const documentEvents = {};
+    const env = await bootWithHelper(true, {monitormouseactivity: 1}, env => {
+        env.window.matchMedia = query => ({matches: !/max-width|min-width/.test(query), addEventListener() {}});
+        env.document.addEventListener = (name, fn) => {
+            (documentEvents[name] = documentEvents[name] || []).push(fn);
+        };
+        env.document.documentElement = {addEventListener() {}};
+    });
+    env.cachedShot = 'data:image/jpeg;base64,QUIZ';
+    env.monitorCallbacks.onScreenshot({image: env.cachedShot, ts: env.now});
+
+    assert.ok((documentEvents.pointerout || []).length, 'mouse monitoring must be active in this fixture');
+    documentEvents.pointerout.forEach(fn => fn({pointerType: 'mouse', relatedTarget: null, clientX: -1, clientY: 5}));
+    await flush();
+
+    const mouseEvents = env.loggedEvents.filter(event => event.eventtype === 'mouse_left_window');
+    assert.strictEqual(mouseEvents.length, 1);
+    assert.strictEqual(mouseEvents[0].screenshot, '');
 });
