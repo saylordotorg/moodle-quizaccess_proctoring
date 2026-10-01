@@ -109,6 +109,22 @@ In Safari 26.6 on a MacBook Pro, **Capture ID image** stayed disabled. A console
 
 Only `styles.css` was deployed, at 01:31:11 UTC on October 1 (8:31 p.m. America/Chicago), through SSM command `0cadfff9-f5d5-4858-bf79-091084f00a4c` (`Success`). The site root, release version and prior hash `867b1221111ab08b3430f0ad404560a662d2f8028962b49cbac045c795bc6f87` were verified first. The file was fetched at commit `28c0b61` and matched `84461a121b0c5ce4876ac541deab078f08cd0d0a7892cd08fddfad15ae590b76` before and after installation. Caches were purged, the homepage returned **200**, and the live stylesheet contains the change. The rollback copy is at `/var/backups/moodle-proctoring/dev.sylr.org/20261001-013111-id-guide-fix`. The fix has not yet been confirmed in Safari. If the card is still not detected once the guide is visible, the detection heuristics are the next suspect.
 
+## Screen-share status grace correction — September 30, 2026
+
+A Chrome preview attempt (`4747`, cmid `1968`) logged one `screen_share_stopped` (`persistent_monitor_unavailable`) at 20:45:09, four seconds after the first quiz page loaded. The share never ended: none of the later page changes logged anything, and the submit-time event at 21:50 carried a desktop capture. `screen_share_stopped` scores as a risk factor, so the false event very likely accounts for most of that attempt's 23/100 Moderate score.
+
+The cause is a race between the quiz page and the background helper window. On page load, the quiz page read the helper's stored status before the helper had replied. Browsers throttle the helper's timers, so that status can be up to a minute old. Any status that was not ready logged the stop immediately. Commit `0743e6a` makes three changes:
+
+- On page load, the quiz page ignores a stored status older than 5 seconds and waits for the helper's live reply.
+- Only a fresh (≤ 5 s) `stopped` status from the helper ends the share at once. Any other not-ready status must persist for 10 seconds, and a ready reply cancels it.
+- The event detail now records `statusage` in seconds, `helperready` and `helperstopped`.
+
+The 30-second marker grace is unchanged. Existing events and scores were not modified.
+
+Six runtime files were deployed at 02:59:32 UTC on October 1 (9:59 p.m. America/Chicago) through SSM command `5d7c3fcf-b219-46c3-adcf-b183326d005e` (`Success`): the `proctoring` and `screenMonitorClient` sources, builds and source maps. The site root, release version and all six prior hashes were verified first. Each file was fetched at commit `0743e6a` and matched its expected SHA-256 before and after installation. Caches were purged, the homepage returned **200**, and both live builds contain the change. The rollback copy is at `/var/backups/moodle-proctoring/dev.sylr.org/20261001-025932-helper-status-grace`.
+
+Locally, 108 JavaScript tests pass. The three new quiz-page cases cover a stale status followed by a ready reply (no event), a fresh stop (immediate event with diagnostics) and a silent helper (one event after 10 s). They fail on the prior code. Three new client cases cover the 5-second startup freshness rule; one of them fails on the prior code. The new cases also pass against the shipped minified builds. The builds were produced with terser 5. The fix has not yet been confirmed on a real attempt.
+
 ## Manual rollback cautions
 
 Stop or drain scheduled jobs and other writers before restoration. Restore the database snapshot and matching prior plugin code together; a code-only rollback does not reverse the schema or settings upgrade. Restoring the snapshot loses database writes made after it was taken, so assess subsequent activity first. Recover the original provider URLs and settings from the database backup, then restore the recorded maintenance and cron state and verify the site. The dedicated dev Lambda and the unchanged shared Lambda must remain clearly distinguished.
