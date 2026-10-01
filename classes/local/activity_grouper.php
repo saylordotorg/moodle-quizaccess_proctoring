@@ -61,7 +61,9 @@ class activity_grouper {
      *     hascapture keys.
      */
     public static function group(array $events): array {
-        $sorted = array_values($events);
+        $sorted = array_values(array_filter($events, static function (\stdClass $event): bool {
+            return !in_array((string)$event->eventtype, monitoring_coverage::NEUTRAL_EVENTS, true);
+        }));
         usort($sorted, static function (\stdClass $a, \stdClass $b): int {
             return [(int)$a->timemodified, (int)$a->id] <=> [(int)$b->timemodified, (int)$b->id];
         });

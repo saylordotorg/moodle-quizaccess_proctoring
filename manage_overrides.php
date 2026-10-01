@@ -73,7 +73,10 @@ foreach (get_enrolled_users($coursecontext) as $enrolled) {
 }
 $quizzes = [];
 foreach (get_all_instances_in_course('quiz', $course) as $quizinstance) {
-    $quizzes[(int)$quizinstance->id] = format_string($quizinstance->name);
+    $quizcontext = context_module::instance((int)$quizinstance->coursemodule);
+    if (has_capability('quizaccess/proctoring:manageoverrides', $quizcontext)) {
+        $quizzes[(int)$quizinstance->id] = format_string($quizinstance->name, true, ['context' => $quizcontext]);
+    }
 }
 
 $customdata = [
@@ -115,6 +118,7 @@ if ($action === 'create' || $action === 'edit') {
             '*',
             MUST_EXIST
         );
+        override_manager::require_scope($context, (int)$existing->courseid, (int)$existing->quizid);
         $existing->cmid = $cmid;
         $existing->courseid = $courseid;
         // Populate the form's hidden routing field so a submitted edit is not misrouted as a create.
@@ -147,6 +151,7 @@ if ($action === 'revoke') {
         '*',
         MUST_EXIST
     );
+    override_manager::require_scope($context, (int)$override->courseid, (int)$override->quizid);
 
     if ($confirm && confirm_sesskey()) {
         override_manager::revoke($context, $overrideid);
@@ -374,7 +379,7 @@ foreach ($overrides as $override) {
     // profile from here, and the email address is the identifier they match against other systems.
     $studentname = html_writer::link(
         new moodle_url('/user/profile.php', ['id' => (int)$override->userid]),
-        $student ? fullname($student) : (string)$override->userid
+        $student ? s(fullname($student)) : (string)$override->userid
     );
     $studentemail = $student ? s($student->email) : '-';
     $studentid = html_writer::link(
@@ -419,6 +424,9 @@ foreach ($overrides as $override) {
 
     if ((int)$override->revoked === 1) {
         $status = get_string('override_status_revoked', $component);
+        $actions = '';
+    } else if ((int)$override->quizid === 0 && !has_capability('quizaccess/proctoring:manageoverrides', $coursecontext)) {
+        $status = get_string('override_status_active', $component);
         $actions = '';
     } else {
         $status = get_string('override_status_active', $component);

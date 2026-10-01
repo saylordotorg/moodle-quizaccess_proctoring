@@ -30,6 +30,14 @@ defined('MOODLE_INTERNAL') || die();
 
 // List of external functions for the quizaccess_proctoring plugin.
 $functions = [
+    'quizaccess_proctoring_readiness' => [
+        'classname' => 'quizaccess_proctoring\external\readiness',
+        'methodname' => 'execute',
+        'description' => 'Check device-test connectivity and configured service reachability before an attempt.',
+        'type' => 'read',
+        'ajax' => true,
+        'capabilities' => 'quizaccess/proctoring:sendcamshot',
+    ],
     // Send a camera snapshot on the given session.
     'quizaccess_proctoring_send_camshot' => [
         'classname'    => 'quizaccess_proctoring_external',

@@ -63,6 +63,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: moodle-plugin-ci phplint ./moodle/mod/quiz/accessrule/proctoring
 
+      - name: Browser security and preflight regressions
+        if: ${{ !cancelled() }}
+        run: node --test plugin/tests/js/*.test.js
+
       - name: Validate plugin
         if: ${{ !cancelled() }}
         run: moodle-plugin-ci validate ./moodle/mod/quiz/accessrule/proctoring
@@ -90,6 +94,7 @@ jobs:
     name: PHPUnit Moodle ${{ matrix.version }} / PHP ${{ matrix.php }} / ${{ matrix.dbname }}
     runs-on: ubuntu-22.04
     continue-on-error: ${{ matrix.experimental }}
+    timeout-minutes: 45
 
     strategy:
       fail-fast: false
@@ -215,4 +220,38 @@ jobs:
           MOODLE_BRANCH: ${{ matrix.branch }}
 
       - name: PHPUnit
-        run: moodle-plugin-ci phpunit ${{ matrix.pluginpath }}
+        working-directory: moodle
+        # Moodle generates a configuration matching its bundled PHPUnit version.
+        # The plugin's legacy standalone config targets PHPUnit 9 only.
+        run: vendor/bin/phpunit --configuration phpunit.xml --testsuite quizaccess_proctoring_testsuite --fail-on-risky --fail-on-empty-test-suite --testdox
+
+  verification-service:
+    name: Verification service security regressions
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out plugin
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/verification_service/requirements.txt
+
+      - name: Install service and test dependencies
+        run: python -m pip install -r tools/verification_service/requirements.txt httpx==0.28.1
+
+      - name: Run offline security regressions
+        working-directory: tools/verification_service
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python -B - <<'PY'
+          import sys
+          import unittest
+          suite = unittest.defaultTestLoader.loadTestsFromName('test_security')
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(0 if result.wasSuccessful() and result.testsRun > 0 and not result.skipped else 1)
+          PY

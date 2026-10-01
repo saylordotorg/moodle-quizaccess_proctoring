@@ -54,10 +54,10 @@ namespace quizaccess_proctoring\local;
  * and still shown. That distinction matters more than it looks: switching the check off entirely
  * makes the verification provider skip the text recognition and answer with a name score of 100 and
  * an empty name, so "off" would silently replace the evidence with a perfect score that was never
- * measured. Advisory keeps the measurement and drops only the consequence.
+ * measured. Advisory keeps the measurement and drops only the consequence. When face checking is
+ * disabled, the name must pass its threshold so at least one identity check remains mandatory.
  */
 final class id_verification_decision {
-
     /** @var int Default score either check must clear on its own. */
     const DEFAULT_THRESHOLD = 80;
 
@@ -101,8 +101,8 @@ final class id_verification_decision {
             'checkname' => $checkname,
             'facethreshold' => $facethreshold,
             'namethreshold' => $namethreshold,
-            // Whether a name shortfall may fail the attempt. Off by default: see the class comment.
-            'nameblocks' => $bool('idverificationnameblocks', false),
+            // Advisory names require a face gate. Name-only verification must actually check a name.
+            'nameblocks' => !$checkface || $bool('idverificationnameblocks', false),
             'facecarries' => $bool('idverificationfacecarriesname', true),
             // Never a weaker bar than the face gate itself: carrying a name on a face score that
             // would not have passed on its own is not corroboration, it is nothing.
@@ -142,7 +142,7 @@ final class id_verification_decision {
                 && !$facefailed
                 && $facescore >= (int)$config['strongfacescore']
                 && $namescore >= (int)$config['namefloor'];
-            if (empty($config['nameblocks'])) {
+            if (empty($config['nameblocks']) && !empty($config['checkface'])) {
                 // Measured, recorded, shown on the report - and not a reason to refuse anybody.
                 // Reported as advisory rather than carried, because nothing had to carry it.
                 $nameadvisory = true;

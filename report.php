@@ -73,6 +73,17 @@ require_login($course, true, $cm);
 $courseid = (int)$course->id;
 $cmid = (int)$cm->id;
 
+// Validate the selected report before any note, finding or sign-off can be written.
+$selectedreport = null;
+if ($studentid !== null && $reportid !== null) {
+    $selectedreport = \quizaccess_proctoring\local\report_access::require_report(
+        $courseid,
+        $cmid,
+        (int)$studentid,
+        (int)$reportid
+    );
+}
+
 // Course and quiz data.
 $coursedata = $course;
 $quiz = $DB->get_record('quiz', ['id' => $cm->instance]);
@@ -271,7 +282,11 @@ if (!empty($logaction)) {
             quizaccess_proctoring_delete_pluginfile_url((string)$event->screenshoturl);
         }
 
-        $faceimages = $DB->get_records_list('quizaccess_proctoring_face_images', 'parentid', $logids, '', 'id, faceimage');
+        // Camshot ids and admin reference-image ids use independent sequences.
+        [$faceinsql, $faceparams] = $DB->get_in_or_equal($logids, SQL_PARAMS_NAMED, 'facelog');
+        $facewhere = "parentid $faceinsql AND parent_type = :parenttype";
+        $faceparams['parenttype'] = 'camshot_image';
+        $faceimages = $DB->get_records_select('quizaccess_proctoring_face_images', $facewhere, $faceparams, '', 'id, faceimage');
         foreach ($faceimages as $faceimage) {
             quizaccess_proctoring_delete_pluginfile_url((string)$faceimage->faceimage);
         }
@@ -279,7 +294,7 @@ if (!empty($logaction)) {
         $DB->delete_records_list('quizaccess_proctoring_fm_warnings', 'reportid', $logids);
         $DB->delete_records_list('quizaccess_proctoring_events', 'reportid', $logids);
         $DB->delete_records_list('quizaccess_proctoring_ai_reviews', 'reportid', $logids);
-        $DB->delete_records_list('quizaccess_proctoring_face_images', 'parentid', $logids);
+        $DB->delete_records_select('quizaccess_proctoring_face_images', $facewhere, $faceparams);
         $DB->delete_records_list('quizaccess_proctoring_logs', 'id', $logids);
     }
 
@@ -338,7 +353,7 @@ if ($fpaction === 'mark' && $studentid && $reportid && $fpfactorkey !== '') {
         throw new moodle_exception('invalidrequest', 'error');
     }
 
-    $fpattemptid = (int)$DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]);
+    $fpattemptid = (int)$selectedreport->status;
     $fpwhere = 'courseid = :courseid AND quizid = :cmid AND userid = :studentid
         AND factorkey = :factorkey AND revoked = 0';
     $fpparams = [
@@ -404,7 +419,7 @@ if (($noteaction === 'add' || $noteaction === 'delete') && $studentid && $report
     require_sesskey();
     require_capability('quizaccess/proctoring:reviewriskholds', $context);
 
-    $noteattemptid = (int)$DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]);
+    $noteattemptid = (int)$selectedreport->status;
     $notereturn = new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
         'courseid' => $courseid,
         'cmid' => $cmid,
@@ -466,7 +481,7 @@ if (($reviewaction === 'signoff' || $reviewaction === 'undosignoff') && $student
             (int)$courseid,
             (int)$cmid,
             (int)$studentid,
-            (int)$DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]),
+            (int)$selectedreport->status,
             (int)$reportid,
             (int)$USER->id
         );
@@ -640,14 +655,16 @@ if (
     $rows = [];
     foreach ($sqlexecuted as $info) {
             // Apply the A–Z name-initial filter on the all-users list view (Requirement 13.3).
-            if ($islistview && !quizaccess_proctoring_name_matches_initials(
+        if (
+            $islistview && !quizaccess_proctoring_name_matches_initials(
                 (string)$info->firstname,
                 (string)$info->lastname,
                 $firstnameinitial,
                 $lastnameinitial
-            )) {
-                continue;
-            }
+            )
+        ) {
+            continue;
+        }
             $row = [];
             // Carried on the row so the post-pass below can key the score and account-age lookups
             // off it without re-reading the recordset.
@@ -695,14 +712,14 @@ if (
             // reviewer has already dismissed as a false positive. This is the number the reviewer
             // is counting on screen, so it leads the column and the raw event total sits behind it.
             $findingcount = 0;
-            foreach ($risk['factors'] as $factor) {
-                if (!empty($factor['falsepositive'])) {
-                    continue;
-                }
-                if ((int)($factor['points'] ?? 0) > 0) {
-                    $findingcount++;
-                }
+        foreach ($risk['factors'] as $factor) {
+            if (!empty($factor['falsepositive'])) {
+                continue;
             }
+            if ((int)($factor['points'] ?? 0) > 0) {
+                $findingcount++;
+            }
+        }
             $row['findingcount'] = $findingcount;
             $row['findinglabel'] = $findingcount > 0
                 ? (string)$findingcount
@@ -973,7 +990,7 @@ if (
     }
 
     $makeinitialbar = function (string $param, string $selected, array $otherparam)
-            use ($url, $initialbarparams) {
+ use ($url, $initialbarparams) {
         $items = [];
         // "All" resets this initial while preserving the other one.
         $allparams = $initialbarparams + $otherparam;
@@ -1128,7 +1145,10 @@ if (
             'courseid' => $courseid,
             'cmid' => $cmid,
             'studentid' => $studentid,
+            'coveragestart' => 'monitoring_started',
+            'coveragecapture' => 'screen_capture',
         ];
+        $eventwhere .= ' AND eventtype NOT IN (:coveragestart, :coveragecapture)';
         if (!empty($attemptid)) {
             $eventwhere .= ' AND attemptid = :attemptid';
             $eventparams['attemptid'] = $attemptid;
@@ -1980,6 +2000,12 @@ if (
             'riskscore' => $riskscore,
             'sessionsummary' => $sessionsummary,
             'hassessionsummary' => ($sessionsummary !== ''),
+            'coverage' => \quizaccess_proctoring\local\monitoring_coverage::for_attempt(
+                (int)$courseid,
+                (int)$cmid,
+                (int)$studentid,
+                (int)$riskscore['attemptid']
+            ),
             'aireview' => $aireviewdata,
             'captures' => $capturescontext,
             'activity' => $activitycontext,

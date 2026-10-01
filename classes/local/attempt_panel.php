@@ -51,7 +51,6 @@ namespace quizaccess_proctoring\local;
  * resolved report id.
  */
 final class attempt_panel {
-
     /**
      * Build the template-ready context for the embeddable per-attempt panel.
      *
@@ -104,6 +103,7 @@ final class attempt_panel {
             'certificatelabel' => get_string('attemptpanel:certificatelabel', 'quizaccess_proctoring'),
             'aireview' => $aireviewdata,
             'hasaireview' => $aireviewdata !== null,
+            'coverage' => monitoring_coverage::for_attempt($courseid, $cmid, $userid, $effectiveattemptid),
         ];
     }
 

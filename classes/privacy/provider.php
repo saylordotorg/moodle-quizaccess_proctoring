@@ -52,6 +52,8 @@ class provider implements
      */
     public static function get_metadata(collection $collection): collection {
         $quizaccessproctoringlogs = [
+            'capturedat' => 'privacy:metadata:capturedat',
+            'requestid' => 'privacy:metadata:requestid',
             'courseid' => 'privacy:metadata:courseid',
             'quizid' => 'privacy:metadata:quizid',
             'userid' => 'privacy:metadata:userid',
@@ -65,8 +67,22 @@ class provider implements
             $quizaccessproctoringlogs,
             'privacy:metadata:quizaccess_proctoring_logs'
         );
+        $collection->add_database_table('quizaccess_proctoring_fm_warnings', [
+            'courseid' => 'privacy:metadata:courseid',
+            'quizid' => 'privacy:metadata:quizid',
+            'userid' => 'privacy:metadata:userid',
+            'reportid' => 'privacy:metadata:reportid',
+        ], 'privacy:metadata:quizaccess_proctoring_logs');
+        $collection->add_database_table('quizaccess_proctoring_facematch_task', [
+            'reportid' => 'privacy:metadata:reportid',
+            'refimageurl' => 'privacy:metadata:webcampicture',
+            'targetimageurl' => 'privacy:metadata:webcampicture',
+            'timemodified' => 'privacy:metadata:timemodified',
+        ], 'privacy:metadata:quizaccess_proctoring_logs');
 
         $quizaccessproctoringevents = [
+            'capturedat' => 'privacy:metadata:capturedat',
+            'requestid' => 'privacy:metadata:requestid',
             'courseid' => 'privacy:metadata:courseid',
             'quizid' => 'privacy:metadata:quizid',
             'userid' => 'privacy:metadata:userid',
@@ -177,6 +193,9 @@ class provider implements
         );
 
         $quizaccessproctoringidv = [
+            'verifiedat' => 'privacy:metadata:verifiedat',
+            'profilehash' => 'privacy:metadata:profilehash',
+            'policyhash' => 'privacy:metadata:policyhash',
             'courseid' => 'privacy:metadata:courseid',
             'quizid' => 'privacy:metadata:quizid',
             'userid' => 'privacy:metadata:userid',
@@ -227,6 +246,37 @@ class provider implements
             $quizaccessproctoringfaceimages,
             'privacy:metadata:quizaccess_proctoring_face_images'
         );
+
+        $overridefields = [
+            'courseid' => 'privacy:metadata:courseid',
+            'quizid' => 'privacy:metadata:quizid',
+            'userid' => 'privacy:metadata:userid',
+            'justification' => 'privacy:metadata:overridejustification',
+            'expiry' => 'privacy:metadata:overrideexpiry',
+            'grantedby' => 'privacy:metadata:overrideactor',
+            'revokedby' => 'privacy:metadata:overrideactor',
+            'revoked' => 'privacy:metadata:overriderevoked',
+            'timecreated' => 'privacy:metadata:timecreated',
+            'timemodified' => 'privacy:metadata:timemodified',
+            'timerevoked' => 'privacy:metadata:timereviewed',
+        ];
+        foreach (\quizaccess_proctoring\local\override_resolver::STATE_COLUMNS as $column) {
+            $overridefields[$column] = 'privacy:metadata:overridestate';
+        }
+        $collection->add_database_table(
+            'quizaccess_proctoring_overrides',
+            $overridefields,
+            'privacy:metadata:overrides'
+        );
+        $collection->add_database_table('quizaccess_proctoring_override_audit', [
+            'overrideid' => 'privacy:metadata:overrideid',
+            'actorid' => 'privacy:metadata:overrideactor',
+            'action' => 'privacy:metadata:overridechange',
+            'fieldname' => 'privacy:metadata:overridechange',
+            'oldvalue' => 'privacy:metadata:overridechange',
+            'newvalue' => 'privacy:metadata:overridechange',
+            'timecreated' => 'privacy:metadata:timecreated',
+        ], 'privacy:metadata:overrideaudit');
 
         $collection->add_external_location_link(
             'openai',
@@ -287,6 +337,10 @@ class provider implements
               GROUP BY c.id";
         $contextlist = new contextlist();
         $contextlist->add_from_sql($sql, $params);
+        $contextlist->add_from_sql("SELECT DISTINCT c.id
+                  FROM {quizaccess_proctoring_fm_warnings} w
+                  JOIN {context} c ON c.instanceid = w.quizid AND c.contextlevel = :context
+                 WHERE w.userid = :userid", $params);
         $sql = "SELECT DISTINCT c.id
                   FROM {quizaccess_proctoring_events} qpe
                   JOIN {context} c ON c.instanceid = qpe.quizid AND c.contextlevel = :context
@@ -304,10 +358,11 @@ class provider implements
         $sql = "SELECT DISTINCT c.id
                   FROM {quizaccess_proctoring_finding_reviews} qpfr
                   JOIN {context} c ON c.instanceid = qpfr.quizid AND c.contextlevel = :context
-                 WHERE qpfr.userid = :userid OR qpfr.reviewerid = :reviewerid
+                 WHERE qpfr.userid = :userid OR qpfr.reviewerid = :reviewerid OR qpfr.revokedby = :revokerid
               GROUP BY c.id";
         $findingreviewparams = $params;
         $findingreviewparams['reviewerid'] = $userid;
+        $findingreviewparams['revokerid'] = $userid;
         $contextlist->add_from_sql($sql, $findingreviewparams);
         $sql = "SELECT DISTINCT c.id
                   FROM {quizaccess_proctoring_notes} qpn
@@ -360,6 +415,7 @@ class provider implements
                        AND filearea IN (:userphoto, :faceimage)
                        AND itemid = :userid";
         $contextlist->add_from_sql($sqlfile, $fileparams);
+        self::add_override_contexts($contextlist, $userid);
         return $contextlist;
     }
 
@@ -370,6 +426,7 @@ class provider implements
      */
     public static function get_users_in_context(userlist $userlist) {
         $context = $userlist->get_context();
+        self::add_override_users($userlist);
 
         if ($context->contextlevel === CONTEXT_SYSTEM) {
             $sql = "SELECT DISTINCT qui.user_id AS userid
@@ -402,6 +459,8 @@ class provider implements
                  WHERE cm.id = ?";
         $params = [$context->instanceid];
         $userlist->add_from_sql('userid', $sql, $params);
+        $userlist->add_from_sql('userid', "SELECT DISTINCT userid
+                  FROM {quizaccess_proctoring_fm_warnings} WHERE quizid = ?", $params);
 
         $sql = "SELECT DISTINCT qpe.userid AS userid
                   FROM {quizaccess_proctoring_events} qpe
@@ -426,6 +485,11 @@ class provider implements
         $sql = "SELECT DISTINCT qpfr.reviewerid AS userid
                   FROM {quizaccess_proctoring_finding_reviews} qpfr
                  WHERE qpfr.quizid = ? AND qpfr.reviewerid <> 0";
+        $userlist->add_from_sql('userid', $sql, $params);
+
+        $sql = "SELECT DISTINCT qpfr.revokedby AS userid
+                  FROM {quizaccess_proctoring_finding_reviews} qpfr
+                 WHERE qpfr.quizid = ? AND qpfr.revokedby <> 0";
         $userlist->add_from_sql('userid', $sql, $params);
 
         $sql = "SELECT DISTINCT qpn.userid AS userid
@@ -468,6 +532,7 @@ class provider implements
 
         // Get all cmids that correspond to the contexts for a user.
         foreach ($contextlist->get_contexts() as $context) {
+            self::export_override_data($context, (int)$contextlist->get_user()->id);
             if ($context->contextlevel === CONTEXT_MODULE && $context->instanceid) {
                 [$insql, $inparams] = $DB->get_in_or_equal([$context->instanceid], SQL_PARAMS_NAMED);
 
@@ -475,7 +540,7 @@ class provider implements
                 $params = $inparams;
                 $params['userid'] = $contextlist->get_user()->id;
 
-                $fields = 'id, courseid, quizid, userid, webcampicture, status, timemodified';
+                $fields = 'id, courseid, quizid, userid, webcampicture, status, timemodified, capturedat, requestid';
 
                 $qaplogs = $DB->get_records_select('quizaccess_proctoring_logs', $select, $params, '', $fields);
 
@@ -495,14 +560,21 @@ class provider implements
                         'quizid' => $qaplog->quizid,
                         'userid' => $qaplog->userid,
                         'webcampicture' => $qaplog->webcampicture,
+                        'capturedat' => $qaplog->capturedat ? transform::datetime($qaplog->capturedat) : null,
+                        'requestid' => $qaplog->requestid,
                         'status' => $qaplog->status,
                         'timemodified' => transform::datetime($qaplog->timemodified),
                     ];
                     $webcamepic = explode("/", "$qaplog->webcampicture");
                     $webcamepiclast = end($webcamepic);
 
-                    $paramfile["userid"] = $qaplog->userid;
-                    $paramfile["filename"] = $webcamepiclast;
+                    $paramfile = [
+                        'userid' => $qaplog->userid,
+                        'filename' => $webcamepiclast,
+                        'contextid' => $context->id,
+                        'component' => 'quizaccess_proctoring',
+                        'filearea' => 'picture',
+                    ];
                     if (!empty($webcamepiclast)) {
                         $userfiles = $DB->get_record('files', $paramfile);
                         writer::with_context($context)
@@ -510,7 +582,7 @@ class provider implements
                                 [get_string('privacy:core_files', 'quizaccess_proctoring')],
                                 'quizaccess_proctoring',
                                 'picture',
-                                $userfiles->itemid
+                                $userfiles ? $userfiles->itemid : $qaplog->id
                             )->export_data($subcontext, $data);
                     } else {
                         writer::with_context($context)
@@ -519,8 +591,24 @@ class provider implements
                 }
 
                 $logids = array_map('intval', array_keys($qaplogs));
+                $warnings = array_values($DB->get_records_select('quizaccess_proctoring_fm_warnings', $select, $params));
+                if ($warnings) {
+                    writer::with_context($context)->export_data([
+                        get_string('quizaccess_proctoring', 'quizaccess_proctoring'), 'proctoring_face_warnings',
+                    ], (object)['warnings' => $warnings]);
+                }
                 if ($logids) {
                     [$loginsql, $loginparams] = $DB->get_in_or_equal($logids, SQL_PARAMS_NAMED, 'logid');
+                    $jobs = array_values($DB->get_records_select(
+                        'quizaccess_proctoring_facematch_task',
+                        "reportid {$loginsql}",
+                        $loginparams
+                    ));
+                    if ($jobs) {
+                        writer::with_context($context)->export_data([
+                            get_string('quizaccess_proctoring', 'quizaccess_proctoring'), 'proctoring_face_jobs',
+                        ], (object)['jobs' => $jobs]);
+                    }
                     $faceparams = $loginparams;
                     $faceparams['adminparent'] = 'admin_image';
                     $faceimages = $DB->get_records_select(
@@ -556,7 +644,7 @@ class provider implements
                 }
 
                 $eventfields = 'id, courseid, quizid, userid, attemptid, reportid, eventtype, eventdetail, ' .
-                    'pagevisibility, currenturl, screenshoturl, timemodified';
+                    'pagevisibility, currenturl, screenshoturl, timemodified, capturedat, requestid';
                 $events = $DB->get_records_select(
                     'quizaccess_proctoring_events',
                     $select,
@@ -582,6 +670,8 @@ class provider implements
                         'attemptid' => $event->attemptid,
                         'reportid' => $event->reportid,
                         'eventtype' => $event->eventtype,
+                        'capturedat' => $event->capturedat ? transform::datetime($event->capturedat) : null,
+                        'requestid' => $event->requestid,
                         'eventdetail' => $event->eventdetail,
                         'pagevisibility' => $event->pagevisibility,
                         'currenturl' => $event->currenturl,
@@ -642,11 +732,11 @@ class provider implements
                 }
 
                 $findingreviewfields = 'id, courseid, quizid, userid, attemptid, reportid, factorkey, verdict, ' .
-                    'note, reviewerid, revoked, timerevoked, timecreated';
+                    'note, reviewerid, revokedby, revoked, timerevoked, timecreated';
                 $findingreviews = $DB->get_records_select(
                     'quizaccess_proctoring_finding_reviews',
-                    "quizid $insql AND (userid = :participantid OR reviewerid = :reviewerid)",
-                    $participantparams,
+                    "quizid $insql AND (userid = :participantid OR reviewerid = :reviewerid OR revokedby = :revokerid)",
+                    $participantparams + ['revokerid' => $contextlist->get_user()->id],
                     '',
                     $findingreviewfields
                 );
@@ -671,6 +761,7 @@ class provider implements
                         'verdict' => $findingreview->verdict,
                         'note' => $findingreview->note,
                         'reviewerid' => $findingreview->reviewerid,
+                        'revokedby' => $findingreview->revokedby,
                         'revoked' => $findingreview->revoked,
                         'timerevoked' => $findingreview->timerevoked ? transform::datetime($findingreview->timerevoked) : null,
                         'timecreated' => transform::datetime($findingreview->timecreated),
@@ -716,7 +807,7 @@ class provider implements
 
                 $aireviewfields = 'id, courseid, quizid, userid, attemptid, reportid, eventid, reviewtype, holdid, riskscore, ' .
                     'triggerthreshold, provider, model, reviewscore, decision, status, summary, evidence, ' .
-                    'errormessage, timecreated, timemodified, timereviewed';
+                    'rawresponse, errormessage, timecreated, timemodified, timereviewed';
                 $aireviews = $DB->get_records_select(
                     'quizaccess_proctoring_ai_reviews',
                     $select,
@@ -753,6 +844,7 @@ class provider implements
                         'status' => $aireview->status,
                         'summary' => $aireview->summary,
                         'evidence' => $aireview->evidence,
+                        'rawresponse' => $aireview->rawresponse,
                         'errormessage' => $aireview->errormessage,
                         'timecreated' => transform::datetime($aireview->timecreated),
                         'timemodified' => transform::datetime($aireview->timemodified),
@@ -764,7 +856,7 @@ class provider implements
 
                 $idvfields = 'id, courseid, quizid, userid, attemptid, status, facescore, namescore, extractedname, ' .
                     'romanizedname, matchedprofilename, namematchreason, profilename, idimageurl, idbackimageurl, ' .
-                    'liveimageurl, errormessage, timecreated, timemodified';
+                    'liveimageurl, errormessage, timecreated, timemodified, verifiedat, profilehash, policyhash';
                 $idverifications = $DB->get_records_select(
                     'quizaccess_proctoring_idv',
                     $select,
@@ -790,6 +882,9 @@ class provider implements
                         'attemptid' => $idverification->attemptid,
                         'status' => $idverification->status,
                         'facescore' => $idverification->facescore,
+                        'verifiedat' => $idverification->verifiedat ? transform::datetime($idverification->verifiedat) : null,
+                        'profilehash' => $idverification->profilehash,
+                        'policyhash' => $idverification->policyhash,
                         'namescore' => $idverification->namescore,
                         'extractedname' => $idverification->extractedname,
                         'romanizedname' => $idverification->romanizedname,
@@ -876,6 +971,8 @@ class provider implements
     public static function delete_data_for_all_users_in_context(context $context) {
         global $DB;
 
+        self::delete_override_data($context);
+
         // Sanity check that context is at the module context level.
         if ($context->contextlevel === CONTEXT_MODULE) {
             $cmid = $context->instanceid;
@@ -887,25 +984,13 @@ class provider implements
             );
             self::delete_face_image_records_for_logids($logids);
 
-            $DB->set_field_select('quizaccess_proctoring_logs', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
-            $DB->set_field_select('quizaccess_proctoring_events', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
-            $DB->set_field_select('quizaccess_proctoring_risk_holds', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
-            $DB->set_field_select('quizaccess_proctoring_risk_holds', 'reviewerid', 0, "quizid = :cmid", ['cmid' => $cmid]);
-            $DB->set_field_select('quizaccess_proctoring_ai_reviews', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
-            $DB->set_field_select('quizaccess_proctoring_finding_reviews', 'note', '', "quizid = :cmid", ['cmid' => $cmid]);
-            $DB->set_field_select('quizaccess_proctoring_finding_reviews', 'userid', 0, "quizid = :cmid", ['cmid' => $cmid]);
-            $DB->set_field_select(
-                'quizaccess_proctoring_finding_reviews',
-                'reviewerid',
-                0,
-                "quizid = :cmid",
-                ['cmid' => $cmid]
-            );
-            $DB->delete_records('quizaccess_proctoring_idv', ['quizid' => $cmid]);
-            // A reviewer note is written about one student's attempt and is nothing but a
-            // description of that student's evidence, so it is deleted rather than anonymized:
-            // stripping the ids off it would leave the description behind.
-            $DB->delete_records('quizaccess_proctoring_notes', ['quizid' => $cmid]);
+            if ($logids) {
+                $DB->delete_records_list('quizaccess_proctoring_facematch_task', 'reportid', $logids);
+            }
+            // Free text, URLs and attempt IDs remain personal data after userid is cleared.
+            foreach (self::module_data_tables() as $table) {
+                $DB->delete_records($table, ['quizid' => $cmid]);
+            }
 
             $fs = get_file_storage();
             $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'picture');
@@ -933,6 +1018,7 @@ class provider implements
     public static function delete_data_for_users(approved_userlist $userlist) {
         $context = $userlist->get_context();
         $userids = $userlist->get_userids();
+        self::delete_override_data($context, $userids);
 
         if ($context->contextlevel === CONTEXT_SYSTEM) {
             self::delete_reference_image_data_for_userids($userids);
@@ -960,6 +1046,7 @@ class provider implements
 
         $userid = $contextlist->get_user()->id;
         foreach ($contexts as $context) {
+            self::delete_override_data($context, [$userid]);
             if ($context->contextlevel === CONTEXT_MODULE) {
                 self::delete_module_data_for_userids($context, [$userid]);
             } else if ($context->contextlevel === CONTEXT_SYSTEM) {
@@ -969,7 +1056,7 @@ class provider implements
     }
 
     /**
-     * Anonymizes module records and deletes user-owned proctoring files for selected users.
+     * Deletes module evidence and user-owned proctoring files for selected users.
      *
      * @param context $context Module context.
      * @param array $userids User IDs.
@@ -993,70 +1080,26 @@ class provider implements
             $params
         );
         self::delete_face_image_records_for_logids($logids);
-        self::delete_id_verification_records_for_userids($context, $userids);
-
-        $DB->set_field_select('quizaccess_proctoring_logs', 'userid', 0, "quizid = :cmid AND userid {$insql}", $params);
-        $DB->set_field_select('quizaccess_proctoring_events', 'userid', 0, "quizid = :cmid AND userid {$insql}", $params);
-        $DB->set_field_select(
-            'quizaccess_proctoring_risk_holds',
-            'userid',
-            0,
-            "quizid = :cmid AND userid {$insql}",
-            $params
-        );
-        $DB->set_field_select(
-            'quizaccess_proctoring_risk_holds',
-            'reviewerid',
-            0,
-            "quizid = :cmid AND reviewerid {$insql}",
-            $params
-        );
-        $DB->set_field_select(
-            'quizaccess_proctoring_ai_reviews',
-            'userid',
-            0,
-            "quizid = :cmid AND userid {$insql}",
-            $params
-        );
-        // Blank the reviewer note before anonymizing the student id: the note describes the
-        // student's evidence, so it goes with the student's data.
-        $DB->set_field_select(
-            'quizaccess_proctoring_finding_reviews',
-            'note',
-            '',
-            "quizid = :cmid AND userid {$insql}",
-            $params
-        );
-        $DB->set_field_select(
-            'quizaccess_proctoring_finding_reviews',
-            'userid',
-            0,
-            "quizid = :cmid AND userid {$insql}",
-            $params
-        );
-        $DB->set_field_select(
-            'quizaccess_proctoring_finding_reviews',
-            'reviewerid',
-            0,
-            "quizid = :cmid AND reviewerid {$insql}",
-            $params
-        );
-
-        // Notes about these students go entirely: the note text describes their evidence. Notes
-        // they wrote about other students stay, with the authorship anonymized - the reasoning is
-        // still needed by whoever reviews that attempt next.
-        $DB->delete_records_select(
-            'quizaccess_proctoring_notes',
-            "quizid = :cmid AND userid {$insql}",
-            $params
-        );
-        $DB->set_field_select(
-            'quizaccess_proctoring_notes',
-            'authorid',
-            0,
-            "quizid = :cmid AND authorid {$insql}",
-            $params
-        );
+        if ($logids) {
+            $DB->delete_records_list('quizaccess_proctoring_facematch_task', 'reportid', $logids);
+        }
+        // Remove the complete evidence, including embedded names, raw AI responses and links
+        // back to quiz attempts. Zeroing the user ID alone does not anonymize these records.
+        foreach (self::module_data_tables() as $table) {
+            $DB->delete_records_select($table, "quizid = :cmid AND userid {$insql}", $params);
+        }
+        // Keep other students' records while removing the erased user's staff attribution.
+        foreach (
+            [
+            'quizaccess_proctoring_risk_holds' => ['reviewerid'],
+            'quizaccess_proctoring_finding_reviews' => ['reviewerid', 'revokedby'],
+            'quizaccess_proctoring_notes' => ['authorid'],
+            ] as $table => $fields
+        ) {
+            foreach ($fields as $field) {
+                $DB->set_field_select($table, $field, 0, "quizid = :cmid AND {$field} {$insql}", $params);
+            }
+        }
 
         self::delete_files_for_userids($context, $userids, [
             'picture',
@@ -1069,23 +1112,181 @@ class provider implements
     }
 
     /**
-     * Deletes ID verification database rows for selected users in a module context.
+     * Add contexts containing overrides or override actions involving this user.
      *
-     * @param context $context Module context.
-     * @param array $userids User IDs.
+     * @param contextlist $contextlist Discovered contexts.
+     * @param int $userid User being discovered.
      */
-    private static function delete_id_verification_records_for_userids(context $context, array $userids): void {
-        global $DB;
+    private static function add_override_contexts(contextlist $contextlist, int $userid): void {
+        $participant = "(o.userid = :subject OR o.grantedby = :grantor OR o.revokedby = :revoker
+                        OR EXISTS (SELECT 1 FROM {quizaccess_proctoring_override_audit} a
+                                    WHERE a.overrideid = o.id AND a.actorid = :actor))";
+        $params = ['subject' => $userid, 'grantor' => $userid, 'revoker' => $userid, 'actor' => $userid];
+        $contextlist->add_from_sql("SELECT DISTINCT c.id
+                  FROM {quizaccess_proctoring_overrides} o
+                  JOIN {context} c ON c.instanceid = o.courseid AND c.contextlevel = :level
+                 WHERE o.quizid = 0 AND {$participant}", $params + ['level' => CONTEXT_COURSE]);
+        $contextlist->add_from_sql("SELECT DISTINCT c.id
+                  FROM {quizaccess_proctoring_overrides} o
+                  JOIN {course_modules} cm ON cm.instance = o.quizid AND cm.course = o.courseid
+                  JOIN {modules} m ON m.id = cm.module AND m.name = :quizmodule
+                  JOIN {context} c ON c.instanceid = cm.id AND c.contextlevel = :level
+                 WHERE {$participant}", $params + ['level' => CONTEXT_MODULE, 'quizmodule' => 'quiz']);
+    }
 
-        $userids = array_values(array_filter(array_map('intval', $userids)));
-        if (!$userids || $context->contextlevel !== CONTEXT_MODULE) {
+    /**
+     * Restrict overrides to their actual course or quiz context.
+     *
+     * @param context $context Approved context.
+     * @return array SQL condition and parameters, or an empty array for unrelated contexts.
+     */
+    private static function override_scope(context $context): array {
+        if ($context->contextlevel === CONTEXT_COURSE) {
+            $courseid = (int)$context->instanceid;
+            $quizid = 0;
+        } else if ($context->contextlevel === CONTEXT_MODULE) {
+            $cm = get_coursemodule_from_id('quiz', (int)$context->instanceid, 0, false, IGNORE_MISSING);
+            if (!$cm) {
+                return [];
+            }
+            $courseid = (int)$cm->course;
+            $quizid = (int)$cm->instance;
+        } else {
+            return [];
+        }
+        return [
+            'courseid = :overridecourse AND quizid = :overridequiz',
+            ['overridecourse' => $courseid, 'overridequiz' => $quizid],
+        ];
+    }
+
+    /**
+     * Add students and staff referenced by overrides in one context.
+     *
+     * @param userlist $userlist Users being discovered.
+     */
+    private static function add_override_users(userlist $userlist): void {
+        $scope = self::override_scope($userlist->get_context());
+        if (!$scope) {
             return;
         }
+        [$select, $params] = $scope;
+        foreach (['userid', 'grantedby', 'revokedby'] as $field) {
+            $userlist->add_from_sql('userid', "SELECT DISTINCT {$field} AS userid
+                  FROM {quizaccess_proctoring_overrides} WHERE {$select} AND {$field} > 0", $params);
+        }
+        $userlist->add_from_sql('userid', "SELECT DISTINCT a.actorid AS userid
+                  FROM {quizaccess_proctoring_override_audit} a
+                 WHERE a.actorid > 0 AND a.overrideid IN
+                       (SELECT id FROM {quizaccess_proctoring_overrides} WHERE {$select})", $params);
+    }
 
-        [$insql, $params] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'userid');
-        $params['cmid'] = $context->instanceid;
+    /**
+     * Export override reasons, states and audit history for a data subject.
+     *
+     * @param context $context Approved context.
+     * @param int $userid Data subject.
+     */
+    private static function export_override_data(context $context, int $userid): void {
+        global $DB;
 
-        $DB->delete_records_select('quizaccess_proctoring_idv', "quizid = :cmid AND userid {$insql}", $params);
+        $scope = self::override_scope($context);
+        if (!$scope) {
+            return;
+        }
+        [$select, $params] = $scope;
+        $params += ['subject' => $userid, 'grantor' => $userid, 'revoker' => $userid, 'actor' => $userid];
+        $records = $DB->get_records_select('quizaccess_proctoring_overrides', "{$select} AND
+                (userid = :subject OR grantedby = :grantor OR revokedby = :revoker OR id IN
+                    (SELECT overrideid FROM {quizaccess_proctoring_override_audit} WHERE actorid = :actor))", $params);
+        foreach ($records as $record) {
+            $path = [get_string('quizaccess_proctoring', 'quizaccess_proctoring'), 'proctoring_overrides', $record->id];
+            if ((int)$record->userid === $userid) {
+                $audit = array_values($DB->get_records('quizaccess_proctoring_override_audit', ['overrideid' => $record->id]));
+                $data = (object)['override' => $record, 'audit' => $audit];
+            } else {
+                // Staff attribution is personal to the requester; another student's accommodation
+                // reasons and historical values are not part of that staff member's export.
+                $audit = array_values($DB->get_records(
+                    'quizaccess_proctoring_override_audit',
+                    ['overrideid' => $record->id, 'actorid' => $userid],
+                    '',
+                    'id, overrideid, actorid, action, fieldname, timecreated'
+                ));
+                $data = (object)[
+                    'overrideid' => $record->id,
+                    'granted' => (int)$record->grantedby === $userid,
+                    'revoked' => (int)$record->revokedby === $userid,
+                    'audit' => $audit,
+                ];
+            }
+            writer::with_context($context)->export_data($path, $data);
+        }
+    }
+
+    /**
+     * Delete override reasons and audit history, and anonymize staff actions on other users' records.
+     *
+     * @param context $context Approved context.
+     * @param array|null $userids Selected users, or null for all users in the context.
+     */
+    private static function delete_override_data(context $context, ?array $userids = null): void {
+        global $DB;
+
+        $scope = self::override_scope($context);
+        if (!$scope || $userids === []) {
+            return;
+        }
+        [$select, $params] = $scope;
+        $subjectselect = $select;
+        $subjectparams = $params;
+        if ($userids !== null) {
+            [$insql, $inparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'overrideuser');
+            $subjectselect .= " AND userid {$insql}";
+            $subjectparams += $inparams;
+        }
+        $ids = $DB->get_fieldset_select('quizaccess_proctoring_overrides', 'id', $subjectselect, $subjectparams);
+        if ($ids) {
+            $DB->delete_records_list('quizaccess_proctoring_override_audit', 'overrideid', $ids);
+            $DB->delete_records_list('quizaccess_proctoring_overrides', 'id', $ids);
+        }
+        if ($userids !== null) {
+            foreach (['grantedby', 'revokedby'] as $field) {
+                $DB->set_field_select(
+                    'quizaccess_proctoring_overrides',
+                    $field,
+                    0,
+                    "{$select} AND {$field} {$insql}",
+                    $params + $inparams
+                );
+            }
+            $DB->set_field_select(
+                'quizaccess_proctoring_override_audit',
+                'actorid',
+                0,
+                "actorid {$insql} AND overrideid IN
+                    (SELECT id FROM {quizaccess_proctoring_overrides} WHERE {$select})",
+                $params + $inparams
+            );
+        }
+    }
+
+    /**
+     * Tables containing evidence directly associated with a student and course module.
+     *
+     * @return string[] Table names.
+     */
+    private static function module_data_tables(): array {
+        return [
+            'quizaccess_proctoring_logs',
+            'quizaccess_proctoring_events',
+            'quizaccess_proctoring_risk_holds',
+            'quizaccess_proctoring_ai_reviews',
+            'quizaccess_proctoring_finding_reviews',
+            'quizaccess_proctoring_idv',
+            'quizaccess_proctoring_notes',
+            'quizaccess_proctoring_fm_warnings',
+        ];
     }
 
     /**

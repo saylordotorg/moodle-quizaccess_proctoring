@@ -58,7 +58,12 @@ $config = [
         'stopped' => get_string('screenmonitor:stopped', 'quizaccess_proctoring'),
         'unsupported' => get_string('screenmonitor:unsupported', 'quizaccess_proctoring'),
         'wrongmonitor' => get_string('screenmonitor:wrongmonitor', 'quizaccess_proctoring'),
-        'denied' => get_string('screensharedenied', 'quizaccess_proctoring'),
+        'permissiondenied' => get_string('screenmonitor:permissiondenied', 'quizaccess_proctoring'),
+        'captureunavailable' => get_string('screenmonitor:captureunavailable', 'quizaccess_proctoring'),
+        'windowinactive' => get_string('screenmonitor:windowinactive', 'quizaccess_proctoring'),
+        'requestfailed' => get_string('screenmonitor:requestfailed', 'quizaccess_proctoring'),
+        'playbackfailed' => get_string('screenmonitor:playbackfailed', 'quizaccess_proctoring'),
+        'noframes' => get_string('screenmonitor:noframes', 'quizaccess_proctoring'),
         'entirescreenrequired' => get_string('entirescreenrequired', 'quizaccess_proctoring'),
     ],
 ];
@@ -89,6 +94,7 @@ $js = <<<JS
     const markerGraceMs = 30000;
     const statusIntervalMs = 2000;
     const markerMissingNotifyMs = 15000;
+    const playbackTimeoutMs = 5000;
     let channel = null;
     let stream = null;
     let video = null;
@@ -99,6 +105,10 @@ $js = <<<JS
     let lastMarkerSeen = 0;
     let lastMarkerMissingMessage = 0;
     let displaySurface = '';
+    let statusTimer = null;
+    let pageActive = true;
+    let shareGeneration = 0;
+    let cancelPlaybackWait = null;
 
     const statusNode = document.getElementById('proctoring-screen-monitor-status');
     const shareButton = document.getElementById('proctoring-screen-monitor-share');
@@ -286,12 +296,20 @@ $js = <<<JS
     };
 
     const stopStream = function() {
+        shareGeneration++;
+        if (cancelPlaybackWait) {
+            cancelPlaybackWait();
+        }
         if (stream) {
             stream.getTracks().forEach((track) => track.stop());
             stream = null;
         }
         if (video) {
             video.srcObject = null;
+        }
+        if (canvas) {
+            canvas.width = 0;
+            canvas.height = 0;
         }
         clearStatus();
     };
@@ -330,9 +348,54 @@ $js = <<<JS
         return false;
     };
 
+    const waitForPlayback = function() {
+        return new Promise((resolve) => {
+            let timer = null;
+            let settled = false;
+            const finish = function(result) {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                window.clearTimeout(timer);
+                if (cancelPlaybackWait === cancel) {
+                    cancelPlaybackWait = null;
+                }
+                resolve(result);
+            };
+            const cancel = () => finish('cancelled');
+            cancelPlaybackWait = cancel;
+            timer = window.setTimeout(() => finish('timeout'), playbackTimeoutMs);
+            try {
+                // Keep both handlers attached so a late result cannot affect a later share or reject unhandled.
+                Promise.resolve(video.play()).then(() => finish('playing'), () => finish('failed'));
+            } catch (error) {
+                finish('failed');
+            }
+        });
+    };
+
+    const requestFailureMessage = function(error) {
+        // Browser errors can contain sensitive details. Only known names select a translated message.
+        switch (error && error.name) {
+            case 'NotAllowedError':
+            case 'SecurityError':
+                return config.strings.permissiondenied;
+            case 'NotReadableError':
+                return config.strings.captureunavailable;
+            case 'InvalidStateError':
+                return config.strings.windowinactive;
+            default:
+                return config.strings.requestfailed;
+        }
+    };
+
     const startShare = async function(event) {
         if (event) {
             event.preventDefault();
+        }
+        if (!pageActive) {
+            return;
         }
 
         if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
@@ -342,17 +405,25 @@ $js = <<<JS
         }
 
         stopStream();
+        const generation = shareGeneration;
 
         try {
-            stream = await navigator.mediaDevices.getDisplayMedia({
+            const granted = await navigator.mediaDevices.getDisplayMedia({
                 video: {
                     displaySurface: 'monitor'
                 },
                 audio: false
             });
+            if (!pageActive || generation !== shareGeneration) {
+                granted.getTracks().forEach(track => track.stop());
+                return;
+            }
+            stream = granted;
         } catch (error) {
-            setStatus(config.strings.denied, 'danger');
-            clearStatus();
+            if (pageActive && generation === shareGeneration) {
+                setStatus(requestFailureMessage(error), 'danger');
+                clearStatus();
+            }
             return;
         }
 
@@ -372,17 +443,23 @@ $js = <<<JS
         }
         video.srcObject = stream;
 
-        try {
-            await video.play();
-        } catch (error) {
+        const playback = await waitForPlayback();
+        if (!pageActive || generation !== shareGeneration || playback === 'cancelled') {
+            return;
+        }
+        if (playback !== 'playing') {
             stopStream();
-            setStatus(config.strings.denied, 'danger');
+            setStatus(playback === 'timeout' ? config.strings.noframes : config.strings.playbackfailed, 'danger');
             return;
         }
 
-        if (!await waitForFrame()) {
+        const hasFrame = await waitForFrame();
+        if (!pageActive || generation !== shareGeneration) {
+            return;
+        }
+        if (!hasFrame) {
             stopStream();
-            setStatus(config.strings.denied, 'danger');
+            setStatus(config.strings.noframes, 'danger');
             return;
         }
 
@@ -391,6 +468,9 @@ $js = <<<JS
         checkMarker();
 
         videoTrack.addEventListener('ended', function() {
+            if (!pageActive || generation !== shareGeneration) {
+                return;
+            }
             setStatus(config.strings.stopped, 'danger');
             clearStatus();
         });
@@ -399,6 +479,9 @@ $js = <<<JS
     if (window.BroadcastChannel) {
         channel = new BroadcastChannel(config.channel);
         channel.onmessage = function(event) {
+            if (!pageActive) {
+                return;
+            }
             const message = event.data || {};
             if (message.type === 'status_request') {
                 // Run a fresh marker check instead of replying from cache: browsers
@@ -408,6 +491,11 @@ $js = <<<JS
                 // and checkMarker() publishes the status itself.
                 checkMarker();
             } else if (message.type === 'screenshot_request' && ready && channel) {
+                const tracks = stream ? stream.getVideoTracks() : [];
+                if (!tracks.length || tracks.every(track => track.readyState === 'ended' || track.muted)) {
+                    clearStatus();
+                    return;
+                }
                 channel.postMessage({
                     type: 'screenshot',
                     image: drawFrame(false) || '',
@@ -422,8 +510,21 @@ $js = <<<JS
         shareButton.addEventListener('click', startShare);
     }
 
-    window.addEventListener('beforeunload', clearStatus);
-    window.setInterval(checkMarker, statusIntervalMs);
+    window.addEventListener('pagehide', function() {
+        pageActive = false;
+        stopStream();
+        window.clearInterval(statusTimer);
+        statusTimer = null;
+    });
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted && !statusTimer) {
+            pageActive = true;
+            statusTimer = window.setInterval(checkMarker, statusIntervalMs);
+            setStatus(config.strings.stopped, 'danger');
+            publishStatus();
+        }
+    });
+    statusTimer = window.setInterval(checkMarker, statusIntervalMs);
     publishStatus();
 })(%s);
 JS;

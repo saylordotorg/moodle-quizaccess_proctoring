@@ -56,6 +56,8 @@ if (!quizaccess_proctoring_can_manage_admin_settings()) {
 $PAGE->set_pagelayout('admin');
 
 $userid = required_param('id', PARAM_INT);
+$context = context_system::instance();
+$targetuser = $DB->get_record('user', ['id' => $userid, 'deleted' => 0], 'id, firstname, lastname', MUST_EXIST);
 
 $mform = new image_upload_form();
 
@@ -69,6 +71,11 @@ if ($mform->is_cancelled()) {
     );
 } else if ($data = $mform->get_data()) {
     require_sesskey();
+    // The files are stored under the page's target user, so the image records must point at the same user.
+    if ((int)$data->id !== $userid) {
+        throw new \moodle_exception('invalidrequest');
+    }
+
     // Check if the image has face.
     if ($data->face_image == 'null'  || empty($data->face_image)) {
         redirect(
@@ -82,13 +89,13 @@ if ($mform->is_cancelled()) {
     // Store or update $student.
     file_save_draft_area_files(
         $data->user_photo,
-        $data->context_id,
+        $context->id,
         'quizaccess_proctoring',
         'user_photo',
-        $data->id,
+        $userid,
         [
             'subdirs' => 0,
-            'maxfiles' => 50,
+            'maxfiles' => 1,
         ]
     );
 
@@ -116,8 +123,8 @@ if ($mform->is_cancelled()) {
     $facetablerecord->facefound = 1;
     $facetablerecord->timemodified = time();
 
-    if ($DB->record_exists_select('quizaccess_proctoring_user_images', 'user_id = :id', ['id' => $data->id])) {
-        $record = $DB->get_record_select('quizaccess_proctoring_user_images', 'user_id = :id', ['id' => $data->id]);
+    if ($DB->record_exists_select('quizaccess_proctoring_user_images', 'user_id = :id', ['id' => $userid])) {
+        $record = $DB->get_record_select('quizaccess_proctoring_user_images', 'user_id = :id', ['id' => $userid]);
         $record->photo_draft_id = $data->user_photo;
         $DB->update_record('quizaccess_proctoring_user_images', $record);
 
@@ -153,7 +160,7 @@ if ($mform->is_cancelled()) {
         );
     } else {
         $record = new stdClass();
-        $record->user_id = $data->id;
+        $record->user_id = $userid;
         $record->photo_draft_id = $data->user_photo;
         $parentid = $DB->insert_record('quizaccess_proctoring_user_images', $record);
 
@@ -189,7 +196,7 @@ if ($mform->is_cancelled()) {
 }
 
 $context = context_system::instance();
-$username = $DB->get_record_select('user', 'id=:id', ['id' => $userid], 'firstname ,lastname');
+$username = $targetuser;
 
 // Prepare image file.
 if (empty($user->id)) {

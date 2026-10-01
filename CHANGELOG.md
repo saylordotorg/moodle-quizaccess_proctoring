@@ -1,6 +1,20 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.11.0 — 2026-09-30
+- Add a separate device-readiness page before timed attempts: local camera, microphone and whole-screen checks, a small synthetic connection check, and cached provider-reachability diagnostics without uploading student images.
+- Add bounded, memory-only evidence upload recovery and attempt reports showing received-evidence gaps and delayed uploads. Routine screen coverage is an explicit opt-in; neutral captures do not add risk points or enter AI review.
+- Add configurable ID-check expiry, verification for every new attempt, and rechecks after profile-name or identity-policy changes. Defaults preserve existing reuse; fresh checks are bound to the student and quiz, consumed at preflight and linked to the created attempt.
+- Add an upgrade for verification fingerprints, capture timestamps and duplicate-request protection; ship rebuilt browser modules. See FEATURE_RELEASE_NOTES.md for defaults, validation and rollout instructions.
+- Enforce preflight checks on direct quiz starts and web services. Require a fresh server-recorded face check, and enforce the same per-student requirements shown in the preflight form.
+- Bind report actions and override changes to their actual quiz/course permissions; keep browser captures separate from staff reference images.
+- Remove unsafe HTML insertion in image viewers and validate image formats and identity-provider responses more strictly.
+- Require HTTPS and verified TLS for evidence providers, pin validated destinations, and reject additional private/reserved address forms.
+- Complete privacy discovery, export, and deletion for sensitive records and overrides.
+- Keep webcam image processing from closing the caller's output buffer, and use Moodle's supported external API classes.
+- Add security and feature regression tests and run the JavaScript regressions in CI. See SECURITY_AUDIT.md for findings and FEATURE_IMPROVEMENTS.md for the remaining optional choices.
+- Version the optional verification service under `tools/verification_service`, including authenticated Lambda readiness probes and offline security tests. Run Moodle tests with the configuration generated for each supported Moodle/PHPUnit version.
+
 # v1.10.5
 - **Fixed "Invalid response value detected" when a student opens a proctored quiz in the Moodle app.** The app loads the quiz's access rules through `mod_quiz_get_quiz_access_information`, which declares each rule description as plain text and rejects the whole response if cleaning would change any of them. The proctoring description carried HTML — the `<strong>` in the webcam notice, plus the Pictures report button for staff — so the call failed every time the quiz was opened, and the student only reached the quiz page by dismissing the error. Web service and AJAX requests now get the notice as plain text without the button; the quiz view page in a browser is unchanged. With the call succeeding, the app can show its own notice that this quiz's access rules are not supported in the app and offer to open it in the browser, which is where a proctored attempt has to happen anyway.
 

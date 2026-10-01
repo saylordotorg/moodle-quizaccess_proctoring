@@ -1,0 +1,2 @@
+# Preserve the exact verified Lambda source bytes on Windows checkouts.
+tools/verification_service/*.py text eol=lf

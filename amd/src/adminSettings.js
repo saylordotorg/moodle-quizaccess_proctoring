@@ -4,6 +4,7 @@ define([], function() {
 
     const primarySettings = {
         precheck: [
+            'readinessenabled',
             'honorstatementrequired',
             'privacynoticerequired',
             'captchabeforeattemptenabled',
@@ -14,7 +15,11 @@ define([], function() {
             'idverificationenabled',
             'idverificationrequireback',
             'idverificationcheckface',
-            'idverificationcheckname'
+            'idverificationcheckname',
+            'idverificationmaxage',
+            'idverificationeachattempt',
+            'idverificationnamechange',
+            'idverificationpolicychange'
         ],
         monitoring: [
             'monitorbrowseractivity',
@@ -22,6 +27,7 @@ define([], function() {
             'requireentirescreen',
             'multimonitormode',
             'captureviolationdesktop',
+            'monitoringcoveragescreens',
             'detectphone'
         ],
         review: [

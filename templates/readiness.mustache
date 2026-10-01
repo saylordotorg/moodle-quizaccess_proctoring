@@ -1,0 +1,91 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle. If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template quizaccess_proctoring/readiness
+
+    Local device tests before starting an attempt.
+
+    Example context (json):
+    {
+        "quizurl": "/mod/quiz/view.php?id=2",
+        "screenrequired": true
+    }
+}}
+<div id="proctoring-readiness">
+    <p class="alert alert-info">{{#str}}readiness:intro, quizaccess_proctoring{{/str}}</p>
+    <p>{{#str}}readiness:privacy, quizaccess_proctoring{{/str}}</p>
+    <div class="row">
+        <section class="col-md-6 mb-3" aria-labelledby="readiness-camera-label">
+            <div class="card card-body h-100">
+                <h3 class="h5" id="readiness-camera-label">{{#str}}readiness:camera, quizaccess_proctoring{{/str}}</h3>
+                <p>{{#str}}readiness:camerahint, quizaccess_proctoring{{/str}}</p>
+                <button type="button" class="btn btn-outline-primary" data-readiness-device="camera">
+                    {{#str}}readiness:testcamera, quizaccess_proctoring{{/str}}
+                </button>
+                <p data-readiness-status="camera" role="status" class="mt-2">{{#str}}readiness:notchecked, quizaccess_proctoring{{/str}}</p>
+            </div>
+        </section>
+        <section class="col-md-6 mb-3" aria-labelledby="readiness-microphone-label">
+            <div class="card card-body h-100">
+                <h3 class="h5" id="readiness-microphone-label">{{#str}}readiness:microphone, quizaccess_proctoring{{/str}}</h3>
+                <p>{{#str}}readiness:microphonehint, quizaccess_proctoring{{/str}}</p>
+                <button type="button" class="btn btn-outline-primary" data-readiness-device="microphone">
+                    {{#str}}readiness:testmicrophone, quizaccess_proctoring{{/str}}
+                </button>
+                <p data-readiness-status="microphone" role="status" class="mt-2">{{#str}}readiness:notchecked, quizaccess_proctoring{{/str}}</p>
+            </div>
+        </section>
+        <section class="col-md-6 mb-3" aria-labelledby="readiness-screen-label">
+            <div class="card card-body h-100">
+                <h3 class="h5" id="readiness-screen-label">{{#str}}readiness:screen, quizaccess_proctoring{{/str}}</h3>
+                <p>{{#screenrequired}}{{#str}}readiness:screenrequired, quizaccess_proctoring{{/str}}{{/screenrequired}}
+                    {{^screenrequired}}{{#str}}readiness:screenoptional, quizaccess_proctoring{{/str}}{{/screenrequired}}</p>
+                <button type="button" class="btn btn-outline-primary" data-readiness-device="screen">
+                    {{#str}}readiness:testscreen, quizaccess_proctoring{{/str}}
+                </button>
+                <p data-readiness-status="screen" role="status" class="mt-2">{{#str}}readiness:notchecked, quizaccess_proctoring{{/str}}</p>
+            </div>
+        </section>
+        <section class="col-md-6 mb-3" aria-labelledby="readiness-network-label">
+            <div class="card card-body h-100">
+                <h3 class="h5" id="readiness-network-label">{{#str}}readiness:network, quizaccess_proctoring{{/str}}</h3>
+                <p>{{#str}}readiness:networkhint, quizaccess_proctoring{{/str}}</p>
+                <button type="button" class="btn btn-outline-primary" data-readiness-network>
+                    {{#str}}readiness:testnetwork, quizaccess_proctoring{{/str}}
+                </button>
+                <p data-readiness-status="network" role="status" class="mt-2">{{#str}}readiness:notchecked, quizaccess_proctoring{{/str}}</p>
+                <div class="small">{{#str}}readiness:face, quizaccess_proctoring{{/str}}
+                    <p data-readiness-status="face" role="status">{{#str}}readiness:notchecked, quizaccess_proctoring{{/str}}</p>
+                </div>
+                <div class="small">{{#str}}readiness:identity, quizaccess_proctoring{{/str}}
+                    <p data-readiness-status="identity" role="status">{{#str}}readiness:notchecked, quizaccess_proctoring{{/str}}</p>
+                </div>
+            </div>
+        </section>
+    </div>
+    <div class="mb-3">
+        <video data-readiness-preview muted autoplay playsinline hidden style="max-width:100%;width:480px"
+            aria-label="{{#str}}readiness:preview, quizaccess_proctoring{{/str}}"></video>
+        <meter data-readiness-meter min="0" max="1" value="0" hidden
+            aria-label="{{#str}}readiness:level, quizaccess_proctoring{{/str}}"></meter>
+    </div>
+    <p>{{#str}}readiness:release, quizaccess_proctoring{{/str}}</p>
+    <button type="button" class="btn btn-secondary mb-2" data-readiness-stop>
+        {{#str}}readiness:stop, quizaccess_proctoring{{/str}}
+    </button>
+    <a href="{{quizurl}}" class="btn btn-primary mb-2">{{#str}}readiness:return, quizaccess_proctoring{{/str}}</a>
+</div>

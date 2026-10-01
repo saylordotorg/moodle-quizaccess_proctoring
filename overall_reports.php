@@ -168,9 +168,13 @@ if ($action === 'signoff' || $action === 'undosignoff') {
         $rowuserid = required_param('rowuserid', PARAM_INT);
         $rowattemptid = optional_param('rowattemptid', 0, PARAM_INT);
         $rowreportid = required_param('rowreportid', PARAM_INT);
-        require_capability(
-            'quizaccess/proctoring:reviewriskholds',
-            context_course::instance($rowcourseid)
+        \quizaccess_proctoring\local\report_access::require_review($rowcourseid, $rowcmid);
+        \quizaccess_proctoring\local\report_access::require_report(
+            $rowcourseid,
+            $rowcmid,
+            $rowuserid,
+            $rowreportid,
+            $rowattemptid
         );
 
         \quizaccess_proctoring\local\attempt_review::record(
@@ -197,9 +201,9 @@ if ($action === 'signoff' || $action === 'undosignoff') {
         '*',
         MUST_EXIST
     );
-    require_capability(
-        'quizaccess/proctoring:reviewriskholds',
-        context_course::instance((int)$signoff->courseid)
+    \quizaccess_proctoring\local\report_access::require_review(
+        (int)$signoff->courseid,
+        (int)$signoff->quizid
     );
     \quizaccess_proctoring\local\attempt_review::undo(
         $signoffid,
@@ -219,7 +223,7 @@ if ($action === 'signoff' || $action === 'undosignoff') {
 if (($action === 'release' || $action === 'confirm') && $holdid > 0) {
     require_sesskey();
     $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
-    require_capability('quizaccess/proctoring:reviewriskholds', context_course::instance((int)$hold->courseid));
+    \quizaccess_proctoring\local\report_access::require_review((int)$hold->courseid, (int)$hold->quizid);
 
     $returnurl = new moodle_url(
         '/mod/quiz/accessrule/proctoring/overall_reports.php',

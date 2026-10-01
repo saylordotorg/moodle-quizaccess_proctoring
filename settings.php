@@ -261,6 +261,13 @@ if ($canmanageproctoring) {
     ));
 
     $settings->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/readinessenabled',
+        get_string('setting:readinessenabled', 'quizaccess_proctoring'),
+        get_string('setting:readinessenabled_desc', 'quizaccess_proctoring'),
+        1
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
         'quizaccess_proctoring/honorstatementrequired',
         get_string('setting:honorstatementrequired', 'quizaccess_proctoring'),
         get_string('setting:honorstatementrequired_desc', 'quizaccess_proctoring'),
@@ -556,6 +563,22 @@ if ($canmanageproctoring) {
         PARAM_INT
     ));
 
+    $settings->add(new admin_setting_configduration(
+        'quizaccess_proctoring/idverificationmaxage',
+        get_string('setting:idverificationmaxage', 'quizaccess_proctoring'),
+        get_string('setting:idverificationmaxage_desc', 'quizaccess_proctoring'),
+        0
+    ));
+
+    foreach (['eachattempt', 'namechange', 'policychange'] as $recheck) {
+        $settings->add(new admin_setting_configcheckbox(
+            'quizaccess_proctoring/idverification' . $recheck,
+            get_string('setting:idverification' . $recheck, 'quizaccess_proctoring'),
+            get_string('setting:idverification' . $recheck . '_desc', 'quizaccess_proctoring'),
+            0
+        ));
+    }
+
     $settings->add(new admin_setting_configtext(
         'quizaccess_proctoring/threshold',
         get_string('setting:fcthreshold', 'quizaccess_proctoring'),
@@ -665,6 +688,13 @@ if ($canmanageproctoring) {
         get_string('setting:captureviolationdesktop', 'quizaccess_proctoring'),
         get_string('setting:captureviolationdesktop_desc', 'quizaccess_proctoring'),
         1
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/monitoringcoveragescreens',
+        get_string('setting:monitoringcoveragescreens', 'quizaccess_proctoring'),
+        get_string('setting:monitoringcoveragescreens_desc', 'quizaccess_proctoring'),
+        0
     ));
 
     $settings->add(new admin_setting_configselect(

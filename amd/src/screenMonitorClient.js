@@ -1,5 +1,8 @@
 define([], function() {
     const statusStaleMs = 20000;
+    // On page load the stored status may be whatever the throttled helper last wrote, possibly
+    // close to a minute ago. Trust it only when it is this recent; otherwise wait for a live reply.
+    const startupStatusMaxAgeMs = 5000;
     const statusPollMs = 2000;
     const screenshotPollMs = 5000;
 
@@ -27,12 +30,12 @@ define([], function() {
         }
     };
 
-    const isFresh = function(status) {
-        return status && status.ts && (Date.now() - status.ts) <= statusStaleMs;
+    const isFresh = function(status, maxAgeMs = statusStaleMs) {
+        return status && status.ts && (Date.now() - status.ts) <= maxAgeMs;
     };
 
-    const isReady = function(status) {
-        return isFresh(status) && status.ready === true && status.marker === true && status.stopped !== true;
+    const isReady = function(status, maxAgeMs = statusStaleMs) {
+        return isFresh(status, maxAgeMs) && status.ready === true && status.marker === true && status.stopped !== true;
     };
 
     const isMobileClient = function() {
@@ -58,6 +61,7 @@ define([], function() {
             let screenshotTimer = null;
             let latestScreenshot = '';
             let lastWrongScreenLogged = 0;
+            let running = false;
             const mobileClient = isMobileClient();
 
             const postMessage = function(message) {
@@ -174,6 +178,9 @@ define([], function() {
             if (channelName && window.BroadcastChannel) {
                 channel = new BroadcastChannel(channelName);
                 channel.onmessage = function(event) {
+                    if (!running) {
+                        return;
+                    }
                     const message = event.data || {};
                     if (message.type === 'status') {
                         handleStatus(message);
@@ -194,18 +201,22 @@ define([], function() {
             }
 
             window.addEventListener('storage', function(event) {
-                if (event.key === statusKey) {
+                if (running && event.key === statusKey) {
                     handleStatus(parseStatus(event.newValue));
                 }
             });
 
             return {
                 start: function() {
+                    running = true;
                     if (mobileClient) {
                         return;
                     }
 
-                    readAndHandleStoredStatus();
+                    const storedStatus = getStoredStatus(statusKey);
+                    if (isFresh(storedStatus, startupStatusMaxAgeMs)) {
+                        handleStatus(storedStatus);
+                    }
                     requestStatus();
 
                     if (statusTimer) {
@@ -221,6 +232,14 @@ define([], function() {
                     }
                     screenshotTimer = window.setInterval(requestScreenshot, screenshotPollMs);
                 },
+                stop: function() {
+                    running = false;
+                    window.clearInterval(statusTimer);
+                    window.clearInterval(screenshotTimer);
+                    statusTimer = null;
+                    screenshotTimer = null;
+                    latestScreenshot = '';
+                },
                 open: open,
                 requestStatus: requestStatus,
                 getLatestScreenshot: function() {
@@ -228,7 +247,7 @@ define([], function() {
                     return latestScreenshot;
                 },
                 isReady: function() {
-                    return isReady(getStoredStatus(statusKey));
+                    return isReady(getStoredStatus(statusKey), startupStatusMaxAgeMs);
                 }
             };
         }

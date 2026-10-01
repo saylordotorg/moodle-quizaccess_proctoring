@@ -14,9 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+use core_external\external_api;
+use core_external\external_function_parameters;
+use core_external\external_single_structure;
+use core_external\external_value;
+use core_external\external_warnings;
+
 defined('MOODLE_INTERNAL') || die;
 
-require_once($CFG->libdir . '/externallib.php');
 require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
 /**
@@ -112,6 +117,8 @@ class quizaccess_proctoring_external extends external_api {
                 'parenttype' => new external_value(PARAM_RAW, 'Face image parent type'),
                 'faceimage' => new external_value(PARAM_RAW, 'Face Image'),
                 'facefound' => new external_value(PARAM_INT, 'Face found flag'),
+                'capturedat' => new external_value(PARAM_INT, 'Browser capture time', VALUE_DEFAULT, 0),
+                'requestid' => new external_value(PARAM_RAW, 'Stable recovery request token', VALUE_DEFAULT, ''),
             ]
         );
     }
@@ -132,6 +139,8 @@ class quizaccess_proctoring_external extends external_api {
      * @param string $parenttype The parent type, indicating whether the image is an Admin Image or Webcam Image.
      * @param string $faceimage The base64-encoded face image extracted from the webcam photo.
      * @param int $facefound A flag indicating whether a face was detected (1 = face found, 0 = face not found).
+     * @param int $capturedat Browser capture time, zero for legacy clients.
+     * @param string $requestid Stable recovery request token.
      *
      * @return array Returns an array with the following:
      *      - 'screenshotid' (int): The ID of the stored screenshot.
@@ -150,7 +159,9 @@ class quizaccess_proctoring_external extends external_api {
         $imagetype,
         $parenttype,
         $faceimage,
-        $facefound
+        $facefound,
+        $capturedat = 0,
+        $requestid = ''
     ) {
         global $DB, $USER;
 
@@ -166,96 +177,128 @@ class quizaccess_proctoring_external extends external_api {
                 'parenttype' => $parenttype,
                 'faceimage' => $faceimage,
                 'facefound' => $facefound,
+                'capturedat' => $capturedat,
+                'requestid' => $requestid,
             ]
         );
 
         [$cm, $context] = self::get_authorized_quiz_context((int)$courseid, (int)$quizid);
 
-        $warnings = [];
+        $metadata = \quizaccess_proctoring\local\evidence_ingestion::metadata((int)$capturedat, (string)$requestid);
+        $lock = \quizaccess_proctoring\local\evidence_ingestion::lock((int)$USER->id, (int)$cm->id, (string)$requestid);
+        try {
+            $warnings = [];
 
-        if ($imagetype == 1) {
-            $parenttype = self::clean_parent_type((string)$parenttype);
-            self::validate_image_payload($webcampicture, self::MAX_WEBCAM_IMAGE_BYTES);
-            if (!empty($faceimage)) {
-                self::validate_image_payload($faceimage, self::MAX_FACE_IMAGE_BYTES);
-            }
-            self::enforce_recent_record_limit('quizaccess_proctoring_logs', [
+            if ($imagetype == 1) {
+                $parenttype = self::clean_parent_type((string)$parenttype);
+                $camshot = self::get_owned_report((int)$screenshotid, (int)$courseid, (int)$cm->id);
+                if ((int)$camshot->status > 0) {
+                    \quizaccess_proctoring\local\evidence_ingestion::attempt(
+                        (int)$camshot->status,
+                        (int)$cm->instance,
+                        (int)$USER->id,
+                        (int)$capturedat,
+                        (string)$requestid
+                    );
+                }
+                $existing = \quizaccess_proctoring\local\evidence_ingestion::duplicate(
+                    'quizaccess_proctoring_logs',
+                    (int)$USER->id,
+                    (int)$cm->id,
+                    (int)$camshot->status,
+                    (string)$requestid
+                );
+                if ($existing) {
+                    $faceid = $DB->get_field(
+                        'quizaccess_proctoring_face_images',
+                        'id',
+                        ['parent_type' => 'camshot_image', 'parentid' => $existing->id]
+                    );
+                    return ['screenshotid' => (int)($faceid ?: $existing->id), 'warnings' => []];
+                }
+                self::validate_image_payload($webcampicture, self::MAX_WEBCAM_IMAGE_BYTES);
+                if (!empty($faceimage)) {
+                    self::validate_image_payload($faceimage, self::MAX_FACE_IMAGE_BYTES);
+                }
+                self::enforce_recent_record_limit('quizaccess_proctoring_logs', [
                 'courseid' => (int)$courseid,
                 'quizid' => (int)$cm->id,
                 'userid' => (int)$USER->id,
-            ], self::MAX_CAMSHOTS_PER_WINDOW);
+                ], self::MAX_CAMSHOTS_PER_WINDOW);
 
-            $camshot = self::get_owned_report((int)$screenshotid, (int)$courseid, (int)$cm->id);
-            if ((int)$camshot->status > 0) {
-                self::get_owned_quiz_attempt((int)$camshot->status, $cm);
+                $record = new stdClass();
+                $record->filearea = 'picture';
+                $record->component = 'quizaccess_proctoring';
+                $record->filepath = '';
+                $record->itemid = (int)$screenshotid;
+                $record->license = '';
+                $record->author = '';
+
+                $fs = get_file_storage();
+                $record->filepath = file_correct_filepath($record->filepath);
+
+                $url = self::geturl($webcampicture, (int)$screenshotid, $USER, (int)$courseid, $record, $context, $fs);
+
+                $record = new stdClass();
+                $record->courseid = (int)$courseid;
+                $record->quizid = (int)$cm->id;
+                $record->userid = $USER->id;
+                $record->webcampicture = "{$url}";
+                $record->status = $camshot->status;
+                $record->timemodified = time();
+                $record->capturedat = $metadata['capturedat'];
+                $record->requestid = $metadata['requestid'];
+                $screenshotid = $DB->insert_record('quizaccess_proctoring_logs', $record, true);
+                $logid = $screenshotid;
+
+                // Save the face image.
+                $record = new stdClass();
+                $record->filearea = 'face_image';
+                $record->component = 'quizaccess_proctoring';
+                $record->filepath = '';
+                $record->itemid = $screenshotid;
+                $record->license = '';
+                $record->author = '';
+
+                $fs = get_file_storage();
+                $record->filepath = file_correct_filepath($record->filepath);
+
+                $url = "";
+                if ($faceimage) {
+                    $url = self::quizaccess_proctoring_geturl_without_timecode(
+                        $faceimage,
+                        $screenshotid,
+                        $USER,
+                        (int)$courseid,
+                        $record,
+                        $context,
+                        $fs
+                    );
+                }
+                $record = new stdClass();
+                $record->parent_type = $parenttype;
+                $record->parentid = $screenshotid;
+                $record->faceimage = "{$url}";
+                $record->facefound = $facefound;
+                $record->timemodified = time();
+                $screenshotid = $DB->insert_record('quizaccess_proctoring_face_images', $record, true);
+                self::run_continuous_face_check($logid, (int)$facefound);
+
+                $result = [];
+                $result['screenshotid'] = $screenshotid;
+                $result['warnings'] = $warnings;
+            } else {
+                $result = [];
+                $result['screenshotid'] = 100;
+                $result['warnings'] = [];
             }
 
-            $record = new stdClass();
-            $record->filearea = 'picture';
-            $record->component = 'quizaccess_proctoring';
-            $record->filepath = '';
-            $record->itemid = (int)$screenshotid;
-            $record->license = '';
-            $record->author = '';
-
-            $fs = get_file_storage();
-            $record->filepath = file_correct_filepath($record->filepath);
-
-            $url = self::geturl($webcampicture, (int)$screenshotid, $USER, (int)$courseid, $record, $context, $fs);
-
-            $record = new stdClass();
-            $record->courseid = (int)$courseid;
-            $record->quizid = (int)$cm->id;
-            $record->userid = $USER->id;
-            $record->webcampicture = "{$url}";
-            $record->status = $camshot->status;
-            $record->timemodified = time();
-            $screenshotid = $DB->insert_record('quizaccess_proctoring_logs', $record, true);
-            $logid = $screenshotid;
-
-            // Save the face image.
-            $record = new stdClass();
-            $record->filearea = 'face_image';
-            $record->component = 'quizaccess_proctoring';
-            $record->filepath = '';
-            $record->itemid = $screenshotid;
-            $record->license = '';
-            $record->author = '';
-
-            $fs = get_file_storage();
-            $record->filepath = file_correct_filepath($record->filepath);
-
-            $url = "";
-            if ($faceimage) {
-                $url = self::quizaccess_proctoring_geturl_without_timecode(
-                    $faceimage,
-                    $screenshotid,
-                    $USER,
-                    (int)$courseid,
-                    $record,
-                    $context,
-                    $fs
-                );
+            return $result;
+        } finally {
+            if ($lock) {
+                $lock->release();
             }
-            $record = new stdClass();
-            $record->parent_type = $parenttype;
-            $record->parentid = $screenshotid;
-            $record->faceimage = "{$url}";
-            $record->facefound = $facefound;
-            $record->timemodified = time();
-            $screenshotid = $DB->insert_record('quizaccess_proctoring_face_images', $record, true);
-            self::run_continuous_face_check($logid, (int)$facefound);
-
-            $result = [];
-            $result['screenshotid'] = $screenshotid;
-            $result['warnings'] = $warnings;
-        } else {
-            $result = [];
-            $result['screenshotid'] = 100;
-            $result['warnings'] = [];
         }
-
-        return $result;
     }
 
     /**
@@ -296,6 +339,8 @@ class quizaccess_proctoring_external extends external_api {
                 'pagevisibility' => new external_value(PARAM_ALPHANUMEXT, 'document visibility state', VALUE_DEFAULT, ''),
                 'currenturl' => new external_value(PARAM_RAW, 'page URL', VALUE_DEFAULT, ''),
                 'screenshot' => new external_value(PARAM_RAW, 'desktop screenshot data URI', VALUE_DEFAULT, ''),
+                'capturedat' => new external_value(PARAM_INT, 'Browser capture time', VALUE_DEFAULT, 0),
+                'requestid' => new external_value(PARAM_RAW, 'Stable recovery request token', VALUE_DEFAULT, ''),
             ]
         );
     }
@@ -312,6 +357,8 @@ class quizaccess_proctoring_external extends external_api {
      * @param string $pagevisibility Document visibility state.
      * @param string $currenturl Page URL when the event was observed.
      * @param string $screenshot Desktop screenshot data URI captured when the event was observed.
+     * @param int $capturedat Browser capture time, zero for legacy clients.
+     * @param string $requestid Stable recovery request token.
      * @return array Event result.
      * @throws dml_exception
      * @throws invalid_parameter_exception
@@ -326,7 +373,9 @@ class quizaccess_proctoring_external extends external_api {
         $eventdetail = '',
         $pagevisibility = '',
         $currenturl = '',
-        $screenshot = ''
+        $screenshot = '',
+        $capturedat = 0,
+        $requestid = ''
     ) {
         global $DB, $USER;
 
@@ -342,12 +391,18 @@ class quizaccess_proctoring_external extends external_api {
                 'pagevisibility' => $pagevisibility,
                 'currenturl' => $currenturl,
                 'screenshot' => $screenshot,
+                'capturedat' => $capturedat,
+                'requestid' => $requestid,
             ]
         );
 
         [$cm, $context] = self::get_authorized_quiz_context((int)$courseid, (int)$quizid);
 
-        $allowedevents = [
+        $metadata = \quizaccess_proctoring\local\evidence_ingestion::metadata((int)$capturedat, (string)$requestid);
+        $lock = \quizaccess_proctoring\local\evidence_ingestion::lock((int)$USER->id, (int)$cm->id, (string)$requestid);
+        try {
+            $allowedevents = [
+            'screen_capture',
             'tab_hidden',
             'tab_visible',
             'focus_lost',
@@ -370,70 +425,118 @@ class quizaccess_proctoring_external extends external_api {
             'phone_detected',
             'multiple_monitors_detected',
             'monitor_detection_unavailable',
-        ];
+            ];
 
-        if (!in_array($eventtype, $allowedevents, true)) {
-            $eventtype = 'shortcut';
-        }
-
-        $attemptid = max(0, (int)$attemptid);
-        $reportid = max(0, (int)$reportid);
-        if ($attemptid > 0) {
-            self::get_owned_quiz_attempt($attemptid, $cm);
-        }
-        if ($reportid > 0) {
-            $report = self::get_owned_report($reportid, (int)$courseid, (int)$cm->id, $attemptid);
-            if ($attemptid === 0 && (int)$report->status > 0) {
-                $attemptid = (int)$report->status;
-                self::get_owned_quiz_attempt($attemptid, $cm);
+            if (!in_array($eventtype, $allowedevents, true)) {
+                $eventtype = 'shortcut';
             }
-        } else if (!empty($screenshot)) {
-            throw new invalid_parameter_exception('A report id is required when saving a desktop screenshot.');
-        }
 
-        if (!empty($screenshot)) {
-            self::validate_image_payload($screenshot, self::MAX_DESKTOP_IMAGE_BYTES);
-        }
-        self::enforce_recent_record_limit('quizaccess_proctoring_events', [
+            if ($eventtype === 'screen_capture') {
+                $desktopsetting = get_config('quizaccess_proctoring', 'captureviolationdesktop');
+                $desktopenabled = $desktopsetting === false || $desktopsetting === null || $desktopsetting === '' ||
+                    (int)$desktopsetting === 1;
+                if ((int)get_config('quizaccess_proctoring', 'monitoringcoveragescreens') !== 1 || !$desktopenabled) {
+                    throw new invalid_parameter_exception('Periodic screen capture is not enabled.');
+                }
+            }
+
+            $attemptid = max(0, (int)$attemptid);
+            $reportid = max(0, (int)$reportid);
+            if ($attemptid > 0) {
+                \quizaccess_proctoring\local\evidence_ingestion::attempt(
+                    $attemptid,
+                    (int)$cm->instance,
+                    (int)$USER->id,
+                    (int)$capturedat,
+                    (string)$requestid
+                );
+            }
+            if ($reportid > 0) {
+                $report = self::get_owned_report($reportid, (int)$courseid, (int)$cm->id, $attemptid);
+                if ($attemptid === 0 && (int)$report->status > 0) {
+                    $attemptid = (int)$report->status;
+                    \quizaccess_proctoring\local\evidence_ingestion::attempt(
+                        $attemptid,
+                        (int)$cm->instance,
+                        (int)$USER->id,
+                        (int)$capturedat,
+                        (string)$requestid
+                    );
+                }
+            } else if (!empty($screenshot)) {
+                throw new invalid_parameter_exception('A report id is required when saving a desktop screenshot.');
+            }
+
+            if ($eventtype === 'screen_capture' && ($attemptid <= 0 || empty($screenshot))) {
+                throw new invalid_parameter_exception('A screen capture requires an attempt and screenshot.');
+            }
+            $existing = \quizaccess_proctoring\local\evidence_ingestion::duplicate(
+                'quizaccess_proctoring_events',
+                (int)$USER->id,
+                (int)$cm->id,
+                $attemptid,
+                (string)$requestid
+            );
+            if ($existing) {
+                return ['eventid' => (int)$existing->id, 'warnings' => []];
+            }
+            if (!empty($screenshot)) {
+                self::validate_image_payload($screenshot, self::MAX_DESKTOP_IMAGE_BYTES);
+            }
+            self::enforce_recent_record_limit('quizaccess_proctoring_events', [
             'courseid' => (int)$courseid,
             'quizid' => (int)$cm->id,
             'userid' => (int)$USER->id,
-        ], self::MAX_EVENTS_PER_WINDOW);
+            ], self::MAX_EVENTS_PER_WINDOW);
 
-        $record = new stdClass();
-        $record->courseid = (int)$courseid;
-        $record->quizid = $cm->id;
-        $record->userid = $USER->id;
-        $record->attemptid = $attemptid;
-        $record->reportid = $reportid;
-        $record->eventtype = substr($eventtype, 0, 40);
-        $record->eventdetail = substr($eventdetail, 0, 2000);
-        $record->pagevisibility = substr($pagevisibility, 0, 20);
-        $record->currenturl = substr($currenturl, 0, 1000);
-        $record->screenshoturl = '';
-        $record->timemodified = time();
+            $record = new stdClass();
+            $record->courseid = (int)$courseid;
+            $record->quizid = $cm->id;
+            $record->userid = $USER->id;
+            $record->attemptid = $attemptid;
+            $record->reportid = $reportid;
+            $record->eventtype = substr($eventtype, 0, 40);
+            $record->eventdetail = substr($eventdetail, 0, 2000);
+            $record->pagevisibility = substr($pagevisibility, 0, 20);
+            $record->currenturl = substr($currenturl, 0, 1000);
+            $record->screenshoturl = '';
+            $record->timemodified = time();
+            $record->capturedat = $metadata['capturedat'];
+            $record->requestid = $metadata['requestid'];
 
-        $eventid = $DB->insert_record('quizaccess_proctoring_events', $record, true);
+            $eventid = $DB->insert_record('quizaccess_proctoring_events', $record, true);
 
-        if (!empty($screenshot)) {
-            try {
-                $record->id = $eventid;
-                $record->screenshoturl = self::save_event_screenshot($courseid, $cm->id, $eventid, $screenshot);
-                $DB->update_record('quizaccess_proctoring_events', $record);
-                quizaccess_proctoring_queue_event_ai_review($eventid);
-            } catch (Throwable $e) {
-                // Keep the event log even if the optional desktop capture cannot be stored.
-                debugging(
-                    'quizaccess_proctoring: failed to store desktop event screenshot: ' . $e->getMessage(),
-                    DEBUG_DEVELOPER
-                );
+            if (!empty($screenshot)) {
+                try {
+                    $record->id = $eventid;
+                    $record->screenshoturl = self::save_event_screenshot($courseid, $cm->id, $eventid, $screenshot);
+                    $DB->update_record('quizaccess_proctoring_events', $record);
+                    if ($eventtype !== 'screen_capture') {
+                        quizaccess_proctoring_queue_event_ai_review($eventid);
+                    }
+                } catch (Throwable $e) {
+                    if ($eventtype === 'screen_capture') {
+                        // A capture without its image is not coverage evidence. Let the client retry.
+                        $DB->delete_records('quizaccess_proctoring_events', ['id' => $eventid]);
+                        throw $e;
+                    }
+                    // Keep the event log even if the optional desktop capture cannot be stored.
+                    debugging(
+                        'quizaccess_proctoring: failed to store desktop event screenshot: ' . $e->getMessage(),
+                        DEBUG_DEVELOPER
+                    );
+                }
             }
-        }
 
-        return [
+            return [
             'eventid' => $eventid,
             'warnings' => [],
-        ];
+            ];
+        } finally {
+            if ($lock) {
+                $lock->release();
+            }
+        }
     }
 
     /**
@@ -516,13 +619,15 @@ class quizaccess_proctoring_external extends external_api {
     }
 
     /**
-     * Restricts submitted face parent types to values the plugin creates.
+     * Keeps browser captures separate from staff-managed reference images.
      *
      * @param string $parenttype Submitted parent type.
      * @return string Clean parent type.
      */
     private static function clean_parent_type(string $parenttype): string {
-        return in_array($parenttype, ['camshot_image', 'admin_image'], true) ? $parenttype : 'camshot_image';
+        // The parent id below is a log id, never a user_images id. Accepting admin_image here
+        // lets a student attach a capture to another user's reference with a colliding id.
+        return 'camshot_image';
     }
 
     /**
@@ -694,7 +799,6 @@ class quizaccess_proctoring_external extends external_api {
         ob_start();
         imagepng($image);
         $data = ob_get_clean();
-        ob_end_clean();
         imagedestroy($image);
         return $data;
     }
@@ -762,6 +866,7 @@ class quizaccess_proctoring_external extends external_api {
         );
 
         [$cm, $context] = self::get_authorized_quiz_context((int)$courseid, (int)$cmid);
+        quizaccess_proctoring_clear_face_preflight((int)$cm->id);
         $parenttype = self::clean_parent_type((string)$parenttype);
         if (!empty($webcampicture)) {
             self::validate_image_payload($webcampicture, self::MAX_WEBCAM_IMAGE_BYTES);
@@ -795,6 +900,7 @@ class quizaccess_proctoring_external extends external_api {
             }
 
             $referenceid = self::save_reference_image($USER->id, $webcampicture, $faceimage, (int)$facefound);
+            quizaccess_proctoring_set_face_preflight_passed((int)$cm->id);
             $result = [];
             $result['screenshotid'] = $referenceid;
             $result['status'] = 'registered';
@@ -823,7 +929,8 @@ class quizaccess_proctoring_external extends external_api {
         $record->quizid = (int)$cm->id;
         $record->userid = $USER->id;
         $record->webcampicture = "{$url}";
-        $record->status = $screenshotid;
+        // A preflight capture is not yet associated with a quiz attempt.
+        $record->status = 0;
         $record->timemodified = time();
         $screenshotid = $DB->insert_record('quizaccess_proctoring_logs', $record, true);
 
@@ -886,8 +993,9 @@ class quizaccess_proctoring_external extends external_api {
         $awsscore = $currentdata->awsscore;
         $threshhold = (int)quizaccess_proctoring_get_proctoring_settings('threshold');
 
-        if ($awsscore > $threshhold) {
+        if ((int)$currentdata->awsflag === 2 && $awsscore > $threshhold) {
             $status = "success";
+            quizaccess_proctoring_set_face_preflight_passed((int)$cm->id);
         } else {
             $status = "failed";
         }
@@ -978,7 +1086,20 @@ class quizaccess_proctoring_external extends external_api {
         if ($attemptid > 0) {
             self::get_owned_quiz_attempt($attemptid, $cm);
         }
-        if ((int)get_config('quizaccess_proctoring', 'idverificationenabled') !== 1) {
+        $idenabled = (int)get_config('quizaccess_proctoring', 'idverificationenabled') === 1;
+        if (!$idenabled && $attemptid === 0) {
+            // A student-specific requirement must be completable even when the site default is off.
+            $resolver = \quizaccess_proctoring\local\override_resolver::class;
+            $resolved = $resolver::resolve_all(
+                (int)$courseid,
+                (int)$cm->instance,
+                (int)$USER->id,
+                time(),
+                [$resolver::REQ_IDVERIFICATION => false]
+            );
+            $idenabled = !empty($resolved[$resolver::REQ_IDVERIFICATION]);
+        }
+        if (!$idenabled) {
             return [
                 'verificationid' => 0,
                 'status' => 'disabled',
@@ -1022,7 +1143,10 @@ class quizaccess_proctoring_external extends external_api {
         ], self::MAX_ID_VERIFICATIONS_PER_WINDOW);
 
         $now = time();
-        $profilename = fullname($USER);
+        // Read the current persisted identity, even when this session predates a profile edit.
+        $identityuser = $DB->get_record('user', ['id' => (int)$USER->id, 'deleted' => 0], '*', MUST_EXIST);
+        $profilename = fullname($identityuser);
+        $snapshot = \quizaccess_proctoring\local\identity_recheck_policy::snapshot($identityuser);
         $record = (object)[
             'courseid' => (int)$courseid,
             'quizid' => (int)$cm->id,
@@ -1036,6 +1160,9 @@ class quizaccess_proctoring_external extends external_api {
             'matchedprofilename' => '',
             'namematchreason' => '',
             'profilename' => $profilename,
+            'profilehash' => $snapshot['profilehash'],
+            'policyhash' => $snapshot['policyhash'],
+            'verifiedat' => 0,
             'idimageurl' => '',
             'idbackimageurl' => '',
             'liveimageurl' => '',
@@ -1087,7 +1214,7 @@ class quizaccess_proctoring_external extends external_api {
                 get_string('facenotfoundoncam', 'quizaccess_proctoring')
             );
         } else {
-            $providerresult = self::call_id_verification_endpoint($idbytes, $livebytes, $USER, $idbackbytes);
+            $providerresult = self::call_id_verification_endpoint($idbytes, $livebytes, $identityuser, $idbackbytes);
         }
         $providerresult['message'] = self::get_id_verification_student_message($providerresult, $profilename);
 
@@ -1100,7 +1227,11 @@ class quizaccess_proctoring_external extends external_api {
         $record->namematchreason = $providerresult['namematchreason'];
         $record->errormessage = $providerresult['message'];
         $record->timemodified = time();
+        $record->verifiedat = $record->status === 'pass' ? $record->timemodified : 0;
         $DB->update_record('quizaccess_proctoring_idv', $record);
+        if ($record->status === 'pass') {
+            \quizaccess_proctoring\local\identity_recheck_policy::record_success($record);
+        }
 
         return [
             'verificationid' => (int)$verificationid,
@@ -1196,8 +1327,14 @@ class quizaccess_proctoring_external extends external_api {
      * @param string $alternatives Optional note on documentation they can provide instead.
      * @return array Status and student-facing message.
      */
-    public static function request_id_exemption($courseid, $cmid, $reason = '', $category = '', $detail = '',
-            $alternatives = '') {
+    public static function request_id_exemption(
+        $courseid,
+        $cmid,
+        $reason = '',
+        $category = '',
+        $detail = '',
+        $alternatives = ''
+    ) {
         global $DB, $USER;
 
         self::validate_parameters(
@@ -1358,7 +1495,7 @@ class quizaccess_proctoring_external extends external_api {
     }
 
     /**
-     * Calls the configured Saylor/custom ID verification endpoint.
+     * Submit identity evidence and interpret a provider's verification response.
      *
      * @param string $idbytes ID document image bytes.
      * @param string $livebytes Live webcam image bytes.
@@ -1366,10 +1503,6 @@ class quizaccess_proctoring_external extends external_api {
      * @param string|null $idbackbytes Optional ID back document image bytes.
      * @return array Normalized result.
      */
-
-
-
-
     private static function call_id_verification_endpoint(
         string $idbytes,
         string $livebytes,
@@ -1513,8 +1646,20 @@ class quizaccess_proctoring_external extends external_api {
             );
         }
 
+        try {
+            $requestoptions = \quizaccess_proctoring\local\outbound_endpoint_validator::request_options($endpoint);
+        } catch (moodle_exception $e) {
+            return self::make_id_verification_result(
+                'error',
+                0,
+                0,
+                '',
+                get_string('outboundendpointinvalid', 'quizaccess_proctoring')
+            );
+        }
+
         $curl = new curl();
-        $response = $curl->post($endpoint, $payload, [
+        $response = $curl->post($endpoint, $payload, $requestoptions + [
             'CURLOPT_TIMEOUT' => 45,
             'CURLOPT_FOLLOWLOCATION' => false,
             'CURLOPT_HTTPHEADER' => [
@@ -1572,7 +1717,7 @@ class quizaccess_proctoring_external extends external_api {
             );
         }
 
-        $verified = !empty($decoded['verified']) || !empty($decoded['match']);
+        $verified = self::provider_response_is_verified($decoded);
         $facescorevalue = self::get_first_numeric_response_value_or_null($decoded, [
             'face_score',
             'faceScore',
@@ -1658,7 +1803,9 @@ class quizaccess_proctoring_external extends external_api {
                 DEBUG_DEVELOPER
             );
         }
-        if ($status !== 'pass' && in_array($rawstatus, ['retry', 'manual', 'error'], true)) {
+        // A provider transport/quality/manual-review result is never a completed verification,
+        // even when the response also carries high preliminary scores.
+        if (in_array($rawstatus, ['retry', 'manual', 'error'], true)) {
             $status = $rawstatus === 'manual' ? 'failed' : $rawstatus;
         }
 
@@ -1679,6 +1826,23 @@ class quizaccess_proctoring_external extends external_api {
             $matchedprofilename,
             $namematchreason
         );
+    }
+
+    /**
+     * Reads a provider's positive boolean verdict without PHP truthiness coercion.
+     *
+     * @param array $response Decoded provider response.
+     * @return bool Whether a positive verdict was explicitly supplied.
+     */
+    private static function provider_response_is_verified(array $response): bool {
+        foreach (['verified', 'match'] as $key) {
+            if (array_key_exists($key, $response)) {
+                // The final verification verdict takes precedence over a lower-level face match.
+                return in_array($response[$key], [true, 1, '1', 'true'], true);
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -2304,23 +2468,31 @@ class quizaccess_proctoring_external extends external_api {
      * @throws invalid_parameter_exception If the payload cannot be decoded.
      */
     private static function decode_base64_image_data(string $data, int $maxbytes = self::MAX_WEBCAM_IMAGE_BYTES): string {
+        $maxencoded = (int)ceil(($maxbytes * 4) / 3) + 1024;
+        // Bound the original request before regex/whitespace processing can allocate large copies.
+        if (strlen($data) > $maxencoded) {
+            throw new invalid_parameter_exception('Image data is too large.');
+        }
         $data = trim($data);
         if ($data === '') {
             throw new invalid_parameter_exception('Image data is required.');
         }
 
+        $mime = null;
         if (preg_match('/^data:([^;]+);base64,(.*)$/is', $data, $matches)) {
             $mime = strtolower($matches[1]);
             if (!in_array($mime, ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'], true)) {
                 throw new invalid_parameter_exception('Unsupported image type.');
             }
+            if ($mime === 'image/jpg') {
+                $mime = 'image/jpeg';
+            }
             $data = $matches[2];
-        } else if (strpos($data, ',') !== false) {
-            [, $data] = explode(',', $data, 2);
+        } else if (strpos($data, ',') !== false || stripos($data, 'data:') === 0) {
+            throw new invalid_parameter_exception('Invalid image data URI.');
         }
 
         $data = preg_replace('/\s+/', '', $data);
-        $maxencoded = (int)ceil(($maxbytes * 4) / 3) + 1024;
         if (strlen($data) > $maxencoded) {
             throw new invalid_parameter_exception('Image data is too large.');
         }
@@ -2336,9 +2508,12 @@ class quizaccess_proctoring_external extends external_api {
         $info = @getimagesizefromstring($decoded);
         if (
             empty($info[0]) || empty($info[1]) || empty($info['mime']) ||
-                strpos((string)$info['mime'], 'image/') !== 0
+                !in_array((string)$info['mime'], ['image/png', 'image/jpeg', 'image/webp'], true)
         ) {
             throw new invalid_parameter_exception('Invalid image data.');
+        }
+        if ($mime !== null && $mime !== (string)$info['mime']) {
+            throw new invalid_parameter_exception('Image type does not match the image data.');
         }
         if (((int)$info[0] * (int)$info[1]) > self::MAX_IMAGE_PIXELS) {
             throw new invalid_parameter_exception('Image dimensions are too large.');

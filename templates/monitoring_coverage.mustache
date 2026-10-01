@@ -1,0 +1,71 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+    GNU General Public License for more details.
+    You should have received a copy of the GNU General Public License
+    along with Moodle. If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template quizaccess_proctoring/monitoring_coverage
+
+    Informational evidence coverage for one attempt; never a misconduct verdict.
+
+    Example context (json):
+    {
+        "available": true, "legacy": false, "from": "10:00", "to": "10:30", "interval": 30,
+        "channels": [{"label": "Webcam", "required": true, "status": "Missing intervals",
+            "capturecount": 48, "delayedcount": 2, "gapcount": 1, "missingduration": "2 mins",
+            "hasgaps": true, "gaprows": [{"from": "10:10", "to": "10:12", "duration": "2 mins"}]}]
+    }
+}}
+<section class="proctoring-monitoring-coverage card my-3">
+    <div class="card-body">
+        <h3 class="h5">{{#str}}coverage:heading, quizaccess_proctoring{{/str}}</h3>
+        <p class="small" role="note">{{#str}}coverage:reviewernotice, quizaccess_proctoring{{/str}}</p>
+        {{#legacy}}
+        <p class="mb-0">{{#str}}coverage:legacy, quizaccess_proctoring{{/str}}</p>
+        {{/legacy}}
+        {{#available}}
+        <p class="small mb-1">{{#str}}coverage:window, quizaccess_proctoring{{/str}} {{from}} – {{to}}</p>
+        <p class="small">{{#str}}coverage:cadence, quizaccess_proctoring{{/str}} {{interval}} {{#str}}coverage:seconds, quizaccess_proctoring{{/str}}</p>
+        {{#partial}}<p class="small">{{#str}}coverage:partial, quizaccess_proctoring{{/str}}</p>{{/partial}}
+        {{#ongoing}}<p class="small">{{#str}}coverage:ongoing, quizaccess_proctoring{{/str}}</p>{{/ongoing}}
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead><tr>
+                    <th scope="col">{{#str}}coverage:channel, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}coverage:status, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}coverage:samples, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}coverage:delayed, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}coverage:missingtime, quizaccess_proctoring{{/str}}</th>
+                </tr></thead>
+                <tbody>
+                {{#channels}}
+                    <tr>
+                        <th scope="row">{{label}}</th><td>{{status}}</td>
+                        {{#required}}<td>{{capturecount}}</td><td>{{delayedcount}}</td><td>{{missingduration}}</td>{{/required}}
+                        {{^required}}<td>—</td><td>—</td><td>—</td>{{/required}}
+                    </tr>
+                {{/channels}}
+                </tbody>
+            </table>
+        </div>
+        {{#channels}}{{#required}}
+            {{#legacycount}}<p class="small">{{label}}: {{#str}}coverage:legacytimes, quizaccess_proctoring{{/str}}</p>{{/legacycount}}
+            {{#hasgaps}}
+            <details class="mb-2">
+                <summary>{{label}}: {{#str}}coverage:intervals, quizaccess_proctoring{{/str}} ({{gapcount}})</summary>
+                <ul>{{#gaprows}}<li>{{from}} – {{to}} ({{duration}})</li>{{/gaprows}}</ul>
+                {{#moregaps}}<p class="small">{{#str}}coverage:moregaps, quizaccess_proctoring{{/str}}</p>{{/moregaps}}
+            </details>
+            {{/hasgaps}}
+        {{/required}}{{/channels}}
+        {{/available}}
+    </div>
+</section>

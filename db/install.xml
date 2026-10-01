@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026092500"
+<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026093000"
        COMMENT="XMLDB file for Moodle mod/quiz/accessrule/proctoring"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:noNamespaceSchemaLocation="../../../../../lib/xmldb/xmldb.xsd"
@@ -53,11 +53,18 @@
                 <FIELD NAME="deletionprogress" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
                        SEQUENCE="false" COMMENT="Progress of deletion process" PREVIOUS="awsflag" NEXT="timemodified"/>      
                 <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="false"
-                       COMMENT="Validation process date and time" PREVIOUS="deletionprogress"/>
+                       COMMENT="Validation process date and time" PREVIOUS="deletionprogress" NEXT="capturedat"/>
+                <FIELD NAME="capturedat" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"
+                       COMMENT="Client capture time, zero for older clients" PREVIOUS="timemodified" NEXT="requestid"/>
+                <FIELD NAME="requestid" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false"
+                       COMMENT="Client retry token, null for older clients" PREVIOUS="capturedat"/>
             </FIELDS>
             <KEYS>
                 <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
             </KEYS>
+            <INDEXES>
+                <INDEX NAME="userquizrequest" UNIQUE="true" FIELDS="userid, quizid, requestid"/>
+            </INDEXES>
         </TABLE>
 
         <TABLE NAME="quizaccess_proctoring_facematch_task" COMMENT="Stores check face recognition task logs">
@@ -120,7 +127,11 @@
                        COMMENT="Desktop screenshot captured when the event was logged" PREVIOUS="currenturl"
                        NEXT="timemodified"/>
                 <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" DEFAULT="0"
-                       SEQUENCE="false" COMMENT="Event server time" PREVIOUS="screenshoturl"/>
+                       SEQUENCE="false" COMMENT="Event server time" PREVIOUS="screenshoturl" NEXT="capturedat"/>
+                <FIELD NAME="capturedat" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"
+                       COMMENT="Client capture time, zero for older clients" PREVIOUS="timemodified" NEXT="requestid"/>
+                <FIELD NAME="requestid" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false"
+                       COMMENT="Client retry token, null for older clients" PREVIOUS="capturedat"/>
             </FIELDS>
             <KEYS>
                 <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
@@ -129,6 +140,7 @@
                 <INDEX NAME="coursequizuser" UNIQUE="false" FIELDS="courseid, quizid, userid"/>
                 <INDEX NAME="attemptid" UNIQUE="false" FIELDS="attemptid"/>
                 <INDEX NAME="reportid" UNIQUE="false" FIELDS="reportid"/>
+                <INDEX NAME="userquizrequest" UNIQUE="true" FIELDS="userid, quizid, requestid"/>
             </INDEXES>
         </TABLE>
 
@@ -284,7 +296,14 @@
                 <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" DEFAULT="0"
                        SEQUENCE="false" COMMENT="Record creation time" PREVIOUS="errormessage" NEXT="timemodified"/>
                 <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" DEFAULT="0"
-                       SEQUENCE="false" COMMENT="Last modified time" PREVIOUS="timecreated"/>
+                       SEQUENCE="false" COMMENT="Last modified time" PREVIOUS="timecreated" NEXT="verifiedat"/>
+                <FIELD NAME="verifiedat" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"
+                       COMMENT="Successful verification completion time, zero for legacy rows" PREVIOUS="timemodified"
+                       NEXT="profilehash"/>
+                <FIELD NAME="profilehash" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false"
+                       COMMENT="Fingerprint of verified profile names" PREVIOUS="verifiedat" NEXT="policyhash"/>
+                <FIELD NAME="policyhash" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false"
+                       COMMENT="Fingerprint of the effective identity verification policy" PREVIOUS="profilehash"/>
             </FIELDS>
             <KEYS>
                 <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

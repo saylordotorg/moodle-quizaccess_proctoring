@@ -167,10 +167,12 @@ function createEnvironment() {
         frameLayout: 'blank',
         frameArrives: true,
         now: 1700000000000,
+        wallSkew: 0,
         loggedEvents: [],
         intervals: [],
         displayMediaCalls: 0,
         tracks: [],
+        windowEvents: {},
     };
 
     const makeTrack = () => {
@@ -266,7 +268,9 @@ function createEnvironment() {
         matchMedia() {
             return {matches: false, addEventListener() {}};
         },
-        addEventListener() {},
+        addEventListener(name, callback) {
+            (env.windowEvents[name] = env.windowEvents[name] || []).push(callback);
+        },
         removeEventListener() {},
         setInterval(fn, delay) {
             env.intervals.push({fn, delay});
@@ -322,7 +326,8 @@ function createEnvironment() {
                 fail() {
                     return this;
                 },
-                done() {
+                done(callback) {
+                    callback({warnings: []});
                     return {fail() {}};
                 },
             }];
@@ -399,7 +404,8 @@ function loadModule(env) {
         window: env.window,
         document: env.document,
         // Controllable clock: the module only ever reads Date.now().
-        Date: {now: () => env.now},
+        Date: {now: () => env.now + env.wallSkew},
+        performance: {now: () => env.now - 1700000000000},
         MutationObserver: class {
             observe() {}
             disconnect() {}
@@ -421,6 +427,9 @@ function loadModule(env) {
         queueMicrotask,
     };
     vm.createContext(sandbox);
+    // Load the actual bounded uploader used by the attempt module.
+    vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../../amd/src/evidenceQueue.js'), 'utf8'), sandbox);
+    env.deps['quizaccess_proctoring/evidenceQueue'] = moduleExport;
     vm.runInContext(SOURCE, sandbox, {filename: 'proctoring.js'});
     return moduleExport;
 }
@@ -576,4 +585,240 @@ test('a share that never delivers a frame reports an error instead of stalling t
     assert.strictEqual(env.liveTracks().length, 0, 'the unusable stream must be released');
     assert.strictEqual(env.markerMissingEvents().length, 0,
         'a missing frame is not evidence the student shared the wrong screen');
+});
+
+test('periodic screen evidence keeps its capture time and retry ID with browser activity logging off', async () => {
+    const env = await bootWithShare({screenmarkerrequired: 0, monitorbrowseractivity: 0, coveragescreens: 1});
+    const heartbeat = env.intervals.find(interval => interval.delay === PROPS.camshotdelay);
+    assert.ok(heartbeat, 'screen sharing needs a periodic coverage sample');
+    env.advance(PROPS.camshotdelay);
+    heartbeat.fn();
+    await flush();
+    const samples = env.loggedEvents.filter(event => event.eventtype === 'screen_capture');
+    assert.equal(samples.length, 1);
+    assert.ok(samples[0].screenshot.startsWith('data:image/jpeg;base64,'));
+    assert.equal(samples[0].capturedat, Math.floor(env.now / 1000));
+    assert.match(samples[0].requestid, /^[a-zA-Z0-9_-]+$/);
+    assert.equal(samples[0].attemptid, PROPS.status);
+});
+
+test('a muted screen track does not produce misleading coverage evidence', async () => {
+    const env = await bootWithShare({screenmarkerrequired: 0, coveragescreens: 1});
+    env.tracks[0].muted = true;
+    env.advance(PROPS.camshotdelay);
+    env.intervals.find(interval => interval.delay === PROPS.camshotdelay).fn();
+    await flush();
+    assert.equal(env.loggedEvents.filter(event => event.eventtype === 'screen_capture').length, 0);
+});
+
+test('capture timestamps follow server time when the device clock is a day ahead or behind', async () => {
+    for (const skew of [-86400000, 86400000]) {
+        const env = await bootWithShare({screenmarkerrequired: 0, servertime: 1700000000, coveragescreens: 1}, env => {
+            env.wallSkew = skew;
+        });
+        env.advance(PROPS.camshotdelay);
+        env.intervals.find(interval => interval.delay === PROPS.camshotdelay).fn();
+        await flush();
+        const sample = env.loggedEvents.find(event => event.eventtype === 'screen_capture');
+        assert.equal(sample.capturedat, 1700000030);
+        assert.notEqual(sample.capturedat, Math.floor((env.now + skew) / 1000));
+    }
+});
+
+test('routine screenshots require explicit opt-in while existing event screenshots remain available', async () => {
+    for (const enabled of [undefined, 0]) {
+        const env = await bootWithShare({screenmarkerrequired: 0, coveragescreens: enabled});
+        assert.equal(env.intervals.some(interval => interval.delay === PROPS.camshotdelay), false,
+            'the default and explicit disabled setting must not start periodic screen collection');
+        env.advance(20000); // Pass the focus-loss grace period for the browser share picker.
+        env.windowEvents.blur.forEach(callback => callback());
+        await flush();
+        assert.equal(env.loggedEvents.filter(event => event.eventtype === 'screen_capture').length, 0);
+        const existingEvent = env.loggedEvents.find(event => event.eventtype === 'focus_lost');
+        assert.ok(existingEvent, 'existing browser activity monitoring remains enabled');
+        assert.ok(existingEvent.screenshot.startsWith('data:image/jpeg;base64,'));
+    }
+});
+
+/**
+ * Boot the attempt page in helper-window mode with a scripted screen monitor client.
+ *
+ * The fake client hands back the callbacks proctoring.js registers, so each test can feed
+ * it exactly the status sequence a throttled or stopped helper window would produce.
+ */
+async function bootWithHelper(readyAtStart, overrides, envSetup) {
+    const env = createEnvironment();
+    env.cachedShot = '';
+    if (envSetup) {
+        envSetup(env);
+    }
+    env.deps['quizaccess_proctoring/screenMonitorClient'] = {
+        create(props, callbacks) {
+            env.monitorCallbacks = callbacks;
+            return {
+                start() {},
+                stop() {},
+                open() {},
+                requestStatus() {},
+                getLatestScreenshot() {
+                    env.screenshotRequests = (env.screenshotRequests || 0) + 1;
+                    return env.cachedShot;
+                },
+                isReady() {
+                    return readyAtStart;
+                },
+            };
+        },
+    };
+    const mod = loadModule(env);
+    await Promise.resolve(mod.setup(Object.assign({}, PROPS, {
+        screenmonitorurl: 'https://example.org/mod/quiz/accessrule/proctoring/screenmonitor.php',
+    }, overrides || {}), null)).catch(() => {});
+    await flush();
+    env.stoppedEvents = () => env.loggedEvents.filter((e) => e.eventtype === 'screen_share_stopped');
+    return env;
+}
+
+const HELPER_GRACE_MS = 10000;
+
+test('an out-of-date helper status on page load does not report the share as stopped', async () => {
+    const env = await bootWithHelper(true);
+    const stale = () => ({type: 'status', ready: true, marker: true, stopped: false, ts: env.now - 30000});
+
+    env.monitorCallbacks.onUnavailable(stale());
+    env.advance(4000);
+    env.monitorCallbacks.onUnavailable(stale());
+    // The helper answers the status request: the share was fine all along.
+    env.monitorCallbacks.onReady({type: 'status', ready: true, marker: true, stopped: false, ts: env.now});
+    env.advance(HELPER_GRACE_MS - 2000);
+    env.monitorCallbacks.onUnavailable(stale());
+    await flush();
+
+    assert.strictEqual(env.stoppedEvents().length, 0,
+        'a stale read followed by a live ready reply is not a stopped share');
+});
+
+test('a fresh stopped status from the helper is reported at once with its diagnostics', async () => {
+    const env = await bootWithHelper(true);
+
+    env.monitorCallbacks.onUnavailable({type: 'status', ready: false, marker: false, stopped: true, ts: env.now - 1000});
+    await flush();
+
+    const events = env.stoppedEvents();
+    assert.strictEqual(events.length, 1, 'a real stop must not wait for the grace period');
+    assert.deepStrictEqual(JSON.parse(events[0].eventdetail), {
+        reason: 'persistent_monitor_unavailable',
+        statusage: 1,
+        helperready: false,
+        helperstopped: true,
+    });
+});
+
+test('a helper that stays silent is reported once the grace period has passed', async () => {
+    const env = await bootWithHelper(true);
+    const lastWrite = env.now - 25000;
+    const stale = () => ({type: 'status', ready: true, marker: true, stopped: false, ts: lastWrite});
+
+    for (let waited = 0; waited < HELPER_GRACE_MS; waited += 2000) {
+        env.monitorCallbacks.onUnavailable(stale());
+        env.advance(2000);
+    }
+    await flush();
+    assert.strictEqual(env.stoppedEvents().length, 0, 'nothing is reported inside the grace period');
+
+    env.monitorCallbacks.onUnavailable(stale());
+    await flush();
+    const events = env.stoppedEvents();
+    assert.strictEqual(events.length, 1);
+    const detail = JSON.parse(events[0].eventdetail);
+    assert.strictEqual(detail.statusage, 35);
+    assert.strictEqual(detail.helperready, true);
+    assert.strictEqual(detail.helperstopped, false);
+
+    env.advance(2000);
+    env.monitorCallbacks.onUnavailable(stale());
+    await flush();
+    assert.strictEqual(env.stoppedEvents().length, 1, 'the stop is reported once, not on every poll');
+});
+
+/** Leave the quiz window after the share-picker focus grace, as a student switching apps does. */
+async function leaveQuizWindow(env) {
+    env.advance(20000);
+    env.windowEvents.blur.forEach(callback => callback());
+    await flush();
+}
+
+const focusLostEvents = env => env.loggedEvents.filter(event => event.eventtype === 'focus_lost');
+
+test('leaving the quiz attaches a helper frame taken after the switch, not the cached one', async () => {
+    const env = await bootWithHelper(true);
+    env.cachedShot = 'data:image/jpeg;base64,QUIZ';
+    env.monitorCallbacks.onScreenshot({image: env.cachedShot, ts: env.now});
+
+    await leaveQuizWindow(env);
+    assert.strictEqual(focusLostEvents(env).length, 0, 'the event waits for a frame from after the switch');
+
+    // The helper answers the fresh request with what is now on screen.
+    env.monitorCallbacks.onScreenshot({image: 'data:image/jpeg;base64,OTHERAPP', ts: env.now + 1500});
+    env.advance(1500);
+    await flush(10);
+
+    const events = focusLostEvents(env);
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].screenshot, 'data:image/jpeg;base64,OTHERAPP');
+    assert.strictEqual(JSON.parse(events[0].eventdetail).screenshottiming, 'after_leaving');
+    assert.strictEqual(events[0].capturedat, Math.floor((env.now - 1500) / 1000),
+        'the event keeps the time the student left');
+});
+
+test('an away event falls back to its own frame when no newer frame arrives', async () => {
+    const env = await bootWithHelper(true);
+    env.cachedShot = 'data:image/jpeg;base64,QUIZ';
+    env.monitorCallbacks.onScreenshot({image: env.cachedShot, ts: env.now});
+
+    await leaveQuizWindow(env);
+    env.advance(3001);
+    await flush(10);
+
+    const events = focusLostEvents(env);
+    assert.strictEqual(events.length, 1, 'a silent helper must not lose the event');
+    assert.strictEqual(events[0].screenshot, 'data:image/jpeg;base64,QUIZ');
+    assert.strictEqual(JSON.parse(events[0].eventdetail).screenshottiming, 'at_event');
+});
+
+test('leaving the page submits a waiting away event straight away', async () => {
+    const env = await bootWithHelper(true);
+    env.cachedShot = 'data:image/jpeg;base64,QUIZ';
+    env.monitorCallbacks.onScreenshot({image: env.cachedShot, ts: env.now});
+
+    await leaveQuizWindow(env);
+    for (const callback of env.windowEvents.pagehide || []) {
+        callback({});
+        await flush(1);
+    }
+
+    const events = focusLostEvents(env);
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(JSON.parse(events[0].eventdetail).screenshottiming, 'at_event');
+});
+
+test('mouse movements across the window edge are logged without desktop screenshots', async () => {
+    const documentEvents = {};
+    const env = await bootWithHelper(true, {monitormouseactivity: 1}, env => {
+        env.window.matchMedia = query => ({matches: !/max-width|min-width/.test(query), addEventListener() {}});
+        env.document.addEventListener = (name, fn) => {
+            (documentEvents[name] = documentEvents[name] || []).push(fn);
+        };
+        env.document.documentElement = {addEventListener() {}};
+    });
+    env.cachedShot = 'data:image/jpeg;base64,QUIZ';
+    env.monitorCallbacks.onScreenshot({image: env.cachedShot, ts: env.now});
+
+    assert.ok((documentEvents.pointerout || []).length, 'mouse monitoring must be active in this fixture');
+    documentEvents.pointerout.forEach(fn => fn({pointerType: 'mouse', relatedTarget: null, clientX: -1, clientY: 5}));
+    await flush();
+
+    const mouseEvents = env.loggedEvents.filter(event => event.eventtype === 'mouse_left_window');
+    assert.strictEqual(mouseEvents.length, 1);
+    assert.strictEqual(mouseEvents[0].screenshot, '');
 });

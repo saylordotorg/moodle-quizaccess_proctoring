@@ -1049,9 +1049,13 @@ body.quizaccess-proctoring-settings-page #admin-deleteallimages .btn-danger {
     object-fit: contain;
     position: absolute;
     width: 100%;
+    z-index: 0;
 }
 
 .proctoring-id-document-guide {
+    /* Safari composites a playing <video> above later absolutely positioned siblings unless
+       the stacking order is explicit, which hid the guide and left students no target. */
+    z-index: 1;
     aspect-ratio: 1.586 / 1;
     --proctoring-id-hold-progress: 0%;
     background:
@@ -2085,6 +2089,15 @@ body.quizaccess-proctoring-settings-page #admin-deleteallimages .btn-danger {
 .proctoring-desktop-status-slot {
     display: flex;
     justify-content: center;
+}
+
+/* The face crop is upload data only; on the attempt page it must not render beside the webcam. */
+.proctoring-fixed-webcam-box #cropimg {
+    display: none;
+}
+
+.proctoring-screen-marker-spacer {
+    width: min(220px, 100%);
 }
 
 .proctoring-fixed-webcam-box.is-docked {

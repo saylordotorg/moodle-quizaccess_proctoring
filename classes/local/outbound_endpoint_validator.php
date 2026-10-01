@@ -61,11 +61,14 @@ final class outbound_endpoint_validator {
      */
     public static function validate(string $endpoint, ?callable $resolver = null): string {
         $endpoint = trim($endpoint);
+        if (preg_match('/[\x00-\x20\x7f]/', $endpoint) || !filter_var($endpoint, FILTER_VALIDATE_URL)) {
+            throw new \moodle_exception('outboundendpointinvalid', 'quizaccess_proctoring');
+        }
         $parts = parse_url($endpoint);
         if (!$parts || empty($parts['scheme']) || empty($parts['host'])) {
             throw new \moodle_exception('outboundendpointinvalid', 'quizaccess_proctoring');
         }
-        if (!empty($parts['user']) || !empty($parts['pass'])) {
+        if (isset($parts['user']) || isset($parts['pass']) || isset($parts['fragment'])) {
             throw new \moodle_exception('outboundendpointinvalid', 'quizaccess_proctoring');
         }
         if (isset($parts['port']) && ((int)$parts['port'] < 1 || (int)$parts['port'] > 65535)) {
@@ -73,7 +76,8 @@ final class outbound_endpoint_validator {
         }
 
         $scheme = strtolower((string)$parts['scheme']);
-        if (!in_array($scheme, ['http', 'https'], true)) {
+        // Requests contain biometric images and credentials; never send them in cleartext.
+        if ($scheme !== 'https') {
             throw new \moodle_exception('outboundendpointinvalid', 'quizaccess_proctoring');
         }
 
@@ -88,12 +92,85 @@ final class outbound_endpoint_validator {
         }
 
         foreach ($ips as $ip) {
-            if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            if (!self::is_public_ip((string)$ip)) {
                 throw new \moodle_exception('outboundendpointblocked', 'quizaccess_proctoring');
             }
         }
 
         return $endpoint;
+    }
+
+    /**
+     * Validate and pin a request to the same addresses that passed validation.
+     *
+     * Moodle's curl wrapper still applies its configured host blocks and proxy settings. A proxy
+     * which resolves the destination itself must enforce the same network restrictions: cURL's
+     * local DNS pins cannot control DNS resolution performed by that proxy.
+     *
+     * @param string $endpoint Endpoint URL.
+     * @param callable|null $resolver Optional host resolver for tests.
+     * @return array cURL options, to merge into the request options without overriding these keys.
+     */
+    public static function request_options(string $endpoint, ?callable $resolver = null): array {
+        $ips = [];
+        $endpoint = self::validate($endpoint, static function (string $host) use ($resolver, &$ips): array {
+            $ips = $resolver ? (array)$resolver($host) : self::resolve_host_ips($host);
+            return $ips;
+        });
+        $host = trim((string)parse_url($endpoint, PHP_URL_HOST), '[]');
+        $port = (int)(parse_url($endpoint, PHP_URL_PORT) ?: 443);
+        // Pinning replaces the DNS entries used by Moodle's curl wrapper. Check every pinned
+        // address against Moodle's site policy too, so a later DNS answer cannot mask a blocked IP.
+        $security = new \core\files\curl_security_helper();
+        foreach ($ips as $ip) {
+            $iphost = strpos($ip, ':') !== false ? '[' . $ip . ']' : $ip;
+            if ($security->url_is_blocked('https://' . $iphost . ':' . $port . '/')) {
+                throw new \moodle_exception('outboundendpointblocked', 'quizaccess_proctoring');
+            }
+        }
+        $options = [
+            'CURLOPT_FOLLOWLOCATION' => false,
+            'CURLOPT_SSL_VERIFYPEER' => true,
+            'CURLOPT_SSL_VERIFYHOST' => 2,
+            'CURLOPT_PROTOCOLS' => CURLPROTO_HTTPS,
+        ];
+        // Literal addresses have no second DNS lookup to pin. IPv6 literal host pins require a
+        // much newer libcurl than the versions supported by Moodle.
+        if (!filter_var($host, FILTER_VALIDATE_IP)) {
+            $addresses = array_map(static function (string $ip): string {
+                return strpos($ip, ':') !== false ? '[' . $ip . ']' : $ip;
+            }, $ips);
+            $options['CURLOPT_RESOLVE'] = [$host . ':' . $port . ':' . implode(',', $addresses)];
+        }
+        return $options;
+    }
+
+    /**
+     * Reject private, local, multicast and address-translation destinations on supported PHP versions.
+     *
+     * @param string $ip Resolved IP address.
+     * @return bool Whether the address may receive proctoring data.
+     */
+    private static function is_public_ip(string $ip): bool {
+        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return false;
+        }
+        $packed = inet_pton($ip);
+        if (strlen($packed) === 4) {
+            $octets = array_values(unpack('C4', $packed));
+            // FILTER_FLAG_NO_RES_RANGE does not reject shared address space or multicast.
+            return !($octets[0] >= 224 ||
+                ($octets[0] === 100 && $octets[1] >= 64 && $octets[1] <= 127) ||
+                ($octets[0] === 198 && ($octets[1] === 18 || $octets[1] === 19)));
+        }
+        // Restrict IPv6 to native global unicast. This also excludes IPv4-mapped, NAT64,
+        // deprecated site-local and multicast addresses even on older PHP runtimes.
+        if ((ord($packed[0]) & 0xe0) !== 0x20) {
+            return false;
+        }
+        // Transition addresses can route an apparently public IPv6 destination to private IPv4.
+        return substr($packed, 0, 2) !== "\x20\x02" &&
+            substr($packed, 0, 4) !== "\x20\x01\x00\x00";
     }
 
     /**
