@@ -1347,19 +1347,43 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 $('#proctoring-screen-share-button').on('click', requestScreenShare);
 
                 if (props.screenmonitorurl && !screenMonitorClient) {
+                    // The helper window runs in the background, where browsers throttle its timers,
+                    // so a status read just after a quiz page loads is often out of date even though
+                    // the share is fine. Only a fresh "stopped" from the helper ends the share at once;
+                    // anything else has to persist through the grace period before it counts.
+                    const monitorUnavailableGraceMs = 10000;
+                    const monitorStoppedFreshMs = 5000;
+                    let monitorUnavailableSince = 0;
                     screenMonitorClient = ScreenMonitorClient.create(props, {
                         onReady: function() {
+                            monitorUnavailableSince = 0;
                             screenReady = true;
                             setScreenShareStatus(strings.screenshareaccepted, 'success');
                             clearAttemptWarning('wrongscreen');
                             clearAttemptWarning('screenshare');
                             hideScreenShareGate();
                         },
-                        onUnavailable: function() {
+                        onUnavailable: function(status) {
                             if (screenReady) {
+                                const now = Date.now();
+                                const statusAge = status && status.ts ? Math.max(0, now - status.ts) : null;
+                                const stoppedByHelper = !!(status && status.stopped === true &&
+                                    statusAge !== null && statusAge <= monitorStoppedFreshMs);
+                                if (!stoppedByHelper) {
+                                    if (!monitorUnavailableSince) {
+                                        monitorUnavailableSince = now;
+                                    }
+                                    if (now - monitorUnavailableSince < monitorUnavailableGraceMs) {
+                                        return;
+                                    }
+                                }
+                                monitorUnavailableSince = 0;
                                 screenReady = false;
                                 logEvent('screen_share_stopped', {
-                                    reason: 'persistent_monitor_unavailable'
+                                    reason: 'persistent_monitor_unavailable',
+                                    statusage: statusAge === null ? null : Math.round(statusAge / 1000),
+                                    helperready: !!(status && status.ready === true),
+                                    helperstopped: !!(status && status.stopped === true)
                                 });
                                 setScreenShareStatus(strings.screensharestopped, 'danger');
                                 clearAttemptWarning('wrongscreen');
@@ -1370,6 +1394,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             }
                         },
                         onWrongScreen: function() {
+                            monitorUnavailableSince = 0;
                             screenReady = false;
                             logEvent('screen_marker_missing', {
                                 reason: 'persistent_monitor_marker_missing',

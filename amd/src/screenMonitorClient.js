@@ -1,5 +1,8 @@
 define([], function() {
     const statusStaleMs = 20000;
+    // On page load the stored status may be whatever the throttled helper last wrote, possibly
+    // close to a minute ago. Trust it only when it is this recent; otherwise wait for a live reply.
+    const startupStatusMaxAgeMs = 5000;
     const statusPollMs = 2000;
     const screenshotPollMs = 5000;
 
@@ -27,12 +30,12 @@ define([], function() {
         }
     };
 
-    const isFresh = function(status) {
-        return status && status.ts && (Date.now() - status.ts) <= statusStaleMs;
+    const isFresh = function(status, maxAgeMs = statusStaleMs) {
+        return status && status.ts && (Date.now() - status.ts) <= maxAgeMs;
     };
 
-    const isReady = function(status) {
-        return isFresh(status) && status.ready === true && status.marker === true && status.stopped !== true;
+    const isReady = function(status, maxAgeMs = statusStaleMs) {
+        return isFresh(status, maxAgeMs) && status.ready === true && status.marker === true && status.stopped !== true;
     };
 
     const isMobileClient = function() {
@@ -210,7 +213,10 @@ define([], function() {
                         return;
                     }
 
-                    readAndHandleStoredStatus();
+                    const storedStatus = getStoredStatus(statusKey);
+                    if (isFresh(storedStatus, startupStatusMaxAgeMs)) {
+                        handleStatus(storedStatus);
+                    }
                     requestStatus();
 
                     if (statusTimer) {
@@ -241,7 +247,7 @@ define([], function() {
                     return latestScreenshot;
                 },
                 isReady: function() {
-                    return isReady(getStoredStatus(statusKey));
+                    return isReady(getStoredStatus(statusKey), startupStatusMaxAgeMs);
                 }
             };
         }

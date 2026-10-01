@@ -639,3 +639,99 @@ test('routine screenshots require explicit opt-in while existing event screensho
         assert.ok(existingEvent.screenshot.startsWith('data:image/jpeg;base64,'));
     }
 });
+
+/**
+ * Boot the attempt page in helper-window mode with a scripted screen monitor client.
+ *
+ * The fake client hands back the callbacks proctoring.js registers, so each test can feed
+ * it exactly the status sequence a throttled or stopped helper window would produce.
+ */
+async function bootWithHelper(readyAtStart) {
+    const env = createEnvironment();
+    env.deps['quizaccess_proctoring/screenMonitorClient'] = {
+        create(props, callbacks) {
+            env.monitorCallbacks = callbacks;
+            return {
+                start() {},
+                stop() {},
+                open() {},
+                requestStatus() {},
+                getLatestScreenshot() {
+                    return '';
+                },
+                isReady() {
+                    return readyAtStart;
+                },
+            };
+        },
+    };
+    const mod = loadModule(env);
+    await Promise.resolve(mod.setup(Object.assign({}, PROPS, {
+        screenmonitorurl: 'https://example.org/mod/quiz/accessrule/proctoring/screenmonitor.php',
+    }), null)).catch(() => {});
+    await flush();
+    env.stoppedEvents = () => env.loggedEvents.filter((e) => e.eventtype === 'screen_share_stopped');
+    return env;
+}
+
+const HELPER_GRACE_MS = 10000;
+
+test('an out-of-date helper status on page load does not report the share as stopped', async () => {
+    const env = await bootWithHelper(true);
+    const stale = () => ({type: 'status', ready: true, marker: true, stopped: false, ts: env.now - 30000});
+
+    env.monitorCallbacks.onUnavailable(stale());
+    env.advance(4000);
+    env.monitorCallbacks.onUnavailable(stale());
+    // The helper answers the status request: the share was fine all along.
+    env.monitorCallbacks.onReady({type: 'status', ready: true, marker: true, stopped: false, ts: env.now});
+    env.advance(HELPER_GRACE_MS - 2000);
+    env.monitorCallbacks.onUnavailable(stale());
+    await flush();
+
+    assert.strictEqual(env.stoppedEvents().length, 0,
+        'a stale read followed by a live ready reply is not a stopped share');
+});
+
+test('a fresh stopped status from the helper is reported at once with its diagnostics', async () => {
+    const env = await bootWithHelper(true);
+
+    env.monitorCallbacks.onUnavailable({type: 'status', ready: false, marker: false, stopped: true, ts: env.now - 1000});
+    await flush();
+
+    const events = env.stoppedEvents();
+    assert.strictEqual(events.length, 1, 'a real stop must not wait for the grace period');
+    assert.deepStrictEqual(JSON.parse(events[0].eventdetail), {
+        reason: 'persistent_monitor_unavailable',
+        statusage: 1,
+        helperready: false,
+        helperstopped: true,
+    });
+});
+
+test('a helper that stays silent is reported once the grace period has passed', async () => {
+    const env = await bootWithHelper(true);
+    const lastWrite = env.now - 25000;
+    const stale = () => ({type: 'status', ready: true, marker: true, stopped: false, ts: lastWrite});
+
+    for (let waited = 0; waited < HELPER_GRACE_MS; waited += 2000) {
+        env.monitorCallbacks.onUnavailable(stale());
+        env.advance(2000);
+    }
+    await flush();
+    assert.strictEqual(env.stoppedEvents().length, 0, 'nothing is reported inside the grace period');
+
+    env.monitorCallbacks.onUnavailable(stale());
+    await flush();
+    const events = env.stoppedEvents();
+    assert.strictEqual(events.length, 1);
+    const detail = JSON.parse(events[0].eventdetail);
+    assert.strictEqual(detail.statusage, 35);
+    assert.strictEqual(detail.helperready, true);
+    assert.strictEqual(detail.helperstopped, false);
+
+    env.advance(2000);
+    env.monitorCallbacks.onUnavailable(stale());
+    await flush();
+    assert.strictEqual(env.stoppedEvents().length, 1, 'the stop is reported once, not on every poll');
+});
