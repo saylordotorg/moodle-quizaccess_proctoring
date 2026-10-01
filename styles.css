@@ -2087,6 +2087,15 @@ body.quizaccess-proctoring-settings-page #admin-deleteallimages .btn-danger {
     justify-content: center;
 }
 
+/* The face crop is upload data only; on the attempt page it must not render beside the webcam. */
+.proctoring-fixed-webcam-box #cropimg {
+    display: none;
+}
+
+.proctoring-screen-marker-spacer {
+    width: min(220px, 100%);
+}
+
 .proctoring-fixed-webcam-box.is-docked {
     justify-content: center;
     width: 100%;

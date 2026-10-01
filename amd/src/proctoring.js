@@ -701,8 +701,35 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return;
                 }
 
-                const markerWidth = Math.min(220, Math.max(180, rect.width));
                 const markerHeight = markerElement.offsetHeight || 96;
+
+                // Reserve the marker's footprint in the status panel's screen slot so the docked
+                // webcam sits below it. The marker itself stays fixed and outside the panel:
+                // collapsing the quiz navigation must not hide it from the shared screen.
+                const screenSlot = getDesktopPanelSlot('screen');
+                if (screenSlot) {
+                    let spacer = screenSlot.querySelector('.proctoring-screen-marker-spacer');
+                    if (!spacer) {
+                        spacer = document.createElement('div');
+                        spacer.className = 'proctoring-screen-marker-spacer';
+                        spacer.setAttribute('aria-hidden', 'true');
+                        screenSlot.appendChild(spacer);
+                    }
+                    spacer.style.height = markerHeight + 'px';
+                    const slotRect = spacer.getBoundingClientRect();
+                    // Only follow the slot while it is fully in view; the marker must stay on screen.
+                    if (slotRect.width >= 80 && slotRect.top >= 8 &&
+                            slotRect.top + markerHeight <= window.innerHeight - 16) {
+                        markerElement.classList.add('is-panel-aligned');
+                        markerElement.style.top = slotRect.top + 'px';
+                        markerElement.style.left = slotRect.left + 'px';
+                        markerElement.style.right = 'auto';
+                        markerElement.style.width = slotRect.width + 'px';
+                        return;
+                    }
+                }
+
+                const markerWidth = Math.min(220, Math.max(180, rect.width));
                 const top = Math.min(
                     Math.max(8, rect.bottom + 12),
                     Math.max(8, window.innerHeight - markerHeight - 16)
