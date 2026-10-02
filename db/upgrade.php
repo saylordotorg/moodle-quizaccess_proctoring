@@ -1367,5 +1367,19 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026093000, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026100200) {
+        // The Student Handbook link below the honesty statement pointed at a Google Doc that
+        // students cannot open. The shipped default is now https://saylor.org/handbook, but
+        // settings.php stored the old default at install, so a changed default alone never
+        // reaches an existing site. Replace it only where the old default is still stored: an
+        // administrator who set their own URL, or cleared it to hide the link, keeps that choice.
+        $olddefault = 'https://docs.google.com/document/d/1Ol42RIGyLnoDW65vcvile3RuGDmEAJa6sgKLLxzaXdc/edit'
+            . '?tab=t.0#heading=h.5x2pojowsd48';
+        if (get_config('quizaccess_proctoring', 'honorstatementhandbookurl') === $olddefault) {
+            set_config('honorstatementhandbookurl', 'https://saylor.org/handbook', 'quizaccess_proctoring');
+        }
+        upgrade_plugin_savepoint(true, 2026100200, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

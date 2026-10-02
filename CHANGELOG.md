@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.11.1 — 2026-10-02
+- **Fixed "Select your entire screen" for every Firefox user who did share their entire screen (CPIT-456).** The screen-share check accepted a share only when the browser reported `displaySurface: 'monitor'`, and Firefox does not report `displaySurface` at all — nor any equivalent. So an entire-screen share in Firefox was always treated as a window. When the browser reports no surface, the share is now judged by its size: one at least as large as the physical screen (`screen.width` × `devicePixelRatio`, which Firefox keeps constant across page zoom, less a pixel or two of rounding; a desktop spanning several monitors is larger still) is the entire screen, and anything smaller — including a maximised window, which is short by the panel or taskbar — is still rejected. A window sized exactly to a screen with no panel cannot be told apart by size and is accepted. Browsers that do report the surface are unaffected. Applies to the screen monitor helper window, the Start attempt checklist, the in-quiz re-share prompt and the device-readiness page.
+- **The Student Handbook link below the honesty statement now goes to https://saylor.org/handbook (CPIT-459)** instead of a Google Doc students could not open. The upgrade replaces the stored URL only where it is still the old default, so a site with its own URL, or with the link cleared, keeps its choice.
+
 # v1.11.0 — 2026-09-30
 - Add a separate device-readiness page before timed attempts: local camera, microphone and whole-screen checks, a small synthetic connection check, and cached provider-reachability diagnostics without uploading student images.
 - Add bounded, memory-only evidence upload recovery and attempt reports showing received-evidence gaps and delayed uploads. Routine screen coverage is an explicit opt-in; neutral captures do not add risk points or enter AI review.
