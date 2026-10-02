@@ -141,6 +141,14 @@ Three runtime files (the `proctoring` source, build and source map) were deploye
 
 Locally, 112 JavaScript tests pass. The four new cases cover the helper frame after the switch, the fallback when no newer frame arrives, a pending event on pagehide, and mouse-edge events without screenshots. All four fail on the prior code and pass against the shipped minified build. The change has not yet been confirmed on a real attempt.
 
+## Reference image target correction — October 1, 2026
+
+Codex review of PR #29 found that `upload_image.php` stored the admin-uploaded photo and face image under the URL's user ID, but looked up and inserted the `quizaccess_proctoring_user_images` row with the submitted hidden `id`. A modified or replayed submission could leave one user's record pointing at files stored under another user's item ID. Commit `ec1ebe2` rejects a submitted `id` that differs from the page's target user and uses the target user ID for every write. PR #29 was merged to `master` as `d2ce715` after CI passed.
+
+Before installation, every file on the site was compared with `master` at `d2ce715`. Apart from line endings, `upload_image.php` was the only runtime difference. Tests, CI and planning files are not installed on the site, and the five documentation files that differ were left as they are.
+
+Only `upload_image.php` was deployed, at 23:36:18 UTC on October 1 (6:36 p.m. America/Chicago), through SSM command `664ddbc2-0464-450d-84d6-354863e383e1` (`Success`). The release version and prior hash `4bbf69ba86ef4904bf35ee1d0eb47d27f09fd7939e5c514653e4700f0ada4c7d` were verified first. The new file passed `php -l` and matched `6b43017dd2d8bdaa5ed8d43dcb9fe4e2993b18f0cbcb029483c696a7bccabdfa` before and after installation. No upgrade was needed. Caches were purged, the homepage returned **200**, and the upload page redirected an anonymous request to login (**303**). The rollback copy is at `/var/backups/moodle-proctoring/dev.sylr.org/20261001-233618-upload-image-target`. An admin upload has not yet been exercised on the site.
+
 ## Manual rollback cautions
 
 Stop or drain scheduled jobs and other writers before restoration. Restore the database snapshot and matching prior plugin code together; a code-only rollback does not reverse the schema or settings upgrade. Restoring the snapshot loses database writes made after it was taken, so assess subsequent activity first. Recover the original provider URLs and settings from the database backup, then restore the recorded maintenance and cron state and verify the site. The dedicated dev Lambda and the unchanged shared Lambda must remain clearly distinguished.
