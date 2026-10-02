@@ -64,6 +64,53 @@ define(['core/ajax'], function(Ajax) {
     };
 
     /**
+     * Average brightness and contrast of the current preview frame, on a small sample.
+     *
+     * @param {HTMLVideoElement} preview Playing preview element.
+     * @returns {Object|null} {brightness, contrast} from 0-255, or null when it cannot be measured.
+     */
+    const measurePreviewFrame = function(preview) {
+        if (typeof document === 'undefined' || !preview.videoWidth || !preview.videoHeight) {
+            return null;
+        }
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = Math.max(1, Math.round(64 * preview.videoHeight / preview.videoWidth));
+            const context = canvas.getContext('2d');
+            context.drawImage(preview, 0, 0, canvas.width, canvas.height);
+            const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+            let sum = 0;
+            let sumsq = 0;
+            const count = data.length / 4;
+            for (let index = 0; index < data.length; index += 4) {
+                const luminance = (0.2126 * data[index]) + (0.7152 * data[index + 1]) + (0.0722 * data[index + 2]);
+                sum += luminance;
+                sumsq += luminance * luminance;
+            }
+            const brightness = sum / count;
+            return {brightness: brightness, contrast: Math.sqrt(Math.max(0, (sumsq / count) - (brightness * brightness)))};
+        } catch (error) {
+            return null;
+        }
+    };
+
+    /**
+     * Whether a measured frame is the near-uniform black of a blocked camera.
+     *
+     * A camera that is on but blocked - a privacy shutter or camera-off key, the operating
+     * system's camera privacy setting, or another app holding the device - still delivers
+     * frames, so "frames arrived" alone reports it as working. Those frames are almost
+     * perfectly black and flat; a dim room is neither.
+     *
+     * @param {Object|null} frame Measurement from measurePreviewFrame.
+     * @returns {boolean} True when the frame is black.
+     */
+    const isDarkFrame = function(frame) {
+        return !!frame && frame.brightness < 12 && frame.contrast < 6;
+    };
+
+    /**
      * Own test streams independently of the quiz's actual preflight/monitoring streams.
      * The onStream callback attaches and returns a video preview for camera/screen tests.
      *
@@ -136,6 +183,36 @@ define(['core/ajax'], function(Ajax) {
                     finish('previewfailed');
                 }
             });
+        };
+        /**
+         * Sample the camera preview until a frame is not black, or give up.
+         *
+         * Cameras commonly open on a few black frames while exposure settles, so one black
+         * frame proves nothing; only a feed that stays black for the whole window fails.
+         *
+         * @param {HTMLVideoElement} preview Playing preview element.
+         * @param {number} token Generation that started this test.
+         * @returns {Promise<boolean>} True when every frame was black; false when one was not or none could be measured.
+         */
+        const cameraStaysDark = async function(preview, token) {
+            const measure = options.measureFrame || measurePreviewFrame;
+            const deadline = Date.now() + (options.darkFrameWindow === undefined ? 3000 : options.darkFrameWindow);
+            for (;;) {
+                if (disposed || token !== generation) {
+                    return false;
+                }
+                // A frame that cannot be read (no canvas, a tainted source) proves nothing either way.
+                const frame = measure(preview);
+                if (!frame || !isDarkFrame(frame)) {
+                    return false;
+                }
+                if (Date.now() >= deadline) {
+                    return true;
+                }
+                await new Promise(function(resolve) {
+                    setTimeout(resolve, 250);
+                });
+            }
         };
         return {
             stop: stop,
@@ -233,6 +310,17 @@ define(['core/ajax'], function(Ajax) {
                             options.onStatus(kind, previewStatus);
                             return;
                         }
+                    }
+                    if (kind === 'camera' && await cameraStaysDark(preview, token)) {
+                        if (disposed || token !== generation) {
+                            return;
+                        }
+                        stop();
+                        options.onStatus(kind, 'cameradark');
+                        return;
+                    }
+                    if (disposed || token !== generation) {
+                        return;
                     }
                     options.onStatus(kind, 'passed');
                     autoStop = setTimeout(stop, options.previewDuration || 8000);

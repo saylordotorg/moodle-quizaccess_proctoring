@@ -54,6 +54,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'devicenotice:handheld', component: 'quizaccess_proctoring'},
                 {key: 'devicenotice:nocamera', component: 'quizaccess_proctoring'},
                 {key: 'preflight:servererrors', component: 'quizaccess_proctoring'},
+                {key: 'cameradark', component: 'quizaccess_proctoring'},
+                {key: 'referencereset', component: 'quizaccess_proctoring'},
+                {key: 'referenceunusable', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -102,6 +105,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     devicenoticehandheld: strings[41],
                     devicenoticenocamera: strings[42],
                     preflightservererrors: strings[43],
+                    cameradark: strings[44],
+                    referencereset: strings[45],
+                    referenceunusable: strings[46],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -173,6 +179,18 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 contrast: Math.sqrt(variance),
                 sharpness: edgecount > 0 ? edgedelta / edgecount : 0,
             };
+        };
+
+        // A camera that is on but blocked - a privacy shutter or camera-off key, the operating
+        // system's camera privacy setting, or another app holding the device - still delivers
+        // frames, and they are almost perfectly black and flat. That is not a face problem:
+        // telling the student to centre their face and find better light sends them the wrong way.
+        const isDarkFrame = function(canvas) {
+            if (!canvas.width || !canvas.height) {
+                return false;
+            }
+            const quality = getImageQuality(canvas, {x: 0, y: 0, width: canvas.width, height: canvas.height});
+            return quality.brightness < 12 && quality.contrast < 6;
         };
 
         const getCaptureSharpness = function(canvas) {
@@ -1777,6 +1795,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         setFaceValidationAction(strings.facequalityfailed);
                         return false;
                     }
+                    if (status === 'referencereset') {
+                        setFaceValidationAction(strings.referencereset);
+                        return false;
+                    }
+                    if (status === 'referenceunusable') {
+                        setFaceValidationAction(strings.referenceunusable);
+                        return false;
+                    }
 
                     setFaceValidationAction(strings.facenotmatched);
                     return false;
@@ -2412,6 +2438,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     canvas.width = captureSize.width;
                     canvas.height = captureSize.height;
                     context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    if (isDarkFrame(canvas)) {
+                        failIdentity(strings.cameradark);
+                        return;
+                    }
                     const liveImage = canvas.toDataURL('image/png');
 
                     let liveFaceFound = 0;
@@ -2908,6 +2938,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     context.drawImage(video, 0, 0, canvas.width, canvas.height);
                     var data = canvas.toDataURL('image/png');
                     photo.setAttribute('src', data);
+                    if (isDarkFrame(canvas)) {
+                        setFaceValidationAction(strings.cameradark);
+                        return;
+                    }
 
                     // Getting the face image from screenshot.
                     let croppedImage = document.getElementById('validate-cropimg');

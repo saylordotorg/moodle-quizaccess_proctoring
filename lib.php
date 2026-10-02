@@ -50,6 +50,9 @@ defined('QUIZACCESS_PROCTORING_AI_REVIEW_FAILED') ||
     define('QUIZACCESS_PROCTORING_AI_REVIEW_FAILED', 3);
 defined('QUIZACCESS_PROCTORING_CAP_ADMIN_SETTINGS') ||
     define('QUIZACCESS_PROCTORING_CAP_ADMIN_SETTINGS', 'quizaccess/proctoring:manageadminsettings');
+// Face match awsflag: the provider found no face in the student's reference image.
+defined('QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE') ||
+    define('QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE', 4);
 
 $token = "";
 
@@ -541,7 +544,7 @@ function quizaccess_proctoring_get_image_file($userid) {
  *
  * @param int $rowid The report ID (`rowid`) of the record to be updated.
  * @param string $matchresult The similarity score, which will be converted to an integer.
- * @param int $awsflag Flag indicating the status of the analyzed images (1/2/3).
+ * @param int $awsflag Flag indicating the status of the analyzed images (1/2/3/4/101).
  *
  * @return void This function does not return any value.
  */
@@ -572,6 +575,8 @@ function quizaccess_proctoring_get_face_match_status_label(int $awsflag, int $aw
             return get_string('facematchstatus:score', 'quizaccess_proctoring', max(0, min(100, $awsscore)));
         case 3:
             return get_string('facematchstatus:noface', 'quizaccess_proctoring');
+        case QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE:
+            return get_string('facematchstatus:referenceunusable', 'quizaccess_proctoring');
         case 101:
             return get_string('facematchstatus:apierror', 'quizaccess_proctoring');
         case 1:
@@ -594,7 +599,7 @@ function quizaccess_proctoring_get_face_match_status_class(int $awsflag, int $aw
     if ($awsflag === 2) {
         return $awsscore >= $threshold ? 'badge badge-success' : 'badge badge-danger';
     }
-    if ($awsflag === 3) {
+    if ($awsflag === 3 || $awsflag === QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE) {
         return 'badge badge-warning';
     }
     if ($awsflag === 101) {
@@ -4239,6 +4244,14 @@ function quizaccess_proctoring_extracted(
             );
         }
         quizaccess_proctoring_update_match_result($reportid, 0, 101);
+        return;
+    }
+
+    // The service found no face in the reference image itself. No capture of anyone could
+    // match it, so this is recorded as its own outcome rather than as a mismatch, and never
+    // logged as a face-mismatch warning against the student.
+    if (isset($response->reason) && $response->reason === 'reference_no_face') {
+        quizaccess_proctoring_update_match_result($reportid, 0, QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE);
         return;
     }
 

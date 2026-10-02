@@ -15,6 +15,7 @@ with mock.patch.dict(os.environ, {"FACE_API_KEY": "test-secret"}), mock.patch("b
 class LambdaSecurityTests(unittest.TestCase):
     def setUp(self):
         service.rekognition.reset_mock()
+        service.rekognition.compare_faces.side_effect = None
         service.rekognition.compare_faces.return_value = {"FaceMatches": [{"Similarity": 95}]}
 
     def request(self, payload, path="/verify-face", key="test-secret"):
@@ -89,6 +90,32 @@ class LambdaSecurityTests(unittest.TestCase):
         self.assertEqual(200, result["statusCode"])
         self.assertTrue(json.loads(result["body"])["match"])
         service.rekognition.compare_faces.assert_called_once()
+
+    def no_face_error(self):
+        return service.ClientError({"Error": {"Code": "InvalidParameterException"}}, "CompareFaces")
+
+    def test_reference_without_a_face_is_reported_distinctly(self):
+        # Both the real comparison and the reference self-check find no face.
+        service.rekognition.compare_faces.side_effect = self.no_face_error()
+        result = self.request({"reference_image": "YWJj", "current_snap": "ZGVm"})
+        body = json.loads(result["body"])
+        self.assertEqual(200, result["statusCode"])
+        self.assertFalse(body["match"])
+        self.assertEqual("reference_no_face", body["reason"])
+        self_check = service.rekognition.compare_faces.call_args_list[1].kwargs
+        self.assertEqual(self_check["SourceImage"], self_check["TargetImage"])
+
+    def test_missing_face_in_live_image_is_still_a_plain_mismatch(self):
+        service.rekognition.compare_faces.side_effect = [self.no_face_error(), {"FaceMatches": [{"Similarity": 100}]}]
+        body = json.loads(self.request({"reference_image": "YWJj", "current_snap": "ZGVm"})["body"])
+        self.assertFalse(body["match"])
+        self.assertNotIn("reason", body)
+
+    def test_reference_self_check_outage_never_retires_the_reference(self):
+        outage = service.ClientError({"Error": {"Code": "ThrottlingException"}}, "CompareFaces")
+        service.rekognition.compare_faces.side_effect = [self.no_face_error(), outage]
+        body = json.loads(self.request({"reference_image": "YWJj", "current_snap": "ZGVm"})["body"])
+        self.assertNotIn("reason", body)
 
     def test_base64_lambda_event_body_is_supported(self):
         body = base64.b64encode(json.dumps({"reference_image": "YWJj", "current_snap": "YWJj"}).encode()).decode()

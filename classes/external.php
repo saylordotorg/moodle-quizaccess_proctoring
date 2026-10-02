@@ -990,6 +990,13 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         $currentdata = $DB->get_record('quizaccess_proctoring_logs', ['id' => $screenshotid]);
+        if ((int)$currentdata->awsflag === QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE) {
+            return [
+                'screenshotid' => $screenshotid,
+                'status' => self::retire_unusable_reference((int)$USER->id) ? 'referencereset' : 'referenceunusable',
+                'warnings' => $warnings,
+            ];
+        }
         $awsscore = $currentdata->awsscore;
         $threshhold = (int)quizaccess_proctoring_get_proctoring_settings('threshold');
 
@@ -2373,6 +2380,36 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         return $parentid;
+    }
+
+    /**
+     * Retires a self-registered reference image that the face-match provider found no face in.
+     *
+     * Such a reference identifies nobody - no capture of anyone could match it - so retiring it
+     * loses nothing, and the student's next capture registers a new one under exactly the checks
+     * a first-time registration gets. The provider makes the call, never the browser. Only
+     * self-registered references are retired: a staff upload carries its draft id and stays
+     * until staff replace it.
+     *
+     * @param int $userid Student whose reference image to retire.
+     * @return bool True when the reference was retired.
+     */
+    private static function retire_unusable_reference(int $userid): bool {
+        global $DB;
+
+        if (!get_config('quizaccess_proctoring', 'replaceunusablereference')) {
+            return false;
+        }
+        $record = $DB->get_record('quizaccess_proctoring_user_images', ['user_id' => $userid]);
+        if (!$record || (int)$record->photo_draft_id !== 0) {
+            return false;
+        }
+
+        $imagefile = quizaccess_proctoring_get_image_file($userid);
+        if ($imagefile) {
+            $imagefile->delete();
+        }
+        return !$DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $userid]);
     }
 
     /**
