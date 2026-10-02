@@ -94,6 +94,39 @@ test('screen test rejects a selected window and releases the stream', async () =
     env.controller.dispose();
 });
 
+// Firefox reports no displaySurface at all, only the captured size (CPIT-456).
+function firefoxScreen(width, height) {
+    const screen = stream('screen');
+    screen.track.getSettings = () => ({width, height});
+    return screen;
+}
+const firefoxWindow = {screen: {width: 1280, height: 720}, devicePixelRatio: 1.5};
+
+test('Firefox entire-screen share is accepted from its size when no surface is reported', async () => {
+    const screen = firefoxScreen(1920, 1080);
+    const env = setup({getDisplayMedia() { return Promise.resolve(screen); }}, {}, {window: firefoxWindow});
+    await env.controller.run('screen');
+    assert.deepEqual(env.statuses.at(-1), ['screen', 'passed']);
+    env.controller.dispose();
+});
+
+test('Firefox window share smaller than the screen is still rejected', async () => {
+    const screen = firefoxScreen(1920, 1040);
+    const env = setup({getDisplayMedia() { return Promise.resolve(screen); }}, {}, {window: firefoxWindow});
+    await env.controller.run('screen');
+    assert.deepEqual(env.statuses.at(-1), ['screen', 'wrongscreen']);
+    assert.equal(screen.track.stopped, 1);
+    env.controller.dispose();
+});
+
+test('screen share with neither a surface nor a size is reported as unconfirmed', async () => {
+    const screen = firefoxScreen(undefined, undefined);
+    const env = setup({getDisplayMedia() { return Promise.resolve(screen); }}, {}, {window: firefoxWindow});
+    await env.controller.run('screen');
+    assert.deepEqual(env.statuses.at(-1), ['screen', 'screenunknown']);
+    env.controller.dispose();
+});
+
 test('microphone test uses audio only and preview stops automatically', async () => {
     const mic = stream('microphone');
     let constraints;

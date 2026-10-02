@@ -1111,6 +1111,34 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }, delay || 2500);
             };
 
+            /**
+             * Report which surface a screen share captured.
+             *
+             * Firefox reports neither displaySurface nor any equivalent in the track settings, so an
+             * entire-screen share there would otherwise always look like a window. When the browser is
+             * silent, a share at least as large as the physical screen is taken to be the entire screen
+             * (a multi-monitor desktop is larger still); anything smaller is a window. A maximised window
+             * still loses the panel or taskbar, which is well outside the 2% allowed for rounding.
+             *
+             * @param {MediaStreamTrack} track The shared video track.
+             * @returns {string} 'monitor', 'window', 'browser', or '' when it cannot be told.
+             */
+            const sharedDisplaySurface = function(track) {
+                const settings = track && track.getSettings ? track.getSettings() : {};
+                if (settings.displaySurface) {
+                    return settings.displaySurface;
+                }
+                const view = typeof window === 'undefined' ? {} : window;
+                const screenSize = view.screen || {};
+                const ratio = view.devicePixelRatio || 1;
+                if (!settings.width || !settings.height || !screenSize.width || !screenSize.height) {
+                    return '';
+                }
+                const coversScreen = settings.width >= Math.floor(screenSize.width * ratio * 0.98) &&
+                    settings.height >= Math.floor(screenSize.height * ratio * 0.98);
+                return coversScreen ? 'monitor' : 'window';
+            };
+
             const stopScreenStream = function() {
                 screenShareGeneration++;
                 if (markerCheckTimer) {
@@ -1251,8 +1279,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }
 
                 const videoTrack = screenStream.getVideoTracks()[0];
-                const settings = videoTrack && videoTrack.getSettings ? videoTrack.getSettings() : {};
-                if (!videoTrack || settings.displaySurface !== 'monitor') {
+                if (!videoTrack || sharedDisplaySurface(videoTrack) !== 'monitor') {
                     stopScreenStream();
                     setScreenShareStatus(strings.entirescreenrequired, 'danger');
                     return;

@@ -267,7 +267,7 @@ $string['honorstatement:agreementdefault'] = 'I have read and agree to the above
 $string['honorstatement:default'] = 'I affirm that this attempt will be entirely my own work. I will not use notes, books, websites, AI assistants, or help from another person unless the instructions for this exam explicitly allow them. I will not copy, photograph, record, or share any exam question or my answers. I understand that this attempt is proctored and that a confirmed integrity violation may result in a failing grade or the loss of certificate eligibility.';
 $string['honorstatement:handbooklink'] = 'Read the {$a} for the full academic integrity policy.';
 $string['honorstatement:handbooklinktext'] = 'Student Handbook';
-$string['honorstatement:handbookurldefault'] = 'https://docs.google.com/document/d/1Ol42RIGyLnoDW65vcvile3RuGDmEAJa6sgKLLxzaXdc/edit?tab=t.0#heading=h.5x2pojowsd48';
+$string['honorstatement:handbookurldefault'] = 'https://saylor.org/handbook';
 $string['honorstatement:heading'] = 'Please read the following message';
 $string['idexemption:allexamslink'] = 'See pending requests for every exam';
 $string['idexemption:altlabel'] = 'What documentation can you provide instead? (optional)';
