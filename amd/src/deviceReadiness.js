@@ -27,8 +27,10 @@ define(['core/ajax'], function(Ajax) {
      * Firefox reports neither displaySurface nor any equivalent in the track settings, so an
      * entire-screen share there would otherwise always look like a window. When the browser is
      * silent, a share at least as large as the physical screen is taken to be the entire screen
-     * (a multi-monitor desktop is larger still); anything smaller is a window. A maximised window
-     * still loses the panel or taskbar, which is well outside the 2% allowed for rounding.
+     * (a multi-monitor desktop is larger still); anything smaller is a window. Firefox applies page
+     * zoom to both screen.width (down) and devicePixelRatio (up), so their product is the physical
+     * size at any zoom. A window sized exactly to the screen with no panel at all is
+     * indistinguishable by size, and is accepted.
      *
      * @param {MediaStreamTrack} track The shared video track.
      * @returns {string} 'monitor', 'window', 'browser', or '' when it cannot be told.
@@ -44,8 +46,12 @@ define(['core/ajax'], function(Ajax) {
         if (!settings.width || !settings.height || !screenSize.width || !screenSize.height) {
             return '';
         }
-        const coversScreen = settings.width >= Math.floor(screenSize.width * ratio * 0.98) &&
-            settings.height >= Math.floor(screenSize.height * ratio * 0.98);
+        // screen.width is in CSS pixels, rounded, so the physical size it implies can be off by
+        // about a pixel per unit of devicePixelRatio. Allow only that much: a maximised window
+        // is short by the panel or taskbar, often only 20-40 pixels, and must not pass.
+        const slack = Math.ceil(ratio) + 1;
+        const coversScreen = settings.width >= Math.round(screenSize.width * ratio) - slack &&
+            settings.height >= Math.round(screenSize.height * ratio) - slack;
         return coversScreen ? 'monitor' : 'window';
     };
 

@@ -119,6 +119,29 @@ test('Firefox window share smaller than the screen is still rejected', async () 
     env.controller.dispose();
 });
 
+// Firefox page zoom shrinks screen.width and grows devicePixelRatio together: a 1920x1080
+// display at 125% zoom reports 1536x864 at 1.25, and the share is still 1920x1080.
+test('Firefox entire-screen share is accepted at non-default page zoom', async () => {
+    for (const [width, height, ratio] of [[1536, 864, 1.25], [1745, 982, 1.1], [2133, 1200, 0.9]]) {
+        const screen = firefoxScreen(1920, 1080);
+        const env = setup({getDisplayMedia() { return Promise.resolve(screen); }}, {},
+            {window: {screen: {width, height}, devicePixelRatio: ratio}});
+        await env.controller.run('screen');
+        assert.deepEqual(env.statuses.at(-1), ['screen', 'passed'], `zoom ${ratio}`);
+        env.controller.dispose();
+    }
+});
+
+test('Firefox maximised window short by only a thin panel is rejected', async () => {
+    const screen = firefoxScreen(1920, 1060);
+    const env = setup({getDisplayMedia() { return Promise.resolve(screen); }}, {},
+        {window: {screen: {width: 1920, height: 1080}, devicePixelRatio: 1}});
+    await env.controller.run('screen');
+    assert.deepEqual(env.statuses.at(-1), ['screen', 'wrongscreen']);
+    assert.equal(screen.track.stopped, 1);
+    env.controller.dispose();
+});
+
 test('screen share with neither a surface nor a size is reported as unconfirmed', async () => {
     const screen = firefoxScreen(undefined, undefined);
     const env = setup({getDisplayMedia() { return Promise.resolve(screen); }}, {}, {window: firefoxWindow});
