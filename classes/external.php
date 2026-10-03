@@ -2397,8 +2397,10 @@ class quizaccess_proctoring_external extends external_api {
      * overlap - one may already have retired that photo and the student registered a new one by
      * the time a slower check returns - so nothing is retired unless the stored reference is
      * still that same file, and the deletes are bound to what was checked: that file object and
-     * the rows by id. A replacement saved at any point in between has a new file and new rows,
-     * so none of these deletes can reach it, without needing a lock.
+     * the rows by id. A replacement the student registers in between has a new file and new rows,
+     * so none of these deletes can reach it. A staff upload in between instead updates the same
+     * row in place, so the row is deleted only while it is still self-registered, in a single
+     * conditional delete, and nothing else is touched if it survives.
      *
      * @param int $userid Student whose reference image to retire.
      * @param string $checkedurl Pluginfile URL of the reference the provider found no face in.
@@ -2421,12 +2423,16 @@ class quizaccess_proctoring_external extends external_api {
             return false;
         }
 
+        $DB->delete_records('quizaccess_proctoring_user_images', ['id' => $record->id, 'photo_draft_id' => 0]);
+        if ($DB->record_exists('quizaccess_proctoring_user_images', ['id' => $record->id])) {
+            return false;
+        }
+
         $faceconditions = ['parentid' => $record->id, 'parent_type' => 'admin_image'];
         foreach ($DB->get_records('quizaccess_proctoring_face_images', $faceconditions) as $face) {
             quizaccess_proctoring_delete_pluginfile_url((string)$face->faceimage);
         }
         $DB->delete_records('quizaccess_proctoring_face_images', $faceconditions);
-        $DB->delete_records('quizaccess_proctoring_user_images', ['id' => $record->id]);
         $checked->delete();
         return true;
     }
