@@ -202,6 +202,7 @@ final class sis_export {
         $idv = self::id_verifications($rows);
         $holds = self::hold_states($attemptids);
         $ai = self::ai_reviews($attemptids);
+        $overrides = self::override_states($rows);
 
         // The same scoring call the overall report makes, so both read the same number.
         $requests = [];
@@ -281,8 +282,7 @@ final class sis_export {
                 'reviewed' => $signoff !== null,
                 'reviewed_at' => $signoff === null ? 0 : (int)$signoff->timecreated,
                 'review_current' => $signoff !== null && attempt_review::is_current($signoff, $lastactivity),
-                'overrides' => self::override_states((int)$r->courseid, (int)$r->quizid, (int)$r->userid,
-                    (int)$r->timestart),
+                'overrides' => $overrides[$attemptid] ?? [],
                 'last_activity' => $lastactivity,
                 'report_url' => $reporturl,
             ];
@@ -400,29 +400,33 @@ final class sis_export {
             $out[(int)$rec->attemptid] = self::idv_wire($rec, (string)$rec->status);
         }
 
-        // Attempts with no row of their own: look for an earlier pass on the same quiz.
-        foreach ($byid as $attemptid => $row) {
-            if (isset($out[$attemptid])) {
-                continue;
-            }
+        // Attempts with no row of their own: the latest pass on the same quiz recorded no later than
+        // the attempt STARTED. A check made after the start - for a later attempt, say - cannot have
+        // governed this one. One query for the whole page, matched back per attempt in PHP.
+        $missing = array_filter($byid, function ($row) use ($out) {
+            return !isset($out[(int)$row->attemptid]);
+        });
+        if (!empty($missing)) {
+            [$usersql, $userparams] = $DB->get_in_or_equal(
+                array_values(array_unique(array_map(fn($r) => (int)$r->userid, $missing))), SQL_PARAMS_NAMED, 'idvu');
+            [$cmsql, $cmparams] = $DB->get_in_or_equal(
+                array_values(array_unique(array_map(fn($r) => (int)$r->cmid, $missing))), SQL_PARAMS_NAMED, 'idvc');
             $passes = $DB->get_records_select(
                 'quizaccess_proctoring_idv',
-                'courseid = :courseid AND quizid = :cmid AND userid = :userid AND status = :status
-                    AND timecreated <= :before',
-                [
-                    'courseid' => (int)$row->courseid,
-                    'cmid' => (int)$row->cmid,
-                    'userid' => (int)$row->userid,
-                    'status' => 'pass',
-                    'before' => max((int)$row->timestart, (int)$row->timemodified),
-                ],
+                "userid {$usersql} AND quizid {$cmsql} AND status = :status",
+                $userparams + $cmparams + ['status' => 'pass'],
                 'timecreated DESC, id DESC',
-                'id, status, facescore, namescore, verifiedat, timecreated',
-                0,
-                1
+                'id, courseid, quizid, userid, status, facescore, namescore, verifiedat, timecreated'
             );
-            if ($passes) {
-                $out[$attemptid] = self::idv_wire(reset($passes), 'reused_pass');
+            foreach ($missing as $attemptid => $row) {
+                $start = self::attempt_start($row);
+                foreach ($passes as $pass) {
+                    if ((int)$pass->courseid === (int)$row->courseid && (int)$pass->quizid === (int)$row->cmid
+                            && (int)$pass->userid === (int)$row->userid && (int)$pass->timecreated <= $start) {
+                        $out[$attemptid] = self::idv_wire($pass, 'reused_pass');
+                        break;
+                    }
+                }
             }
         }
         return $out;
@@ -507,32 +511,88 @@ final class sis_export {
     }
 
     /**
-     * Which requirements a per-student override changed for this attempt, as "requirement:on|off".
+     * Which requirements a per-student override changed for each attempt, as "requirement:on|off".
      *
-     * Only the winning, non-inherit state per requirement, resolved at the attempt's start exactly as
-     * the attempt itself resolved it. Never the justification, which can hold accommodation details.
+     * AS OF THE ATTEMPT'S START, not as of now: an override counts when it was created no later than
+     * the start, had not expired by then, and was either never revoked or revoked after the start. So
+     * a waiver granted afterwards is not read back onto an earlier attempt, and one revoked afterwards
+     * still shows on the attempt it covered. The winner per requirement is chosen with the resolver's
+     * own ordering and pick_winner(), as the attempt itself chose it. Limitation: an override whose
+     * states were EDITED after the start is read with its current states (edits are only in the audit
+     * table).
      *
-     * @param int $courseid Course id.
-     * @param int $quizid Quiz instance id.
-     * @param int $userid Student id.
-     * @param int $timestart Attempt start.
-     * @return string[]
+     * One query for the page. Only states cross; never the justification, which can describe an
+     * accommodation.
+     *
+     * @param array $rows Attempt rows.
+     * @return array attemptid => string[]
      */
-    private static function override_states(int $courseid, int $quizid, int $userid, int $timestart): array {
-        $overrides = override_resolver::applicable_overrides($courseid, $quizid, $userid, $timestart ?: time());
-        if (empty($overrides)) {
-            return [];
-        }
+    private static function override_states(array $rows): array {
+        global $DB;
+
+        $byid = self::rows_by_id($rows);
+        [$usersql, $userparams] = $DB->get_in_or_equal(
+            array_values(array_unique(array_map(fn($r) => (int)$r->userid, $byid))), SQL_PARAMS_NAMED, 'ovu');
+        [$coursesql, $courseparams] = $DB->get_in_or_equal(
+            array_values(array_unique(array_map(fn($r) => (int)$r->courseid, $byid))), SQL_PARAMS_NAMED, 'ovc');
+        $columns = implode(', ', array_values(override_resolver::STATE_COLUMNS));
+        $records = $DB->get_records_select(
+            'quizaccess_proctoring_overrides',
+            "userid {$usersql} AND courseid {$coursesql}",
+            $userparams + $courseparams,
+            '',
+            "id, courseid, quizid, userid, expiry, revoked, timerevoked, timecreated, {$columns}"
+        );
+
         $out = [];
-        foreach (override_resolver::requirement_keys() as $requirement) {
-            $state = override_resolver::pick_winner($overrides, $requirement);
-            if ($state === override_resolver::STATE_ENABLED) {
-                $out[] = $requirement . ':on';
-            } else if ($state === override_resolver::STATE_DISABLED) {
-                $out[] = $requirement . ':off';
+        foreach ($byid as $attemptid => $row) {
+            $start = self::attempt_start($row);
+            $applicable = array_values(array_filter($records, function ($o) use ($row, $start) {
+                return (int)$o->userid === (int)$row->userid
+                    && (int)$o->courseid === (int)$row->courseid
+                    && ((int)$o->quizid === 0 || (int)$o->quizid === (int)$row->quizid)
+                    && (int)$o->timecreated <= $start
+                    && ($o->expiry === null || (int)$o->expiry > $start)
+                    && ((int)$o->revoked === 0 || ((int)$o->timerevoked > 0 && (int)$o->timerevoked > $start));
+            }));
+            if (empty($applicable)) {
+                $out[$attemptid] = [];
+                continue;
             }
+            // The resolver's tie-break: quiz-scoped first, then newest, then highest id.
+            usort($applicable, static function ($a, $b) {
+                $aspecific = ((int)$a->quizid !== 0) ? 1 : 0;
+                $bspecific = ((int)$b->quizid !== 0) ? 1 : 0;
+                if ($aspecific !== $bspecific) {
+                    return $bspecific <=> $aspecific;
+                }
+                if ((int)$a->timecreated !== (int)$b->timecreated) {
+                    return (int)$b->timecreated <=> (int)$a->timecreated;
+                }
+                return (int)$b->id <=> (int)$a->id;
+            });
+            $states = [];
+            foreach (override_resolver::requirement_keys() as $requirement) {
+                $state = override_resolver::pick_winner($applicable, $requirement);
+                if ($state === override_resolver::STATE_ENABLED) {
+                    $states[] = $requirement . ':on';
+                } else if ($state === override_resolver::STATE_DISABLED) {
+                    $states[] = $requirement . ':off';
+                }
+            }
+            $out[$attemptid] = $states;
         }
         return $out;
+    }
+
+    /**
+     * When the attempt started, falling back to its last change for a row with no start recorded.
+     *
+     * @param \stdClass $row Attempt row.
+     * @return int
+     */
+    private static function attempt_start(\stdClass $row): int {
+        return (int)$row->timestart > 0 ? (int)$row->timestart : (int)$row->timemodified;
     }
 
     /**

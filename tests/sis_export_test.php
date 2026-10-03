@@ -245,6 +245,81 @@ final class sis_export_test extends advanced_testcase {
         $this->assertSame($now - 6800, $rows[$second]['idv_verified_at']);
     }
 
+    public function test_a_pass_recorded_after_the_attempt_started_is_not_reused(): void {
+        global $DB;
+        set_config('sisexportenabled', 1, 'quizaccess_proctoring');
+        $now = time();
+        // Attempt 1 runs from now-5000 to now-100; a pass recorded mid-way, for some later attempt,
+        // cannot have governed it.
+        $first = $this->attempt($this->quiz, 1, $now - 100);
+        $DB->set_field('quiz_attempts', 'timestart', $now - 5000, ['id' => $first]);
+        $DB->insert_record('quizaccess_proctoring_idv', (object)[
+            'courseid' => $this->course->id, 'quizid' => $this->cm->id, 'userid' => $this->student->id,
+            'attemptid' => 0, 'status' => 'pass', 'facescore' => 91, 'namescore' => 100,
+            'timecreated' => $now - 3000, 'timemodified' => $now - 3000, 'verifiedat' => $now - 3000,
+            'profilehash' => str_repeat('a', 64), 'policyhash' => str_repeat('b', 64),
+        ]);
+
+        $row = $this->call()['attempts'][0];
+        $this->assertSame('none', $row['idv_status']);
+        // No ID check means null scores, and the declared shape accepts them.
+        $this->assertNull($row['idv_face_score']);
+        $this->assertNull($row['idv_name_score']);
+    }
+
+    public function test_overrides_are_read_as_they_stood_when_the_attempt_started(): void {
+        global $DB;
+        set_config('sisexportenabled', 1, 'quizaccess_proctoring');
+        $now = time();
+        $attemptid = $this->attempt($this->quiz, 1, $now - 100);
+        $start = $now - 1900;
+        $override = function (array $over) use ($DB) {
+            $DB->insert_record('quizaccess_proctoring_overrides', (object)($over + [
+                'courseid' => $this->course->id, 'quizid' => 0, 'userid' => $this->student->id,
+                'captchastate' => -1, 'webcamstate' => -1, 'idverificationstate' => -1, 'screensharestate' => -1,
+                'multimonitorstate' => -1, 'phonedetectionstate' => -1, 'justification' => 'x',
+                'expiry' => null, 'revoked' => 0, 'timerevoked' => 0, 'grantedby' => 2,
+            ]));
+        };
+        // Active at the start, revoked afterwards: it covered this attempt.
+        $override(['webcamstate' => 0, 'timecreated' => $start - 500, 'timemodified' => $start - 500,
+            'revoked' => 1, 'timerevoked' => $start + 60]);
+        // Granted after the start: it did not.
+        $override(['captchastate' => 0, 'timecreated' => $start + 30, 'timemodified' => $start + 30]);
+        // Revoked before the start: it did not.
+        $override(['screensharestate' => 0, 'timecreated' => $start - 900, 'timemodified' => $start - 900,
+            'revoked' => 1, 'timerevoked' => $start - 10]);
+        // Expired before the start: it did not.
+        $override(['multimonitorstate' => 0, 'timecreated' => $start - 900, 'timemodified' => $start - 900,
+            'expiry' => $start - 1]);
+
+        $rows = array_column($this->call()['attempts'], null, 'attemptid');
+        $this->assertSame(['webcam:off'], $rows[$attemptid]['overrides']);
+    }
+
+    public function test_a_full_page_costs_a_bounded_number_of_queries(): void {
+        global $DB;
+        set_config('sisexportenabled', 1, 'quizaccess_proctoring');
+        $now = time();
+        $this->attempt($this->quiz, 1, $now - 500);
+        $this->setUser($this->sisuser);
+        get_attempt_summaries::execute(0, 0, 200);
+        $small = $DB->perf_get_reads();
+        get_attempt_summaries::execute(0, 0, 200);
+        $one = $DB->perf_get_reads() - $small;
+
+        for ($i = 2; $i <= 40; $i++) {
+            $this->attempt($this->quiz, $i, $now - 500 + $i);
+        }
+        $before = $DB->perf_get_reads();
+        $result = get_attempt_summaries::execute(0, 0, 200);
+        $forty = $DB->perf_get_reads() - $before;
+
+        $this->assertCount(40, $result['attempts']);
+        // Grouped queries, not one per attempt: forty attempts may not cost forty times one.
+        $this->assertLessThan($one + 40, $forty, "1 attempt cost {$one} reads, 40 cost {$forty}");
+    }
+
     public function test_pages_on_the_keyset_without_gaps_or_repeats(): void {
         set_config('sisexportenabled', 1, 'quizaccess_proctoring');
         $now = time();
