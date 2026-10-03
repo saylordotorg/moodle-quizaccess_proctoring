@@ -146,6 +146,29 @@ final class external_security_audit_test extends \advanced_testcase {
     }
 
     /**
+     * A late verdict about an already-replaced photo cannot retire the new one (overlapping checks).
+     */
+    public function test_stale_no_face_verdict_cannot_retire_a_replacement_reference(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        [$course, $cm, $user] = $this->create_fixture();
+        $image = $this->register_reference($course, $cm);
+        $oldurl = \quizaccess_proctoring_get_image_url($user->id);
+
+        // Check A finds no face and retires the photo; the student registers a replacement.
+        $this->assertSame('referencereset',
+            $this->validate_with_provider($course, $cm, $image, ['match' => false, 'reason' => 'reference_no_face'])['status']);
+        $again = \quizaccess_proctoring_external::validate_face($course->id, $cm->id, '', $image, 'camshot_image', $image, 1);
+        $this->assertSame('registered', $again['status']);
+
+        // Slower check B, which was comparing against the old photo, now returns its verdict.
+        $this->assertFalse($this->invoke_external('retire_unusable_reference', [(int)$user->id, (string)$oldurl]));
+        $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $user->id]));
+        $this->assertNotFalse(\quizaccess_proctoring_get_image_url($user->id));
+    }
+
+    /**
      * A staff-uploaded reference is never retired by the student's precheck.
      */
     public function test_faceless_staff_uploaded_reference_is_kept(): void {

@@ -977,6 +977,7 @@ class quizaccess_proctoring_external extends external_api {
         // Face check.
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
         $method = quizaccess_proctoring_get_proctoring_settings("fcmethod");
+        $referenceimageurl = '';
         if ($method == "customapi") {
             $referenceimageurl = quizaccess_proctoring_get_image_url($USER->id);
             if (!$referenceimageurl) {
@@ -993,7 +994,8 @@ class quizaccess_proctoring_external extends external_api {
         if ((int)$currentdata->awsflag === QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE) {
             return [
                 'screenshotid' => $screenshotid,
-                'status' => self::retire_unusable_reference((int)$USER->id) ? 'referencereset' : 'referenceunusable',
+                'status' => self::retire_unusable_reference((int)$USER->id, (string)$referenceimageurl) ?
+                    'referencereset' : 'referenceunusable',
                 'warnings' => $warnings,
             ];
         }
@@ -2391,10 +2393,16 @@ class quizaccess_proctoring_external extends external_api {
      * self-registered references are retired: a staff upload carries its draft id and stays
      * until staff replace it.
      *
+     * The verdict applies only to the exact file that was sent to the provider. Face checks can
+     * overlap - one may already have retired that photo and the student registered a new one by
+     * the time a slower check returns - so nothing is retired unless the stored reference is
+     * still that same file.
+     *
      * @param int $userid Student whose reference image to retire.
+     * @param string $checkedurl Pluginfile URL of the reference the provider found no face in.
      * @return bool True when the reference was retired.
      */
-    private static function retire_unusable_reference(int $userid): bool {
+    private static function retire_unusable_reference(int $userid, string $checkedurl): bool {
         global $DB;
 
         if (!get_config('quizaccess_proctoring', 'replaceunusablereference')) {
@@ -2402,6 +2410,12 @@ class quizaccess_proctoring_external extends external_api {
         }
         $record = $DB->get_record('quizaccess_proctoring_user_images', ['user_id' => $userid]);
         if (!$record || (int)$record->photo_draft_id !== 0) {
+            return false;
+        }
+        $checked = quizaccess_proctoring_stored_file_from_pluginfile_url($checkedurl);
+        $currenturl = quizaccess_proctoring_get_image_url($userid);
+        $current = $currenturl ? quizaccess_proctoring_stored_file_from_pluginfile_url($currenturl) : null;
+        if (!$checked || !$current || (int)$checked->get_id() !== (int)$current->get_id()) {
             return false;
         }
 
