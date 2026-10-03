@@ -182,10 +182,7 @@ final class external_security_audit_test extends \advanced_testcase {
         $lock = \quizaccess_proctoring_get_reference_lock((int)$user->id);
         $this->assertNotFalse($lock);
         try {
-            $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring_reference');
-            if ($factory->supports_recursion()) {
-                $this->markTestSkipped('This lock factory lets the same process take the lock twice.');
-            }
+            // Moodle locks are not re-entrant, so this attempt waits out its timeout and gives up.
             $this->assertFalse($this->invoke_external('retire_unusable_reference', [(int)$user->id, (string)$url]));
             $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $user->id]));
         } finally {
