@@ -1367,5 +1367,18 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026093000, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026100200) {
+        // The SIS summary web service, its capability and the off-by-default sisexportenabled
+        // setting register on this version bump (SIS-204). The service looks captures up by attempt
+        // id, which the logs table stores in `status`; nothing indexed it, so every page scanned the
+        // whole capture history (PR #32 review). The risk calculator's bulk path benefits as well.
+        $table = new xmldb_table('quizaccess_proctoring_logs');
+        $index = new xmldb_index('status', XMLDB_INDEX_NOTUNIQUE, ['status']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+        upgrade_plugin_savepoint(true, 2026100200, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
