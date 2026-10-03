@@ -2396,7 +2396,9 @@ class quizaccess_proctoring_external extends external_api {
      * The verdict applies only to the exact file that was sent to the provider. Face checks can
      * overlap - one may already have retired that photo and the student registered a new one by
      * the time a slower check returns - so nothing is retired unless the stored reference is
-     * still that same file.
+     * still that same file, and the deletes are bound to what was checked: that file object and
+     * the rows by id. A replacement saved at any point in between has a new file and new rows,
+     * so none of these deletes can reach it, without needing a lock.
      *
      * @param int $userid Student whose reference image to retire.
      * @param string $checkedurl Pluginfile URL of the reference the provider found no face in.
@@ -2419,11 +2421,14 @@ class quizaccess_proctoring_external extends external_api {
             return false;
         }
 
-        $imagefile = quizaccess_proctoring_get_image_file($userid);
-        if ($imagefile) {
-            $imagefile->delete();
+        $faceconditions = ['parentid' => $record->id, 'parent_type' => 'admin_image'];
+        foreach ($DB->get_records('quizaccess_proctoring_face_images', $faceconditions) as $face) {
+            quizaccess_proctoring_delete_pluginfile_url((string)$face->faceimage);
         }
-        return !$DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $userid]);
+        $DB->delete_records('quizaccess_proctoring_face_images', $faceconditions);
+        $DB->delete_records('quizaccess_proctoring_user_images', ['id' => $record->id]);
+        $checked->delete();
+        return true;
     }
 
     /**
