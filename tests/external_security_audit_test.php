@@ -169,9 +169,12 @@ final class external_security_audit_test extends \advanced_testcase {
     }
 
     /**
-     * Retirement backs off while a staff upload holds the student's reference lock.
+     * Retirement runs under the student's reference lock and always releases it.
+     *
+     * Contention itself needs two requests: in PHPUnit everything shares one process and one
+     * database session, where Moodle's lock factories let the holder take the lock again.
      */
-    public function test_retirement_waits_for_a_staff_upload_in_progress(): void {
+    public function test_retirement_releases_the_reference_lock(): void {
         global $DB;
 
         $this->resetAfterTest();
@@ -179,18 +182,16 @@ final class external_security_audit_test extends \advanced_testcase {
         $this->register_reference($course, $cm);
         $url = \quizaccess_proctoring_get_image_url($user->id);
 
-        $lock = \quizaccess_proctoring_get_reference_lock((int)$user->id);
-        $this->assertNotFalse($lock);
-        try {
-            // Moodle locks are not re-entrant, so this attempt waits out its timeout and gives up.
-            $this->assertFalse($this->invoke_external('retire_unusable_reference', [(int)$user->id, (string)$url]));
-            $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $user->id]));
-        } finally {
-            $lock->release();
-        }
-
-        // Once the upload is done, the same verdict retires the photo.
         $this->assertTrue($this->invoke_external('retire_unusable_reference', [(int)$user->id, (string)$url]));
+        $this->assertFalse($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $user->id]));
+
+        // A stale verdict on the already-retired photo also releases the lock.
+        $this->assertFalse($this->invoke_external('retire_unusable_reference', [(int)$user->id, (string)$url]));
+
+        $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring_reference');
+        $lock = $factory->get_lock('user' . $user->id, 0);
+        $this->assertNotFalse($lock);
+        $lock->release();
     }
 
     /**
