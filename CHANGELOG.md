@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.0 — 2026-10-02
+- **Share per-attempt proctoring summaries with the Saylor SIS (SIS-204).** A new read-only web service, `quizaccess_proctoring_get_attempt_summaries`, returns one summary per proctored attempt: the risk score and band (from the same risk calculator the reports use), capture, face-mismatch and violation counts, the ID check outcome (including `reused_pass` when an earlier pass on the same quiz covered the attempt), the grade-hold decision, the attempt-level AI review status and decision, whether a reviewer signed the attempt off and whether that sign-off is still current, which requirements a per-student override changed, and a link to the attempt report. It never returns images, ID scans, screenshots, names read from an ID, AI review text, reviewer notes or override justifications.
+- It pages on (`quiz_attempts.timemodified`, id) and also accepts up to 500 attempt ids, so the SIS can re-read attempts whose review is still open.
+- Off by default. Requires the new site setting **Share proctoring summaries with the SIS** (`sisexportenabled`, Reports section, site administrators only) and the new system capability `quizaccess/proctoring:exportsummaries`, which no archetype holds. Where the SIS connector plugin (`local_completionhistory`) is installed, the function joins its "Completion History SIS" service automatically.
+
 # v1.11.0 — 2026-09-30
 - Add a separate device-readiness page before timed attempts: local camera, microphone and whole-screen checks, a small synthetic connection check, and cached provider-reachability diagnostics without uploading student images.
 - Add bounded, memory-only evidence upload recovery and attempt reports showing received-evidence gaps and delayed uploads. Routine screen coverage is an explicit opt-in; neutral captures do not add risk points or enter AI review.

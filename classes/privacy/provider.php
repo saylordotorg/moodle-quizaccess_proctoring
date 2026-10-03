@@ -310,6 +310,14 @@ class provider implements
             ],
             'privacy:metadata:sayloridverification'
         );
+        $collection->add_external_location_link(
+            'saylorsis',
+            [
+                'userid' => 'privacy:metadata:saylorsis:userid',
+                'summary' => 'privacy:metadata:saylorsis:summary',
+            ],
+            'privacy:metadata:saylorsis'
+        );
 
         $collection->add_subsystem_link(
             'core_files',

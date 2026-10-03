@@ -1367,5 +1367,11 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026093000, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026100200) {
+        // No schema changes: the SIS summary web service, its capability and the off-by-default
+        // sisexportenabled setting register on this version bump (SIS-204).
+        upgrade_plugin_savepoint(true, 2026100200, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
