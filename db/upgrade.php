@@ -1381,5 +1381,17 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100200, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026100201) {
+        // New setting: students may replace a self-registered reference photo that the face-match
+        // service found no face in. On by default - such a photo identifies nobody, and the student
+        // is otherwise stuck failing every face check until staff delete it by hand. Set it here
+        // because a web upgrade only applies settings.php defaults if the admin saves the new
+        // settings page. An explicit choice already stored is left alone.
+        if (get_config('quizaccess_proctoring', 'replaceunusablereference') === false) {
+            set_config('replaceunusablereference', 1, 'quizaccess_proctoring');
+        }
+        upgrade_plugin_savepoint(true, 2026100201, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

@@ -150,6 +150,60 @@ test('screen share with neither a surface nor a size is reported as unconfirmed'
     env.controller.dispose();
 });
 
+// A blocked camera (shutter, camera-off key, OS privacy setting) still delivers frames,
+// but they are flat black (CPIT-452).
+const black = {brightness: 2, contrast: 1};
+const lit = {brightness: 110, contrast: 40};
+
+test('camera that only sends black frames is reported as dark and released', async () => {
+    const camera = stream();
+    const env = setup({getUserMedia() { return Promise.resolve(camera); }},
+        {measureFrame: () => black, darkFrameWindow: 30});
+    await env.controller.run('camera');
+    assert.deepEqual(env.statuses.at(-1), ['camera', 'cameradark']);
+    assert.equal(camera.track.stopped, 1);
+    env.controller.dispose();
+});
+
+test('camera that starts black while exposure settles still passes', async () => {
+    const camera = stream();
+    const frames = [black, black, lit];
+    const env = setup({getUserMedia() { return Promise.resolve(camera); }},
+        {measureFrame: () => frames.shift() || lit, darkFrameWindow: 2000});
+    await env.controller.run('camera');
+    assert.deepEqual(env.statuses.at(-1), ['camera', 'passed']);
+    env.controller.dispose();
+});
+
+test('a dim but real picture is not mistaken for a blocked camera', async () => {
+    const camera = stream();
+    const env = setup({getUserMedia() { return Promise.resolve(camera); }},
+        {measureFrame: () => ({brightness: 9, contrast: 14}), darkFrameWindow: 30});
+    await env.controller.run('camera');
+    assert.deepEqual(env.statuses.at(-1), ['camera', 'passed']);
+    env.controller.dispose();
+});
+
+test('camera passes when frames cannot be measured', async () => {
+    const camera = stream();
+    const env = setup({getUserMedia() { return Promise.resolve(camera); }},
+        {measureFrame: () => null, darkFrameWindow: 30});
+    await env.controller.run('camera');
+    assert.deepEqual(env.statuses.at(-1), ['camera', 'passed']);
+    env.controller.dispose();
+});
+
+test('screen shares are never checked for darkness', async () => {
+    const screen = stream('screen');
+    let measured = 0;
+    const env = setup({getDisplayMedia() { return Promise.resolve(screen); }},
+        {measureFrame: () => { measured++; return black; }, darkFrameWindow: 30});
+    await env.controller.run('screen');
+    assert.deepEqual(env.statuses.at(-1), ['screen', 'passed']);
+    assert.equal(measured, 0);
+    env.controller.dispose();
+});
+
 test('microphone test uses audio only and preview stops automatically', async () => {
     const mic = stream('microphone');
     let constraints;

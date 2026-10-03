@@ -119,6 +119,134 @@ final class external_security_audit_test extends \advanced_testcase {
     }
 
     /**
+     * A self-registered reference the provider finds no face in is retired, not reported as a mismatch (CPIT-453).
+     */
+    public function test_faceless_self_registered_reference_is_retired_and_reregistered(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        [$course, $cm, $user] = $this->create_fixture();
+        $image = $this->register_reference($course, $cm);
+
+        $result = $this->validate_with_provider($course, $cm, $image, ['match' => false, 'reason' => 'reference_no_face']);
+
+        $this->assertSame('referencereset', $result['status']);
+        $this->assertSame(
+            QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE,
+            (int)$DB->get_field('quizaccess_proctoring_logs', 'awsflag', ['id' => $result['screenshotid']])
+        );
+        $this->assertFalse($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $user->id]));
+        $this->assertFalse(\quizaccess_proctoring_get_image_url($user->id));
+        $this->assertFalse($DB->record_exists('quizaccess_proctoring_fm_warnings', ['userid' => $user->id]));
+        $this->assertFalse(\quizaccess_proctoring_has_face_preflight_passed((int)$cm->id));
+
+        // The next capture registers a fresh reference under the first-registration checks.
+        $again = \quizaccess_proctoring_external::validate_face($course->id, $cm->id, '', $image, 'camshot_image', $image, 1);
+        $this->assertSame('registered', $again['status']);
+    }
+
+    /**
+     * A late verdict about an already-replaced photo cannot retire the new one (overlapping checks).
+     */
+    public function test_stale_no_face_verdict_cannot_retire_a_replacement_reference(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        [$course, $cm, $user] = $this->create_fixture();
+        $image = $this->register_reference($course, $cm);
+        $oldurl = \quizaccess_proctoring_get_image_url($user->id);
+
+        // Check A finds no face and retires the photo; the student registers a replacement.
+        $this->assertSame('referencereset',
+            $this->validate_with_provider($course, $cm, $image, ['match' => false, 'reason' => 'reference_no_face'])['status']);
+        $again = \quizaccess_proctoring_external::validate_face($course->id, $cm->id, '', $image, 'camshot_image', $image, 1);
+        $this->assertSame('registered', $again['status']);
+
+        // Slower check B, which was comparing against the old photo, now returns its verdict.
+        $this->assertFalse($this->invoke_external('retire_unusable_reference', [(int)$user->id, (string)$oldurl]));
+        $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $user->id]));
+        $this->assertNotFalse(\quizaccess_proctoring_get_image_url($user->id));
+    }
+
+    /**
+     * Retirement runs under the student's reference lock and always releases it.
+     *
+     * Contention itself needs two requests: in PHPUnit everything shares one process and one
+     * database session, where Moodle's lock factories let the holder take the lock again.
+     */
+    public function test_retirement_releases_the_reference_lock(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        [$course, $cm, $user] = $this->create_fixture();
+        $this->register_reference($course, $cm);
+        $url = \quizaccess_proctoring_get_image_url($user->id);
+
+        $this->assertTrue($this->invoke_external('retire_unusable_reference', [(int)$user->id, (string)$url]));
+        $this->assertFalse($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $user->id]));
+
+        // A stale verdict on the already-retired photo also releases the lock.
+        $this->assertFalse($this->invoke_external('retire_unusable_reference', [(int)$user->id, (string)$url]));
+
+        $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring_reference');
+        $lock = $factory->get_lock('user' . $user->id, 0);
+        $this->assertNotFalse($lock);
+        $lock->release();
+    }
+
+    /**
+     * A staff-uploaded reference is never retired by the student's precheck.
+     */
+    public function test_faceless_staff_uploaded_reference_is_kept(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        [$course, $cm, $user] = $this->create_fixture();
+        $image = $this->register_reference($course, $cm);
+        $DB->set_field('quizaccess_proctoring_user_images', 'photo_draft_id', 12345, ['user_id' => $user->id]);
+
+        $result = $this->validate_with_provider($course, $cm, $image, ['match' => false, 'reason' => 'reference_no_face']);
+
+        $this->assertSame('referenceunusable', $result['status']);
+        $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $user->id]));
+        $this->assertNotFalse(\quizaccess_proctoring_get_image_url($user->id));
+    }
+
+    /**
+     * With replacement switched off, the reference is kept and the student is sent to support.
+     */
+    public function test_faceless_reference_is_kept_when_replacement_is_off(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        [$course, $cm, $user] = $this->create_fixture();
+        $image = $this->register_reference($course, $cm);
+        set_config('replaceunusablereference', 0, 'quizaccess_proctoring');
+
+        $result = $this->validate_with_provider($course, $cm, $image, ['match' => false, 'reason' => 'reference_no_face']);
+
+        $this->assertSame('referenceunusable', $result['status']);
+        $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $user->id]));
+    }
+
+    /**
+     * A plain mismatch never retires the reference, whatever the setting.
+     */
+    public function test_plain_mismatch_keeps_the_reference(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        [$course, $cm, $user] = $this->create_fixture();
+        $image = $this->register_reference($course, $cm);
+
+        $result = $this->validate_with_provider($course, $cm, $image, ['match' => false, 'message' => 'Face does not match.']);
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame(2, (int)$DB->get_field('quizaccess_proctoring_logs', 'awsflag', ['id' => $result['screenshotid']]));
+        $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $user->id]));
+    }
+
+    /**
      * A string false or arbitrary truthy value cannot synthesize missing scores of 100.
      */
     public function test_false_provider_verdicts_do_not_pass(): void {
@@ -224,6 +352,38 @@ final class external_security_audit_test extends \advanced_testcase {
         set_config('idverificationapikey', 'security-test-key', 'quizaccess_proctoring');
         \curl::mock_response(json_encode($response));
         return $this->invoke_external('call_id_verification_endpoint', [base64_decode(self::PNG), base64_decode(self::PNG), $user]);
+    }
+
+    /**
+     * Register the current user's reference image through the real first-capture path.
+     *
+     * @param \stdClass $course Course.
+     * @param \stdClass $cm Quiz course module.
+     * @return string The image used, reusable for later captures.
+     */
+    private function register_reference(\stdClass $course, \stdClass $cm): string {
+        $image = $this->make_image();
+        $result = \quizaccess_proctoring_external::validate_face($course->id, $cm->id, '', $image, 'camshot_image', $image, 1);
+        $this->assertSame('registered', $result['status']);
+        set_config('replaceunusablereference', 1, 'quizaccess_proctoring');
+        return $image;
+    }
+
+    /**
+     * Run a precheck capture against a mocked face-match provider response.
+     *
+     * @param \stdClass $course Course.
+     * @param \stdClass $cm Quiz course module.
+     * @param string $image Capture to submit.
+     * @param array $response Provider response.
+     * @return array validate_face result.
+     */
+    private function validate_with_provider(\stdClass $course, \stdClass $cm, string $image, array $response): array {
+        set_config('fcmethod', 'customapi', 'quizaccess_proctoring');
+        set_config('custom_ai_endpoint', 'https://8.8.8.8/verify-face', 'quizaccess_proctoring');
+        set_config('custom_api_key', 'security-test-key', 'quizaccess_proctoring');
+        \curl::mock_response(json_encode($response));
+        return \quizaccess_proctoring_external::validate_face($course->id, $cm->id, '', $image, 'camshot_image', $image, 1);
     }
 
     /**

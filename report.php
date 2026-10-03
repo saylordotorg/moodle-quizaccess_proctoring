@@ -1124,6 +1124,10 @@ if (
             } else if ($awsflag === 3) {
                 $statuskey = 'noface';
                 $row['badgelabel'] = get_string('reportcaptures:badgenoface', 'quizaccess_proctoring');
+            } else if ($awsflag === QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE) {
+                // Never compared: the reference image has no face. Not the student's mismatch.
+                $statuskey = 'notanalyzed';
+                $row['badgelabel'] = get_string('reportcaptures:badgereferenceunusable', 'quizaccess_proctoring');
             } else {
                 $statuskey = 'notanalyzed';
                 $row['badgelabel'] = get_string('reportcaptures:badgenotanalyzed', 'quizaccess_proctoring');

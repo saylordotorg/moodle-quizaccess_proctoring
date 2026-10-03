@@ -50,6 +50,9 @@ defined('QUIZACCESS_PROCTORING_AI_REVIEW_FAILED') ||
     define('QUIZACCESS_PROCTORING_AI_REVIEW_FAILED', 3);
 defined('QUIZACCESS_PROCTORING_CAP_ADMIN_SETTINGS') ||
     define('QUIZACCESS_PROCTORING_CAP_ADMIN_SETTINGS', 'quizaccess/proctoring:manageadminsettings');
+// Face match awsflag: the provider found no face in the student's reference image.
+defined('QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE') ||
+    define('QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE', 4);
 
 $token = "";
 
@@ -490,6 +493,21 @@ function quizaccess_proctoring_get_image_url($userid) {
 
 
 /**
+ * Serialise changes to one student's reference photo.
+ *
+ * A staff upload and the precheck's retirement of an unusable self-registered photo each write
+ * the photo file and the user_images row in several steps. Interleaved, the retirement could
+ * delete a row the staff upload is about to mark as staff-owned. Both take this lock first.
+ *
+ * @param int $userid Student whose reference photo is being changed.
+ * @return \core\lock\lock|false The lock, or false when it could not be obtained in time.
+ */
+function quizaccess_proctoring_get_reference_lock(int $userid) {
+    $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring_reference');
+    return $factory->get_lock('user' . $userid, 10);
+}
+
+/**
  * Returns the image file of a specific user.
  *
  * This function retrieves the image file associated with a specific user by searching the `user_photo` file area
@@ -541,7 +559,7 @@ function quizaccess_proctoring_get_image_file($userid) {
  *
  * @param int $rowid The report ID (`rowid`) of the record to be updated.
  * @param string $matchresult The similarity score, which will be converted to an integer.
- * @param int $awsflag Flag indicating the status of the analyzed images (1/2/3).
+ * @param int $awsflag Flag indicating the status of the analyzed images (1/2/3/4/101).
  *
  * @return void This function does not return any value.
  */
@@ -572,6 +590,8 @@ function quizaccess_proctoring_get_face_match_status_label(int $awsflag, int $aw
             return get_string('facematchstatus:score', 'quizaccess_proctoring', max(0, min(100, $awsscore)));
         case 3:
             return get_string('facematchstatus:noface', 'quizaccess_proctoring');
+        case QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE:
+            return get_string('facematchstatus:referenceunusable', 'quizaccess_proctoring');
         case 101:
             return get_string('facematchstatus:apierror', 'quizaccess_proctoring');
         case 1:
@@ -594,7 +614,7 @@ function quizaccess_proctoring_get_face_match_status_class(int $awsflag, int $aw
     if ($awsflag === 2) {
         return $awsscore >= $threshold ? 'badge badge-success' : 'badge badge-danger';
     }
-    if ($awsflag === 3) {
+    if ($awsflag === 3 || $awsflag === QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE) {
         return 'badge badge-warning';
     }
     if ($awsflag === 101) {
@@ -4239,6 +4259,14 @@ function quizaccess_proctoring_extracted(
             );
         }
         quizaccess_proctoring_update_match_result($reportid, 0, 101);
+        return;
+    }
+
+    // The service found no face in the reference image itself. No capture of anyone could
+    // match it, so this is recorded as its own outcome rather than as a mismatch, and never
+    // logged as a face-mismatch warning against the student.
+    if (isset($response->reason) && $response->reason === 'reference_no_face') {
+        quizaccess_proctoring_update_match_result($reportid, 0, QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE);
         return;
     }
 

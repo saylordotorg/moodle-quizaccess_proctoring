@@ -7,6 +7,8 @@ Small FastAPI service that exposes private `/verify`, `/verify-face`, and `/veri
 - `{"image_reference": "...", "image_current": "..."}`
 - `{"reference_image": "...", "current_snap": "..."}`
 
+A non-match normally returns `{"match": false, "message": "Face does not match."}`. When Rekognition finds no face in the reference image itself, the response adds `"reason": "reference_no_face"`. Rekognition reports a missing face in either image the same way, so the service compares the reference with itself to tell them apart, using the same `rekognition:CompareFaces` permission. Moodle records that outcome as "Reference photo unusable", not as a mismatch, and can let the student replace a self-registered reference. Any other error during that second comparison is reported as a plain non-match, so an AWS outage never retires a usable reference.
+
 ## Run
 
 ```powershell

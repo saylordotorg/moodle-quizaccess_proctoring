@@ -977,6 +977,7 @@ class quizaccess_proctoring_external extends external_api {
         // Face check.
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
         $method = quizaccess_proctoring_get_proctoring_settings("fcmethod");
+        $referenceimageurl = '';
         if ($method == "customapi") {
             $referenceimageurl = quizaccess_proctoring_get_image_url($USER->id);
             if (!$referenceimageurl) {
@@ -990,6 +991,14 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         $currentdata = $DB->get_record('quizaccess_proctoring_logs', ['id' => $screenshotid]);
+        if ((int)$currentdata->awsflag === QUIZACCESS_PROCTORING_AWSFLAG_REFERENCE_UNUSABLE) {
+            return [
+                'screenshotid' => $screenshotid,
+                'status' => self::retire_unusable_reference((int)$USER->id, (string)$referenceimageurl) ?
+                    'referencereset' : 'referenceunusable',
+                'warnings' => $warnings,
+            ];
+        }
         $awsscore = $currentdata->awsscore;
         $threshhold = (int)quizaccess_proctoring_get_proctoring_settings('threshold');
 
@@ -2373,6 +2382,79 @@ class quizaccess_proctoring_external extends external_api {
         }
 
         return $parentid;
+    }
+
+    /**
+     * Retires a self-registered reference image that the face-match provider found no face in.
+     *
+     * Such a reference identifies nobody - no capture of anyone could match it - so retiring it
+     * loses nothing, and the student's next capture registers a new one under exactly the checks
+     * a first-time registration gets. The provider makes the call, never the browser. Only
+     * self-registered references are retired: a staff upload carries its draft id and stays
+     * until staff replace it.
+     *
+     * The verdict applies only to the exact file that was sent to the provider. Face checks can
+     * overlap - one may already have retired that photo and the student registered a new one by
+     * the time a slower check returns - so nothing is retired unless the stored reference is
+     * still that same file, and the deletes are bound to what was checked: that file object and
+     * the rows by id. A replacement the student registers in between has a new file and new rows,
+     * so none of these deletes can reach it. A staff upload in between instead updates the same
+     * row in place, so the row is deleted only while it is still self-registered, in a single
+     * conditional delete, and nothing else is touched if it survives. The staff upload also
+     * takes the student's reference lock, so the two never interleave.
+     *
+     * @param int $userid Student whose reference image to retire.
+     * @param string $checkedurl Pluginfile URL of the reference the provider found no face in.
+     * @return bool True when the reference was retired.
+     */
+    private static function retire_unusable_reference(int $userid, string $checkedurl): bool {
+        if (!get_config('quizaccess_proctoring', 'replaceunusablereference')) {
+            return false;
+        }
+        $lock = quizaccess_proctoring_get_reference_lock($userid);
+        if (!$lock) {
+            return false;
+        }
+        try {
+            return self::retire_checked_reference($userid, $checkedurl);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Retirement itself; the caller holds the student's reference lock.
+     *
+     * @param int $userid Student whose reference image to retire.
+     * @param string $checkedurl Pluginfile URL of the reference the provider found no face in.
+     * @return bool True when the reference was retired.
+     */
+    private static function retire_checked_reference(int $userid, string $checkedurl): bool {
+        global $DB;
+
+        $record = $DB->get_record('quizaccess_proctoring_user_images', ['user_id' => $userid]);
+        if (!$record || (int)$record->photo_draft_id !== 0) {
+            return false;
+        }
+        $checked = quizaccess_proctoring_stored_file_from_pluginfile_url($checkedurl);
+        $currenturl = quizaccess_proctoring_get_image_url($userid);
+        $current = $currenturl ? quizaccess_proctoring_stored_file_from_pluginfile_url($currenturl) : null;
+        if (!$checked || !$current || (int)$checked->get_id() !== (int)$current->get_id()) {
+            return false;
+        }
+
+        $DB->delete_records('quizaccess_proctoring_user_images', ['id' => $record->id, 'photo_draft_id' => 0]);
+        if ($DB->record_exists('quizaccess_proctoring_user_images', ['id' => $record->id])) {
+            return false;
+        }
+
+        $faceconditions = ['parentid' => $record->id, 'parent_type' => 'admin_image'];
+        foreach ($DB->get_records('quizaccess_proctoring_face_images', $faceconditions) as $face) {
+            quizaccess_proctoring_delete_pluginfile_url((string)$face->faceimage);
+        }
+        $DB->delete_records('quizaccess_proctoring_face_images', $faceconditions);
+        $checked->delete();
+        return true;
     }
 
     /**

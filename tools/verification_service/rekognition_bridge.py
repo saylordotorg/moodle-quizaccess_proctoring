@@ -239,6 +239,27 @@ def score_name_match(lines: list[str], payload: VerifyIdRequest) -> tuple[float,
     return best_score, extracted_name or best_line
 
 
+def reference_has_face(reference: bytes) -> bool:
+    """Whether Rekognition can find a face in the reference image at all.
+
+    compare_faces raises InvalidParameterException when either image has no face, so a
+    reference saved with the face out of frame looks exactly like a mismatch. Comparing the
+    reference with itself tells the two apart using the same permission. Any other failure
+    is reported as "has a face" so an outage never retires a usable reference.
+    """
+    try:
+        rekognition.compare_faces(
+            SourceImage={"Bytes": reference},
+            TargetImage={"Bytes": reference},
+            SimilarityThreshold=0,
+        )
+    except ClientError as exc:
+        return exc.response.get("Error", {}).get("Code") != "InvalidParameterException"
+    except BotoCoreError:
+        return True
+    return True
+
+
 @app.post("/verify")
 @app.post("/verify-face")
 def verify_faces(payload: VerifyRequest, x_api_key: str = Header(default="", alias="X-API-Key")):
@@ -267,7 +288,13 @@ def verify_faces(payload: VerifyRequest, x_api_key: str = Header(default="", ali
     except ClientError as exc:
         error_code = exc.response.get("Error", {}).get("Code")
         if error_code == "InvalidParameterException":
-            return {"match": False}
+            if not reference_has_face(reference):
+                return {
+                    "match": False,
+                    "reason": "reference_no_face",
+                    "message": "No face found in the reference image.",
+                }
+            return {"match": False, "message": "Face does not match."}
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AWS Rekognition compare_faces failed.",

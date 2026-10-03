@@ -588,6 +588,13 @@ if ($canmanageproctoring) {
     ));
 
     $settings->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/replaceunusablereference',
+        get_string('setting:replaceunusablereference', 'quizaccess_proctoring'),
+        get_string('setting:replaceunusablereference_desc', 'quizaccess_proctoring'),
+        1
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
         'quizaccess_proctoring/continuousfacecheck',
         get_string('setting:continuousfacecheck', 'quizaccess_proctoring'),
         get_string('setting:continuousfacecheck_desc', 'quizaccess_proctoring'),

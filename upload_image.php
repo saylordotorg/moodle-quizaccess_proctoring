@@ -86,6 +86,18 @@ if ($mform->is_cancelled()) {
         );
     }
 
+    // Hold the student's reference lock until the row is marked staff-owned, so the precheck's
+    // retirement of an unusable self-registered photo cannot interleave with this upload.
+    $referencelock = quizaccess_proctoring_get_reference_lock((int)$userid);
+    if (!$referencelock) {
+        redirect(
+            $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/userslist.php',
+            get_string('image_not_uploaded', 'quizaccess_proctoring'),
+            null,
+            \core\output\notification::NOTIFY_ERROR
+        );
+    }
+
     // Store or update $student.
     file_save_draft_area_files(
         $data->user_photo,
@@ -152,6 +164,7 @@ if ($mform->is_cancelled()) {
         } else {
             $DB->insert_record('quizaccess_proctoring_face_images', $facetablerecord);
         }
+        $referencelock->release();
         redirect(
             $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/userslist.php',
             get_string('image_updated', 'quizaccess_proctoring'),
@@ -186,6 +199,7 @@ if ($mform->is_cancelled()) {
         } else {
             $DB->insert_record('quizaccess_proctoring_face_images', $facetablerecord);
         }
+        $referencelock->release();
         redirect(
             $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/userslist.php',
             get_string('image_updated', 'quizaccess_proctoring'),
