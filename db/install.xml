@@ -64,6 +64,7 @@
             </KEYS>
             <INDEXES>
                 <INDEX NAME="userquizrequest" UNIQUE="true" FIELDS="userid, quizid, requestid"/>
+                <INDEX NAME="status" UNIQUE="false" FIELDS="status"/>
             </INDEXES>
         </TABLE>
 

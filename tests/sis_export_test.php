@@ -292,6 +292,7 @@ final class sis_export_test extends advanced_testcase {
     public function test_a_pass_recorded_after_the_attempt_started_is_not_reused(): void {
         global $DB;
         set_config('sisexportenabled', 1, 'quizaccess_proctoring');
+        set_config('idverificationenabled', 1, 'quizaccess_proctoring');
         $now = time();
         // Attempt 1 runs from now-5000 to now-100; a pass recorded mid-way, for some later attempt,
         // cannot have governed it.
@@ -301,6 +302,14 @@ final class sis_export_test extends advanced_testcase {
             'courseid' => $this->course->id, 'quizid' => $this->cm->id, 'userid' => $this->student->id,
             'attemptid' => 0, 'status' => 'pass', 'facescore' => 91, 'namescore' => 100,
             'timecreated' => $now - 3000, 'timemodified' => $now - 3000, 'verifiedat' => $now - 3000,
+            'profilehash' => str_repeat('a', 64), 'policyhash' => str_repeat('b', 64),
+        ]);
+
+        // Begun before the start, completed after it: it did not govern the attempt either.
+        $DB->insert_record('quizaccess_proctoring_idv', (object)[
+            'courseid' => $this->course->id, 'quizid' => $this->cm->id, 'userid' => $this->student->id,
+            'attemptid' => 0, 'status' => 'pass', 'facescore' => 95, 'namescore' => 100,
+            'timecreated' => $now - 5010, 'timemodified' => $now - 4990, 'verifiedat' => $now - 4990,
             'profilehash' => str_repeat('a', 64), 'policyhash' => str_repeat('b', 64),
         ]);
 

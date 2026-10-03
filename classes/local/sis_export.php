@@ -425,24 +425,47 @@ final class sis_export {
             return $siterequired || in_array('idverification:on', $states, true);
         });
         if (!empty($missing)) {
-            [$usersql, $userparams] = $DB->get_in_or_equal(
-                array_values(array_unique(array_map(fn($r) => (int)$r->userid, $missing))), SQL_PARAMS_NAMED, 'idvu');
-            [$cmsql, $cmparams] = $DB->get_in_or_equal(
-                array_values(array_unique(array_map(fn($r) => (int)$r->cmid, $missing))), SQL_PARAMS_NAMED, 'idvc');
-            $passes = $DB->get_records_select(
-                'quizaccess_proctoring_idv',
-                "userid {$usersql} AND quizid {$cmsql} AND status = :status",
-                $userparams + $cmparams + ['status' => 'pass'],
-                'timecreated DESC, id DESC',
-                'id, courseid, quizid, userid, status, facescore, namescore, verifiedat, timecreated'
-            );
+            // Exactly the (course, quiz, student) scopes on the page, not the cross-product of every
+            // student with every quiz on it (PR #32 review); each tuple uses the coursequizuser index.
+            $scopes = [];
+            foreach ($missing as $row) {
+                $scopes[self::scope_key((int)$row->courseid, (int)$row->cmid, (int)$row->userid)] =
+                    [(int)$row->courseid, (int)$row->cmid, (int)$row->userid];
+            }
+            $passesbyscope = [];
+            foreach (array_chunk($scopes, 100, true) as $chunk) {
+                $where = [];
+                $params = ['status' => 'pass'];
+                $i = 0;
+                foreach ($chunk as [$courseid, $cmid, $userid]) {
+                    $where[] = "(courseid = :c{$i} AND quizid = :q{$i} AND userid = :u{$i})";
+                    $params["c{$i}"] = $courseid;
+                    $params["q{$i}"] = $cmid;
+                    $params["u{$i}"] = $userid;
+                    $i++;
+                }
+                $passes = $DB->get_records_select(
+                    'quizaccess_proctoring_idv',
+                    'status = :status AND (' . implode(' OR ', $where) . ')',
+                    $params,
+                    'verifiedat DESC, timecreated DESC, id DESC',
+                    'id, courseid, quizid, userid, status, facescore, namescore, verifiedat, timecreated'
+                );
+                foreach ($passes as $pass) {
+                    $key = self::scope_key((int)$pass->courseid, (int)$pass->quizid, (int)$pass->userid);
+                    $passesbyscope[$key][] = $pass;
+                }
+            }
             foreach ($missing as $attemptid => $row) {
                 $start = self::attempt_start($row);
-                foreach ($passes as $pass) {
+                $key = self::scope_key((int)$row->courseid, (int)$row->cmid, (int)$row->userid);
+                foreach ($passesbyscope[$key] ?? [] as $pass) {
+                    // The check must have COMPLETED by the start (PR #32 review): a request begun
+                    // before the attempt but finished after it cannot have governed it. verifiedat is
+                    // the completion time; legacy rows without one fall back to timecreated.
                     $verifiedat = (int)($pass->verifiedat ?: $pass->timecreated);
                     $fresh = (int)$policy['maxage'] === 0 || $verifiedat + (int)$policy['maxage'] > $start;
-                    if ((int)$pass->courseid === (int)$row->courseid && (int)$pass->quizid === (int)$row->cmid
-                            && (int)$pass->userid === (int)$row->userid && (int)$pass->timecreated <= $start && $fresh) {
+                    if ($verifiedat <= $start && $fresh) {
                         $out[$attemptid] = self::idv_wire($pass, 'reused_pass');
                         break;
                     }
@@ -603,6 +626,18 @@ final class sis_export {
             $out[$attemptid] = $states;
         }
         return $out;
+    }
+
+    /**
+     * Key for one (course, quiz course-module, student) scope.
+     *
+     * @param int $courseid Course id.
+     * @param int $cmid Course-module id.
+     * @param int $userid Student id.
+     * @return string
+     */
+    private static function scope_key(int $courseid, int $cmid, int $userid): string {
+        return $courseid . ':' . $cmid . ':' . $userid;
     }
 
     /**
