@@ -2400,18 +2400,38 @@ class quizaccess_proctoring_external extends external_api {
      * the rows by id. A replacement the student registers in between has a new file and new rows,
      * so none of these deletes can reach it. A staff upload in between instead updates the same
      * row in place, so the row is deleted only while it is still self-registered, in a single
-     * conditional delete, and nothing else is touched if it survives.
+     * conditional delete, and nothing else is touched if it survives. The staff upload also
+     * takes the student's reference lock, so the two never interleave.
      *
      * @param int $userid Student whose reference image to retire.
      * @param string $checkedurl Pluginfile URL of the reference the provider found no face in.
      * @return bool True when the reference was retired.
      */
     private static function retire_unusable_reference(int $userid, string $checkedurl): bool {
-        global $DB;
-
         if (!get_config('quizaccess_proctoring', 'replaceunusablereference')) {
             return false;
         }
+        $lock = quizaccess_proctoring_get_reference_lock($userid);
+        if (!$lock) {
+            return false;
+        }
+        try {
+            return self::retire_checked_reference($userid, $checkedurl);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Retirement itself; the caller holds the student's reference lock.
+     *
+     * @param int $userid Student whose reference image to retire.
+     * @param string $checkedurl Pluginfile URL of the reference the provider found no face in.
+     * @return bool True when the reference was retired.
+     */
+    private static function retire_checked_reference(int $userid, string $checkedurl): bool {
+        global $DB;
+
         $record = $DB->get_record('quizaccess_proctoring_user_images', ['user_id' => $userid]);
         if (!$record || (int)$record->photo_draft_id !== 0) {
             return false;

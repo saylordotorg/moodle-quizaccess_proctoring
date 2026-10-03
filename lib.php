@@ -493,6 +493,21 @@ function quizaccess_proctoring_get_image_url($userid) {
 
 
 /**
+ * Serialise changes to one student's reference photo.
+ *
+ * A staff upload and the precheck's retirement of an unusable self-registered photo each write
+ * the photo file and the user_images row in several steps. Interleaved, the retirement could
+ * delete a row the staff upload is about to mark as staff-owned. Both take this lock first.
+ *
+ * @param int $userid Student whose reference photo is being changed.
+ * @return \core\lock\lock|false The lock, or false when it could not be obtained in time.
+ */
+function quizaccess_proctoring_get_reference_lock(int $userid) {
+    $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring_reference');
+    return $factory->get_lock('user' . $userid, 10);
+}
+
+/**
  * Returns the image file of a specific user.
  *
  * This function retrieves the image file associated with a specific user by searching the `user_photo` file area

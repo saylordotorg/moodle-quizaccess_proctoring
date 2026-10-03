@@ -169,6 +169,34 @@ final class external_security_audit_test extends \advanced_testcase {
     }
 
     /**
+     * Retirement backs off while a staff upload holds the student's reference lock.
+     */
+    public function test_retirement_waits_for_a_staff_upload_in_progress(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        [$course, $cm, $user] = $this->create_fixture();
+        $this->register_reference($course, $cm);
+        $url = \quizaccess_proctoring_get_image_url($user->id);
+
+        $lock = \quizaccess_proctoring_get_reference_lock((int)$user->id);
+        $this->assertNotFalse($lock);
+        try {
+            $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring_reference');
+            if ($factory->supports_recursion()) {
+                $this->markTestSkipped('This lock factory lets the same process take the lock twice.');
+            }
+            $this->assertFalse($this->invoke_external('retire_unusable_reference', [(int)$user->id, (string)$url]));
+            $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $user->id]));
+        } finally {
+            $lock->release();
+        }
+
+        // Once the upload is done, the same verdict retires the photo.
+        $this->assertTrue($this->invoke_external('retire_unusable_reference', [(int)$user->id, (string)$url]));
+    }
+
+    /**
      * A staff-uploaded reference is never retired by the student's precheck.
      */
     public function test_faceless_staff_uploaded_reference_is_kept(): void {
