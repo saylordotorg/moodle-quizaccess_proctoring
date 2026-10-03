@@ -199,10 +199,10 @@ final class sis_export {
 
         $captures = self::capture_counts($rows);
         $violations = self::violation_counts($rows);
-        $idv = self::id_verifications($rows);
+        $overrides = self::override_states($rows);
+        $idv = self::id_verifications($rows, $overrides);
         $holds = self::hold_states($attemptids);
         $ai = self::ai_reviews($attemptids);
-        $overrides = self::override_states($rows);
 
         // The same scoring call the overall report makes, so both read the same number.
         $requests = [];
@@ -380,10 +380,18 @@ final class sis_export {
      * same quiz for the same student - the plugin reuses that pass instead of asking again - reported
      * as `reused_pass` so the SIS can tell "checked for this attempt" from "covered by an earlier check".
      *
+     * An earlier pass is only credited when it could have governed the attempt (PR #32 review): an ID
+     * check was required at the start (the site setting, as changed by any per-student override that
+     * stood then), reuse was allowed (not "verify every attempt"), and the pass was within the maximum
+     * age at the start. Otherwise the attempt reports `none` - an exempted student is not "verified".
+     * Limitation: the site settings are read as they are now, and the name/policy-change rechecks are
+     * not replayed, because neither the settings nor the profile at the start are recorded.
+     *
      * @param array $rows Attempt rows.
+     * @param array $overrides attemptid => override states, from {@see self::override_states()}.
      * @return array attemptid => ['status', 'facescore', 'namescore', 'verifiedat']
      */
-    private static function id_verifications(array $rows): array {
+    private static function id_verifications(array $rows, array $overrides): array {
         global $DB;
 
         $byid = self::rows_by_id($rows);
@@ -403,8 +411,18 @@ final class sis_export {
         // Attempts with no row of their own: the latest pass on the same quiz recorded no later than
         // the attempt STARTED. A check made after the start - for a later attempt, say - cannot have
         // governed this one. One query for the whole page, matched back per attempt in PHP.
-        $missing = array_filter($byid, function ($row) use ($out) {
-            return !isset($out[(int)$row->attemptid]);
+        $policy = identity_recheck_policy::config();
+        $siterequired = (int)get_config('quizaccess_proctoring', 'idverificationenabled') === 1;
+        $missing = array_filter($byid, function ($row) use ($out, $overrides, $siterequired, $policy) {
+            $attemptid = (int)$row->attemptid;
+            if (isset($out[$attemptid]) || !empty($policy['eachattempt'])) {
+                return false;
+            }
+            $states = $overrides[$attemptid] ?? [];
+            if (in_array('idverification:off', $states, true)) {
+                return false;
+            }
+            return $siterequired || in_array('idverification:on', $states, true);
         });
         if (!empty($missing)) {
             [$usersql, $userparams] = $DB->get_in_or_equal(
@@ -421,8 +439,10 @@ final class sis_export {
             foreach ($missing as $attemptid => $row) {
                 $start = self::attempt_start($row);
                 foreach ($passes as $pass) {
+                    $verifiedat = (int)($pass->verifiedat ?: $pass->timecreated);
+                    $fresh = (int)$policy['maxage'] === 0 || $verifiedat + (int)$policy['maxage'] > $start;
                     if ((int)$pass->courseid === (int)$row->courseid && (int)$pass->quizid === (int)$row->cmid
-                            && (int)$pass->userid === (int)$row->userid && (int)$pass->timecreated <= $start) {
+                            && (int)$pass->userid === (int)$row->userid && (int)$pass->timecreated <= $start && $fresh) {
                         $out[$attemptid] = self::idv_wire($pass, 'reused_pass');
                         break;
                     }

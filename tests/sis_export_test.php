@@ -229,6 +229,7 @@ final class sis_export_test extends advanced_testcase {
     public function test_reports_an_earlier_pass_as_reused(): void {
         global $DB;
         set_config('sisexportenabled', 1, 'quizaccess_proctoring');
+        set_config('idverificationenabled', 1, 'quizaccess_proctoring');
         $now = time();
         $first = $this->attempt($this->quiz, 1, $now - 5000);
         $second = $this->attempt($this->quiz, 2, $now - 100);
@@ -243,6 +244,49 @@ final class sis_export_test extends advanced_testcase {
         $this->assertSame('pass', $rows[$first]['idv_status']);
         $this->assertSame('reused_pass', $rows[$second]['idv_status']);
         $this->assertSame($now - 6800, $rows[$second]['idv_verified_at']);
+    }
+
+    public function test_an_earlier_pass_is_not_credited_when_no_check_could_have_used_it(): void {
+        global $DB;
+        set_config('sisexportenabled', 1, 'quizaccess_proctoring');
+        set_config('idverificationenabled', 1, 'quizaccess_proctoring');
+        $now = time();
+        $first = $this->attempt($this->quiz, 1, $now - 5000);
+        $second = $this->attempt($this->quiz, 2, $now - 100);
+        $DB->insert_record('quizaccess_proctoring_idv', (object)[
+            'courseid' => $this->course->id, 'quizid' => $this->cm->id, 'userid' => $this->student->id,
+            'attemptid' => $first, 'status' => 'pass', 'facescore' => 91, 'namescore' => 100,
+            'timecreated' => $now - 6800, 'timemodified' => $now - 6800, 'verifiedat' => $now - 6800,
+            'profilehash' => str_repeat('a', 64), 'policyhash' => str_repeat('b', 64),
+        ]);
+        $status = fn() => array_column($this->call()['attempts'], 'idv_status', 'attemptid')[$second];
+
+        // Reuse is the default: credited.
+        $this->assertSame('reused_pass', $status());
+
+        // Every attempt must verify afresh: an earlier pass covers nothing.
+        set_config('idverificationeachattempt', 1, 'quizaccess_proctoring');
+        $this->assertSame('none', $status());
+        set_config('idverificationeachattempt', 0, 'quizaccess_proctoring');
+
+        // Older than the maximum age at the start: expired, not reused.
+        set_config('idverificationmaxage', 600, 'quizaccess_proctoring');
+        $this->assertSame('none', $status());
+        set_config('idverificationmaxage', 0, 'quizaccess_proctoring');
+
+        // ID checks waived for this student when the attempt started: not "verified".
+        $DB->insert_record('quizaccess_proctoring_overrides', (object)[
+            'courseid' => $this->course->id, 'quizid' => 0, 'userid' => $this->student->id,
+            'captchastate' => -1, 'webcamstate' => -1, 'idverificationstate' => 0, 'screensharestate' => -1,
+            'multimonitorstate' => -1, 'phonedetectionstate' => -1, 'justification' => 'x', 'expiry' => null,
+            'revoked' => 0, 'timerevoked' => 0, 'grantedby' => 2, 'timecreated' => $now - 9000, 'timemodified' => $now - 9000,
+        ]);
+        $this->assertSame('none', $status());
+
+        // ID checks off site-wide and no override turning them on: nothing to reuse.
+        $DB->delete_records('quizaccess_proctoring_overrides');
+        set_config('idverificationenabled', 0, 'quizaccess_proctoring');
+        $this->assertSame('none', $status());
     }
 
     public function test_a_pass_recorded_after_the_attempt_started_is_not_reused(): void {
