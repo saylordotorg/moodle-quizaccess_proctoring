@@ -1434,6 +1434,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return;
                 }
 
+                // Tell the report the detector really started: it gives up silently above when the
+                // model cannot load, and without this the report could not tell the two apart.
+                // Sent on every page rather than once, so one lost upload cannot hide it for good;
+                // it is a neutral event, never shown as student activity.
+                logEvent('phone_detection_started', {});
+
                 monitorInterval(checkPhoneFrame, phoneCheckIntervalMs);
             };
 
@@ -1591,7 +1597,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         !(captureDesktop && screenShareEvents.includes(eventType)) &&
                         !(monitorDetectionEnabled && multiMonitorEvents.includes(eventType)) &&
                         !(monitorMouseActivity && mouseEvents.includes(eventType)) &&
-                        !(detectPhone && eventType === 'phone_detected')) {
+                        !(detectPhone && ['phone_detected', 'phone_detection_started'].includes(eventType))) {
                     return;
                 }
 

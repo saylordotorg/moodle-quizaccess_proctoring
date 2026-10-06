@@ -394,18 +394,22 @@ class send_daily_report_task extends scheduled_task {
         // (CPIT-465); one past its window goes at the next hourly run.
         $autoreleaseat = $activehold ? quizaccess_proctoring_risk_hold_auto_release_time($hold) : 0;
         $expiringsoon = $autoreleaseat > 0 && $autoreleaseat <= time() + self::EXPIRING_SOON;
+        [$neutralsql, $neutralparams] = $DB->get_in_or_equal(
+            \quizaccess_proctoring\local\monitoring_coverage::NEUTRAL_EVENTS,
+            SQL_PARAMS_NAMED,
+            'neutral',
+            false
+        );
         $eventcount = $DB->count_records_select(
             'quizaccess_proctoring_events',
             'courseid = :courseid AND quizid = :quizid AND userid = :userid AND attemptid = :attemptid
-                AND eventtype NOT IN (:coveragestart, :coveragecapture)',
+                AND eventtype ' . $neutralsql,
             [
             'courseid' => (int)$attempt->courseid,
             'quizid' => (int)$attempt->cmid,
             'userid' => (int)$attempt->userid,
             'attemptid' => (int)$attempt->attemptid,
-            'coveragestart' => 'monitoring_started',
-            'coveragecapture' => 'screen_capture',
-            ]
+            ] + $neutralparams
         );
         $capturecount = $DB->count_records('quizaccess_proctoring_logs', [
             'courseid' => (int)$attempt->courseid,

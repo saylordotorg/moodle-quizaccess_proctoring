@@ -2918,6 +2918,16 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
     max-width: 70ch;
 }
 
+.proctoring-notmonitored-list {
+    margin: 6px 0 0;
+    padding-left: 18px;
+}
+
+.proctoring-notmonitored-label {
+    font-weight: 600;
+    color: #3b4651;
+}
+
 .proctoring-notmonitored-text strong {
     color: #3f4a55;
 }

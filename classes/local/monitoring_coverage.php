@@ -29,7 +29,7 @@ namespace quizaccess_proctoring\local;
  */
 final class monitoring_coverage {
     /** Neutral event types excluded from suspicious activity and AI review. */
-    public const NEUTRAL_EVENTS = ['monitoring_started', 'screen_capture'];
+    public const NEUTRAL_EVENTS = ['monitoring_started', 'screen_capture', 'phone_detection_started'];
 
     /**
      * Record the initial policy when Moodle creates a real, proctored attempt.
@@ -132,6 +132,100 @@ final class monitoring_coverage {
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Add the browser monitors the first attempt page ran with to the attempt's snapshot (CPIT-467).
+     *
+     * The attempt-start snapshot is written before any attempt page exists, so it cannot know which
+     * in-browser monitors that page will run, or in which browser. The first attempt page load fills
+     * them in once; later loads leave them alone, like the rest of the snapshot. Without this a
+     * report cannot tell "nothing was detected" from "nothing was watching".
+     *
+     * @param int $courseid Course ID.
+     * @param int $cmid Course-module ID.
+     * @param int $userid Student ID.
+     * @param int $attemptid Quiz attempt ID.
+     * @param array $monitors Monitor name => whether the page runs it.
+     * @param string $useragent The student's user agent, reduced to a browser and OS before storing.
+     */
+    public static function record_monitors(
+        int $courseid,
+        int $cmid,
+        int $userid,
+        int $attemptid,
+        array $monitors,
+        string $useragent
+    ): void {
+        global $DB;
+        if ($attemptid <= 0) {
+            return;
+        }
+        $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring');
+        $lock = $factory->get_lock('coverage:' . $attemptid, 5);
+        if (!$lock) {
+            return;
+        }
+        try {
+            $snapshots = $DB->get_records('quizaccess_proctoring_events', [
+                'courseid' => $courseid, 'quizid' => $cmid, 'userid' => $userid,
+                'attemptid' => $attemptid, 'eventtype' => 'monitoring_started',
+            ], 'id ASC', 'id, eventdetail', 0, 1);
+            $snapshot = $snapshots ? reset($snapshots) : null;
+            $policy = $snapshot ? json_decode($snapshot->eventdetail, true) : null;
+            if (!is_array($policy) || ($policy['version'] ?? 0) !== 1 || isset($policy['monitors'])) {
+                return;
+            }
+            $policy['monitors'] = array_map('boolval', $monitors);
+            $policy += self::describe_browser($useragent);
+            $DB->set_field('quizaccess_proctoring_events', 'eventdetail', json_encode($policy), ['id' => $snapshot->id]);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Reduce a user agent to a browser name with its major version, and an operating system.
+     *
+     * Only these two are kept: they are what a reviewer needs to know which checks could run (the
+     * monitor count, for example, is only reported by Chromium browsers), and nothing more of the
+     * user agent string is stored.
+     *
+     * @param string $useragent User agent string.
+     * @return array 'browser' and 'os', each an empty string when not recognised.
+     */
+    public static function describe_browser(string $useragent): array {
+        $browsers = [
+            'Edge' => '~\bEdg(?:e|A|iOS)?/(\d+)~',
+            'Opera' => '~\b(?:OPR|Opera)/(\d+)~',
+            'Samsung Internet' => '~\bSamsungBrowser/(\d+)~',
+            'Firefox' => '~\b(?:Firefox|FxiOS)/(\d+)~',
+            'Chrome' => '~\b(?:Chrome|CriOS)/(\d+)~',
+            'Safari' => '~\bVersion/(\d+)[.\d]* (?:Mobile/\S+ )?Safari/~',
+        ];
+        $browser = '';
+        foreach ($browsers as $name => $pattern) {
+            if (preg_match($pattern, $useragent, $matches)) {
+                $browser = $name . ' ' . $matches[1];
+                break;
+            }
+        }
+        $systems = [
+            'iOS' => '~\b(?:iPhone|iPad|iPod)\b~',
+            'Android' => '~\bAndroid\b~',
+            'ChromeOS' => '~\bCrOS\b~',
+            'Windows' => '~\bWindows\b~',
+            'macOS' => '~\bMac OS X\b~',
+            'Linux' => '~\bLinux\b~',
+        ];
+        $os = '';
+        foreach ($systems as $name => $pattern) {
+            if (preg_match($pattern, $useragent)) {
+                $os = $name;
+                break;
+            }
+        }
+        return ['browser' => $browser, 'os' => $os];
     }
 
     /**

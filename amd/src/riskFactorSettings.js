@@ -301,6 +301,11 @@ define([], function() {
         const copy = el('div', 'quizaccess-proctoring-rfs-factorcopy');
         const label = el('div', 'quizaccess-proctoring-rfs-factorlabel');
         label.textContent = FACTOR_LABELS[key] || labelFor('riskfactor_' + key + '_enabled', key);
+        if (NOT_AVAILABLE.includes(key)) {
+            const badge = el('span', 'badge badge-secondary bg-secondary ml-2 ms-2');
+            badge.textContent = 'Not available';
+            label.appendChild(badge);
+        }
         const help = el('div', 'quizaccess-proctoring-rfs-factorhelp');
         help.textContent = FACTOR_HELP[key] || '';
         copy.appendChild(label);
@@ -326,7 +331,7 @@ define([], function() {
         barWrap.appendChild(barLabel);
 
         const offNote = el('div', 'quizaccess-proctoring-rfs-offnote');
-        offNote.textContent = 'Off — adds no points and is hidden from reports.';
+        offNote.textContent = 'Off — adds no points; reports list it as not monitored.';
 
         controls.appendChild(pointsCell);
         controls.appendChild(capCell);
@@ -395,16 +400,21 @@ define([], function() {
         speed: 'Finished unusually fast',
     };
 
+    // Factors nothing in the plugin detects (CPIT-467); keep in step with factor_coverage::FACTORS_WITHOUT_DETECTOR.
+    const NOT_AVAILABLE = ['multiplefaces', 'audio'];
+
     const FACTOR_HELP = {
         facemismatch: 'The person on camera doesn’t look like the student’s profile photo. '
             + 'The strongest sign of a stand-in test-taker.',
-        multiplefaces: 'A second person appeared on camera — possibly helping with answers.',
+        multiplefaces: 'Not available yet: nothing in TaView counts faces in a webcam capture, so this never adds points. '
+            + 'Reports list it as not monitored.',
         noface: 'Nobody was detected in frame. Often just poor lighting or leaning away, so it scores low per event.',
         phonedetected: 'A phone was spotted in the student’s hands or on the desk.',
         webcammissing: 'The whole attempt finished without a single webcam photo — the camera was blocked '
             + 'or disconnected.',
         screenshare: 'The student stopped sharing their screen mid-exam, or shared a different screen than the exam.',
-        multimonitor: 'A second screen was connected — it can show notes or another person’s help.',
+        multimonitor: 'A second screen was connected — it can show notes or another person’s help. Only Chrome and Edge '
+            + 'can report this; other browsers show as not monitored.',
         tabactivity: 'The exam window lost focus — often looking something up. Common and usually brief, '
             + 'so it scores low per event.',
         aitool: 'Activity matched a known AI chat tool (like ChatGPT) during the exam.',
@@ -413,9 +423,10 @@ define([], function() {
         clipboard: 'The student copied question text or pasted something into an answer.',
         f12: 'Developer tools can reveal answers hidden in the page or disable monitoring.',
         shortcut: 'Other watched key combinations, like screenshots or window switching.',
-        audio: 'The microphone picked up talking — possibly someone dictating answers.',
-        speed: 'The attempt was completed much faster than classmates’ — a sign of pre-known answers. '
-            + 'Only scored when speed review is turned on in the main settings.',
+        audio: 'Not available yet: nothing in TaView listens to the microphone, so this never adds points. '
+            + 'Reports list it as not monitored.',
+        speed: 'The attempt was completed faster than the minimum seconds per question set in the main settings. '
+            + 'Only scored when speed review is turned on there.',
     };
 
     /**
