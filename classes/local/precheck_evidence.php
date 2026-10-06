@@ -152,11 +152,12 @@ class precheck_evidence {
     }
 
     /**
-     * Record that a proctored attempt is going ahead with the student's current reference photo.
+     * Record that the student's current reference photo is in use.
      *
-     * Also called when the precheck lets a student resume an attempt, which can follow a fresh
-     * registration (for example after an unusable photo was replaced) and raises no
-     * attempt_started event.
+     * Called when a precheck face check matches the photo (so the photo is protected before the
+     * attempt even starts), when a proctored attempt starts, and when the precheck lets a student
+     * resume an attempt - which can follow a fresh registration (for example after an unusable
+     * photo was replaced) and raises no attempt_started event.
      *
      * @param int $userid Student id.
      * @return void

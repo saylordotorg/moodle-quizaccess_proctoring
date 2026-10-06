@@ -1007,6 +1007,9 @@ class quizaccess_proctoring_external extends external_api {
             quizaccess_proctoring_set_face_preflight_passed((int)$cm->id);
             // The attempt that follows claims this capture; otherwise it is deleted after a day.
             \quizaccess_proctoring\local\precheck_evidence::remember_passed_capture((int)$cm->id, (int)$screenshotid);
+            // A reference photo that just matched the student is in use, not abandoned: protect
+            // it now, before the attempt starts, so the cleanup cannot remove it in between.
+            \quizaccess_proctoring\local\precheck_evidence::mark_reference_used_by((int)$USER->id);
         } else {
             $status = "failed";
         }
