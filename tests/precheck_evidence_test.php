@@ -179,7 +179,57 @@ final class precheck_evidence_test extends advanced_testcase {
     }
 
     /**
-     * Without a recorded cut-off (a fresh install) the first run records one and removes nothing.
+     * A photo an attempt started with stays, even after proctoring is turned off on that quiz and
+     * the attempt is deleted, and is unprotected again once the student registers a new one.
+     */
+    public function test_used_reference_survives_quiz_and_attempt_changes(): void {
+        global $DB;
+
+        $now = time();
+        set_config('abandonedreferencesince', $now - 5 * DAYSECS, 'quizaccess_proctoring');
+        $this->add_reference($this->student->id, 0, $now - 2 * DAYSECS);
+        $attemptid = $this->add_attempt($this->student->id, $now - 2 * DAYSECS + 60);
+        $this->setUser($this->student);
+        precheck_evidence::attempt_started($this->attempt_started_event($attemptid));
+        $timeused = (int)$DB->get_field('quizaccess_proctoring_user_images', 'timeused', ['user_id' => $this->student->id]);
+        $this->assertGreaterThan(0, $timeused);
+
+        // Proctoring turned off on the quiz (its settings row is deleted) and the attempt deleted.
+        $DB->delete_records('quizaccess_proctoring', ['quizid' => $this->quiz->id]);
+        $DB->delete_records('quiz_attempts', ['id' => $attemptid]);
+
+        $this->assertSame(0, precheck_evidence::retire_abandoned_references($now));
+        $this->assertNotFalse(quizaccess_proctoring_get_image_url($this->student->id));
+
+        // A new registration clears the mark (save_reference_image sets timeused = 0).
+        $DB->set_field('quizaccess_proctoring_user_images', 'timeused', 0, ['user_id' => $this->student->id]);
+        $this->assertSame(1, precheck_evidence::retire_abandoned_references($now));
+    }
+
+    /**
+     * An attempt on a quiz without proctoring does not mark the photo used.
+     */
+    public function test_unproctored_attempt_does_not_mark_the_reference_used(): void {
+        global $DB;
+
+        $DB->delete_records('quizaccess_proctoring', ['quizid' => $this->quiz->id]);
+        $this->add_reference($this->student->id, 0, time() - HOURSECS);
+        $this->setUser($this->student);
+        precheck_evidence::attempt_started($this->attempt_started_event($this->add_attempt($this->student->id, time())));
+
+        $timeused = (int)$DB->get_field('quizaccess_proctoring_user_images', 'timeused', ['user_id' => $this->student->id]);
+        $this->assertSame(0, $timeused);
+    }
+
+    /**
+     * A fresh install records the cut-off; without one the first run records it and removes nothing.
+     */
+    public function test_install_records_the_cut_off(): void {
+        $this->assertGreaterThan(0, (int)get_config('quizaccess_proctoring', 'abandonedreferencesince'));
+    }
+
+    /**
+     * Without a recorded cut-off the first run records one and removes nothing.
      */
     public function test_first_run_records_the_cut_off(): void {
         $now = time();

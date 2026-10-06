@@ -2342,14 +2342,17 @@ class quizaccess_proctoring_external extends external_api {
         $fs->create_file_from_string($record, self::decode_base64_image_data($webcampicture));
 
         $userimagerecord = $DB->get_record('quizaccess_proctoring_user_images', ['user_id' => $userid]);
+        // A newly registered photo has not been used by an attempt yet (CPIT-464).
         if ($userimagerecord) {
             $userimagerecord->photo_draft_id = 0;
+            $userimagerecord->timeused = 0;
             $DB->update_record('quizaccess_proctoring_user_images', $userimagerecord);
             $parentid = $userimagerecord->id;
         } else {
             $userimagerecord = new stdClass();
             $userimagerecord->user_id = $userid;
             $userimagerecord->photo_draft_id = 0;
+            $userimagerecord->timeused = 0;
             $parentid = $DB->insert_record('quizaccess_proctoring_user_images', $userimagerecord);
         }
 

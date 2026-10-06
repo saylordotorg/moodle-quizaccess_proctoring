@@ -1417,10 +1417,18 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
 
     if ($oldversion < 2026100601) {
         // Self-registered reference photos that no proctored attempt follows within a day are now
-        // removed (CPIT-464). Only photos registered from now on: an older photo may belong to
-        // attempts that have since been deleted, so its history cannot show it was abandoned.
-        // Abandoned precheck captures need no such cut-off - none was ever attached to an
-        // attempt - so the existing backlog is cleared by the hourly task.
+        // removed (CPIT-464). An attempt starting with a photo records it in timeused, which a
+        // later quiz setting change, attempt deletion or course reset cannot undo.
+        $table = new xmldb_table('quizaccess_proctoring_user_images');
+        $field = new xmldb_field('timeused', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'photo_draft_id');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Only photos registered from now on: an older photo may have been used by attempts
+        // that have since been deleted, and nothing recorded that use. Abandoned precheck
+        // captures need no such cut-off - none was ever attached to an attempt - so the
+        // existing backlog is cleared by the hourly task.
         if (!get_config('quizaccess_proctoring', 'abandonedreferencesince')) {
             set_config('abandonedreferencesince', time(), 'quizaccess_proctoring');
         }

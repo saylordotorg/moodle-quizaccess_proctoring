@@ -72,6 +72,8 @@ class precheck_evidence {
     public static function attempt_started(\mod_quiz\event\attempt_started $event): void {
         global $DB, $SESSION, $USER;
 
+        self::mark_reference_used($event);
+
         $cmid = (int)$event->contextinstanceid;
         $pending = $SESSION->quizaccess_proctoring_precheckcapture[$cmid] ?? [];
         if (!$pending) {
@@ -113,6 +115,36 @@ class precheck_evidence {
     }
 
     /**
+     * Record that a proctored attempt started with the student's reference photo.
+     *
+     * Kept on the photo itself, so the photo stays protected from the abandoned-photo cleanup
+     * even if proctoring is later turned off on that quiz, the attempt is deleted or the course
+     * is reset. Registering a new photo clears it.
+     *
+     * @param \mod_quiz\event\attempt_started $event The attempt start event.
+     * @return void
+     */
+    private static function mark_reference_used(\mod_quiz\event\attempt_started $event): void {
+        global $DB;
+
+        $userid = (int)$event->relateduserid;
+        $attempt = $DB->get_record('quiz_attempts', ['id' => (int)$event->objectid], 'id, quiz, userid, preview');
+        if (!$attempt || (int)$attempt->userid !== $userid || !empty($attempt->preview)) {
+            return;
+        }
+        if (!$DB->record_exists('quizaccess_proctoring', ['quizid' => (int)$attempt->quiz, 'proctoringrequired' => 1])) {
+            return;
+        }
+        $DB->set_field_select(
+            'quizaccess_proctoring_user_images',
+            'timeused',
+            time(),
+            'user_id = :userid AND timeused = 0',
+            ['userid' => $userid]
+        );
+    }
+
+    /**
      * Queue precheck captures that never became part of an attempt for deletion.
      *
      * The image deletion task then removes each row's picture, face crop, face-match warning and
@@ -142,12 +174,13 @@ class precheck_evidence {
     }
 
     /**
-     * Remove self-registered reference photos that no proctored attempt followed.
+     * Remove self-registered reference photos that no proctored attempt used.
      *
-     * Only photos registered since this rule was introduced are considered (the
-     * abandonedreferencesince setting, recorded by the upgrade, or by the first run on a fresh
-     * install): an older photo may belong to attempts that have since been deleted, so its
-     * history cannot show it was abandoned.
+     * A photo is used once a proctored attempt starts with it (timeused, set when the attempt
+     * starts and kept whatever later happens to the quiz or attempt). Only photos registered
+     * since this rule was introduced are considered (the abandonedreferencesince setting,
+     * recorded at install or by the upgrade): an older photo may have been used by attempts that
+     * have since been deleted, and nothing recorded that use.
      *
      * @param int $now Current time.
      * @return int Number of photos removed.
@@ -157,7 +190,8 @@ class precheck_evidence {
 
         $since = (int)get_config('quizaccess_proctoring', 'abandonedreferencesince');
         if ($since <= 0) {
-            // A fresh install has no upgrade step to record the cut-off: start counting now.
+            // Install and upgrade both record the cut-off; without one, nothing is known to be
+            // new enough, so start counting now.
             set_config('abandonedreferencesince', $now, 'quizaccess_proctoring');
             return 0;
         }
@@ -167,6 +201,7 @@ class precheck_evidence {
                   JOIN {quizaccess_proctoring_face_images} f
                        ON f.parentid = ui.id AND f.parent_type = :parenttype
                  WHERE ui.photo_draft_id = 0
+                   AND ui.timeused = 0
                    AND f.timemodified >= :since
                    AND f.timemodified <= :cutoff
                    AND NOT EXISTS (
@@ -199,7 +234,7 @@ class precheck_evidence {
                        FROM {quizaccess_proctoring_user_images} ui
                        JOIN {quizaccess_proctoring_face_images} f
                             ON f.parentid = ui.id AND f.parent_type = :parenttype
-                      WHERE ui.user_id = :userid AND ui.photo_draft_id = 0",
+                      WHERE ui.user_id = :userid AND ui.photo_draft_id = 0 AND ui.timeused = 0",
                     ['parenttype' => 'admin_image', 'userid' => $userid],
                     IGNORE_MULTIPLE
                 );
