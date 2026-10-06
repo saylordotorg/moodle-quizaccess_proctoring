@@ -100,8 +100,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 }
             }
         } else {
-            // Resuming: no attempt_started event follows, so bind the precheck capture here (CPIT-464).
+            // Resuming: no attempt_started event follows, so bind the precheck capture and mark the
+            // reference photo used here (CPIT-464). The precheck may just have registered it.
             \quizaccess_proctoring\local\precheck_evidence::claim_for_attempt((int)$this->quiz->cmid, (int)$attemptid);
+            \quizaccess_proctoring\local\precheck_evidence::mark_reference_used_by((int)$USER->id);
         }
         quizaccess_proctoring_clear_face_preflight((int)$this->quiz->cmid);
     }

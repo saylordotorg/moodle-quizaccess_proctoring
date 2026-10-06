@@ -106,6 +106,22 @@ final class precheck_evidence_test extends advanced_testcase {
     }
 
     /**
+     * A photo registered during a resume precheck is marked used, so the cleanup keeps it even
+     * though the attempt started before the photo was registered.
+     */
+    public function test_reference_registered_on_resume_is_kept(): void {
+        $now = time();
+        set_config('abandonedreferencesince', $now - 5 * DAYSECS, 'quizaccess_proctoring');
+        $this->add_attempt($this->student->id, $now - 3 * DAYSECS);
+        $this->add_reference($this->student->id, 0, $now - 2 * DAYSECS);
+
+        precheck_evidence::mark_reference_used_by((int)$this->student->id);
+
+        $this->assertSame(0, precheck_evidence::retire_abandoned_references($now));
+        $this->assertNotFalse(quizaccess_proctoring_get_image_url($this->student->id));
+    }
+
+    /**
      * Removal guarded on the photo being unused leaves a photo an attempt has just used.
      */
     public function test_guarded_removal_keeps_a_photo_marked_used(): void {

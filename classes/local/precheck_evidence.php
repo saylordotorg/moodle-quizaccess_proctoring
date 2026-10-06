@@ -148,6 +148,22 @@ class precheck_evidence {
         if (!$DB->record_exists('quizaccess_proctoring', ['quizid' => (int)$attempt->quiz, 'proctoringrequired' => 1])) {
             return;
         }
+        self::mark_reference_used_by($userid);
+    }
+
+    /**
+     * Record that a proctored attempt is going ahead with the student's current reference photo.
+     *
+     * Also called when the precheck lets a student resume an attempt, which can follow a fresh
+     * registration (for example after an unusable photo was replaced) and raises no
+     * attempt_started event.
+     *
+     * @param int $userid Student id.
+     * @return void
+     */
+    public static function mark_reference_used_by(int $userid): void {
+        global $DB;
+
         $DB->set_field_select(
             'quizaccess_proctoring_user_images',
             'timeused',
