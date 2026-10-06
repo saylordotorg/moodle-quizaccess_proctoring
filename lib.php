@@ -1906,16 +1906,11 @@ function quizaccess_proctoring_with_risk_hold_lock(int $holdid, callable $decisi
     global $DB;
 
     $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], 'id, quizinstance, userid', MUST_EXIST);
-    $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring_riskhold');
-    $lock = $factory->get_lock('quiz' . (int)$hold->quizinstance . 'user' . (int)$hold->userid, 30);
-    if (!$lock) {
-        throw new moodle_exception('locktimeout', 'moodle');
-    }
-    try {
-        return $decision();
-    } finally {
-        $lock->release();
-    }
+    return (bool)\quizaccess_proctoring\local\risk_hold_enforcer::with_lock(
+        (int)$hold->quizinstance,
+        (int)$hold->userid,
+        $decision
+    );
 }
 
 /**

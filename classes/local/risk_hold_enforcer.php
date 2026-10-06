@@ -49,6 +49,9 @@ class risk_hold_enforcer {
     /** @var bool True while this class is writing grades, so its own grade events are ignored. */
     private static $running = false;
 
+    /** @var bool[] Hold locks this request already holds, keyed by quiz and student. */
+    private static $heldlocks = [];
+
     /**
      * Hold statuses that affect the gradebook.
      *
@@ -93,6 +96,52 @@ class risk_hold_enforcer {
      * @return bool False when an active hold could not empty and lock the grade (logged).
      */
     public static function enforce(int $quizinstance, int $userid, bool $clearfeedback = false): bool {
+        return self::with_lock($quizinstance, $userid, function () use ($quizinstance, $userid, $clearfeedback) {
+            return self::enforce_locked($quizinstance, $userid, $clearfeedback);
+        });
+    }
+
+    /**
+     * Run code while holding the lock for one student's holds on one quiz.
+     *
+     * Hold decisions (release, confirm) and every enforcement take this lock, so enforcement never
+     * acts on a hold a concurrent decision is changing. Decisions keep it until they commit. It is
+     * re-entrant within a request: a decision that enforces does not wait on itself.
+     *
+     * @param int $quizinstance Quiz instance id (quiz.id).
+     * @param int $userid Student id.
+     * @param callable $work The work to run under the lock.
+     * @return mixed The work's result.
+     */
+    public static function with_lock(int $quizinstance, int $userid, callable $work) {
+        $key = 'quiz' . $quizinstance . 'user' . $userid;
+        if (!empty(self::$heldlocks[$key])) {
+            return $work();
+        }
+
+        $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring_riskhold');
+        $lock = $factory->get_lock($key, 30);
+        if (!$lock) {
+            throw new \moodle_exception('locktimeout', 'moodle');
+        }
+        self::$heldlocks[$key] = true;
+        try {
+            return $work();
+        } finally {
+            unset(self::$heldlocks[$key]);
+            $lock->release();
+        }
+    }
+
+    /**
+     * {@see self::enforce()}, with the student's hold lock already held.
+     *
+     * @param int $quizinstance Quiz instance id (quiz.id).
+     * @param int $userid Student id.
+     * @param bool $clearfeedback True when a hold was just lifted.
+     * @return bool False when an active hold could not empty and lock the grade (logged).
+     */
+    private static function enforce_locked(int $quizinstance, int $userid, bool $clearfeedback): bool {
         global $CFG, $DB;
 
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
