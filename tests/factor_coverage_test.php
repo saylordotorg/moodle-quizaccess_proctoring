@@ -66,8 +66,14 @@ final class factor_coverage_test extends advanced_testcase {
         // Everything on and the browser reported in: passed.
         foreach (['aitool', 'aitoolscreenshot', 'clipboard', 'tabactivity', 'f12', 'shortcut', 'screenshare',
                 'multimonitor', 'phonedetected'] as $factorkey) {
-            $this->assertNull(factor_coverage::reason($factorkey, $all, true, false, 1, 1), $factorkey);
+            $this->assertNull(factor_coverage::reason($factorkey, $all, true, false, 1, 1, true), $factorkey);
         }
+
+        // Phone detection switched on is not enough: the browser has to say the detector started.
+        $this->assertSame(
+            factor_coverage::REASON_DETECTOR_FAILED,
+            factor_coverage::reason('phonedetected', $all, true, false, 1, 1, false)
+        );
 
         // The attempt predates monitor recording.
         $this->assertSame(factor_coverage::REASON_NOT_RECORDED, factor_coverage::reason('tabactivity', null, true, false, 1, 1));
@@ -170,6 +176,18 @@ final class factor_coverage_test extends advanced_testcase {
         $this->assertSame(factor_coverage::REASON_SETTING_OFF, $reasons['phonedetected']);
         $this->assertSame(factor_coverage::REASON_BROWSER_UNSUPPORTED, $reasons['multimonitor']);
 
+        // Phone detection that was on but never started is not a pass either; once the browser
+        // reports it started, it is.
+        $phoneon = ['phone' => true] + $monitors;
+        $DB->delete_records('quizaccess_proctoring_events', ['attemptid' => $attemptid, 'eventtype' => 'monitoring_started']);
+        monitoring_coverage::start_attempt($course->id, $quiz->cmid, $student->id, $attemptid, true, false, 30);
+        monitoring_coverage::record_monitors($course->id, $quiz->cmid, $student->id, $attemptid, $phoneon, self::CHROME_WINDOWS);
+        $reasons = factor_coverage::for_attempt($course->id, $quiz->cmid, $student->id, $attemptid)['reasons'];
+        $this->assertSame(factor_coverage::REASON_DETECTOR_FAILED, $reasons['phonedetected']);
+        $this->event($course->id, $quiz->cmid, $student->id, $attemptid, 'phone_detection_started');
+        $reasons = factor_coverage::for_attempt($course->id, $quiz->cmid, $student->id, $attemptid)['reasons'];
+        $this->assertArrayNotHasKey('phonedetected', $reasons);
+
         // Detection that later worked shows the check did run.
         $this->event($course->id, $quiz->cmid, $student->id, $attemptid, 'multiple_monitors_detected');
         $reasons = factor_coverage::for_attempt($course->id, $quiz->cmid, $student->id, $attemptid)['reasons'];
@@ -206,6 +224,35 @@ final class factor_coverage_test extends advanced_testcase {
         $reasons = factor_coverage::for_attempt($course->id, $quiz->cmid, $student->id, $attemptid)['reasons'];
         $this->assertSame(factor_coverage::REASON_NO_BROWSER_DATA, $reasons['tabactivity']);
         $this->assertSame(factor_coverage::REASON_NOT_COMPARED, $reasons['facemismatch']);
+    }
+
+    /**
+     * A reference photo's face check never counts as a face check of an attempt.
+     *
+     * Reference-photo face images point at user_images rows, whose ids can equal an attempt log's id.
+     */
+    public function test_reference_photo_face_images_do_not_count_as_attempt_checks(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        [$course, $quiz, $student, $attemptid] = $this->fixture();
+        $logid = $DB->insert_record('quizaccess_proctoring_logs', (object)[
+            'courseid' => $course->id, 'quizid' => $quiz->cmid, 'userid' => $student->id,
+            'webcampicture' => 'https://example.com/capture.png', 'status' => $attemptid, 'timemodified' => time(),
+        ]);
+        $DB->insert_record('quizaccess_proctoring_face_images', (object)[
+            'parent_type' => 'admin_image', 'parentid' => $logid, 'faceimage' => 'https://example.com/ref.png',
+            'facefound' => 1, 'timemodified' => time(),
+        ]);
+        $reasons = factor_coverage::for_attempt($course->id, $quiz->cmid, $student->id, $attemptid)['reasons'];
+        $this->assertSame(factor_coverage::REASON_NO_FACE_CHECK, $reasons['noface']);
+
+        $DB->insert_record('quizaccess_proctoring_face_images', (object)[
+            'parent_type' => 'camshot_image', 'parentid' => $logid, 'faceimage' => 'https://example.com/face.png',
+            'facefound' => 1, 'timemodified' => time(),
+        ]);
+        $reasons = factor_coverage::for_attempt($course->id, $quiz->cmid, $student->id, $attemptid)['reasons'];
+        $this->assertArrayNotHasKey('noface', $reasons);
     }
 
     /**

@@ -1434,6 +1434,21 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return;
                 }
 
+                // Tell the report the detector really started: it gives up silently above when the
+                // model cannot load, and without this the report could not tell the two apart.
+                // Once per attempt is enough, so later quiz pages do not log it again.
+                const startedKey = 'quizaccess_proctoring_phone_started_' + (parseInt(props.status, 10) || 0);
+                let alreadyLogged = false;
+                try {
+                    alreadyLogged = window.sessionStorage.getItem(startedKey) === '1';
+                    window.sessionStorage.setItem(startedKey, '1');
+                } catch (error) {
+                    // Storage can be unavailable; logging it again on each page is harmless.
+                }
+                if (!alreadyLogged) {
+                    logEvent('phone_detection_started', {});
+                }
+
                 monitorInterval(checkPhoneFrame, phoneCheckIntervalMs);
             };
 
@@ -1591,7 +1606,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         !(captureDesktop && screenShareEvents.includes(eventType)) &&
                         !(monitorDetectionEnabled && multiMonitorEvents.includes(eventType)) &&
                         !(monitorMouseActivity && mouseEvents.includes(eventType)) &&
-                        !(detectPhone && eventType === 'phone_detected')) {
+                        !(detectPhone && ['phone_detected', 'phone_detection_started'].includes(eventType))) {
                     return;
                 }
 

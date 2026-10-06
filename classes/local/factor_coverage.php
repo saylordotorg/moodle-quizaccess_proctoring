@@ -44,6 +44,8 @@ final class factor_coverage {
     public const REASON_NO_BROWSER_DATA = 'nobrowserdata';
     /** The attempt predates monitor recording, so which monitors ran is unknown. */
     public const REASON_NOT_RECORDED = 'notrecorded';
+    /** The detector was switched on but never reported that it started in the browser. */
+    public const REASON_DETECTOR_FAILED = 'detectorfailed';
     /** No webcam capture was compared with the reference photo. */
     public const REASON_NOT_COMPARED = 'notcompared';
     /** No webcam capture was checked for a face. */
@@ -86,6 +88,7 @@ final class factor_coverage {
         $os = '';
         $browserdata = false;
         $monitorunsupported = false;
+        $phonestarted = false;
         // Unknown until the attempt's captures are counted; an attempt without an id has none to count.
         $comparedcount = -1;
         $facecheckcount = -1;
@@ -117,6 +120,16 @@ final class factor_coverage {
                 $scope + ['eventtype' => 'multiple_monitors_detected']
             );
 
+            // Phone detection loads a model in the browser and silently gives up if it cannot, so
+            // only the browser saying it started proves it ran.
+            $phonestarted = $DB->record_exists(
+                'quizaccess_proctoring_events',
+                $scope + ['eventtype' => 'phone_detection_started']
+            ) || $DB->record_exists(
+                'quizaccess_proctoring_events',
+                $scope + ['eventtype' => 'phone_detected']
+            );
+
             $logwhere = 'courseid = :courseid AND quizid = :cmid AND userid = :userid
                 AND status = :attemptid AND deletionprogress = 0';
             $logparams = ['courseid' => $courseid, 'cmid' => $cmid, 'userid' => $userid, 'attemptid' => $attemptid];
@@ -143,9 +156,11 @@ final class factor_coverage {
                 "SELECT COUNT(1)
                    FROM {quizaccess_proctoring_face_images} fi
                    JOIN {quizaccess_proctoring_logs} l ON l.id = fi.parentid
-                  WHERE l.courseid = :courseid AND l.quizid = :cmid AND l.userid = :userid
+                  WHERE fi.parent_type = :parenttype
+                    AND l.courseid = :courseid AND l.quizid = :cmid AND l.userid = :userid
                     AND l.status = :attemptid AND l.deletionprogress = 0",
-                $logparams
+                // Reference photos are face images too, but their parentid points at user_images.
+                $logparams + ['parenttype' => 'camshot_image']
             );
         }
 
@@ -157,7 +172,8 @@ final class factor_coverage {
                 $browserdata,
                 $monitorunsupported,
                 $comparedcount,
-                $facecheckcount
+                $facecheckcount,
+                $phonestarted
             );
             if ($reason !== null) {
                 $reasons[$factorkey] = $reason;
@@ -176,6 +192,7 @@ final class factor_coverage {
      * @param bool $monitorunsupported Whether the browser said it cannot count monitors.
      * @param int $comparedcount Webcam captures compared with the reference photo, or -1 when unknown.
      * @param int $facecheckcount Webcam captures checked for a face, or -1 when unknown.
+     * @param bool $phonestarted Whether the browser reported that phone detection started.
      * @return string|null One of the REASON_* constants, or null when the check ran.
      */
     public static function reason(
@@ -184,7 +201,8 @@ final class factor_coverage {
         bool $browserdata,
         bool $monitorunsupported,
         int $comparedcount,
-        int $facecheckcount
+        int $facecheckcount,
+        bool $phonestarted = false
     ): ?string {
         if (in_array($factorkey, self::FACTORS_WITHOUT_DETECTOR, true)) {
             return self::REASON_NOT_BUILT;
@@ -214,6 +232,9 @@ final class factor_coverage {
         }
         if ($factorkey === 'multimonitor' && $monitorunsupported) {
             return self::REASON_BROWSER_UNSUPPORTED;
+        }
+        if ($factorkey === 'phonedetected' && !$phonestarted) {
+            return self::REASON_DETECTOR_FAILED;
         }
         return null;
     }

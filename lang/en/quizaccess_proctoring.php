@@ -240,6 +240,7 @@ $string['facequalityfailed'] = 'Make sure your face is centered, well lit, and i
 $string['faceregistered'] = 'Face registered. You can now start the quiz.';
 $string['factorcoverage:browseros'] = '{$a->browser} on {$a->os}';
 $string['factorcoverage:browserunsupported'] = 'this browser cannot report how many monitors are connected (only Chrome and Edge can)';
+$string['factorcoverage:detectorfailed'] = 'switched on, but the detector never reported that it started in the browser (for example, its model failed to load)';
 $string['factorcoverage:nobrowserdata'] = 'the browser sent no proctoring data during this attempt, so the in-browser checks cannot be shown to have run';
 $string['factorcoverage:nofacecheck'] = 'no webcam capture was checked for a face';
 $string['factorcoverage:notbuilt'] = 'not available: nothing in TaView detects this yet';

@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
   - it was switched off;
   - the browser cannot report it (monitor count outside Chrome and Edge);
   - the browser sent no proctoring data;
+  - phone detection was on, but its model never loaded in the browser (the browser now reports when the detector starts);
   - no capture was compared with the reference photo or checked for a face;
   - the attempt predates this release.
   Scores do not change.

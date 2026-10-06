@@ -1193,15 +1193,19 @@ if (
                 $row['timeshort'] = userdate((int)$info->timemodified, $timeformat);
                 $studentdata[] = $row;
         }
+        [$neutralsql, $neutralparams] = $DB->get_in_or_equal(
+            \quizaccess_proctoring\local\monitoring_coverage::NEUTRAL_EVENTS,
+            SQL_PARAMS_NAMED,
+            'neutral',
+            false
+        );
         $eventwhere = 'courseid = :courseid AND quizid = :cmid AND userid = :studentid';
         $eventparams = [
             'courseid' => $courseid,
             'cmid' => $cmid,
             'studentid' => $studentid,
-            'coveragestart' => 'monitoring_started',
-            'coveragecapture' => 'screen_capture',
-        ];
-        $eventwhere .= ' AND eventtype NOT IN (:coveragestart, :coveragecapture)';
+        ] + $neutralparams;
+        $eventwhere .= ' AND eventtype ' . $neutralsql;
         if (!empty($attemptid)) {
             $eventwhere .= ' AND attemptid = :attemptid';
             $eventparams['attemptid'] = $attemptid;
