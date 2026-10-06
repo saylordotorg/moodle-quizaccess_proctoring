@@ -90,6 +90,38 @@ final class precheck_evidence_test extends advanced_testcase {
     }
 
     /**
+     * Resuming an attempt raises no attempt_started event; the precheck binds its capture itself.
+     */
+    public function test_passed_capture_is_claimed_when_resuming(): void {
+        global $DB;
+
+        $this->setUser($this->student);
+        $attemptid = $this->add_attempt($this->student->id, time() - HOURSECS);
+        $reportid = $this->add_log(0, time());
+        precheck_evidence::remember_passed_capture((int)$this->quiz->cmid, $reportid);
+
+        precheck_evidence::claim_for_attempt((int)$this->quiz->cmid, $attemptid);
+
+        $this->assertSame($attemptid, (int)$DB->get_field('quizaccess_proctoring_logs', 'status', ['id' => $reportid]));
+    }
+
+    /**
+     * Removal guarded on the photo being unused leaves a photo an attempt has just used.
+     */
+    public function test_guarded_removal_keeps_a_photo_marked_used(): void {
+        global $DB;
+
+        $this->add_reference($this->student->id, 0, time() - 2 * DAYSECS);
+        $url = (string)quizaccess_proctoring_get_image_url($this->student->id);
+        // An attempt starts between the cleanup's checks and its delete.
+        $DB->set_field('quizaccess_proctoring_user_images', 'timeused', time(), ['user_id' => $this->student->id]);
+
+        $this->assertFalse(quizaccess_proctoring_retire_self_registered_reference($this->student->id, $url, true));
+        $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $this->student->id]));
+        $this->assertNotFalse(quizaccess_proctoring_get_image_url($this->student->id));
+    }
+
+    /**
      * A remembered capture is not claimed once it is stale, or by another student's attempt.
      */
     public function test_stale_or_foreign_captures_are_not_claimed(): void {

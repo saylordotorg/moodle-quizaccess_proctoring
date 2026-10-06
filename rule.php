@@ -99,6 +99,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                     throw new moodle_exception('idrecheckrequired', 'quizaccess_proctoring');
                 }
             }
+        } else {
+            // Resuming: no attempt_started event follows, so bind the precheck capture here (CPIT-464).
+            \quizaccess_proctoring\local\precheck_evidence::claim_for_attempt((int)$this->quiz->cmid, (int)$attemptid);
         }
         quizaccess_proctoring_clear_face_preflight((int)$this->quiz->cmid);
     }

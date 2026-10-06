@@ -73,8 +73,24 @@ class precheck_evidence {
         global $DB, $SESSION, $USER;
 
         self::mark_reference_used($event);
+        if ((int)($USER->id ?? 0) === (int)$event->relateduserid) {
+            self::claim_for_attempt((int)$event->contextinstanceid, (int)$event->objectid);
+        }
+    }
 
-        $cmid = (int)$event->contextinstanceid;
+    /**
+     * Bind the remembered precheck capture to an attempt of the current user.
+     *
+     * Called when an attempt starts, and when the precheck lets the student resume an existing
+     * attempt (Moodle raises no attempt_started event for a resume).
+     *
+     * @param int $cmid Quiz course module id.
+     * @param int $attemptid The attempt the precheck led into.
+     * @return void
+     */
+    public static function claim_for_attempt(int $cmid, int $attemptid): void {
+        global $DB, $SESSION, $USER;
+
         $pending = $SESSION->quizaccess_proctoring_precheckcapture[$cmid] ?? [];
         if (!$pending) {
             return;
@@ -84,16 +100,13 @@ class precheck_evidence {
         $userid = (int)($pending['userid'] ?? 0);
         $created = (int)($pending['timecreated'] ?? 0);
         $now = time();
-        if (
-            $userid <= 0 || $userid !== (int)($USER->id ?? 0) || $userid !== (int)$event->relateduserid ||
-                $created > $now || $created <= $now - self::CLAIM_TTL
-        ) {
+        if ($userid <= 0 || $userid !== (int)($USER->id ?? 0) || $created > $now || $created <= $now - self::CLAIM_TTL) {
             return;
         }
-        $cm = get_coursemodule_from_id('quiz', $cmid, (int)$event->courseid, false, IGNORE_MISSING);
+        $cm = get_coursemodule_from_id('quiz', $cmid, 0, false, IGNORE_MISSING);
         if (
             !$cm || !$DB->record_exists('quiz_attempts', [
-                'id' => (int)$event->objectid, 'userid' => $userid, 'quiz' => (int)$cm->instance, 'preview' => 0])
+                'id' => $attemptid, 'userid' => $userid, 'quiz' => (int)$cm->instance, 'preview' => 0])
         ) {
             return;
         }
@@ -102,12 +115,12 @@ class precheck_evidence {
         $DB->set_field_select(
             'quizaccess_proctoring_logs',
             'status',
-            (int)$event->objectid,
+            $attemptid,
             'id = :id AND courseid = :courseid AND quizid = :cmid AND userid = :userid AND status = 0
                 AND deletionprogress = 0',
             [
                 'id' => (int)($pending['reportid'] ?? 0),
-                'courseid' => (int)$event->courseid,
+                'courseid' => (int)$cm->course,
                 'cmid' => $cmid,
                 'userid' => $userid,
             ]
@@ -245,7 +258,7 @@ class precheck_evidence {
                     continue;
                 }
                 $url = quizaccess_proctoring_get_image_url($userid);
-                if ($url && quizaccess_proctoring_retire_self_registered_reference($userid, (string)$url)) {
+                if ($url && quizaccess_proctoring_retire_self_registered_reference($userid, (string)$url, true)) {
                     $retired++;
                 }
             } finally {

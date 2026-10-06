@@ -516,16 +516,28 @@ function quizaccess_proctoring_get_reference_lock(int $userid) {
  * between updates the same row in place, so the row is deleted only while it is still
  * self-registered, in a single conditional delete, and nothing else is touched if it survives.
  *
+ * With $requireunused, the row is also deleted only while no attempt has used the photo, in the
+ * same conditional delete: an attempt starting meanwhile marks it used, and the photo stays.
+ *
  * @param int $userid Student whose reference photo to remove.
  * @param string $checkedurl Pluginfile URL of the reference that was checked.
+ * @param bool $requireunused Remove the photo only while no attempt has used it.
  * @return bool True when the reference was removed.
  */
-function quizaccess_proctoring_retire_self_registered_reference(int $userid, string $checkedurl): bool {
+function quizaccess_proctoring_retire_self_registered_reference(
+    int $userid,
+    string $checkedurl,
+    bool $requireunused = false
+): bool {
     global $DB;
 
     $record = $DB->get_record('quizaccess_proctoring_user_images', ['user_id' => $userid]);
     if (!$record || (int)$record->photo_draft_id !== 0) {
         return false;
+    }
+    $conditions = ['id' => $record->id, 'photo_draft_id' => 0];
+    if ($requireunused) {
+        $conditions['timeused'] = 0;
     }
     $checked = quizaccess_proctoring_stored_file_from_pluginfile_url($checkedurl);
     $currenturl = quizaccess_proctoring_get_image_url($userid);
@@ -534,7 +546,7 @@ function quizaccess_proctoring_retire_self_registered_reference(int $userid, str
         return false;
     }
 
-    $DB->delete_records('quizaccess_proctoring_user_images', ['id' => $record->id, 'photo_draft_id' => 0]);
+    $DB->delete_records('quizaccess_proctoring_user_images', $conditions);
     if ($DB->record_exists('quizaccess_proctoring_user_images', ['id' => $record->id])) {
         return false;
     }
