@@ -267,7 +267,13 @@ class risk_hold_enforcer {
     }
 
     /**
-     * Recompute the quiz grade, scoring voided attempts as zero.
+     * Recompute the quiz grade, scoring voided attempts as zero, and publish it.
+     *
+     * The grade is computed here and written once, rather than through the quiz's own
+     * recompute, which would first publish a different value. Moodle queues grade events raised
+     * inside an event observer and delivers them after the observer returns, so an intermediate
+     * value would reach {@see self::handle_user_graded()} and start the cycle again. Writing the
+     * final value directly means a repeat run changes nothing, and the gradebook raises no event.
      *
      * @param stdClass $quiz Quiz record with cmidnumber and visible.
      * @param int $userid Student id.
@@ -278,36 +284,78 @@ class risk_hold_enforcer {
         global $DB;
 
         $attempts = quiz_get_user_attempts($quiz->id, $userid, 'finished');
-        if (!$attempts) {
-            // No finished attempt to grade from: let the quiz publish "no grade" itself.
-            quiz_update_grades($quiz, $userid);
-            return;
-        }
+        $grade = self::final_grade($quiz, $attempts, $voidedattemptids);
 
-        $hasvoided = false;
-        foreach ($voidedattemptids as $attemptid) {
-            if (isset($attempts[$attemptid])) {
-                $attempts[$attemptid]->sumgrades = 0;
-                $hasvoided = true;
+        $existing = $DB->get_record('quiz_grades', ['quiz' => $quiz->id, 'userid' => $userid]);
+        if ($grade === null) {
+            if ($existing) {
+                $DB->delete_records('quiz_grades', ['id' => $existing->id]);
             }
-        }
-
-        \mod_quiz\quiz_settings::create($quiz->id, $userid)
-            ->get_grade_calculator()
-            ->recompute_final_grade($userid, $attempts);
-
-        // "Highest grade" starts from null and keeps a mark only if it is greater, and 0 > null is
-        // false in PHP, so a quiz whose only marks are voided zeros comes out with no grade at all.
-        // A voided attempt is a mark of zero, not a missing mark: publish the zero.
-        if ($hasvoided && !$DB->record_exists('quiz_grades', ['quiz' => $quiz->id, 'userid' => $userid])) {
+        } else if (!$existing) {
             $DB->insert_record('quiz_grades', (object)[
                 'quiz' => $quiz->id,
                 'userid' => $userid,
-                'grade' => 0,
+                'grade' => $grade,
                 'timemodified' => time(),
             ]);
-            quiz_update_grades($quiz, $userid);
+        } else if (grade_floats_different((float)$existing->grade, $grade)) {
+            $existing->grade = $grade;
+            $existing->timemodified = time();
+            $DB->update_record('quiz_grades', $existing);
         }
+
+        // Publishes the stored grade, or "no grade" when there is none. The gradebook raises a
+        // grade event only when the final grade actually changes.
+        quiz_update_grades($quiz, $userid);
+    }
+
+    /**
+     * The quiz grade for a set of attempts, with voided attempts scored as zero.
+     *
+     * Follows the quiz's grading method like core's grade calculator, except that a voided
+     * attempt is a mark of zero rather than a missing mark: core's "highest grade" starts from
+     * null and keeps a mark only if it is greater, and 0 > null is false in PHP, so attempts that
+     * all score zero would otherwise produce no grade at all.
+     *
+     * @param stdClass $quiz Quiz record (grade, sumgrades, grademethod).
+     * @param stdClass[] $attempts Finished attempts in attempt order.
+     * @param int[] $voidedattemptids Attempts with a confirmed or automatically failed hold.
+     * @return float|null The rescaled quiz grade, or null when no attempt has a mark.
+     */
+    public static function final_grade(stdClass $quiz, array $attempts, array $voidedattemptids): ?float {
+        $voided = array_map('intval', $voidedattemptids);
+        $marks = [];
+        foreach ($attempts as $attempt) {
+            if (in_array((int)$attempt->id, $voided, true)) {
+                $marks[] = 0.0;
+            } else {
+                $marks[] = $attempt->sumgrades === null ? null : (float)$attempt->sumgrades;
+            }
+        }
+        if (!$marks) {
+            return null;
+        }
+
+        $graded = array_values(array_filter($marks, function ($mark) {
+            return $mark !== null;
+        }));
+        switch ((int)$quiz->grademethod) {
+            case QUIZ_ATTEMPTFIRST:
+                $raw = reset($marks);
+                break;
+            case QUIZ_ATTEMPTLAST:
+                $raw = end($marks);
+                break;
+            case QUIZ_GRADEAVERAGE:
+                $raw = $graded ? array_sum($graded) / count($graded) : null;
+                break;
+            case QUIZ_GRADEHIGHEST:
+            default:
+                $raw = $graded ? max($graded) : null;
+                break;
+        }
+
+        return $raw === null ? null : (float)quiz_rescale_grade($raw, $quiz, false);
     }
 
     /**
@@ -375,7 +423,7 @@ class risk_hold_enforcer {
      * Holds now keep certificates from being issued, but certificates issued before this
      * change, or through a restriction that does not depend on the quiz, are flagged so staff
      * can revoke them. A confirmed or failed attempt does not taint a certificate the student
-     * earned afterwards with a valid attempt.
+     * earned with a valid passing attempt finished before it was issued.
      *
      * @param int $courseid Course id.
      * @param int $userid Student id.
@@ -420,8 +468,22 @@ class risk_hold_enforcer {
                         'autofailed' => QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
                     ]
                 );
-                foreach (quiz_get_user_attempts($attempt->quiz, $userid, 'finished') as $other) {
-                    if (!in_array((int)$other->id, array_map('intval', $voided), true)) {
+                // Only a valid attempt that passed can have earned the certificate; the quiz's
+                // pass mark is on its grade item (no pass mark means any finished attempt counts).
+                $quiz = $DB->get_record('quiz', ['id' => $attempt->quiz], 'id, grade, sumgrades', MUST_EXIST);
+                $gradepass = (float)$DB->get_field('grade_items', 'gradepass', [
+                    'itemtype' => 'mod',
+                    'itemmodule' => 'quiz',
+                    'iteminstance' => $quiz->id,
+                    'itemnumber' => 0,
+                ]);
+                $voided = array_map('intval', $voided);
+                foreach (quiz_get_user_attempts($quiz->id, $userid, 'finished') as $other) {
+                    if (in_array((int)$other->id, $voided, true) || $other->sumgrades === null) {
+                        continue;
+                    }
+                    $grade = (float)quiz_rescale_grade($other->sumgrades, $quiz, false);
+                    if ($gradepass <= 0 || $grade >= $gradepass - 0.00001) {
                         $validfinishtimes[] = (int)$other->timefinish;
                     }
                 }
@@ -437,12 +499,12 @@ class risk_hold_enforcer {
      * Decide whether certificates issued since a held attempt started conflict with its hold.
      *
      * While a hold is active no certificate should be issued at all. After a violation is
-     * confirmed, a certificate is legitimate if a valid (not voided) attempt was finished before
-     * it was issued, because that attempt can have earned it.
+     * confirmed, a certificate is legitimate if a valid (not voided) passing attempt was finished
+     * before it was issued, because that attempt can have earned it.
      *
      * @param bool $active True for an active hold, false for a confirmed or failed one.
      * @param int[] $issuetimes Times certificates were issued since the held attempt started.
-     * @param int[] $validfinishtimes Finish times of the student's attempts that are not voided.
+     * @param int[] $validfinishtimes Finish times of the student's passing attempts that are not voided.
      * @return bool
      */
     public static function certificate_conflicts(bool $active, array $issuetimes, array $validfinishtimes): bool {

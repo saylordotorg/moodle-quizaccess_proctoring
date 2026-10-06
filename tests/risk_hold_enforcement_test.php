@@ -192,6 +192,37 @@ final class risk_hold_enforcement_test extends advanced_testcase {
     }
 
     /**
+     * Enforcing an already enforced hold changes nothing and raises no grade event.
+     *
+     * Moodle queues events raised inside an observer and delivers them after it returns, so any
+     * grade event from a repeat run would reach the observer again and loop.
+     */
+    public function test_repeat_enforcement_raises_no_grade_event(): void {
+        $enforcer = \quizaccess_proctoring\local\risk_hold_enforcer::class;
+
+        // Confirmed: the only attempt is voided, so the grade is a zero.
+        $attemptid = $this->add_attempt(9);
+        $this->assertTrue(quizaccess_proctoring_confirm_risk_hold($this->hold($attemptid), 2));
+        $sink = $this->redirectEvents();
+        $enforcer::enforce((int)$this->quiz->id, (int)$this->student->id);
+        $this->assertCount(0, array_filter($sink->get_events(), function ($event) {
+            return $event instanceof \core\event\user_graded;
+        }));
+        $sink->close();
+        $this->assertSame(0.0, $this->final_grade());
+
+        // Active: a later attempt is held, so the grade is empty.
+        $this->hold($this->add_attempt(10));
+        $sink = $this->redirectEvents();
+        $enforcer::enforce((int)$this->quiz->id, (int)$this->student->id);
+        $this->assertCount(0, array_filter($sink->get_events(), function ($event) {
+            return $event instanceof \core\event\user_graded;
+        }));
+        $sink->close();
+        $this->assertNull($this->final_grade());
+    }
+
+    /**
      * With every attempt voided, each grading method still publishes a zero, not "no grade".
      */
     public function test_voided_attempts_publish_zero_for_every_grading_method(): void {
