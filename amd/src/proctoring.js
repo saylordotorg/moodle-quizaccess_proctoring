@@ -562,6 +562,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let phoneLastLogged = 0;
             let phoneEvidenceFrame = '';
             let multiFaceConsecutive = 0;
+            let multiFaceLastPositive = 0;
             let multiFaceLastLogged = 0;
             let multiFaceChecking = false;
             let webcamEvidenceFrame = '';
@@ -1446,9 +1447,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             };
 
             const checkMultipleFaces = async function() {
+                if (multiFaceChecking) {
+                    return;
+                }
                 const video = document.getElementById('video');
-                if (!monitoringActive || multiFaceChecking || !video || !video.videoWidth || !video.videoHeight ||
+                if (!monitoringActive || !video || !video.videoWidth || !video.videoHeight ||
                         document.visibilityState === 'hidden') {
+                    // Nothing was observed, so the run of positive checks is broken: two separate
+                    // walk-pasts either side of a gap must not add up to one sustained presence.
+                    multiFaceConsecutive = 0;
                     return;
                 }
 
@@ -1457,11 +1464,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 try {
                     faces = await countWebcamFaces(video);
                 } catch (error) {
+                    multiFaceConsecutive = 0;
                     return;
                 } finally {
                     multiFaceChecking = false;
                 }
                 if (!monitoringActive) {
+                    multiFaceConsecutive = 0;
                     return;
                 }
                 if (faces < 2) {
@@ -1469,6 +1478,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return;
                 }
 
+                // A slow or throttled check also breaks the run: positives only count as consecutive
+                // when they are no more than two check intervals apart.
+                const now = Date.now();
+                if (now - multiFaceLastPositive > multiFaceCheckIntervalMs * 2) {
+                    multiFaceConsecutive = 0;
+                }
+                multiFaceLastPositive = now;
                 multiFaceConsecutive++;
                 if (multiFaceConsecutive < multiFaceRequiredFrames || Date.now() - multiFaceLastLogged < multiFaceCooldownMs) {
                     return;
