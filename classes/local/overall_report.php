@@ -1044,7 +1044,9 @@ final class overall_report {
                 (int)$hold->attemptid,
                 (int)$hold->reportid
             );
-            if ($cert['state'] !== 'held') {
+            // A held attempt whose certificate went out anyway ('conflict') still needs a decision,
+            // more urgently than a plain hold.
+            if ($cert['state'] !== 'held' && $cert['state'] !== 'conflict') {
                 continue;
             }
             $held[] = [

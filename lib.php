@@ -1711,7 +1711,7 @@ function quizaccess_proctoring_apply_risk_hold(
     int $riskscore,
     int $threshold
 ): int {
-    global $CFG, $DB, $USER;
+    global $CFG, $DB;
 
     require_once($CFG->dirroot . '/mod/quiz/lib.php');
 
@@ -1751,17 +1751,31 @@ function quizaccess_proctoring_apply_risk_hold(
         $holdid = $DB->insert_record('quizaccess_proctoring_risk_holds', $hold, true);
     }
 
-    $grade = (object)[
-        'userid' => $userid,
-        'rawgrade' => 0,
-        'feedback' => get_string('riskreview:gradefeedback', 'quizaccess_proctoring', $riskscore),
-        'feedbackformat' => FORMAT_PLAIN,
-        'usermodified' => !empty($USER->id) ? $USER->id : 0,
-        'dategraded' => $now,
-    ];
-    quiz_grade_item_update($quiz, $grade);
+    // Empty and lock the gradebook grade so neither a passing grade nor a zero can complete the
+    // quiz or satisfy a certificate restriction while the hold is active.
+    \quizaccess_proctoring\local\risk_hold_enforcer::enforce((int)$quiz->id, $userid);
 
     return $holdid;
+}
+
+/**
+ * Record a failure in proctoring grade handling where staff can find it.
+ *
+ * debugging() alone is invisible on production sites, so the failure also goes to the PHP error
+ * log (and to cron output when running from the CLI).
+ *
+ * @param string $action What was being done, e.g. 'applying a risk hold'.
+ * @param \Throwable|string $error The exception or a short description.
+ * @return void
+ */
+function quizaccess_proctoring_log_failure(string $action, $error): void {
+    $detail = $error instanceof \Throwable ? get_class($error) . ': ' . $error->getMessage() : (string)$error;
+    $message = 'quizaccess_proctoring: failed ' . $action . ': ' . $detail;
+    debugging($message, DEBUG_DEVELOPER);
+    error_log($message);
+    if (defined('CLI_SCRIPT') && CLI_SCRIPT) {
+        mtrace($message);
+    }
 }
 
 /**
@@ -1838,42 +1852,8 @@ function quizaccess_proctoring_fail_high_risk_attempt(
     if ($attempt->sumgrades === null || (float)$attempt->sumgrades !== 0.0) {
         $DB->set_field('quiz_attempts', 'sumgrades', 0, ['id' => $attemptid]);
     }
-    quiz_save_best_grade($quiz, $userid);
 
-    // Keep Moodle's quiz-grade source of truth at zero as well as the submitted attempt. Without
-    // this, a later quiz_update_grades() could republish a previous passing best grade.
     $now = time();
-    $quizgrade = $DB->get_record('quiz_grades', ['quiz' => $quiz->id, 'userid' => $userid]);
-    if ($quizgrade) {
-        $quizgrade->grade = 0;
-        $quizgrade->timemodified = $now;
-        $DB->update_record('quiz_grades', $quizgrade);
-    } else {
-        $DB->insert_record('quiz_grades', (object)[
-            'quiz' => $quiz->id,
-            'userid' => $userid,
-            'grade' => 0,
-            'timemodified' => $now,
-        ]);
-    }
-
-    $grade = (object)[
-        'userid' => $userid,
-        'rawgrade' => 0,
-        'feedback' => get_string('riskreview:autofailgradefeedback', 'quizaccess_proctoring', $riskscore),
-        'feedbackformat' => FORMAT_PLAIN,
-        'usermodified' => 0,
-        'dategraded' => $now,
-    ];
-    $gradeupdateresult = quiz_grade_item_update($quiz, $grade);
-    if ($gradeupdateresult !== GRADE_UPDATE_OK) {
-        debugging(
-            'Unable to update the gradebook for automatically failed proctored attempt ' . $attemptid .
-                '; grade update result: ' . $gradeupdateresult,
-            DEBUG_DEVELOPER
-        );
-    }
-
     $shouldnotify = (int)$hold->status !== QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED;
     $hold->riskscore = $riskscore;
     $hold->threshold = $threshold;
@@ -1882,6 +1862,10 @@ function quizaccess_proctoring_fail_high_risk_attempt(
     $hold->timereviewed = $now;
     $hold->timemodified = $now;
     $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
+
+    // Regrade the quiz with this attempt scored as zero. The hold keeps it at zero, so a later
+    // quiz regrade that rebuilds the attempt's marks from its answers cannot revive it.
+    \quizaccess_proctoring\local\risk_hold_enforcer::enforce((int)$quiz->id, $userid);
 
     $transaction->allow_commit();
 
@@ -1927,7 +1911,19 @@ function quizaccess_proctoring_release_risk_hold(int $holdid, int $reviewerid, b
     $quiz->cmidnumber = $cm->idnumber;
     $quiz->visible = $cm->visible;
 
-    quiz_update_grades($quiz, $hold->userid, false);
+    // Mark the hold released before regrading, so the regrade no longer sees it. The status
+    // change and the regrade commit together: a failed regrade leaves the hold active.
+    $transaction = $DB->start_delegated_transaction();
+    $hold->status = QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED;
+    $hold->reviewerid = $reviewerid;
+    $hold->timereviewed = time();
+    $hold->timemodified = $hold->timereviewed;
+    $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
+
+    // Unlock and restore the grade. Another hold on the same quiz (an active one on a later
+    // attempt, or a confirmed one on an earlier attempt) still applies.
+    \quizaccess_proctoring\local\risk_hold_enforcer::enforce((int)$quiz->id, (int)$hold->userid, true);
+    $transaction->allow_commit();
 
     // Backdate the restored grade's dategraded to the exam completion date so that downstream
     // grade-based certificate issuance reflects when the exam was actually completed rather than
@@ -1971,12 +1967,6 @@ function quizaccess_proctoring_release_risk_hold(int $holdid, int $reviewerid, b
             mtrace($message);
         }
     }
-
-    $hold->status = QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED;
-    $hold->reviewerid = $reviewerid;
-    $hold->timereviewed = time();
-    $hold->timemodified = $hold->timereviewed;
-    $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
 
     if (quizaccess_proctoring_should_notify_hold_decision($isautorelease)) {
         quizaccess_proctoring_notify_hold_decision($hold, 'released');
@@ -2059,6 +2049,8 @@ function quizaccess_proctoring_hold_field($hold, string $field, $default = 0) {
  * report, the inline attempt-review panel and the cross-course dashboard, guaranteeing they agree.
  *
  * The state is derived by evaluating the inputs in the following order:
+ *  0. An active or confirmed hold exists, and a course certificate was issued after the held
+ *     attempt started                         -> 'conflict'  (the hold did not stop it; revoke it).
  *  1. An active hold exists                  -> 'held'      (grade/certificate held pending review).
  *  2. Otherwise a confirmed hold exists      -> 'withheld'  (violation confirmed, grade kept at zero).
  *  3. Otherwise a released hold exists        -> 'released'  (hold cleared, grade restored).
@@ -2073,14 +2065,19 @@ function quizaccess_proctoring_hold_field($hold, string $field, $default = 0) {
  * @param bool $hasreleased Whether a released hold exists for the attempt.
  * @param bool $hasconfirmed Whether a confirmed (withheld) hold exists for the attempt.
  * @param bool $hasgrade Whether a non-null quiz grade exists for the attempt.
- * @return string One of 'held', 'withheld', 'released', 'issued' or 'none'.
+ * @param bool $certificateissued Whether a course certificate was issued after the held attempt started.
+ * @return string One of 'conflict', 'held', 'withheld', 'released', 'issued' or 'none'.
  */
 function quizaccess_proctoring_certificate_state(
     bool $hasactive,
     bool $hasreleased,
     bool $hasconfirmed,
-    bool $hasgrade
+    bool $hasgrade,
+    bool $certificateissued = false
 ): string {
+    if (($hasactive || $hasconfirmed) && $certificateissued) {
+        return 'conflict';
+    }
     if ($hasactive) {
         return 'held';
     }
@@ -2129,6 +2126,7 @@ function quizaccess_proctoring_resolve_certificate_label(
     $hasreleased = false;
     $hasconfirmed = false;
     $hasgrade = false;
+    $certificateissued = false;
 
     // Gather the hold row(s) for the attempt defensively; a missing table/row means "absent".
     try {
@@ -2153,23 +2151,39 @@ function quizaccess_proctoring_resolve_certificate_label(
                     $hasactive = true;
                     break;
                 case QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED:
+                    // A released hold no longer withholds anything, so it cannot conflict.
                     $hasreleased = true;
-                    break;
+                    continue 2;
                 case QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED:
                 case QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED:
                     $hasconfirmed = true;
                     break;
+                default:
+                    continue 2;
+            }
+            if (!$certificateissued) {
+                $certificateissued = \quizaccess_proctoring\local\risk_hold_enforcer::certificate_issued_during_hold(
+                    $courseid,
+                    $userid,
+                    (int)$hold->attemptid
+                );
             }
         }
     } catch (\Throwable $e) {
         // Treat any lookup failure as "no holds"; never let the report fail on a read.
-        $hasactive = $hasreleased = $hasconfirmed = false;
+        $hasactive = $hasreleased = $hasconfirmed = $certificateissued = false;
     }
 
     // Reconcile against the gradebook: a non-null quiz grade means the certificate is issued/eligible.
     $hasgrade = quizaccess_proctoring_attempt_has_grade($courseid, $cmid, $userid);
 
-    $state = quizaccess_proctoring_certificate_state($hasactive, $hasreleased, $hasconfirmed, $hasgrade);
+    $state = quizaccess_proctoring_certificate_state(
+        $hasactive,
+        $hasreleased,
+        $hasconfirmed,
+        $hasgrade,
+        $certificateissued
+    );
 
     return [
         'state' => $state,
@@ -2220,6 +2234,8 @@ function quizaccess_proctoring_attempt_has_grade(int $courseid, int $cmid, int $
  */
 function quizaccess_proctoring_certificate_state_label(string $state): string {
     switch ($state) {
+        case 'conflict':
+            return get_string('certificatestate:conflict', 'quizaccess_proctoring');
         case 'held':
             return get_string('certificatestate:held', 'quizaccess_proctoring');
         case 'withheld':
@@ -2241,6 +2257,8 @@ function quizaccess_proctoring_certificate_state_label(string $state): string {
  */
 function quizaccess_proctoring_certificate_state_class(string $state): string {
     switch ($state) {
+        case 'conflict':
+            return 'proctoring-certificate-conflict';
         case 'held':
             return 'proctoring-certificate-held';
         case 'withheld':
@@ -2586,7 +2604,7 @@ function quizaccess_proctoring_auto_release_expired_risk_holds(int $limit = 100)
  * @return bool True when confirmed or already confirmed.
  */
 function quizaccess_proctoring_confirm_risk_hold(int $holdid, int $reviewerid): bool {
-    global $CFG, $DB;
+    global $DB;
 
     $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
     if ((int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED) {
@@ -2596,28 +2614,18 @@ function quizaccess_proctoring_confirm_risk_hold(int $holdid, int $reviewerid): 
         return false;
     }
 
-    require_once($CFG->dirroot . '/mod/quiz/lib.php');
-    $cm = get_coursemodule_from_id('quiz', $hold->quizid, $hold->courseid, false, MUST_EXIST);
-    $quiz = $DB->get_record('quiz', ['id' => $hold->quizinstance], '*', MUST_EXIST);
-    $quiz->cmidnumber = $cm->idnumber;
-    $quiz->visible = $cm->visible;
-
     $now = time();
-    $grade = (object)[
-        'userid' => $hold->userid,
-        'rawgrade' => 0,
-        'feedback' => get_string('riskreview:confirmedgradefeedback', 'quizaccess_proctoring', $hold->riskscore),
-        'feedbackformat' => FORMAT_PLAIN,
-        'usermodified' => $reviewerid,
-        'dategraded' => $now,
-    ];
-    quiz_grade_item_update($quiz, $grade);
-
+    $transaction = $DB->start_delegated_transaction();
     $hold->status = QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED;
     $hold->reviewerid = $reviewerid;
     $hold->timereviewed = $now;
     $hold->timemodified = $now;
     $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
+
+    // The confirmed attempt now scores zero for good; the quiz's grading method decides the
+    // grade from the student's other attempts, so a later honest attempt still counts.
+    \quizaccess_proctoring\local\risk_hold_enforcer::enforce((int)$hold->quizinstance, (int)$hold->userid);
+    $transaction->allow_commit();
 
     if (quizaccess_proctoring_should_notify_hold_decision(false)) {
         quizaccess_proctoring_notify_hold_decision($hold, 'confirmed');

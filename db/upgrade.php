@@ -1393,5 +1393,27 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100201, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026100600) {
+        // Risk holds now keep the student's gradebook grade empty and locked, and are re-applied
+        // on every grade change to a held quiz (CPIT-463). That observer looks holds up by user,
+        // and the enforcer by quiz and user.
+        $table = new xmldb_table('quizaccess_proctoring_risk_holds');
+        $indexes = [
+            new xmldb_index('userstatus', XMLDB_INDEX_NOTUNIQUE, ['userid', 'status']),
+            new xmldb_index('quizinstanceuser', XMLDB_INDEX_NOTUNIQUE, ['quizinstance', 'userid']),
+        ];
+        foreach ($indexes as $index) {
+            if (!$dbman->index_exists($table, $index)) {
+                $dbman->add_index($table, $index);
+            }
+        }
+
+        // Existing holds only zeroed the grade once, and a regrade may have restored it since.
+        // Re-apply them all in cron rather than doing grade work inside the upgrade.
+        \core\task\manager::queue_adhoc_task(new \quizaccess_proctoring\task\enforce_risk_holds_task(), true);
+
+        upgrade_plugin_savepoint(true, 2026100600, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

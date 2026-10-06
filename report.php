@@ -760,7 +760,8 @@ if (
             );
             if ($cert['label'] !== '') {
                 $row['riskholdstatus'] = $cert['label'];
-                $row['riskholdactive'] = $cert['state'] === 'held';
+                $row['riskholdactive'] = $cert['state'] === 'held' ||
+                    ($cert['state'] === 'conflict' && (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE);
             }
         }
             $aireview = quizaccess_proctoring_get_ai_review(

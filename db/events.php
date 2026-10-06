@@ -37,4 +37,9 @@ $observers = [
         'eventname' => '\mod_quiz\event\attempt_submitted',
         'callback' => '\quizaccess_proctoring\proctoring_observer::handle_quiz_attempt_submitted',
     ],
+    [
+        // Re-apply risk holds when a quiz regrade, recompute or manual edit changes a held grade.
+        'eventname' => '\core\event\user_graded',
+        'callback' => '\quizaccess_proctoring\local\risk_hold_enforcer::handle_user_graded',
+    ],
 ];
