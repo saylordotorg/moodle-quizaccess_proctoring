@@ -2307,6 +2307,26 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             if (!empty($coveragepolicy['interval'])) {
                 $record->camshotdelay = max(5, (int)$coveragepolicy['interval']) * 1000;
             }
+            // Record which in-browser monitors this attempt runs, so the report can say "not
+            // monitored" rather than "passed" for a check that was never watching (CPIT-467).
+            // These mirror the gates in proctoring.js logEvent().
+            if (!empty($coveragepolicy) && !isset($coveragepolicy['monitors'])) {
+                \quizaccess_proctoring\local\monitoring_coverage::record_monitors(
+                    (int)$COURSE->id,
+                    (int)$cmid,
+                    (int)$USER->id,
+                    (int)$attempt,
+                    [
+                        'activity' => !empty($record->monitorbrowseractivity),
+                        'clipboard' => !empty($record->monitorbrowseractivity) || !empty($record->blockclipboard),
+                        'screen' => !empty($record->captureviolationdesktop),
+                        'multimonitor' => $record->multimonitormode !== self::MULTI_MONITOR_OFF
+                            || !empty($record->blurquizwithmultiplemonitors),
+                        'phone' => !empty($record->detectphone),
+                    ],
+                    \core_useragent::get_user_agent_string() ?: ''
+                );
+            }
 
             // Configure face model URL and include JS.
             $fcmethod = get_config('quizaccess_proctoring', 'fcmethod');

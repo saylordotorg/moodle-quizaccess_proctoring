@@ -267,7 +267,12 @@
         <span class="proctoring-notmonitored-icon">–</span>
         <div class="proctoring-notmonitored-text">
             <strong>{{#str}}verdict:notmonitored, quizaccess_proctoring{{/str}}</strong>
-            {{notmonitoredlist}}. {{#str}}verdict:notmonitorednote, quizaccess_proctoring{{/str}}
+            {{#str}}verdict:notmonitorednote, quizaccess_proctoring{{/str}}
+            <ul class="proctoring-notmonitored-list">
+                {{#notmonitored}}
+                <li><span class="proctoring-notmonitored-label">{{label}}</span> — {{reason}}</li>
+                {{/notmonitored}}
+            </ul>
         </div>
     </div>
     {{/hasnotmonitored}}

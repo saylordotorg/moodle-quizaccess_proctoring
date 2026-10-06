@@ -1,6 +1,20 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.11.6 — 2026-10-06
+- **The report no longer shows a clean result for a check that never ran (CPIT-467).** Every factor with no evidence used to be listed as passed: "Single face throughout", "No audio activity detected", "One monitor detected", "Identity matched the reference photo". That happened whether or not anything had checked it. A factor now reads as passed only when its check demonstrably ran during that attempt. Otherwise it is listed under "Not monitored for this attempt", with the reason:
+  - nothing in TaView detects it yet (multiple faces, audio);
+  - it was switched off;
+  - the browser cannot report it (monitor count outside Chrome and Edge);
+  - the browser sent no proctoring data;
+  - no capture was compared with the reference photo or checked for a face;
+  - the attempt predates this release.
+  Scores do not change.
+- The attempt's first page load now records which in-browser monitors it ran, alongside the existing monitoring snapshot, together with the browser (name and major version) and operating system. Nothing else from the user agent is kept. The report shows the browser and OS next to the student's name.
+- **The "AI tool captured on screen" finding shows its screenshot.** The images were filed under the plain AI-tool factor, so the card said "the image is the deciding evidence" and showed no image. "The image is the deciding evidence" now appears only when an image is attached. Otherwise, the card says no image was captured. The same applies to phone detection.
+- The descriptions of the monitor-count and F12 factors now state what those checks cannot see. Mirrored displays, a closed lid, remote desktops and virtual machines all count as one display, and only an F12 key press is seen.
+- On the risk factor settings page, multiple faces and audio are labelled "Not available". Their settings are kept. The speed factor's help now describes the per-question pace it actually uses, instead of a comparison with classmates.
+
 # v1.11.5 — 2026-10-06
 - **Critical holds no longer auto-release unreviewed by default (CPIT-465).** The auto-release ceiling shipped as 101, which with the score cap on means "off", so every hold, Critical ones included, was released automatically when its 7-day review window ended. The shipped default is now 80, the default start of the Critical band, so a Critical hold waits for a reviewer. Lower holds are still released at the end of their window. With nothing configured, the ceiling follows the site's Critical band. The upgrade moves a site still on the shipped 101 to the start of its Critical band; a ceiling an administrator chose is left alone.
 - **The daily report warns before a hold is released unreviewed.** Holds that will auto-release within 48 hours are counted in the summary, listed first, and marked with their release time.

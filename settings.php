@@ -1159,10 +1159,16 @@ if ($canmanageproctoring) {
 
     foreach (\quizaccess_proctoring\local\risk_calculator::FACTOR_DEFAULTS as $factorkey => $factordefaults) {
         $factorlabel = get_string('riskscore:' . $factorkey, 'quizaccess_proctoring');
+        // Factors nothing detects stay listed, so a stored value is kept, but say so (CPIT-467).
+        $notavailable = in_array(
+            $factorkey,
+            \quizaccess_proctoring\local\factor_coverage::FACTORS_WITHOUT_DETECTOR,
+            true
+        );
         $riskfactorspage->add(new admin_setting_configcheckbox(
             'quizaccess_proctoring/riskfactor_' . $factorkey . '_enabled',
             get_string('setting:riskfactorenabled', 'quizaccess_proctoring', $factorlabel),
-            get_string('setting:riskfactorenabled_desc', 'quizaccess_proctoring'),
+            get_string($notavailable ? 'setting:riskfactornotavailable' : 'setting:riskfactorenabled_desc', 'quizaccess_proctoring'),
             1
         ));
         $riskfactorspage->add(new admin_setting_configtext(

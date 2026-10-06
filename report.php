@@ -151,6 +151,52 @@ function quizaccess_proctoring_format_event_detail(string $eventdetail): string 
 }
 
 /**
+ * One entry of the report's "Not monitored for this attempt" list (CPIT-467).
+ *
+ * @param string $factorkey Risk factor key.
+ * @param string $reason One of the factor_coverage::REASON_* constants.
+ * @return array Template context with the factor label and why it was not checked.
+ */
+function quizaccess_proctoring_not_monitored_item(string $factorkey, string $reason): array {
+    return [
+        'label' => get_string('riskscore:' . $factorkey, 'quizaccess_proctoring'),
+        'reason' => get_string('factorcoverage:' . $reason, 'quizaccess_proctoring'),
+    ];
+}
+
+/**
+ * Finding-card description, stating whether an image backs it up.
+ *
+ * Some factors are only decided by looking at a picture. Telling a reviewer "the image is the
+ * deciding evidence" when no image was stored sends them looking for evidence that does not exist.
+ *
+ * @param string $factorkey Risk factor key.
+ * @param bool $hasimage Whether the finding card shows at least one captured image.
+ * @return string Description text.
+ */
+function quizaccess_proctoring_finding_description(string $factorkey, bool $hasimage): string {
+    $desc = get_string('riskfactordesc:' . $factorkey, 'quizaccess_proctoring');
+    if (in_array($factorkey, ['aitoolscreenshot', 'phonedetected'], true)) {
+        $desc .= ' ' . get_string($hasimage ? 'riskfactorimage:attached' : 'riskfactorimage:none', 'quizaccess_proctoring');
+    }
+    return $desc;
+}
+
+/**
+ * The browser and operating system an attempt was taken in, as recorded at its first page load.
+ *
+ * @param string $browser Browser name and major version, or ''.
+ * @param string $os Operating system, or ''.
+ * @return string Label, or '' when neither was recorded.
+ */
+function quizaccess_proctoring_browser_label(string $browser, string $os): string {
+    if ($browser !== '' && $os !== '') {
+        return get_string('factorcoverage:browseros', 'quizaccess_proctoring', (object)['browser' => $browser, 'os' => $os]);
+    }
+    return $browser !== '' ? $browser : $os;
+}
+
+/**
  * Map a proctoring event type to the risk factor key that scores it.
  *
  * Mirrors the event-to-factor mapping in \quizaccess_proctoring\local\risk_calculator.
@@ -1336,22 +1382,40 @@ if (
             'sesskey' => sesskey(),
         ];
 
+        // A factor with no evidence only counts as passed when its check actually ran (CPIT-467).
+        $factorcoverage = \quizaccess_proctoring\local\factor_coverage::for_attempt(
+            (int)$courseid,
+            (int)$cmid,
+            (int)$studentid,
+            (int)$riskscore['attemptid']
+        );
+
         $findings = [];
         $passedchecks = [];
-        $monitoredkeys = [];
+        $notmonitored = [];
+        $scoredkeys = [];
         foreach ($riskscore['factors'] as $factor) {
             $factorkey = (string)($factor['key'] ?? '');
             if ($factorkey === '') {
                 continue;
             }
-            $monitoredkeys[] = $factorkey;
+            $scoredkeys[] = $factorkey;
             $isfalsepositive = !empty($factor['falsepositive']);
             if (empty($factor['haspoints']) && !$isfalsepositive) {
-                $passedchecks[] = ['label' => get_string('riskfactorpassed:' . $factorkey, 'quizaccess_proctoring')];
+                if (isset($factorcoverage['reasons'][$factorkey])) {
+                    $notmonitored[] = quizaccess_proctoring_not_monitored_item(
+                        $factorkey,
+                        $factorcoverage['reasons'][$factorkey]
+                    );
+                } else {
+                    $passedchecks[] = ['label' => get_string('riskfactorpassed:' . $factorkey, 'quizaccess_proctoring')];
+                }
                 continue;
             }
             $captures = [];
-            foreach ($factorevents[$factorkey] ?? [] as $eventrecord) {
+            // Screenshot-backed AI-tool evidence is stored as ordinary possible_ai_tool events.
+            $eventsource = $factorkey === 'aitoolscreenshot' ? 'aitool' : $factorkey;
+            foreach ($factorevents[$eventsource] ?? [] as $eventrecord) {
                 if (empty($eventrecord->screenshoturl) || count($captures) >= 4) {
                     continue;
                 }
@@ -1377,7 +1441,7 @@ if (
                 'title' => $factor['label'],
                 'colorclass' => quizaccess_proctoring_factor_color_class($factorkey),
                 'badge' => $badge,
-                'desc' => get_string('riskfactordesc:' . $factorkey, 'quizaccess_proctoring'),
+                'desc' => quizaccess_proctoring_finding_description($factorkey, !empty($captures)),
                 'captures' => $captures,
                 'hascaptures' => !empty($captures),
                 'points' => (int)($factor['excludedpoints'] ?? $factor['points']),
@@ -1459,11 +1523,16 @@ if (
             }
         }
 
-        // Factors absent from the scoring output were disabled or not applicable: not monitored.
-        $notmonitored = [];
+        // Factors absent from the scoring output were switched off (or, for speed, had no duration
+        // to judge): not monitored either.
         foreach (array_keys(\quizaccess_proctoring\local\risk_calculator::FACTOR_DEFAULTS) as $factorkey) {
-            if (!in_array($factorkey, $monitoredkeys, true)) {
-                $notmonitored[] = get_string('riskscore:' . $factorkey, 'quizaccess_proctoring');
+            if (!in_array($factorkey, $scoredkeys, true)) {
+                $notmonitored[] = quizaccess_proctoring_not_monitored_item(
+                    $factorkey,
+                    in_array($factorkey, \quizaccess_proctoring\local\factor_coverage::FACTORS_WITHOUT_DETECTOR, true)
+                        ? \quizaccess_proctoring\local\factor_coverage::REASON_NOT_BUILT
+                        : \quizaccess_proctoring\local\factor_coverage::REASON_SETTING_OFF
+                );
             }
         }
 
@@ -1491,6 +1560,11 @@ if (
             ? $sessionsummary
             : get_string('verdict:noflagsheadline', 'quizaccess_proctoring');
         $riskscore['verdictmeta'] = fullname($user) . ($attemptstart > 0 ? ' · ' . userdate($attemptstart) : '');
+        // Which checks could run depends on the browser, so say which one the attempt used.
+        $browserlabel = quizaccess_proctoring_browser_label($factorcoverage['browser'], $factorcoverage['os']);
+        if ($browserlabel !== '') {
+            $riskscore['verdictmeta'] .= ' · ' . $browserlabel;
+        }
         $riskscore['ctalabel'] = $ctalabel;
         $riskscore['ctatab'] = $ctatab;
         $riskscore['findings'] = $findings;
@@ -1515,7 +1589,7 @@ if (
         $riskscore['passedlabel'] = count($passedchecks) === 1
             ? get_string('verdict:passed_one', 'quizaccess_proctoring')
             : get_string('verdict:passed', 'quizaccess_proctoring', count($passedchecks));
-        $riskscore['notmonitoredlist'] = implode(', ', $notmonitored);
+        $riskscore['notmonitored'] = $notmonitored;
         $riskscore['hasnotmonitored'] = !empty($notmonitored);
 
         // Webcam captures tab: identity verdict band, filter pills, and grid metadata.
