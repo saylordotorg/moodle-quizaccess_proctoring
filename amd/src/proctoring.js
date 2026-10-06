@@ -563,6 +563,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let phoneEvidenceFrame = '';
             let multiFaceConsecutive = 0;
             let multiFaceLastPositive = 0;
+            // Each detector reports that it really ran once per page, after its first successful check
+            // of a webcam frame: a loaded model with no camera, or failing inference, has not run.
+            let multiFaceStartReported = false;
+            let phoneStartReported = false;
             let multiFaceLastLogged = 0;
             let multiFaceChecking = false;
             let webcamEvidenceFrame = '';
@@ -1404,6 +1408,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (!monitoringActive) {
                     return;
                 }
+                if (!phoneStartReported) {
+                    phoneStartReported = true;
+                    logEvent('phone_detection_started', {});
+                }
 
                 const hit = predictions.find(function(prediction) {
                     return prediction.class === 'cell phone' && prediction.score >= phoneMinScore;
@@ -1473,6 +1481,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     multiFaceConsecutive = 0;
                     return;
                 }
+                if (!multiFaceStartReported) {
+                    multiFaceStartReported = true;
+                    logEvent('multiple_faces_detection_started', {});
+                }
                 if (faces < 2) {
                     multiFaceConsecutive = 0;
                     return;
@@ -1523,12 +1535,6 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     window.console.debug('quizaccess_proctoring: phone detection unavailable', error);
                     return;
                 }
-
-                // Tell the report the detector really started: it gives up silently above when the
-                // model cannot load, and without this the report could not tell the two apart.
-                // Sent on every page rather than once, so one lost upload cannot hide it for good;
-                // it is a neutral event, never shown as student activity.
-                logEvent('phone_detection_started', {});
 
                 monitorInterval(checkPhoneFrame, phoneCheckIntervalMs);
             };
@@ -1906,8 +1912,6 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             }
             initPhoneDetection();
             if (detectMultipleFaces) {
-                // Tell the report the face count really runs (the model loaded), as for phones.
-                logEvent('multiple_faces_detection_started', {});
                 monitorInterval(checkMultipleFaces, multiFaceCheckIntervalMs);
             }
             checkMultiMonitorSetup();

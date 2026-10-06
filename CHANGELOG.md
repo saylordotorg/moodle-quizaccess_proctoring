@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
 - The factor keeps its points (30, cap 30), but it is **review-only**. It can put an attempt on hold, but when risk review is set to fail attempts automatically, an attempt is failed only if the rest of its evidence reaches the threshold on its own. Otherwise it is held for a reviewer.
 - The setting is off by default, like phone detection, so it can be piloted first. The capture loop is unchanged when the face model is loaded only for this check: no face crop and no "face not found" notice.
 - The report treats it like phone detection. It reads as checked only when the browser reports that the face count started; otherwise it is listed as not monitored. On the risk factor settings page, the factor is no longer labelled "Not available".
+- The browser reports that the face count started only after its first successful check of a webcam frame, so a loaded model with no camera still reads as not monitored. Phone detection now reports the same way. Before, it reported as soon as its model loaded.
+- When AI review of desktop events is on, a multiple-face frame is reviewed with a webcam-specific prompt (is a second person present and helping?), not the desktop-screenshot prompt.
 - Not included: a second-face count from the face-match service. That service compares only the periodic captures, 30 seconds apart, so it could not tell a walk-past from someone sitting in view. With its current settings, it would also never report an unmatched face.
 
 # v1.11.6 — 2026-10-06

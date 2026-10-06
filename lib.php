@@ -3702,6 +3702,25 @@ function quizaccess_proctoring_build_ai_review_prompt(stdClass $review, int $ima
                 . "Images provided: " . $imagecount;
         }
 
+        if ($event && (string)$event->eventtype === 'multiple_faces_detected') {
+            return "You are reviewing one webcam frame captured during an online proctored quiz, after automatic "
+                . "face detection saw more than one face in view across several consecutive checks. "
+                . "Use only visible evidence in the image and the event metadata below. "
+                . "Do not identify anyone or infer intent from protected traits. "
+                . "Mark cheating likely only when a second person is clearly present and appears to be helping: "
+                . "looking at the screen with the student, pointing, talking to them, or passing material. "
+                . "A person who is simply in the room, passing behind, or not engaged with the student, should be "
+                . "rated suspicious or inconclusive, not cheating likely. "
+                . "Faces in photos, posters, screens or reflections are not a second person: if that is all that "
+                . "is visible, or only one face is visible, say so, because the detector may have misfired. "
+                . "Return a cautious review score from 0 to 100 where "
+                . (int)$settings['decisionthreshold'] . "+ means strong visual evidence that needs escalation. "
+                . "This is advisory for a human reviewer, not an automatic misconduct finding.\n\n"
+                . "Event type: " . $eventtype . "\n"
+                . "Event details: " . $eventdetail . "\n"
+                . "Images provided: " . $imagecount;
+        }
+
         return "You are reviewing one desktop screenshot captured during an online quiz proctoring event. "
             . "Use only visible evidence in the screenshot and the event metadata below. "
             . "Inspect the entire screenshot, including browser tabs, browser side panels, right-side assistant panels, "
