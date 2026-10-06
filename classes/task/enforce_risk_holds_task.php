@@ -53,8 +53,13 @@ class enforce_risk_holds_task extends \core\task\adhoc_task {
         $failed = 0;
         foreach ($pairs as $pair) {
             try {
-                \quizaccess_proctoring\local\risk_hold_enforcer::enforce((int)$pair->quizinstance, (int)$pair->userid);
-                $done++;
+                // A false result means a held grade could not be emptied and locked (already logged).
+                $enforcer = \quizaccess_proctoring\local\risk_hold_enforcer::class;
+                if ($enforcer::enforce((int)$pair->quizinstance, (int)$pair->userid)) {
+                    $done++;
+                } else {
+                    $failed++;
+                }
             } catch (\Throwable $e) {
                 $failed++;
                 quizaccess_proctoring_log_failure(

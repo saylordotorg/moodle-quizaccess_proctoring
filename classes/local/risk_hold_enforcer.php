@@ -90,9 +90,9 @@ class risk_hold_enforcer {
      * @param int $userid Student id.
      * @param bool $clearfeedback True when a hold was just lifted, so its gradebook feedback is
      *                            removed even if no enforced hold remains.
-     * @return void
+     * @return bool False when an active hold could not empty and lock the grade (logged).
      */
-    public static function enforce(int $quizinstance, int $userid, bool $clearfeedback = false): void {
+    public static function enforce(int $quizinstance, int $userid, bool $clearfeedback = false): bool {
         global $CFG, $DB;
 
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
@@ -102,11 +102,11 @@ class risk_hold_enforcer {
 
         $quiz = $DB->get_record('quiz', ['id' => $quizinstance]);
         if (!$quiz) {
-            return;
+            return true;
         }
         $cm = get_coursemodule_from_instance('quiz', $quiz->id, $quiz->course);
         if (!$cm) {
-            return;
+            return true;
         }
         $quiz->cmidnumber = $cm->idnumber;
         $quiz->visible = $cm->visible;
@@ -120,7 +120,7 @@ class risk_hold_enforcer {
         );
         if (!$holds && !$clearfeedback) {
             // Nothing to enforce, and no hold was just lifted: leave the quiz's own grade alone.
-            return;
+            return true;
         }
 
         $wasrunning = self::$running;
@@ -137,8 +137,7 @@ class risk_hold_enforcer {
             }
 
             if ($active) {
-                self::hold_grade($quiz, $userid, $active);
-                return;
+                return self::hold_grade($quiz, $userid, $active);
             }
 
             self::unlock_grade($quiz, $userid);
@@ -149,6 +148,7 @@ class risk_hold_enforcer {
             } else if ($clearfeedback) {
                 self::set_feedback($quiz, $userid, '');
             }
+            return true;
         } finally {
             self::$running = $wasrunning;
         }
@@ -217,12 +217,12 @@ class risk_hold_enforcer {
      * @param stdClass $quiz Quiz record with cmidnumber and visible.
      * @param int $userid Student id.
      * @param stdClass $hold The active hold.
-     * @return void
+     * @return bool False when the grade could not be emptied and locked (logged).
      */
-    private static function hold_grade(stdClass $quiz, int $userid, stdClass $hold): void {
+    private static function hold_grade(stdClass $quiz, int $userid, stdClass $hold): bool {
         if ((float)$quiz->grade <= 0) {
             // A quiz with no grade has nothing in the gradebook to hold.
-            return;
+            return true;
         }
 
         // A locked grade refuses every write, including this one, so unlock first.
@@ -253,7 +253,8 @@ class risk_hold_enforcer {
 
         $grade = self::get_grade($quiz, $userid);
         if (!$grade) {
-            return;
+            // Nothing is published for this student, so there is nothing to hold.
+            return true;
         }
         if ($grade->finalgrade !== null) {
             // Never lock a grade in place: if it is not empty, leave it unlocked so the next
@@ -262,14 +263,16 @@ class risk_hold_enforcer {
                 'emptying the held gradebook grade for quiz ' . $quiz->id . ' user ' . $userid,
                 'the final grade is still ' . $grade->finalgrade . ' (is the grade item locked?)'
             );
-            return;
+            return false;
         }
         if (!$grade->is_locked() && !$grade->set_locked(1, false, false)) {
             quizaccess_proctoring_log_failure(
                 'locking the held gradebook grade for quiz ' . $quiz->id . ' user ' . $userid,
                 'the grade item needs a gradebook update'
             );
+            return false;
         }
+        return true;
     }
 
     /**
