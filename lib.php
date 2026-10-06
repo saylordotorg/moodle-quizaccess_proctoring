@@ -914,17 +914,44 @@ function quizaccess_proctoring_get_risk_review_auto_release_days(): int {
  * Expired active risk holds whose risk score is at or above this ceiling are retained for human
  * review instead of being automatically released. Any value above the maximum achievable score
  * disables the ceiling so every expired hold is auto-released. With the 100-point score cap
- * enabled (the default) the maximum is 100, so the historical "101 disables" behavior is
- * preserved; with the cap disabled the maximum is the sum of the enabled factors' caps, so
- * ceilings above 100 remain genuine ceilings for uncapped scores.
+ * enabled the maximum is 100, so 101 disables it; with the cap disabled the maximum is the sum of
+ * the enabled factors' caps, so ceilings above 100 remain genuine ceilings for uncapped scores.
+ *
+ * With nothing configured the ceiling is the start of the Critical band (CPIT-465): a Critical
+ * hold waits for a reviewer rather than being released unseen when its review window ends.
  *
  * @return int Ceiling from 0 to one above the maximum achievable score.
  */
 function quizaccess_proctoring_get_risk_review_ceiling(): int {
     $maxscore = \quizaccess_proctoring\local\risk_calculator::max_possible_score();
     $configured = get_config('quizaccess_proctoring', 'riskreviewceiling');
-    $ceiling = $configured === false ? $maxscore + 1 : (int)$configured;
+    $ceiling = $configured === false
+        ? \quizaccess_proctoring\local\risk_calculator::get_level_boundaries()['critical']
+        : (int)$configured;
     return max(0, min($maxscore + 1, $ceiling));
+}
+
+/**
+ * When an active hold will be released automatically, if ever.
+ *
+ * Mirrors {@see quizaccess_proctoring_auto_release_expired_risk_holds()}: an active hold is released
+ * once its review window has passed, unless the ceiling is enabled and the hold's risk score is at
+ * or above it. The hourly task does the release, so the time is the earliest it can happen.
+ *
+ * @param stdClass $hold Hold record (status, timecreated, riskscore).
+ * @return int Unix time of the automatic release, or 0 when the hold will not be released automatically.
+ */
+function quizaccess_proctoring_risk_hold_auto_release_time(stdClass $hold): int {
+    $days = quizaccess_proctoring_get_risk_review_auto_release_days();
+    if ($days <= 0 || (int)$hold->status !== QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE || (int)$hold->timecreated <= 0) {
+        return 0;
+    }
+    $ceiling = quizaccess_proctoring_get_risk_review_ceiling();
+    $ceilingenabled = $ceiling <= \quizaccess_proctoring\local\risk_calculator::max_possible_score();
+    if ($ceilingenabled && (int)$hold->riskscore >= $ceiling) {
+        return 0;
+    }
+    return (int)$hold->timecreated + $days * DAYSECS;
 }
 
 /**

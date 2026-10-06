@@ -1105,7 +1105,58 @@ final class overall_report {
             'page' => $page,
             'perpage' => self::PER_PAGE,
             'truncated' => $truncated,
+            'backlog' => self::review_backlog(time()),
         ];
+    }
+
+    /**
+     * Summarise every active hold awaiting review (CPIT-465).
+     *
+     * Computed over all active holds, not the capped dashboard list: that list keeps the newest
+     * holds, and the oldest ones - those about to be released unreviewed - matter most here. Bands
+     * use the score each hold was created with, as the auto-release rule does.
+     *
+     * @param int $now Current time.
+     * @return array{critical: int, high: int, lower: int, oldest: int, expiringsoon: int}
+     */
+    public static function review_backlog(int $now): array {
+        global $DB;
+
+        ['high' => $high, 'critical' => $critical] = risk_calculator::get_level_boundaries();
+        $active = ['active' => \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE];
+        $counts = $DB->get_record_sql(
+            "SELECT COUNT(1) AS total,
+                    SUM(CASE WHEN riskscore >= :critical THEN 1 ELSE 0 END) AS critical,
+                    SUM(CASE WHEN riskscore >= :high AND riskscore < :critical2 THEN 1 ELSE 0 END) AS high,
+                    MIN(timecreated) AS oldest
+               FROM {quizaccess_proctoring_risk_holds}
+              WHERE status = :active",
+            $active + ['critical' => $critical, 'high' => $high, 'critical2' => $critical]
+        );
+        $total = (int)($counts->total ?? 0);
+        $backlog = [
+            'critical' => (int)($counts->critical ?? 0),
+            'high' => (int)($counts->high ?? 0),
+            'lower' => 0,
+            'oldest' => $total > 0 ? (int)$counts->oldest : 0,
+            'expiringsoon' => 0,
+        ];
+        $backlog['lower'] = $total - $backlog['critical'] - $backlog['high'];
+
+        // Same rule as quizaccess_proctoring_risk_hold_auto_release_time(), as a count: active
+        // holds whose window ends within two days, unless the enabled ceiling retains them.
+        $days = quizaccess_proctoring_get_risk_review_auto_release_days();
+        if ($days > 0) {
+            $select = 'status = :active AND timecreated > 0 AND timecreated <= :cutoff';
+            $params = $active + ['cutoff' => $now + 2 * DAYSECS - $days * DAYSECS];
+            $ceiling = quizaccess_proctoring_get_risk_review_ceiling();
+            if ($ceiling <= risk_calculator::max_possible_score()) {
+                $select .= ' AND riskscore < :ceiling';
+                $params['ceiling'] = $ceiling;
+            }
+            $backlog['expiringsoon'] = $DB->count_records_select('quizaccess_proctoring_risk_holds', $select, $params);
+        }
+        return $backlog;
     }
 
     /**

@@ -16,6 +16,10 @@
     Example context (json):
     {
         "intro": "Every attempt whose certificate is currently held for review.",
+        "hasbacklog": true,
+        "backlog": "Awaiting review: 12 (3 Critical, 6 High, 3 lower). Oldest held since 1 January 2026  9:43 AM EST.",
+        "hasexpiringsoon": true,
+        "expiringsoon": "2 will be released automatically within 48 hours unless reviewed.",
         "truncated": false,
         "truncatednotice": "Showing up to 2000 held certificates.",
         "hasrows": true,
@@ -35,6 +39,13 @@
 
 <div class="proctoring-held-certificates">
     <p class="text-muted">{{intro}}</p>
+
+    {{#hasbacklog}}
+    <p class="proctoring-held-backlog">{{backlog}}</p>
+    {{/hasbacklog}}
+    {{#hasexpiringsoon}}
+    <div class="alert alert-warning proctoring-held-expiring" role="alert">{{expiringsoon}}</div>
+    {{/hasexpiringsoon}}
 
     {{#truncated}}
     <div class="alert alert-warning">{{truncatednotice}}</div>

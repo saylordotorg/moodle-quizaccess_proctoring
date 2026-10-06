@@ -419,8 +419,20 @@ if ($view === 'held') {
     $baseurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', ['view' => 'held']);
     $pagingbar = $OUTPUT->paging_bar($data['total'], $data['page'], $data['perpage'], $baseurl);
 
+    $backlog = $data['backlog'];
+    $waiting = $backlog['critical'] + $backlog['high'] + $backlog['lower'];
     $templatecontext = [
         'intro' => get_string('heldcertificates:intro', 'quizaccess_proctoring'),
+        'hasbacklog' => $waiting > 0,
+        'backlog' => get_string('heldcertificates:backlog', 'quizaccess_proctoring', (object)[
+            'total' => $waiting,
+            'critical' => $backlog['critical'],
+            'high' => $backlog['high'],
+            'lower' => $backlog['lower'],
+            'oldest' => $backlog['oldest'] > 0 ? \quizaccess_proctoring\local\display_time::staff($backlog['oldest']) : '',
+        ]),
+        'hasexpiringsoon' => $backlog['expiringsoon'] > 0,
+        'expiringsoon' => get_string('heldcertificates:expiringsoon', 'quizaccess_proctoring', $backlog['expiringsoon']),
         'rows' => $data['rows'],
         'hasrows' => $data['hasrows'],
         'truncated' => $data['truncated'],

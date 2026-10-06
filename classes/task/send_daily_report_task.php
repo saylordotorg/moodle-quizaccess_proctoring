@@ -37,6 +37,9 @@ class send_daily_report_task extends scheduled_task {
     /** @var int Maximum attempt rows rendered in the email body. */
     private const MAX_ROWS = 100;
 
+    /** @var int A hold auto-releasing within this long is flagged and listed first. */
+    private const EXPIRING_SOON = 2 * DAYSECS;
+
     /**
      * Returns task name.
      *
@@ -186,6 +189,7 @@ class send_daily_report_task extends scheduled_task {
             'reportrows' => 0,
             'highrisk' => 0,
             'activeholds' => 0,
+            'expiringsoon' => 0,
             'events' => 0,
             'truncated' => 0,
         ];
@@ -203,6 +207,9 @@ class send_daily_report_task extends scheduled_task {
             if ($row['activehold']) {
                 $summary['activeholds']++;
             }
+            if ($row['expiringsoon']) {
+                $summary['expiringsoon']++;
+            }
             if ($row['highrisk']) {
                 $summary['highrisk']++;
             }
@@ -215,8 +222,8 @@ class send_daily_report_task extends scheduled_task {
         }
 
         usort($rows, static function (array $a, array $b): int {
-            return [$b['activehold'], $b['riskscore'], $b['lastactivity']] <=>
-                [$a['activehold'], $a['riskscore'], $a['lastactivity']];
+            return [$b['expiringsoon'], $b['activehold'], $b['riskscore'], $b['lastactivity']] <=>
+                [$a['expiringsoon'], $a['activehold'], $a['riskscore'], $a['lastactivity']];
         });
 
         $summary['reportrows'] = count($rows);
@@ -383,6 +390,10 @@ class send_daily_report_task extends scheduled_task {
             (int)$attempt->reportid
         );
         $activehold = $hold && (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
+        // An unreviewed hold about to be released automatically gets reviewers' attention first
+        // (CPIT-465); one past its window goes at the next hourly run.
+        $autoreleaseat = $activehold ? quizaccess_proctoring_risk_hold_auto_release_time($hold) : 0;
+        $expiringsoon = $autoreleaseat > 0 && $autoreleaseat <= time() + self::EXPIRING_SOON;
         $eventcount = $DB->count_records_select(
             'quizaccess_proctoring_events',
             'courseid = :courseid AND quizid = :quizid AND userid = :userid AND attemptid = :attemptid
@@ -423,9 +434,13 @@ class send_daily_report_task extends scheduled_task {
             'threshold' => (int)$settings['threshold'],
             'highrisk' => (int)$risk['score'] >= (int)$settings['threshold'],
             'activehold' => $activehold,
-            'holdstatus' => $hold
+            'expiringsoon' => $expiringsoon,
+            'holdstatus' => ($hold
                 ? quizaccess_proctoring_get_risk_hold_status_label($hold)
-                : get_string('dailyreport:nohold', 'quizaccess_proctoring'),
+                : get_string('dailyreport:nohold', 'quizaccess_proctoring')) .
+                ($expiringsoon
+                    ? ' - ' . get_string('dailyreport:autoreleases', 'quizaccess_proctoring', userdate($autoreleaseat))
+                    : ''),
             'eventcount' => $eventcount,
             'capturecount' => $capturecount,
             'lastactivity' => (int)$attempt->lastactivity,
@@ -455,6 +470,7 @@ class send_daily_report_task extends scheduled_task {
             get_string('dailyreport:summaryincluded', 'quizaccess_proctoring', $summary['reportrows']),
             get_string('dailyreport:summaryhighrisk', 'quizaccess_proctoring', $summary['highrisk']),
             get_string('dailyreport:summaryactiveholds', 'quizaccess_proctoring', $summary['activeholds']),
+            get_string('dailyreport:summaryexpiringsoon', 'quizaccess_proctoring', $summary['expiringsoon']),
             get_string('dailyreport:summaryevents', 'quizaccess_proctoring', $summary['events']),
             '',
         ];
@@ -505,6 +521,9 @@ class send_daily_report_task extends scheduled_task {
         $html .= '<li>' . s(get_string('dailyreport:summaryhighrisk', 'quizaccess_proctoring', $summary['highrisk'])) . '</li>';
         $html .= '<li>' .
             s(get_string('dailyreport:summaryactiveholds', 'quizaccess_proctoring', $summary['activeholds'])) . '</li>';
+        $html .= '<li>' . ($summary['expiringsoon'] > 0 ? '<strong>' : '') .
+            s(get_string('dailyreport:summaryexpiringsoon', 'quizaccess_proctoring', $summary['expiringsoon'])) .
+            ($summary['expiringsoon'] > 0 ? '</strong>' : '') . '</li>';
         $html .= '<li>' . s(get_string('dailyreport:summaryevents', 'quizaccess_proctoring', $summary['events'])) . '</li>';
         $html .= '</ul>';
 
@@ -527,7 +546,8 @@ class send_daily_report_task extends scheduled_task {
             $html .= '<td><strong>' . s($row['riskscore'] . '/100') . '</strong><br><small>' .
                 s($row['risklevel'] . ' / ' . get_string('dailyreport:threshold', 'quizaccess_proctoring', $row['threshold'])) .
                 '</small></td>';
-            $html .= '<td>' . s($row['holdstatus']) . '</td>';
+            $html .= '<td>' . ($row['expiringsoon'] ? '<strong>' . s($row['holdstatus']) . '</strong>' : s($row['holdstatus'])) .
+                '</td>';
             $html .= '<td>' . s((string)$row['eventcount']) . '</td>';
             $html .= '<td>' . s((string)$row['capturecount']) . '</td>';
             $html .= '<td>' . s($row['lastactivityformatted']) . '</td>';

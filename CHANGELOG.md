@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.11.5 — 2026-10-06
+- **Critical holds no longer auto-release unreviewed by default (CPIT-465).** The auto-release ceiling shipped as 101, which with the score cap on means "off", so every hold, Critical ones included, was released automatically when its 7-day review window ended. The shipped default is now 80, the default start of the Critical band, so a Critical hold waits for a reviewer. Lower holds are still released at the end of their window. With nothing configured, the ceiling follows the site's Critical band. The upgrade moves a site still on the shipped 101 to the start of its Critical band; a ceiling an administrator chose is left alone.
+- **The daily report warns before a hold is released unreviewed.** Holds that will auto-release within 48 hours are counted in the summary, listed first, and marked with their release time.
+- **The held-certificates dashboard shows the review backlog.** Above the list it shows how many holds are awaiting review by band (Critical, High, lower) and when the oldest was opened. A warning appears when any will be released automatically within 48 hours.
+
 # v1.11.4 — 2026-10-06
 - **An abandoned precheck no longer leaves a "report" and photos behind (CPIT-464).** A precheck face capture is stored before any attempt exists. Nothing ever attached it to the attempt or deleted it, so a student who stopped at the photo step kept a report row with their webcam photo and face crop for good. The per-quiz report could even show, and score, an abandoned precheck in place of the student's real attempt, because it picked each student's newest row.
 - The capture that passes the precheck is now remembered in the session. When the student starts the attempt within ten minutes, it becomes part of that attempt's evidence, the way an ID check already is.
