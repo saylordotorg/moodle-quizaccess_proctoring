@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.11.7 — 2026-10-06
+- **Multiple faces in the webcam are now detected (CPIT-468).** The "Multiple faces visible" factor was scored but nothing ever produced it. The webcam capture kept only the first face it found, and the only face count was in the precheck. With the new setting **"Detect multiple faces in the webcam"** on, the browser counts the faces in the webcam every four seconds, using the face model TaView already loads.
+  - Only confident faces at least a minimum share of the frame height count. The share is a new setting, 10% by default, so photos, posters and televisions in the background are ignored.
+  - An event is logged only when a second face stays in view across three checks in a row, about eight seconds, so a walk-past is not flagged. The webcam frame is attached as the evidence. After an event there is a 90-second pause.
+- The factor keeps its points (30, cap 30), but it is **review-only**. It can put an attempt on hold, but when risk review is set to fail attempts automatically, an attempt is failed only if the rest of its evidence reaches the threshold on its own. Otherwise it is held for a reviewer.
+- The setting is off by default, like phone detection, so it can be piloted first. The capture loop is unchanged when the face model is loaded only for this check: no face crop and no "face not found" notice.
+- The report treats it like phone detection. It reads as checked only when the browser reports that the face count started; otherwise it is listed as not monitored. On the risk factor settings page, the factor is no longer labelled "Not available".
+- Not included: a second-face count from the face-match service. That service compares only the periodic captures, 30 seconds apart, so it could not tell a walk-past from someone sitting in view. With its current settings, it would also never report an unmatched face.
+
 # v1.11.6 — 2026-10-06
 - **The report no longer shows a clean result for a check that never ran (CPIT-467).** Every factor with no evidence used to be listed as passed: "Single face throughout", "No audio activity detected", "One monitor detected", "Identity matched the reference photo". That happened whether or not anything had checked it. A factor now reads as passed only when its check demonstrably ran during that attempt. Otherwise it is listed under "Not monitored for this attempt", with the reason:
   - nothing in TaView detects it yet (multiple faces, audio);

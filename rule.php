@@ -193,6 +193,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * Whether the site counts faces in the webcam during attempts (CPIT-468).
+     *
+     * @return bool True when multiple-face detection is switched on.
+     */
+    private static function site_detects_multiple_faces(): bool {
+        return (int)get_config('quizaccess_proctoring', 'detectmultiplefaces') === 1;
+    }
+
+    /**
      * Get the mobile/tablet desktop screen-share policy.
      *
      * @return string One of the MOBILE_SCREEN_SHARE_* constants.
@@ -2276,6 +2285,12 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 }
             }
 
+            // Multiple faces: the browser counts faces with the face model loaded below. A face only
+            // counts when its box is at least this percentage of the frame height.
+            $record->detectmultiplefaces = self::site_detects_multiple_faces() ? 1 : 0;
+            $minsize = (int)(get_config('quizaccess_proctoring', 'multiplefacesminsize') ?: 10);
+            $record->multiplefacesminsize = max(3, min(50, $minsize)) / 100;
+
             $usepersistentmonitor = self::should_use_persistent_screen_monitor();
             $record->screenmarkerrequired = self::should_require_screen_marker(
                 $record->multimonitormode,
@@ -2323,6 +2338,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                         'multimonitor' => $record->multimonitormode !== self::MULTI_MONITOR_OFF
                             || !empty($record->blurquizwithmultiplemonitors),
                         'phone' => !empty($record->detectphone),
+                        'multiplefaces' => !empty($record->detectmultiplefaces),
                     ],
                     \core_useragent::get_user_agent_string() ?: ''
                 );
@@ -2330,7 +2346,12 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
             // Configure face model URL and include JS.
             $fcmethod = get_config('quizaccess_proctoring', 'fcmethod');
-            $modelurl = ($fcmethod === 'customapi' || !empty($record->blurquizwithoutface))
+            // When only multiple-face detection needs the model, the capture loop keeps working as it
+            // did without it: no face crop and no "face not found" notice on each capture.
+            $record->facemodelformultiplefacesonly = ($fcmethod !== 'customapi' && empty($record->blurquizwithoutface)
+                && !empty($record->detectmultiplefaces)) ? 1 : 0;
+            $modelurl = ($fcmethod === 'customapi' || !empty($record->blurquizwithoutface)
+                    || !empty($record->detectmultiplefaces))
                 ? $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/thirdpartylibs/models'
                 : null;
 

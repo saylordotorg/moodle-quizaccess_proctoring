@@ -401,13 +401,14 @@ define([], function() {
     };
 
     // Factors nothing in the plugin detects (CPIT-467); keep in step with factor_coverage::FACTORS_WITHOUT_DETECTOR.
-    const NOT_AVAILABLE = ['multiplefaces', 'audio'];
+    const NOT_AVAILABLE = ['audio'];
 
     const FACTOR_HELP = {
         facemismatch: 'The person on camera doesn’t look like the student’s profile photo. '
             + 'The strongest sign of a stand-in test-taker.',
-        multiplefaces: 'Not available yet: nothing in TaView counts faces in a webcam capture, so this never adds points. '
-            + 'Reports list it as not monitored.',
+        multiplefaces: 'A second face stayed in view of the webcam for about eight seconds. Often someone in the room, '
+            + 'so it can hold an attempt for review but never fails it automatically. Only counted when '
+            + '"Detect multiple faces in the webcam" is on in the main settings.',
         noface: 'Nobody was detected in frame. Often just poor lighting or leaning away, so it scores low per event.',
         phonedetected: 'A phone was spotted in the student’s hands or on the desk.',
         webcammissing: 'The whole attempt finished without a single webcam photo — the camera was blocked '

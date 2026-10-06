@@ -477,6 +477,18 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             const monitorMouseActivity = parseInt(props.monitormouseactivity || 0, 10) === 1 &&
                 desktopPointerEnvironment;
             const detectPhone = parseInt(props.detectphone || 0, 10) === 1 && !!props.phonedetectliburl;
+            // Multiple faces (CPIT-468): needs the face model that setup() loaded.
+            const detectMultipleFaces = parseInt(props.detectmultiplefaces || 0, 10) === 1 &&
+                parseInt(props.facemodelready || 0, 10) === 1;
+            // A face only counts when its box is at least this share of the frame height, so a
+            // photo or poster across the room is ignored.
+            const multiFaceMinSize = Math.min(0.5, Math.max(0.03, parseFloat(props.multiplefacesminsize) || 0.10));
+            const multiFaceMinScore = 0.6;
+            // Like phone detection: a second face must stay in view across consecutive checks
+            // (about 8 seconds), so a walk-past is not flagged; then a cooldown applies.
+            const multiFaceCheckIntervalMs = 4000;
+            const multiFaceRequiredFrames = 3;
+            const multiFaceCooldownMs = 90000;
             const phoneMinScore = Math.min(0.95, Math.max(0.20, parseFloat(props.detectphoneminscore) || 0.60));
             // Defensive cadence: a phone must stay visible across consecutive checks before one
             // event (with the webcam frame attached) is logged, then a cooldown applies.
@@ -549,6 +561,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let phoneConsecutive = 0;
             let phoneLastLogged = 0;
             let phoneEvidenceFrame = '';
+            let multiFaceConsecutive = 0;
+            let multiFaceLastLogged = 0;
+            let multiFaceChecking = false;
+            let webcamEvidenceFrame = '';
             const activeAttemptWarnings = {};
             const attemptWarningTimers = {};
             const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -1412,6 +1428,64 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 phoneEvidenceFrame = '';
             };
 
+            /**
+             * Count the faces in the webcam large and confident enough to be a person at the desk.
+             *
+             * @param {HTMLVideoElement} video Webcam video.
+             * @returns {Promise<number>} Number of qualifying faces.
+             */
+            const countWebcamFaces = async function(video) {
+                // eslint-disable-next-line no-undef
+                const options = new faceapi.SsdMobilenetv1Options({minConfidence: multiFaceMinScore});
+                // eslint-disable-next-line no-undef
+                const detections = await faceapi.detectAllFaces(video, options);
+                const minHeight = video.videoHeight * multiFaceMinSize;
+                return detections.filter(function(detection) {
+                    return detection.box && detection.box.height >= minHeight;
+                }).length;
+            };
+
+            const checkMultipleFaces = async function() {
+                const video = document.getElementById('video');
+                if (!monitoringActive || multiFaceChecking || !video || !video.videoWidth || !video.videoHeight ||
+                        document.visibilityState === 'hidden') {
+                    return;
+                }
+
+                multiFaceChecking = true;
+                let faces = 0;
+                try {
+                    faces = await countWebcamFaces(video);
+                } catch (error) {
+                    return;
+                } finally {
+                    multiFaceChecking = false;
+                }
+                if (!monitoringActive) {
+                    return;
+                }
+                if (faces < 2) {
+                    multiFaceConsecutive = 0;
+                    return;
+                }
+
+                multiFaceConsecutive++;
+                if (multiFaceConsecutive < multiFaceRequiredFrames || Date.now() - multiFaceLastLogged < multiFaceCooldownMs) {
+                    return;
+                }
+
+                multiFaceLastLogged = Date.now();
+                multiFaceConsecutive = 0;
+                // The webcam frame is the evidence a reviewer judges; it is never decided automatically.
+                webcamEvidenceFrame = capturePhoneEvidenceFrame(video);
+                logEvent('multiple_faces_detected', {
+                    faces: faces,
+                    frames: multiFaceRequiredFrames,
+                    note: 'More than one face stayed visible in the webcam across consecutive checks.'
+                });
+                webcamEvidenceFrame = '';
+            };
+
             const initPhoneDetection = async function() {
                 if (!detectPhone) {
                     return;
@@ -1597,7 +1671,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         !(captureDesktop && screenShareEvents.includes(eventType)) &&
                         !(monitorDetectionEnabled && multiMonitorEvents.includes(eventType)) &&
                         !(monitorMouseActivity && mouseEvents.includes(eventType)) &&
-                        !(detectPhone && ['phone_detected', 'phone_detection_started'].includes(eventType))) {
+                        !(detectPhone && ['phone_detected', 'phone_detection_started'].includes(eventType)) &&
+                        !(detectMultipleFaces &&
+                            ['multiple_faces_detected', 'multiple_faces_detection_started'].includes(eventType))) {
                     return;
                 }
 
@@ -1619,7 +1695,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     eventdetail: detailText,
                     pagevisibility: document.visibilityState || '',
                     currenturl: window.location.href,
-                    screenshot: eventType === 'phone_detected' ? phoneEvidenceFrame : captureDesktopFrame(eventType)
+                    screenshot: eventType === 'phone_detected' ? phoneEvidenceFrame
+                        : (eventType === 'multiple_faces_detected' ? webcamEvidenceFrame : captureDesktopFrame(eventType))
                 };
                 let capturedat = Math.floor(captureClock() / 1000);
                 if (eventType === 'screen_capture') {
@@ -1812,6 +1889,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }, Math.max(5000, parseInt(props.camshotdelay, 10) || 30000));
             }
             initPhoneDetection();
+            if (detectMultipleFaces) {
+                // Tell the report the face count really runs (the model loaded), as for phones.
+                logEvent('multiple_faces_detection_started', {});
+                monitorInterval(checkMultipleFaces, multiFaceCheckIntervalMs);
+            }
             checkMultiMonitorSetup();
             if (monitorDetectionEnabled) {
                 monitorInterval(checkMultiMonitorSetup, 60000);
@@ -2049,6 +2131,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     latestDesktopFrame = '';
                     latestDesktopTime = 0;
                     phoneEvidenceFrame = '';
+                    webcamEvidenceFrame = '';
+                    multiFaceConsecutive = 0;
                     if (phoneCanvas) {
                         phoneCanvas.width = 0;
                         phoneCanvas.height = 0;
@@ -2085,6 +2169,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                 }
                 takepicturedelay = Math.max(5000, parseInt(props.camshotdelay, 10) || 30000);
+                // The per-capture face crop and "face not found" notice belong to face matching and
+                // the no-face blur, not to multiple-face detection, which only borrows the model.
+                const captureFaceCheck = faceModelReady && parseInt(props.facemodelformultiplefacesonly || 0, 10) !== 1;
                 // Quiz core renders a lone tertiary-nav "Back" link during attempts;
                 // on a proctored attempt it only walks students out of the exam
                 // mid-attempt (and fires focus-loss violations on the way).
@@ -2122,7 +2209,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         parseInt(props.captureviolationdesktop, 10) === 1 ||
                         parseInt(props.blurquizwithmultiplemonitors || 0, 10) === 1 ||
                         parseInt(props.detectphone || 0, 10) === 1 ||
+                        (parseInt(props.detectmultiplefaces || 0, 10) === 1 && faceModelReady) ||
                         ['log', 'warn', 'block'].includes(props.multimonitormode)) {
+                    props.facemodelready = faceModelReady ? 1 : 0;
                     monitoring = initSuspiciousActivityMonitoring(props, strings, uploads, captureClock);
                 }
 
@@ -2309,7 +2398,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             if (croppedImage) {
                                 croppedImage.removeAttribute('src');
                             }
-                            if (faceModelReady) {
+                            if (captureFaceCheck) {
                                 await detectface(photo, croppedImage);
                             }
                             if (!pageActive || generation !== pageGeneration) {
@@ -2321,13 +2410,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             let faceFound;
                             let faceImage;
                             if (croppedImage && croppedImage.getAttribute('src')) {
-                                if (faceModelReady) {
+                                if (captureFaceCheck) {
                                     removeNotifications();
                                 }
                                 faceFound = 1;
                                 faceImage = croppedImage.src;
                             } else {
-                                if (faceModelReady) {
+                                if (captureFaceCheck) {
                                     showNotification(strings.facenotfoundoncam, 'error');
                                 }
                                 faceFound = 0;
