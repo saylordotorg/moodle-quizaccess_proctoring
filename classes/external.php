@@ -1002,14 +1002,25 @@ class quizaccess_proctoring_external extends external_api {
         $awsscore = $currentdata->awsscore;
         $threshhold = (int)quizaccess_proctoring_get_proctoring_settings('threshold');
 
+        if (
+            (int)$currentdata->awsflag === 2 && $awsscore > $threshhold &&
+                !\quizaccess_proctoring\local\precheck_evidence::protect_matched_reference((int)$USER->id)
+        ) {
+            // The reference was removed as abandoned while the match was running: the student
+            // registers a new one rather than starting an attempt with nothing to compare against.
+            return [
+                'screenshotid' => $screenshotid,
+                'status' => 'referencereset',
+                'warnings' => $warnings,
+            ];
+        }
         if ((int)$currentdata->awsflag === 2 && $awsscore > $threshhold) {
+            // The matched photo now has another day before the cleanup may remove it, so it cannot
+            // disappear between this check and the attempt starting (which marks it used).
             $status = "success";
             quizaccess_proctoring_set_face_preflight_passed((int)$cm->id);
             // The attempt that follows claims this capture; otherwise it is deleted after a day.
             \quizaccess_proctoring\local\precheck_evidence::remember_passed_capture((int)$cm->id, (int)$screenshotid);
-            // Give the photo that just matched another day before the cleanup may remove it, so it
-            // cannot disappear between this check and the attempt starting (which marks it used).
-            \quizaccess_proctoring\local\precheck_evidence::protect_matched_reference((int)$USER->id);
         } else {
             $status = "failed";
         }

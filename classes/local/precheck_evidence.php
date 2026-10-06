@@ -182,20 +182,29 @@ class precheck_evidence {
      * Done under the student's reference lock, which the cleanup also holds while it re-checks
      * that time and removes the photo, so the two never interleave.
      *
+     * The match may have taken a while (the face-match service is remote), and the cleanup may
+     * have removed the photo in the meantime. The caller must not pass the precheck then: the
+     * attempt would start with no reference to compare against.
+     *
      * @param int $userid Student id.
-     * @return void
+     * @return bool False when the photo no longer exists (or could not be locked), so the student
+     *              must register again; true when it is in place and protected.
      */
-    public static function protect_matched_reference(int $userid): void {
+    public static function protect_matched_reference(int $userid): bool {
         global $DB;
 
         $lock = quizaccess_proctoring_get_reference_lock($userid);
         if (!$lock) {
-            return;
+            return false;
         }
         try {
             $image = $DB->get_record('quizaccess_proctoring_user_images', ['user_id' => $userid]);
-            if (!$image || (int)$image->photo_draft_id !== 0 || (int)$image->timeused !== 0) {
-                return;
+            if (!$image || !quizaccess_proctoring_get_image_url($userid)) {
+                return false;
+            }
+            if ((int)$image->photo_draft_id !== 0 || (int)$image->timeused !== 0) {
+                // A staff upload, or a photo an attempt already used: the cleanup never removes it.
+                return true;
             }
             // Only photos the cleanup already covers: moving an older photo's time forward would
             // bring it into scope, and its history cannot show whether it was ever used.
@@ -207,6 +216,7 @@ class precheck_evidence {
                 'parentid = :parentid AND parent_type = :parenttype AND timemodified >= :since',
                 ['parentid' => $image->id, 'parenttype' => 'admin_image', 'since' => max(1, $since)]
             );
+            return true;
         } finally {
             $lock->release();
         }

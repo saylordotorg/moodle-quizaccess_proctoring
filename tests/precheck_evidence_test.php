@@ -132,7 +132,7 @@ final class precheck_evidence_test extends advanced_testcase {
         set_config('abandonedreferencesince', $now - 5 * DAYSECS, 'quizaccess_proctoring');
         $this->add_reference($this->student->id, 0, $now - 2 * DAYSECS);
 
-        precheck_evidence::protect_matched_reference((int)$this->student->id);
+        $this->assertTrue(precheck_evidence::protect_matched_reference((int)$this->student->id));
 
         $this->assertSame(0, precheck_evidence::retire_abandoned_references($now));
         $timeused = (int)$DB->get_field('quizaccess_proctoring_user_images', 'timeused', ['user_id' => $this->student->id]);
@@ -145,6 +145,20 @@ final class precheck_evidence_test extends advanced_testcase {
         precheck_evidence::protect_matched_reference((int)$older->id);
         $this->assertSame(0, precheck_evidence::retire_abandoned_references($now + DAYSECS + 60));
         $this->assertNotFalse(quizaccess_proctoring_get_image_url($older->id));
+    }
+
+    /**
+     * When the cleanup removed the photo while the match was running, protection reports it, so
+     * the precheck does not pass with no reference to compare against.
+     */
+    public function test_protection_fails_when_the_photo_is_gone(): void {
+        $this->assertFalse(precheck_evidence::protect_matched_reference((int)$this->student->id));
+
+        $now = time();
+        set_config('abandonedreferencesince', $now - 5 * DAYSECS, 'quizaccess_proctoring');
+        $this->add_reference($this->student->id, 0, $now - 2 * DAYSECS);
+        $this->assertSame(1, precheck_evidence::retire_abandoned_references($now));
+        $this->assertFalse(precheck_evidence::protect_matched_reference((int)$this->student->id));
     }
 
     /**
