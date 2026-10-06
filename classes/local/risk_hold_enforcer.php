@@ -275,6 +275,8 @@ class risk_hold_enforcer {
      * @return void
      */
     private static function recompute_grade(stdClass $quiz, int $userid, array $voidedattemptids): void {
+        global $DB;
+
         $attempts = quiz_get_user_attempts($quiz->id, $userid, 'finished');
         if (!$attempts) {
             // No finished attempt to grade from: let the quiz publish "no grade" itself.
@@ -282,15 +284,30 @@ class risk_hold_enforcer {
             return;
         }
 
+        $hasvoided = false;
         foreach ($voidedattemptids as $attemptid) {
             if (isset($attempts[$attemptid])) {
                 $attempts[$attemptid]->sumgrades = 0;
+                $hasvoided = true;
             }
         }
 
         \mod_quiz\quiz_settings::create($quiz->id, $userid)
             ->get_grade_calculator()
             ->recompute_final_grade($userid, $attempts);
+
+        // "Highest grade" starts from null and keeps a mark only if it is greater, and 0 > null is
+        // false in PHP, so a quiz whose only marks are voided zeros comes out with no grade at all.
+        // A voided attempt is a mark of zero, not a missing mark: publish the zero.
+        if ($hasvoided && !$DB->record_exists('quiz_grades', ['quiz' => $quiz->id, 'userid' => $userid])) {
+            $DB->insert_record('quiz_grades', (object)[
+                'quiz' => $quiz->id,
+                'userid' => $userid,
+                'grade' => 0,
+                'timemodified' => time(),
+            ]);
+            quiz_update_grades($quiz, $userid);
+        }
     }
 
     /**
@@ -353,32 +370,94 @@ class risk_hold_enforcer {
     }
 
     /**
-     * Whether a course certificate was issued to the student after the held attempt started.
+     * Whether a course certificate was issued that the hold should have stopped.
      *
      * Holds now keep certificates from being issued, but certificates issued before this
      * change, or through a restriction that does not depend on the quiz, are flagged so staff
-     * can revoke them.
+     * can revoke them. A confirmed or failed attempt does not taint a certificate the student
+     * earned afterwards with a valid attempt.
      *
      * @param int $courseid Course id.
      * @param int $userid Student id.
      * @param int $attemptid Held attempt id.
+     * @param bool $active True for an active hold, false for a confirmed or failed one.
      * @return bool
      */
-    public static function certificate_issued_during_hold(int $courseid, int $userid, int $attemptid): bool {
-        global $DB;
+    public static function certificate_issued_during_hold(
+        int $courseid,
+        int $userid,
+        int $attemptid,
+        bool $active
+    ): bool {
+        global $CFG, $DB;
 
         try {
+            require_once($CFG->dirroot . '/mod/quiz/locallib.php');
             if (!$DB->get_manager()->table_exists('tool_certificate_issues')) {
                 return false;
             }
-            $since = (int)$DB->get_field('quiz_attempts', 'timestart', ['id' => $attemptid]);
-            return $DB->record_exists_select(
+            $attempt = $DB->get_record('quiz_attempts', ['id' => $attemptid], 'id, quiz, timestart');
+            $issuetimes = $DB->get_fieldset_select(
                 'tool_certificate_issues',
+                'timecreated',
                 'userid = :userid AND courseid = :courseid AND timecreated >= :since',
-                ['userid' => $userid, 'courseid' => $courseid, 'since' => $since]
+                ['userid' => $userid, 'courseid' => $courseid, 'since' => $attempt ? (int)$attempt->timestart : 0]
             );
+            if (!$issuetimes) {
+                return false;
+            }
+
+            $validfinishtimes = [];
+            if (!$active && $attempt) {
+                $voided = $DB->get_fieldset_select(
+                    'quizaccess_proctoring_risk_holds',
+                    'attemptid',
+                    'quizinstance = :quiz AND userid = :userid AND (status = :confirmed OR status = :autofailed)',
+                    [
+                        'quiz' => $attempt->quiz,
+                        'userid' => $userid,
+                        'confirmed' => QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED,
+                        'autofailed' => QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
+                    ]
+                );
+                foreach (quiz_get_user_attempts($attempt->quiz, $userid, 'finished') as $other) {
+                    if (!in_array((int)$other->id, array_map('intval', $voided), true)) {
+                        $validfinishtimes[] = (int)$other->timefinish;
+                    }
+                }
+            }
+
+            return self::certificate_conflicts($active, $issuetimes, $validfinishtimes);
         } catch (\Throwable $e) {
             return false;
         }
+    }
+
+    /**
+     * Decide whether certificates issued since a held attempt started conflict with its hold.
+     *
+     * While a hold is active no certificate should be issued at all. After a violation is
+     * confirmed, a certificate is legitimate if a valid (not voided) attempt was finished before
+     * it was issued, because that attempt can have earned it.
+     *
+     * @param bool $active True for an active hold, false for a confirmed or failed one.
+     * @param int[] $issuetimes Times certificates were issued since the held attempt started.
+     * @param int[] $validfinishtimes Finish times of the student's attempts that are not voided.
+     * @return bool
+     */
+    public static function certificate_conflicts(bool $active, array $issuetimes, array $validfinishtimes): bool {
+        if (!$issuetimes) {
+            return false;
+        }
+        if ($active) {
+            return true;
+        }
+        $earliestvalid = $validfinishtimes ? min(array_map('intval', $validfinishtimes)) : null;
+        foreach ($issuetimes as $issuetime) {
+            if ($earliestvalid === null || (int)$issuetime < $earliestvalid) {
+                return true;
+            }
+        }
+        return false;
     }
 }

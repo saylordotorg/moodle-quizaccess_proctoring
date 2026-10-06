@@ -2165,7 +2165,8 @@ function quizaccess_proctoring_resolve_certificate_label(
                 $certificateissued = \quizaccess_proctoring\local\risk_hold_enforcer::certificate_issued_during_hold(
                     $courseid,
                     $userid,
-                    (int)$hold->attemptid
+                    (int)$hold->attemptid,
+                    (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE
                 );
             }
         }

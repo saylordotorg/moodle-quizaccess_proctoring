@@ -175,18 +175,48 @@ final class risk_hold_enforcement_test extends advanced_testcase {
 
         $this->assertTrue(quizaccess_proctoring_confirm_risk_hold($holdid, 2));
         $grade = $this->grade();
-        $this->assertEquals(0.0, $grade->finalgrade);
+        // Strict: a voided attempt is a mark of zero, not "no grade" (assertEquals treats null as 0).
+        $this->assertSame(0.0, $this->final_grade());
         $this->assertEmpty($grade->locked);
         $this->assertStringContainsString('violation confirmed', (string)$grade->feedback);
+        $this->assertSame(COMPLETION_COMPLETE_FAIL, $this->completion_state());
 
         // A regrade rebuilds the attempt's own mark; the confirmed hold keeps it at zero.
         $this->recompute();
-        $this->assertEquals(0.0, $this->final_grade());
+        $this->assertSame(0.0, $this->final_grade());
 
         // The quiz grades on the highest attempt, so a later passing attempt counts.
         $this->add_attempt(8);
-        $this->assertEquals(8.0, $this->final_grade());
+        $this->assertSame(8.0, $this->final_grade());
         $this->assertSame(COMPLETION_COMPLETE_PASS, $this->completion_state());
+    }
+
+    /**
+     * With every attempt voided, each grading method still publishes a zero, not "no grade".
+     */
+    public function test_voided_attempts_publish_zero_for_every_grading_method(): void {
+        global $DB;
+
+        foreach ([QUIZ_GRADEHIGHEST, QUIZ_GRADEAVERAGE, QUIZ_ATTEMPTFIRST, QUIZ_ATTEMPTLAST] as $method) {
+            $DB->set_field('quiz', 'grademethod', $method, ['id' => $this->quiz->id]);
+            $DB->delete_records('quizaccess_proctoring_risk_holds');
+            $DB->delete_records('quiz_attempts', ['quiz' => $this->quiz->id]);
+            $DB->delete_records('quiz_grades', ['quiz' => $this->quiz->id]);
+            \cache_helper::purge_by_event('changesincourse');
+
+            $first = $this->add_attempt(9);
+            $second = $this->add_attempt(10);
+            foreach ([$first, $second] as $attemptid) {
+                $this->assertTrue(quizaccess_proctoring_confirm_risk_hold($this->hold($attemptid), 2));
+            }
+
+            $this->assertSame(0.0, $this->final_grade(), 'grademethod ' . $method);
+            $this->assertEquals(
+                0,
+                $DB->get_field('quiz_grades', 'grade', ['quiz' => $this->quiz->id, 'userid' => $this->student->id]),
+                'grademethod ' . $method
+            );
+        }
     }
 
     /**
@@ -223,6 +253,23 @@ final class risk_hold_enforcement_test extends advanced_testcase {
         $this->assertSame('held', quizaccess_proctoring_certificate_state(true, false, false, true, false));
         $this->assertSame('released', quizaccess_proctoring_certificate_state(false, true, false, true, true));
         $this->assertSame('issued', quizaccess_proctoring_certificate_state(false, false, false, true, true));
+    }
+
+    /**
+     * Certificates issued during an active hold always conflict; after a confirmed violation only
+     * those issued before any valid attempt was finished do.
+     */
+    public function test_certificate_conflicts_ignore_certificates_earned_by_a_later_valid_attempt(): void {
+        $enforcer = \quizaccess_proctoring\local\risk_hold_enforcer::class;
+
+        $this->assertFalse($enforcer::certificate_conflicts(true, [], []));
+        $this->assertTrue($enforcer::certificate_conflicts(true, [500], [400]));
+        // Confirmed, and no valid attempt at all: the certificate came from the voided attempt.
+        $this->assertTrue($enforcer::certificate_conflicts(false, [500], []));
+        // Confirmed, issued before the later valid attempt was finished.
+        $this->assertTrue($enforcer::certificate_conflicts(false, [500], [600]));
+        // Confirmed, issued after a later valid attempt was finished: earned legitimately.
+        $this->assertFalse($enforcer::certificate_conflicts(false, [700], [600]));
     }
 
     /**

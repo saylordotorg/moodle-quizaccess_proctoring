@@ -66,5 +66,16 @@ class enforce_risk_holds_task extends \core\task\adhoc_task {
         $pairs->close();
 
         mtrace("Applied Saylor Proctored Quiz risk holds to {$done} student grade(s); {$failed} failed.");
+        if ($failed > 0) {
+            // Fail the task so Moodle retries it with backoff. Re-applying the holds that already
+            // succeeded is harmless: enforcement derives the grade from the holds every time.
+            throw new \moodle_exception(
+                'error',
+                'error',
+                '',
+                null,
+                "{$failed} risk hold(s) could not be applied; the task will be retried."
+            );
+        }
     }
 }
