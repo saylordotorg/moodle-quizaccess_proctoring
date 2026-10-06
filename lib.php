@@ -1885,6 +1885,48 @@ function quizaccess_proctoring_fail_high_risk_attempt(
  * @return bool True when released.
  */
 function quizaccess_proctoring_release_risk_hold(int $holdid, int $reviewerid, bool $isautorelease = false): bool {
+    return quizaccess_proctoring_with_risk_hold_lock($holdid, function () use ($holdid, $reviewerid, $isautorelease) {
+        return quizaccess_proctoring_release_risk_hold_locked($holdid, $reviewerid, $isautorelease);
+    });
+}
+
+/**
+ * Run a hold decision while holding the lock for the hold's student and quiz.
+ *
+ * A decision changes the hold and regrades the student in one transaction, and the regrade reads
+ * the student's other holds on the same quiz. Two decisions running at once could each still see
+ * the other's hold as active and leave the grade held after both holds were released, so they run
+ * one at a time, and the lock is held until the decision has committed.
+ *
+ * @param int $holdid Hold id.
+ * @param callable $decision The decision; it re-reads the hold, which may have changed meanwhile.
+ * @return bool The decision's result.
+ */
+function quizaccess_proctoring_with_risk_hold_lock(int $holdid, callable $decision): bool {
+    global $DB;
+
+    $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], 'id, quizinstance, userid', MUST_EXIST);
+    $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring_riskhold');
+    $lock = $factory->get_lock('quiz' . (int)$hold->quizinstance . 'user' . (int)$hold->userid, 30);
+    if (!$lock) {
+        throw new moodle_exception('locktimeout', 'moodle');
+    }
+    try {
+        return $decision();
+    } finally {
+        $lock->release();
+    }
+}
+
+/**
+ * Release a risk hold; the caller holds the hold's lock.
+ *
+ * @param int $holdid Hold id.
+ * @param int $reviewerid Reviewer user id.
+ * @param bool $isautorelease True when released automatically by the expiry task.
+ * @return bool True when released.
+ */
+function quizaccess_proctoring_release_risk_hold_locked(int $holdid, int $reviewerid, bool $isautorelease): bool {
     global $CFG, $DB;
 
     $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
@@ -2605,6 +2647,19 @@ function quizaccess_proctoring_auto_release_expired_risk_holds(int $limit = 100)
  * @return bool True when confirmed or already confirmed.
  */
 function quizaccess_proctoring_confirm_risk_hold(int $holdid, int $reviewerid): bool {
+    return quizaccess_proctoring_with_risk_hold_lock($holdid, function () use ($holdid, $reviewerid) {
+        return quizaccess_proctoring_confirm_risk_hold_locked($holdid, $reviewerid);
+    });
+}
+
+/**
+ * Confirm a proctoring violation; the caller holds the hold's lock.
+ *
+ * @param int $holdid Hold id.
+ * @param int $reviewerid Reviewer user id.
+ * @return bool True when confirmed or already confirmed.
+ */
+function quizaccess_proctoring_confirm_risk_hold_locked(int $holdid, int $reviewerid): bool {
     global $DB;
 
     $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
