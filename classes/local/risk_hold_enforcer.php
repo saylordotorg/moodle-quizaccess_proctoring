@@ -517,7 +517,7 @@ class risk_hold_enforcer {
      *
      * @param bool $active True for an active hold, false for a confirmed or failed one.
      * @param stdClass $quiz Quiz record (grade, sumgrades, grademethod); unused for an active hold.
-     * @param float $gradepass The quiz grade item's pass mark; 0 means any grade passes.
+     * @param float $gradepass The quiz grade item's pass mark; with none (0), every certificate conflicts.
      * @param int[] $issuetimes Times certificates were issued since the held attempt started.
      * @param stdClass[] $attempts The student's finished attempts in attempt order.
      * @param int[] $voidedattemptids Attempts with a confirmed or automatically failed hold.
@@ -542,7 +542,9 @@ class risk_hold_enforcer {
                 return (int)$attempt->timefinish <= (int)$issuetime;
             });
             $grade = self::final_grade($quiz, $finished, $voidedattemptids);
-            $passed = $grade !== null && ($gradepass <= 0 || $grade >= $gradepass - 0.00001);
+            // Without a pass mark the quiz cannot show the certificate was earned (its own
+            // restriction may ask for any minimum grade), so the conflict stays for staff to judge.
+            $passed = $grade !== null && $gradepass > 0 && $grade >= $gradepass - 0.00001;
             if (!$passed) {
                 return true;
             }

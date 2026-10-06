@@ -307,6 +307,8 @@ final class risk_hold_enforcement_test extends advanced_testcase {
         // A later attempt that fails cannot have earned it.
         $failed = array_merge($voidedfirst, [(object)['id' => 2, 'sumgrades' => 5, 'timefinish' => 600]]);
         $this->assertTrue($enforcer::certificate_conflicts(false, $quiz, 7, [700], $failed, [1]));
+        // Without a pass mark the quiz cannot show the certificate was earned.
+        $this->assertTrue($enforcer::certificate_conflicts(false, $quiz, 0, [700], $twoattempts, [1]));
         // Averaging the voided zero with a passing 8 gives 4, below a pass mark of 6.
         $quiz->grademethod = QUIZ_GRADEAVERAGE;
         $this->assertTrue($enforcer::certificate_conflicts(false, $quiz, 6, [700], $twoattempts, [1]));
