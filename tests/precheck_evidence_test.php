@@ -122,6 +122,32 @@ final class precheck_evidence_test extends advanced_testcase {
     }
 
     /**
+     * A precheck match gives the photo another day, but does not protect it for good, and does
+     * not bring a photo registered before the cut-off into the cleanup's scope.
+     */
+    public function test_match_restarts_the_clock_without_permanent_protection(): void {
+        global $DB;
+
+        $now = time();
+        set_config('abandonedreferencesince', $now - 5 * DAYSECS, 'quizaccess_proctoring');
+        $this->add_reference($this->student->id, 0, $now - 2 * DAYSECS);
+
+        precheck_evidence::protect_matched_reference((int)$this->student->id);
+
+        $this->assertSame(0, precheck_evidence::retire_abandoned_references($now));
+        $timeused = (int)$DB->get_field('quizaccess_proctoring_user_images', 'timeused', ['user_id' => $this->student->id]);
+        $this->assertSame(0, $timeused);
+        // A day after the match, with no attempt, the photo goes.
+        $this->assertSame(1, precheck_evidence::retire_abandoned_references($now + DAYSECS + 60));
+
+        $older = $this->getDataGenerator()->create_user();
+        $this->add_reference($older->id, 0, $now - 10 * DAYSECS);
+        precheck_evidence::protect_matched_reference((int)$older->id);
+        $this->assertSame(0, precheck_evidence::retire_abandoned_references($now + DAYSECS + 60));
+        $this->assertNotFalse(quizaccess_proctoring_get_image_url($older->id));
+    }
+
+    /**
      * Removal guarded on the photo being unused leaves a photo an attempt has just used.
      */
     public function test_guarded_removal_keeps_a_photo_marked_used(): void {

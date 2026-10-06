@@ -154,10 +154,9 @@ class precheck_evidence {
     /**
      * Record that the student's current reference photo is in use.
      *
-     * Called when a precheck face check matches the photo (so the photo is protected before the
-     * attempt even starts), when a proctored attempt starts, and when the precheck lets a student
-     * resume an attempt - which can follow a fresh registration (for example after an unusable
-     * photo was replaced) and raises no attempt_started event.
+     * Called when a proctored attempt starts, and when the precheck lets a student resume an
+     * attempt - which can follow a fresh registration (for example after an unusable photo was
+     * replaced) and raises no attempt_started event.
      *
      * @param int $userid Student id.
      * @return void
@@ -172,6 +171,45 @@ class precheck_evidence {
             'user_id = :userid AND timeused = 0',
             ['userid' => $userid]
         );
+    }
+
+    /**
+     * Restart the abandoned-photo clock for a self-registered photo that just matched the student.
+     *
+     * A successful precheck match is not yet an attempt, so it must not protect the photo for
+     * good: it moves the photo's registration time forward, giving the student another full day
+     * to start the attempt. If none follows, the photo is removed a day after its last match.
+     * Done under the student's reference lock, which the cleanup also holds while it re-checks
+     * that time and removes the photo, so the two never interleave.
+     *
+     * @param int $userid Student id.
+     * @return void
+     */
+    public static function protect_matched_reference(int $userid): void {
+        global $DB;
+
+        $lock = quizaccess_proctoring_get_reference_lock($userid);
+        if (!$lock) {
+            return;
+        }
+        try {
+            $image = $DB->get_record('quizaccess_proctoring_user_images', ['user_id' => $userid]);
+            if (!$image || (int)$image->photo_draft_id !== 0 || (int)$image->timeused !== 0) {
+                return;
+            }
+            // Only photos the cleanup already covers: moving an older photo's time forward would
+            // bring it into scope, and its history cannot show whether it was ever used.
+            $since = (int)get_config('quizaccess_proctoring', 'abandonedreferencesince');
+            $DB->set_field_select(
+                'quizaccess_proctoring_face_images',
+                'timemodified',
+                time(),
+                'parentid = :parentid AND parent_type = :parenttype AND timemodified >= :since',
+                ['parentid' => $image->id, 'parenttype' => 'admin_image', 'since' => max(1, $since)]
+            );
+        } finally {
+            $lock->release();
+        }
     }
 
     /**
