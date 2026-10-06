@@ -34,6 +34,11 @@ $observers = [
         'callback' => '\\quizaccess_proctoring\\local\\identity_recheck_policy::attempt_started',
     ],
     [
+        // Bind the capture that passed the precheck to the attempt it led to (CPIT-464).
+        'eventname' => '\\mod_quiz\\event\\attempt_started',
+        'callback' => '\\quizaccess_proctoring\\local\\precheck_evidence::attempt_started',
+    ],
+    [
         'eventname' => '\mod_quiz\event\attempt_submitted',
         'callback' => '\quizaccess_proctoring\proctoring_observer::handle_quiz_attempt_submitted',
     ],

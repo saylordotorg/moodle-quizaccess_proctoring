@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.11.4 — 2026-10-06
+- **An abandoned precheck no longer leaves a "report" and photos behind (CPIT-464).** A precheck face capture is stored before any attempt exists. Nothing ever attached it to the attempt or deleted it, so a student who stopped at the photo step kept a report row with their webcam photo and face crop for good. The per-quiz report could even show, and score, an abandoned precheck in place of the student's real attempt, because it picked each student's newest row.
+- The capture that passes the precheck is now remembered in the session. When the student starts the attempt within ten minutes, it becomes part of that attempt's evidence, the way an ID check already is.
+- A new hourly task queues every precheck capture still without an attempt a day later for the image deletion task. That task removes its picture, face crop, face-match warning and queued face-match job. The task clears the existing backlog the same way, so no separate cleanup is needed.
+- A first-time student's self-registered reference photo is saved during the precheck. It is now removed if no proctored attempt follows within a day, so the student's next precheck registers a new one. Staff-uploaded photos are never removed. Only photos registered after this release are considered, because an older photo may belong to attempts that have since been deleted.
+- The per-quiz report lists real attempts only.
+- The default privacy notice now says that the first clear photo is kept as the student's reference photo, and that photos from an unfinished check are deleted within a day. A site that has saved its own notice keeps it unchanged; update it under the proctoring settings.
+
 # v1.11.3 — 2026-10-06
 - **A risk hold now actually holds the grade and the certificate (CPIT-463).** A hold used to push a zero to the gradebook once, when the attempt was submitted. Two things undid it. Any later quiz regrade, grade recompute or new attempt wrote the real grade straight back, while the hold row, and the report, still said "grade/certificate held". And a zero still counts as complete for a quiz whose completion is "receive a grade", so a certificate restricted on that completion was issued anyway. While a hold is active, the student's gradebook grade for the quiz is now empty and locked. An empty grade fails every grade- and completion-based restriction (minimum grade, passing grade, receive a grade, must be complete), and Moodle does not let a regrade or recompute change a locked grade.
 - **A confirmed or automatically failed attempt stays at zero.** The quiz is regraded with that attempt scored as zero, using the quiz's own grading method. A full quiz regrade, which rebuilds each attempt's mark from its answers, can no longer bring back the voided mark. A later honest attempt still counts.

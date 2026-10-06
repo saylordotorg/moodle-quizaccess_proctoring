@@ -571,6 +571,7 @@ if (
                 WHERE
                     e.courseid = :courseid
                     AND e.quizid = :cmid
+                    AND e.status > 0
                 GROUP BY
                     e.userid, u.firstname, u.lastname, u.email, pfw.reportid ";
     }
@@ -593,6 +594,7 @@ if (
                         AND e.userid = pfw.userid
                         WHERE e.courseid = :courseid
                         AND e.quizid = :quizid
+                        AND e.status > 0
                         GROUP BY e.userid, u.firstname, u.lastname, u.email, pfw.reportid";
     }
 
@@ -612,12 +614,12 @@ if (
                         ON e.courseid = pfw.courseid
                         AND e.quizid = pfw.quizid
                         AND e.userid = pfw.userid
-                        WHERE (e.courseid = :courseid1 AND e.quizid = :quizid1 AND
+                        WHERE e.status > 0 AND ((e.courseid = :courseid1 AND e.quizid = :quizid1 AND
                               " . $DB->sql_like('u.firstname', ':firstnamelike', false) . ")
                                 OR (e.courseid = :courseid2 AND e.quizid = :quizid2 AND "
                                 . $DB->sql_like('u.email', ':emaillike', false) . ")
                                 OR (e.courseid = :courseid3 AND e.quizid = :quizid3 AND "
-                                . $DB->sql_like('u.lastname', ':lastnamelike', false) . ")
+                                . $DB->sql_like('u.lastname', ':lastnamelike', false) . "))
                                 GROUP BY e.userid, u.firstname, u.lastname, u.email, pfw.reportid";
     }
 

@@ -15,17 +15,21 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version information for the quizaccess_proctoring plugin.
+ * Post-installation steps for quizaccess_proctoring.
  *
  * @package    quizaccess_proctoring
- * @copyright  2024 Saylor Academy
+ * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
-
-$plugin->component = 'quizaccess_proctoring';
-$plugin->release = '1.11.4';
-$plugin->version = 2026100601;
-$plugin->requires = 2024100700;
-$plugin->maturity = MATURITY_STABLE;
+/**
+ * Record install-time state that upgrade steps record on existing sites.
+ *
+ * @return bool
+ */
+function xmldb_quizaccess_proctoring_install() {
+    // Every reference photo on a fresh site is registered from now on, so all of them are
+    // covered by the abandoned-reference cleanup (CPIT-464).
+    set_config('abandonedreferencesince', time(), 'quizaccess_proctoring');
+    return true;
+}
