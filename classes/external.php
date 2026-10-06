@@ -1005,6 +1005,8 @@ class quizaccess_proctoring_external extends external_api {
         if ((int)$currentdata->awsflag === 2 && $awsscore > $threshhold) {
             $status = "success";
             quizaccess_proctoring_set_face_preflight_passed((int)$cm->id);
+            // The attempt that follows claims this capture; otherwise it is deleted after a day.
+            \quizaccess_proctoring\local\precheck_evidence::remember_passed_capture((int)$cm->id, (int)$screenshotid);
         } else {
             $status = "failed";
         }
@@ -2430,31 +2432,7 @@ class quizaccess_proctoring_external extends external_api {
      * @return bool True when the reference was retired.
      */
     private static function retire_checked_reference(int $userid, string $checkedurl): bool {
-        global $DB;
-
-        $record = $DB->get_record('quizaccess_proctoring_user_images', ['user_id' => $userid]);
-        if (!$record || (int)$record->photo_draft_id !== 0) {
-            return false;
-        }
-        $checked = quizaccess_proctoring_stored_file_from_pluginfile_url($checkedurl);
-        $currenturl = quizaccess_proctoring_get_image_url($userid);
-        $current = $currenturl ? quizaccess_proctoring_stored_file_from_pluginfile_url($currenturl) : null;
-        if (!$checked || !$current || (int)$checked->get_id() !== (int)$current->get_id()) {
-            return false;
-        }
-
-        $DB->delete_records('quizaccess_proctoring_user_images', ['id' => $record->id, 'photo_draft_id' => 0]);
-        if ($DB->record_exists('quizaccess_proctoring_user_images', ['id' => $record->id])) {
-            return false;
-        }
-
-        $faceconditions = ['parentid' => $record->id, 'parent_type' => 'admin_image'];
-        foreach ($DB->get_records('quizaccess_proctoring_face_images', $faceconditions) as $face) {
-            quizaccess_proctoring_delete_pluginfile_url((string)$face->faceimage);
-        }
-        $DB->delete_records('quizaccess_proctoring_face_images', $faceconditions);
-        $checked->delete();
-        return true;
+        return quizaccess_proctoring_retire_self_registered_reference($userid, $checkedurl);
     }
 
     /**

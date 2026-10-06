@@ -101,6 +101,18 @@ $tasks = [
         'disabled'  => 0,
     ],
 
+    // This task removes precheck captures and reference photos that no attempt followed (CPIT-464).
+    [
+        'classname' => 'quizaccess_proctoring\task\purge_abandoned_prechecks_task',
+        'blocking'  => 0,
+        'minute'    => '41',
+        'hour'      => '*',
+        'day'       => '*',
+        'month'     => '*',
+        'dayofweek' => '*',
+        'disabled'  => 0,
+    ],
+
     // This task releases active high-risk holds after the configured Student Affairs review window.
     [
         'classname' => 'quizaccess_proctoring\task\release_expired_risk_holds_task',

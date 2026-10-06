@@ -508,6 +508,47 @@ function quizaccess_proctoring_get_reference_lock(int $userid) {
 }
 
 /**
+ * Remove a student's self-registered reference photo; the caller holds the student's reference lock.
+ *
+ * Nothing is removed unless the stored reference is still exactly the file that was checked, and
+ * the deletes are bound to that file object and the rows by id: a replacement registered in
+ * between has a new file and new rows that none of these deletes can reach. A staff upload in
+ * between updates the same row in place, so the row is deleted only while it is still
+ * self-registered, in a single conditional delete, and nothing else is touched if it survives.
+ *
+ * @param int $userid Student whose reference photo to remove.
+ * @param string $checkedurl Pluginfile URL of the reference that was checked.
+ * @return bool True when the reference was removed.
+ */
+function quizaccess_proctoring_retire_self_registered_reference(int $userid, string $checkedurl): bool {
+    global $DB;
+
+    $record = $DB->get_record('quizaccess_proctoring_user_images', ['user_id' => $userid]);
+    if (!$record || (int)$record->photo_draft_id !== 0) {
+        return false;
+    }
+    $checked = quizaccess_proctoring_stored_file_from_pluginfile_url($checkedurl);
+    $currenturl = quizaccess_proctoring_get_image_url($userid);
+    $current = $currenturl ? quizaccess_proctoring_stored_file_from_pluginfile_url($currenturl) : null;
+    if (!$checked || !$current || (int)$checked->get_id() !== (int)$current->get_id()) {
+        return false;
+    }
+
+    $DB->delete_records('quizaccess_proctoring_user_images', ['id' => $record->id, 'photo_draft_id' => 0]);
+    if ($DB->record_exists('quizaccess_proctoring_user_images', ['id' => $record->id])) {
+        return false;
+    }
+
+    $faceconditions = ['parentid' => $record->id, 'parent_type' => 'admin_image'];
+    foreach ($DB->get_records('quizaccess_proctoring_face_images', $faceconditions) as $face) {
+        quizaccess_proctoring_delete_pluginfile_url((string)$face->faceimage);
+    }
+    $DB->delete_records('quizaccess_proctoring_face_images', $faceconditions);
+    $checked->delete();
+    return true;
+}
+
+/**
  * Returns the image file of a specific user.
  *
  * This function retrieves the image file associated with a specific user by searching the `user_photo` file area

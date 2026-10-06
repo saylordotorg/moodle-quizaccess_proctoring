@@ -1415,5 +1415,17 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100600, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026100601) {
+        // Self-registered reference photos that no proctored attempt follows within a day are now
+        // removed (CPIT-464). Only photos registered from now on: an older photo may belong to
+        // attempts that have since been deleted, so its history cannot show it was abandoned.
+        // Abandoned precheck captures need no such cut-off - none was ever attached to an
+        // attempt - so the existing backlog is cleared by the hourly task.
+        if (!get_config('quizaccess_proctoring', 'abandonedreferencesince')) {
+            set_config('abandonedreferencesince', time(), 'quizaccess_proctoring');
+        }
+        upgrade_plugin_savepoint(true, 2026100601, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
