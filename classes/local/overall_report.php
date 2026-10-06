@@ -1022,15 +1022,42 @@ final class overall_report {
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
         // Pull active holds across every course, newest-first, bounded by MAX_ATTEMPTS to cap load.
+        $fields = 'id, courseid, quizid, quizinstance, userid, attemptid, reportid, riskscore, status, timecreated';
         $holds = $DB->get_records(
             'quizaccess_proctoring_risk_holds',
             ['status' => \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE],
             'timecreated DESC, id DESC',
-            'id, courseid, quizid, quizinstance, userid, attemptid, reportid, riskscore, status, timecreated',
+            $fields,
             0,
             self::MAX_ATTEMPTS
         );
         $truncated = count($holds) >= self::MAX_ATTEMPTS;
+
+        // Confirmed and automatically failed holds whose student holds a course certificate are
+        // candidates too: if the certificate was issued despite the hold it still has to be
+        // revoked. They are fetched separately so they cannot crowd active holds out of the cap.
+        if ($DB->get_manager()->table_exists('tool_certificate_issues')) {
+            $terminal = $DB->get_records_sql(
+                "SELECT {$fields}
+                   FROM {quizaccess_proctoring_risk_holds} h
+                  WHERE (h.status = :confirmed OR h.status = :autofailed)
+                    AND EXISTS (SELECT 1
+                                  FROM {tool_certificate_issues} i
+                                 WHERE i.userid = h.userid AND i.courseid = h.courseid)
+               ORDER BY h.timecreated DESC, h.id DESC",
+                [
+                    'confirmed' => \QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED,
+                    'autofailed' => \QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
+                ],
+                0,
+                self::MAX_ATTEMPTS
+            );
+            $truncated = $truncated || count($terminal) >= self::MAX_ATTEMPTS;
+            $holds = $holds + $terminal;
+            uasort($holds, function ($a, $b) {
+                return [(int)$b->timecreated, (int)$b->id] <=> [(int)$a->timecreated, (int)$a->id];
+            });
+        }
 
         // Keep only attempts whose certificate label currently resolves to "held". The resolver
         // reconciles the live hold + gradebook state, so a released/graded attempt is excluded even
@@ -1044,9 +1071,10 @@ final class overall_report {
                 (int)$hold->attemptid,
                 (int)$hold->reportid
             );
-            // A held attempt whose certificate went out anyway ('conflict') still needs a decision,
-            // more urgently than a plain hold.
-            if ($cert['state'] !== 'held' && $cert['state'] !== 'conflict') {
+            // A hold whose certificate went out anyway ('conflict') still needs action, more
+            // urgently than a plain hold: a decision if it is active, a revocation if it is not.
+            $active = (int)$hold->status === \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
+            if ($cert['state'] !== 'conflict' && !($active && $cert['state'] === 'held')) {
                 continue;
             }
             $held[] = [
