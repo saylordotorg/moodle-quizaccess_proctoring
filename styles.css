@@ -4856,3 +4856,9 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
         flex: 1;
     }
 }
+
+/* A certificate issued while its attempt was held or confirmed (CPIT-463): staff must revoke it. */
+.proctoring-certificate-conflict {
+    color: #b02a37;
+    font-weight: bold;
+}

@@ -58,9 +58,9 @@ class proctoring_observer {
     public static function handle_quiz_attempt_submitted(\mod_quiz\event\attempt_submitted $event) {
         global $CFG, $DB;
 
-        try {
-            require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
+        try {
             $attemptid = (int)$event->objectid;
             if ($attemptid <= 0) {
                 return;
@@ -169,7 +169,9 @@ class proctoring_observer {
                 );
             }
         } catch (\Throwable $e) {
-            debugging('Unable to process Saylor Proctored Quiz submission risk review: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            // Never block the student's submission, but make the failure visible: a swallowed
+            // error here means a high-risk attempt was neither held nor failed.
+            \quizaccess_proctoring_log_failure('processing the submission risk review for attempt ' . $event->objectid, $e);
         }
     }
 }
