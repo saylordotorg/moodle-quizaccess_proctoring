@@ -211,7 +211,16 @@ function quizaccess_proctoring_event_factor_key(string $eventtype, string $event
         return quizaccess_proctoring_event_has_shortcut($eventdetail, 'F12') ? 'f12' : 'shortcut';
     }
 
-    $map = [
+    return quizaccess_proctoring_event_factor_map()[$eventtype] ?? '';
+}
+
+/**
+ * Event types scored by each factor, apart from shortcut events, which split by their detail.
+ *
+ * @return array Event type => factor key.
+ */
+function quizaccess_proctoring_event_factor_map(): array {
+    return [
         'focus_lost' => 'tabactivity',
         'tab_hidden' => 'tabactivity',
         'page_exit' => 'tabactivity',
@@ -229,8 +238,6 @@ function quizaccess_proctoring_event_factor_key(string $eventtype, string $event
         'no_face_detected' => 'noface',
         'phone_detected' => 'phonedetected',
     ];
-
-    return $map[$eventtype] ?? '';
 }
 
 /**
@@ -1419,7 +1426,24 @@ if (
             $captures = [];
             // Screenshot-backed AI-tool evidence is stored as ordinary possible_ai_tool events.
             $eventsource = $factorkey === 'aitoolscreenshot' ? 'aitool' : $factorkey;
-            foreach ($factorevents[$eventsource] ?? [] as $eventrecord) {
+            $sourcetypes = array_keys(quizaccess_proctoring_event_factor_map(), $eventsource, true);
+            if ($sourcetypes) {
+                // Asked for directly rather than taken from the activity feed, which keeps only the
+                // newest 200 events: an older screenshot must not read as "no image was captured".
+                [$typesql, $typeparams] = $DB->get_in_or_equal($sourcetypes, SQL_PARAMS_NAMED, 'capturetype');
+                $captureevents = $DB->get_records_select(
+                    'quizaccess_proctoring_events',
+                    $eventwhere . ' AND eventtype ' . $typesql . " AND COALESCE(screenshoturl, '') <> ''",
+                    $eventparams + $typeparams,
+                    'timemodified ASC, id ASC',
+                    'id, eventtype, screenshoturl, timemodified',
+                    0,
+                    4
+                );
+            } else {
+                $captureevents = $factorevents[$eventsource] ?? [];
+            }
+            foreach ($captureevents as $eventrecord) {
                 if (empty($eventrecord->screenshoturl) || count($captures) >= 4) {
                     continue;
                 }
@@ -1530,6 +1554,23 @@ if (
         // Factors absent from the scoring output were switched off (or, for speed, had no duration
         // to judge): not monitored either.
         foreach (array_keys(\quizaccess_proctoring\local\risk_calculator::FACTOR_DEFAULTS) as $factorkey) {
+            if (
+                $factorkey === 'phonedetected'
+                && !in_array($factorkey, $scoredkeys, true)
+                && \quizaccess_proctoring\local\risk_calculator::factor_enabled($factorkey)
+            ) {
+                // Scoring leaves the phone factor out whenever the site detector is off now, but what
+                // matters is whether the detector ran during this attempt, which coverage records.
+                if (isset($factorcoverage['reasons'][$factorkey])) {
+                    $notmonitored[] = quizaccess_proctoring_not_monitored_item(
+                        $factorkey,
+                        $factorcoverage['reasons'][$factorkey]
+                    );
+                } else {
+                    $passedchecks[] = ['label' => get_string('riskfactorpassed:' . $factorkey, 'quizaccess_proctoring')];
+                }
+                continue;
+            }
             if (!in_array($factorkey, $scoredkeys, true)) {
                 $notmonitored[] = quizaccess_proctoring_not_monitored_item(
                     $factorkey,
