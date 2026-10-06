@@ -292,15 +292,43 @@ final class risk_hold_enforcement_test extends advanced_testcase {
      */
     public function test_certificate_conflicts_ignore_certificates_earned_by_a_later_valid_attempt(): void {
         $enforcer = \quizaccess_proctoring\local\risk_hold_enforcer::class;
+        $quiz = (object)['grade' => 10, 'sumgrades' => 10, 'grademethod' => QUIZ_GRADEHIGHEST];
+        $voidedfirst = [(object)['id' => 1, 'sumgrades' => 9, 'timefinish' => 400]];
+        $twoattempts = array_merge($voidedfirst, [(object)['id' => 2, 'sumgrades' => 8, 'timefinish' => 600]]);
 
-        $this->assertFalse($enforcer::certificate_conflicts(true, [], []));
-        $this->assertTrue($enforcer::certificate_conflicts(true, [500], [400]));
-        // Confirmed, and no valid attempt at all: the certificate came from the voided attempt.
-        $this->assertTrue($enforcer::certificate_conflicts(false, [500], []));
+        $this->assertFalse($enforcer::certificate_conflicts(true, $quiz, 7, [], $twoattempts, [1]));
+        $this->assertTrue($enforcer::certificate_conflicts(true, $quiz, 7, [700], $twoattempts, [1]));
+        // Confirmed, and no other attempt: the certificate came from the voided attempt.
+        $this->assertTrue($enforcer::certificate_conflicts(false, $quiz, 7, [500], $voidedfirst, [1]));
         // Confirmed, issued before the later valid attempt was finished.
-        $this->assertTrue($enforcer::certificate_conflicts(false, [500], [600]));
-        // Confirmed, issued after a later valid attempt was finished: earned legitimately.
-        $this->assertFalse($enforcer::certificate_conflicts(false, [700], [600]));
+        $this->assertTrue($enforcer::certificate_conflicts(false, $quiz, 7, [500], $twoattempts, [1]));
+        // Confirmed, issued after a later passing attempt was finished: earned legitimately.
+        $this->assertFalse($enforcer::certificate_conflicts(false, $quiz, 7, [700], $twoattempts, [1]));
+        // A later attempt that fails cannot have earned it.
+        $failed = array_merge($voidedfirst, [(object)['id' => 2, 'sumgrades' => 5, 'timefinish' => 600]]);
+        $this->assertTrue($enforcer::certificate_conflicts(false, $quiz, 7, [700], $failed, [1]));
+        // Averaging the voided zero with a passing 8 gives 4, below a pass mark of 6.
+        $quiz->grademethod = QUIZ_GRADEAVERAGE;
+        $this->assertTrue($enforcer::certificate_conflicts(false, $quiz, 6, [700], $twoattempts, [1]));
+    }
+
+    /**
+     * A grade typed into the gradebook while the hold is active does not survive it.
+     */
+    public function test_hold_overrules_a_manually_overridden_grade(): void {
+        $attemptid = $this->add_attempt(9);
+        $this->hold($attemptid);
+
+        // What a teacher does in the grader report: unlock, then type a passing grade, which
+        // marks it overridden. The grade event re-applies the hold.
+        $this->grade()->set_locked(0, false, false);
+        $this->grade_item()->update_final_grade($this->student->id, 9, 'gradebook');
+
+        $grade = $this->grade();
+        $this->assertNull($grade->finalgrade);
+        $this->assertEmpty($grade->overridden);
+        $this->assertNotEmpty($grade->locked);
+        $this->assertSame(COMPLETION_INCOMPLETE, $this->completion_state());
     }
 
     /**

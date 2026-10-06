@@ -228,6 +228,14 @@ class risk_hold_enforcer {
         // A locked grade refuses every write, including this one, so unlock first.
         self::unlock_grade($quiz, $userid);
 
+        // The gradebook keeps an overridden final grade whatever the quiz sends. A grade typed in
+        // by hand while the hold is active would otherwise be locked in, passing or not; the hold
+        // wins, and staff release the hold to restore a grade.
+        $grade = self::get_grade($quiz, $userid);
+        if ($grade && $grade->is_overridden()) {
+            $grade->set_overridden(false, false);
+        }
+
         $result = quiz_grade_item_update($quiz, (object)[
             'userid' => $userid,
             'rawgrade' => null,
@@ -244,7 +252,19 @@ class risk_hold_enforcer {
         }
 
         $grade = self::get_grade($quiz, $userid);
-        if ($grade && !$grade->is_locked() && !$grade->set_locked(1, false, false)) {
+        if (!$grade) {
+            return;
+        }
+        if ($grade->finalgrade !== null) {
+            // Never lock a grade in place: if it is not empty, leave it unlocked so the next
+            // grade change re-applies the hold, and make the failure visible.
+            quizaccess_proctoring_log_failure(
+                'emptying the held gradebook grade for quiz ' . $quiz->id . ' user ' . $userid,
+                'the final grade is still ' . $grade->finalgrade . ' (is the grade item locked?)'
+            );
+            return;
+        }
+        if (!$grade->is_locked() && !$grade->set_locked(1, false, false)) {
             quizaccess_proctoring_log_failure(
                 'locking the held gradebook grade for quiz ' . $quiz->id . ' user ' . $userid,
                 'the grade item needs a gradebook update'
@@ -423,7 +443,8 @@ class risk_hold_enforcer {
      * Holds now keep certificates from being issued, but certificates issued before this
      * change, or through a restriction that does not depend on the quiz, are flagged so staff
      * can revoke them. A confirmed or failed attempt does not taint a certificate the student
-     * earned with a valid passing attempt finished before it was issued.
+     * earned anyway: one issued when their quiz grade, with voided attempts scored as zero,
+     * already reached the pass mark.
      *
      * @param int $courseid Course id.
      * @param int $userid Student id.
@@ -455,41 +476,32 @@ class risk_hold_enforcer {
                 return false;
             }
 
-            $validfinishtimes = [];
-            if (!$active && $attempt) {
-                $voided = $DB->get_fieldset_select(
-                    'quizaccess_proctoring_risk_holds',
-                    'attemptid',
-                    'quizinstance = :quiz AND userid = :userid AND (status = :confirmed OR status = :autofailed)',
-                    [
-                        'quiz' => $attempt->quiz,
-                        'userid' => $userid,
-                        'confirmed' => QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED,
-                        'autofailed' => QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
-                    ]
-                );
-                // Only a valid attempt that passed can have earned the certificate; the quiz's
-                // pass mark is on its grade item (no pass mark means any finished attempt counts).
-                $quiz = $DB->get_record('quiz', ['id' => $attempt->quiz], 'id, grade, sumgrades', MUST_EXIST);
-                $gradepass = (float)$DB->get_field('grade_items', 'gradepass', [
-                    'itemtype' => 'mod',
-                    'itemmodule' => 'quiz',
-                    'iteminstance' => $quiz->id,
-                    'itemnumber' => 0,
-                ]);
-                $voided = array_map('intval', $voided);
-                foreach (quiz_get_user_attempts($quiz->id, $userid, 'finished') as $other) {
-                    if (in_array((int)$other->id, $voided, true) || $other->sumgrades === null) {
-                        continue;
-                    }
-                    $grade = (float)quiz_rescale_grade($other->sumgrades, $quiz, false);
-                    if ($gradepass <= 0 || $grade >= $gradepass - 0.00001) {
-                        $validfinishtimes[] = (int)$other->timefinish;
-                    }
-                }
+            if ($active || !$attempt) {
+                // While a hold is active no grade is published, so no certificate should exist.
+                return self::certificate_conflicts(true, new \stdClass(), 0.0, $issuetimes, [], []);
             }
 
-            return self::certificate_conflicts($active, $issuetimes, $validfinishtimes);
+            $voided = $DB->get_fieldset_select(
+                'quizaccess_proctoring_risk_holds',
+                'attemptid',
+                'quizinstance = :quiz AND userid = :userid AND (status = :confirmed OR status = :autofailed)',
+                [
+                    'quiz' => $attempt->quiz,
+                    'userid' => $userid,
+                    'confirmed' => QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED,
+                    'autofailed' => QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
+                ]
+            );
+            $quiz = $DB->get_record('quiz', ['id' => $attempt->quiz], 'id, grade, sumgrades, grademethod', MUST_EXIST);
+            $gradepass = (float)$DB->get_field('grade_items', 'gradepass', [
+                'itemtype' => 'mod',
+                'itemmodule' => 'quiz',
+                'iteminstance' => $quiz->id,
+                'itemnumber' => 0,
+            ]);
+            $attempts = quiz_get_user_attempts($quiz->id, $userid, 'finished');
+
+            return self::certificate_conflicts(false, $quiz, $gradepass, $issuetimes, $attempts, $voided);
         } catch (\Throwable $e) {
             return false;
         }
@@ -498,25 +510,40 @@ class risk_hold_enforcer {
     /**
      * Decide whether certificates issued since a held attempt started conflict with its hold.
      *
-     * While a hold is active no certificate should be issued at all. After a violation is
-     * confirmed, a certificate is legitimate if a valid (not voided) passing attempt was finished
-     * before it was issued, because that attempt can have earned it.
+     * While a hold is active no grade is published, so any certificate conflicts. After a
+     * violation is confirmed, a certificate is legitimate only if the quiz grade the student had
+     * when it was issued - from the attempts finished by then, voided ones scored as zero, under
+     * the quiz's grading method - reached the pass mark.
      *
      * @param bool $active True for an active hold, false for a confirmed or failed one.
+     * @param stdClass $quiz Quiz record (grade, sumgrades, grademethod); unused for an active hold.
+     * @param float $gradepass The quiz grade item's pass mark; 0 means any grade passes.
      * @param int[] $issuetimes Times certificates were issued since the held attempt started.
-     * @param int[] $validfinishtimes Finish times of the student's passing attempts that are not voided.
+     * @param stdClass[] $attempts The student's finished attempts in attempt order.
+     * @param int[] $voidedattemptids Attempts with a confirmed or automatically failed hold.
      * @return bool
      */
-    public static function certificate_conflicts(bool $active, array $issuetimes, array $validfinishtimes): bool {
+    public static function certificate_conflicts(
+        bool $active,
+        stdClass $quiz,
+        float $gradepass,
+        array $issuetimes,
+        array $attempts,
+        array $voidedattemptids
+    ): bool {
         if (!$issuetimes) {
             return false;
         }
         if ($active) {
             return true;
         }
-        $earliestvalid = $validfinishtimes ? min(array_map('intval', $validfinishtimes)) : null;
         foreach ($issuetimes as $issuetime) {
-            if ($earliestvalid === null || (int)$issuetime < $earliestvalid) {
+            $finished = array_filter($attempts, function ($attempt) use ($issuetime) {
+                return (int)$attempt->timefinish <= (int)$issuetime;
+            });
+            $grade = self::final_grade($quiz, $finished, $voidedattemptids);
+            $passed = $grade !== null && ($gradepass <= 0 || $grade >= $gradepass - 0.00001);
+            if (!$passed) {
                 return true;
             }
         }
