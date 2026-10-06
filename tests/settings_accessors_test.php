@@ -45,33 +45,34 @@ require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 final class settings_accessors_test extends advanced_testcase {
 
     /**
-     * The risk review ceiling defaults to "one above the highest reachable score", meaning disabled.
+     * The risk review ceiling defaults to the start of the Critical risk band.
      *
-     * The sentinel is not a fixed 101: it is one above whatever the highest reachable score is, and
-     * that follows the score cap. With the cap on the highest score is 100 and the sentinel is the
-     * historical 101; with the cap off - which is the shipped default since 1.8.0 - the highest
-     * score is the sum of the enabled factors' caps and the sentinel follows it up. Both are the
-     * same statement: nothing can reach the ceiling, so no expired hold is retained.
-     *
-     * Validates: Requirements 1.1
+     * Before 1.11.5 it defaulted to "one above the highest reachable score" - disabled - so even a
+     * Critical hold was auto-released unreviewed when its review window ended (CPIT-465).
      */
-    public function test_risk_review_ceiling_defaults_to_one_above_the_maximum(): void {
+    public function test_risk_review_ceiling_defaults_to_the_critical_band(): void {
         $this->resetAfterTest();
 
-        // settings.php ships this setting with a default of 101, and installing the plugin stores
+        // settings.php ships this setting with a default of 80, and installing the plugin stores
         // it - so it is never actually absent on a real site or in a test run. Clearing it is the
-        // only way to exercise the "nothing configured" branch rather than reading that stored 101
+        // only way to exercise the "nothing configured" branch rather than reading that stored 80
         // back and calling it the default.
         unset_config('riskreviewceiling', 'quizaccess_proctoring');
 
+        // With nothing configured, a Critical hold is retained for review (CPIT-465): the ceiling
+        // is the start of the Critical band, whatever that band is set to, cap on or off.
         set_config('riskscorecapenabled', 1, 'quizaccess_proctoring');
-        $this->assertSame(101, quizaccess_proctoring_get_risk_review_ceiling());
+        $this->assertSame(80, quizaccess_proctoring_get_risk_review_ceiling());
 
         set_config('riskscorecapenabled', 0, 'quizaccess_proctoring');
-        $this->assertSame(
-            \quizaccess_proctoring\local\risk_calculator::max_possible_score() + 1,
-            quizaccess_proctoring_get_risk_review_ceiling()
-        );
+        $this->assertSame(80, quizaccess_proctoring_get_risk_review_ceiling());
+
+        set_config('risklevelcritical', 70, 'quizaccess_proctoring');
+        $this->assertSame(70, quizaccess_proctoring_get_risk_review_ceiling());
+
+        // The shipped setting stores the same value.
+        set_config('riskreviewceiling', 80, 'quizaccess_proctoring');
+        $this->assertSame(80, quizaccess_proctoring_get_risk_review_ceiling());
     }
 
     /**

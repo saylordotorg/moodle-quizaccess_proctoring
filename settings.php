@@ -815,7 +815,7 @@ if ($canmanageproctoring) {
         'quizaccess_proctoring/riskreviewceiling',
         get_string('setting:riskreviewceiling', 'quizaccess_proctoring'),
         get_string('setting:riskreviewceiling_desc', 'quizaccess_proctoring'),
-        101,
+        80,
         PARAM_INT
     ));
 

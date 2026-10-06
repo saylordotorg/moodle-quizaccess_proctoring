@@ -1435,5 +1435,20 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100601, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026100602) {
+        // Critical holds no longer auto-release unreviewed by default (CPIT-465). The ceiling used
+        // to ship as 101 - effectively off - so every expired hold was released, Critical ones
+        // included. A site still on that shipped value moves to the start of its Critical band; a
+        // ceiling an administrator chose is left alone.
+        if ((string)get_config('quizaccess_proctoring', 'riskreviewceiling') === '101') {
+            set_config(
+                'riskreviewceiling',
+                \quizaccess_proctoring\local\risk_calculator::get_level_boundaries()['critical'],
+                'quizaccess_proctoring'
+            );
+        }
+        upgrade_plugin_savepoint(true, 2026100602, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
