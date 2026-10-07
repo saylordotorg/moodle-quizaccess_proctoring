@@ -687,12 +687,29 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             const warningShownAt = {};
             const pendingWarningLogs = [];
             let warningLogger = null;
+            // Evidence events still waiting for a screen frame before they are queued for upload.
+            const pendingEvidence = new Set();
+            const trackEvidence = function(promise) {
+                pendingEvidence.add(promise);
+                const done = function() {
+                    pendingEvidence.delete(promise);
+                };
+                promise.then(done, done);
+            };
             const noteWarning = function(eventType, detail) {
                 if (warningLogger) {
-                    // After the current task, so the evidence event that caused the warning is
-                    // queued for upload first: uploads go one at a time.
+                    // After the current task, and after any evidence still waiting for a frame,
+                    // so the event that caused the warning is queued for upload first: uploads go
+                    // one at a time (PR #51 review).
                     window.setTimeout(function() {
-                        warningLogger(eventType, detail);
+                        const waits = Array.from(pendingEvidence).map(function(promise) {
+                            return promise.catch(function() {
+                                return null;
+                            });
+                        });
+                        Promise.all(waits).then(function() {
+                            warningLogger(eventType, detail);
+                        });
                     }, 0);
                 } else {
                     pendingWarningLogs.push([eventType, detail]);
@@ -1925,11 +1942,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     // Keep the event's own time; only the attached frame comes from after the switch.
                     // Tried even when the event itself had no frame, which used to leave it with none.
                     const eventFrame = args.screenshot;
-                    captureAwayFrame(captureClock()).then(function(awayFrame) {
+                    trackEvidence(captureAwayFrame(captureClock()).then(function(awayFrame) {
                         args.screenshot = awayFrame || eventFrame;
                         withMissingReason(args.screenshot ? {screenshottiming: awayFrame ? 'after_leaving' : 'at_event'} : {});
                         uploads.submit(request, capturedat);
-                    });
+                    }));
                     return;
                 }
                 // screen_marker_missing is logged just after readiness is cleared, while the share is
@@ -1937,7 +1954,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (freshFrameEvents.includes(eventType) && captureDesktop && screenEvidenceAvailable() && screenMonitorClient) {
                     // The helper's cached frame can be seconds old: ask for one taken at the event.
                     const eventMs = captureClock();
-                    grabSharedScreenFrame(eventMs, eventMs - freshFrameMaxAgeMs).then(function(frame) {
+                    trackEvidence(grabSharedScreenFrame(eventMs, eventMs - freshFrameMaxAgeMs).then(function(frame) {
                         args.screenshot = frame || '';
                         withMissingReason(frame ? {screenshottiming: 'fresh'} : {});
                         uploads.submit(request, capturedat);
@@ -1945,7 +1962,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         args.screenshot = '';
                         withMissingReason({});
                         uploads.submit(request, capturedat);
-                    });
+                    }));
                     return;
                 }
                 withMissingReason({});
@@ -2436,6 +2453,39 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 let captureFaceMisses = 0;
                 // When the "face not found" notice went up, so its removal can be logged too.
                 let faceNoticeShownAt = 0;
+                // Face matching or the no-face blur can run without the activity monitor; the face
+                // notice is then logged here directly, after the current task like the monitor's
+                // warnings (PR #51 review).
+                const noteFaceWarning = function(eventType, detail) {
+                    if (monitoring && monitoring.noteWarning) {
+                        monitoring.noteWarning(eventType, detail);
+                        return;
+                    }
+                    window.setTimeout(function() {
+                        if (!pageActive) {
+                            return;
+                        }
+                        uploads.submit({
+                            methodname: 'quizaccess_proctoring_log_event',
+                            args: {
+                                courseid: parseInt(props.courseid, 10) || 0,
+                                quizid: parseInt(props.quizid, 10) || 0,
+                                attemptid: parseInt(props.status, 10) || 0,
+                                reportid: parseInt(props.id, 10) || 0,
+                                eventtype: eventType,
+                                eventdetail: JSON.stringify(detail || {}),
+                                pagevisibility: document.visibilityState || '',
+                                currenturl: window.location.href,
+                                screenshot: '',
+                            }
+                        }, Math.floor(captureClock() / 1000));
+                    }, 0);
+                };
+                const faceNoticeText = function() {
+                    const holder = document.createElement('div');
+                    holder.innerHTML = strings.facenotfoundoncam || '';
+                    return (holder.textContent || '').trim().slice(0, 500);
+                };
                 // Quiz core renders a lone tertiary-nav "Back" link during attempts;
                 // on a proctored attempt it only walks students out of the exam
                 // mid-attempt (and fires focus-loss violations on the way).
@@ -2822,8 +2872,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             } else if (croppedImage && croppedImage.getAttribute('src')) {
                                 captureFaceMisses = 0;
                                 removeNotifications();
-                                if (faceNoticeShownAt && monitoring && monitoring.noteWarning) {
-                                    monitoring.noteWarning('warning_cleared', {
+                                if (faceNoticeShownAt) {
+                                    noteFaceWarning('warning_cleared', {
                                         key: 'facenotfoundoncam',
                                         seconds: Math.max(0, Math.round((Date.now() - faceNoticeShownAt) / 1000)),
                                     });
@@ -2838,11 +2888,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 if (captureFaceMisses >= 2) {
                                     showNotification(strings.facenotfoundoncam, 'error');
                                     // Logged once while it stays up, not at every missed capture.
-                                    if (!faceNoticeShownAt && monitoring && monitoring.noteWarning) {
+                                    if (!faceNoticeShownAt) {
                                         faceNoticeShownAt = Date.now();
-                                        monitoring.noteWarning('warning_shown', {
+                                        noteFaceWarning('warning_shown', {
                                             key: 'facenotfoundoncam',
-                                            message: monitoring.plainText(strings.facenotfoundoncam),
+                                            message: faceNoticeText(),
                                         });
                                     }
                                 }
