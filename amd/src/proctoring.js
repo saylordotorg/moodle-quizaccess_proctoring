@@ -198,20 +198,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             isCameraAllowed = false;
         };
 
-        // Function to draw image from the box data.
-        const extractFaceFromBox = async(imageRef, box, croppedImage) => {
+        // Crop the face in the box out of the image, as a data URL ('' when nothing was extracted).
+        const extractFaceFromBox = async(imageRef, box) => {
             const regionsToExtract = [
                 // eslint-disable-next-line no-undef
                 new faceapi.Rect(box.x, box.y, box.width, box.height)
             ];
             // eslint-disable-next-line no-undef
-            let faceImages = await faceapi.extractFaces(imageRef, regionsToExtract);
-
-            if (faceImages.length !== 0) {
-                faceImages.forEach((cnv) => {
-                    croppedImage.src = cnv.toDataURL();
-                });
-            }
+            const faceImages = await faceapi.extractFaces(imageRef, regionsToExtract);
+            return faceImages.length ? faceImages[faceImages.length - 1].toDataURL() : '';
         };
 
         // A detection call that never settles must not stop every later check: each one gives up
@@ -228,16 +223,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             });
         });
 
-        const detectface = async(input, croppedImage, minScore) => {
+        // Returns the face crop as a data URL, or '' when no face was found. It never writes to the
+        // page itself: a call that timed out may still finish later, and must not leave its crop for
+        // the next capture (CPIT-470).
+        const detectface = async(input, minScore) => {
             // The configured sensitivity (faceblurminscore), not face-api's built-in 0.5 (CPIT-469).
             // eslint-disable-next-line no-undef
             const options = new faceapi.SsdMobilenetv1Options({minConfidence: minScore});
             // eslint-disable-next-line no-undef
             const output = await faceapi.detectAllFaces(input, options);
-            if (output.length !== 0) {
-                let detections = output[0].box;
-                await extractFaceFromBox(input, detections, croppedImage);
-            }
+            return output.length ? extractFaceFromBox(input, output[0].box) : '';
         };
 
         const getDesktopPanelSlot = function(slot) {
@@ -2292,8 +2287,31 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 // Every pause is logged, with how long it lasted, so a reviewer sees each one rather
                 // than only the capped "no face" points (CPIT-470). The start carries the webcam frame.
-                const logFacePause = (eventType, detail, screenshot) => {
-                    uploads.submit({
+                // The upload queue is disposed as the page goes away, dropping anything still waiting
+                // in it, so an event sent while leaving goes out as a keepalive request instead, which
+                // the browser completes after the page has gone.
+                const sendWhileLeaving = (request) => {
+                    const cfg = window.M && window.M.cfg;
+                    if (!window.fetch || !cfg || !cfg.sesskey || !cfg.wwwroot) {
+                        return false;
+                    }
+                    try {
+                        window.fetch(cfg.wwwroot + '/lib/ajax/service.php?sesskey=' + encodeURIComponent(cfg.sesskey) +
+                            '&info=' + encodeURIComponent(request.methodname), {
+                            method: 'POST',
+                            keepalive: true,
+                            credentials: 'same-origin',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify([{index: 0, methodname: request.methodname, args: request.args}])
+                        }).catch(() => undefined);
+                        return true;
+                    } catch (error) {
+                        return false;
+                    }
+                };
+                const logFacePause = (eventType, detail, screenshot, leaving) => {
+                    const capturedat = Math.floor(captureClock() / 1000);
+                    const request = {
                         methodname: 'quizaccess_proctoring_log_event',
                         args: {
                             courseid: parseInt(props.courseid, 10) || 0,
@@ -2306,7 +2324,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             currenturl: window.location.href,
                             screenshot: screenshot || ''
                         }
-                    }, Math.floor(captureClock() / 1000));
+                    };
+                    if (leaving) {
+                        request.args.capturedat = capturedat;
+                        request.args.requestid = 'pause-' + capturedat + '-' + Math.random().toString(36).slice(2, 10);
+                        if (sendWhileLeaving(request)) {
+                            return;
+                        }
+                    }
+                    uploads.submit(request, capturedat);
                 };
                 const captureFacePauseFrame = () => {
                     if (!video || !video.videoWidth || !video.videoHeight) {
@@ -2325,7 +2351,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                     const seconds = Math.max(0, Math.round((Date.now() - facePauseStartedAt) / 1000));
                     facePauseStartedAt = 0;
-                    logFacePause('face_missing_end', {durationseconds: seconds, reason: reason});
+                    logFacePause('face_missing_end', {durationseconds: seconds, reason: reason}, '', reason === 'page_left');
                 };
 
                 const setQuizBlurredForFace = (blurred) => {
@@ -2507,7 +2533,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             let faceChecked = captureFaceCheck;
                             if (captureFaceCheck) {
                                 try {
-                                    await withTimeout(detectface(photo, croppedImage, faceBlurMinScore), DETECTION_TIMEOUT_MS);
+                                    const crop = await withTimeout(detectface(photo, faceBlurMinScore), DETECTION_TIMEOUT_MS);
+                                    if (crop && croppedImage) {
+                                        croppedImage.src = crop;
+                                    }
                                 } catch (error) {
                                     // A check that failed or timed out found nothing either way.
                                     faceChecked = false;
