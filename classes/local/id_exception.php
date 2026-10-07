@@ -53,6 +53,9 @@ class id_exception {
     /** @var int Longest alternative-documentation note stored, in characters. */
     const ALTERNATIVES_MAX = 500;
 
+    /** @var int Longest override justification stored, in characters. */
+    const JUSTIFICATION_MAX = 2000;
+
     /**
      * Every pending exception request, newest first.
      *
@@ -227,11 +230,19 @@ class id_exception {
                 $lines[] = get_string('idexemption:altlabel', $component) . ' ' . $alternatives;
             }
         }
+        $text = implode("\n", $lines);
         $note = trim($note);
-        if ($note !== '') {
-            $lines[] = get_string('idexemption:justificationnote', $component, \core_text::substr($note, 0, 400));
+        if ($note === '') {
+            return \core_text::substr($text, 0, self::JUSTIFICATION_MAX);
         }
-        return \core_text::substr(implode("\n", $lines), 0, 2000);
+        // The reviewer's note is kept whole; the student's text is shortened to make room for it
+        // (PR #50 review).
+        $noteline = get_string('idexemption:justificationnote', $component, \core_text::substr($note, 0, 400));
+        $room = self::JUSTIFICATION_MAX - \core_text::strlen($noteline) - 1;
+        if (\core_text::strlen($text) > $room) {
+            $text = rtrim(\core_text::substr($text, 0, $room - 1)) . '…';
+        }
+        return $text . "\n" . $noteline;
     }
 
     /**

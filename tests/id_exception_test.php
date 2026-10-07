@@ -225,6 +225,24 @@ final class id_exception_test extends advanced_testcase {
     }
 
     /**
+     * A full-length reviewer note is kept whole when the student's text is at its longest (PR #50 review).
+     */
+    public function test_long_justification_keeps_the_whole_reviewer_note(): void {
+        $this->resetAfterTest();
+        $note = str_repeat('n', 399) . 'Z';
+        $justification = id_exception::approval_justification([
+            'reason' => id_exception::REASON_NOID,
+            'category' => 'withheld',
+            'detail' => str_repeat('d', id_exception::DETAIL_MAX),
+            'alternatives' => str_repeat('a', id_exception::ALTERNATIVES_MAX),
+        ], $note);
+
+        $this->assertLessThanOrEqual(id_exception::JUSTIFICATION_MAX, \core_text::strlen($justification));
+        $this->assertStringContainsString($note, $justification);
+        $this->assertStringContainsString('…', $justification);
+    }
+
+    /**
      * Requests written before categories existed still label and list cleanly.
      */
     public function test_legacy_requests_without_detail_are_labelled(): void {
