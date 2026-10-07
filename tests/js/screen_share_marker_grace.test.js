@@ -917,3 +917,18 @@ test('a share that stops after the marker check failed is reported as stopped, n
     assert.strictEqual(captures[0].screenshot, '', 'no frame is taken from a share that has stopped');
     assert.strictEqual(JSON.parse(captures[0].eventdetail).capturemissing, 'share_stopped');
 });
+
+test('a wrong-screen event carries a fresh frame although readiness was just cleared', async () => {
+    const env = await bootWithHelper(true);
+    env.advance(20000);
+    env.monitorCallbacks.onScreenshot({image: 'data:image/jpeg;base64,WRONGSCREEN', ts: env.now});
+    env.monitorCallbacks.onWrongScreen({});
+    await flush(10);
+    env.advance(3001);
+    await flush(10);
+
+    const events = env.markerMissingEvents();
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].screenshot, 'data:image/jpeg;base64,WRONGSCREEN');
+    assert.strictEqual(JSON.parse(events[0].eventdetail).capturemissing, undefined);
+});

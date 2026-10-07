@@ -1856,7 +1856,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     currenturl: window.location.href,
                     screenshot: eventType === 'phone_detected' ? phoneEvidenceFrame
                         : (eventType === 'multiple_faces_detected' ? webcamEvidenceFrame
-                            : (eventType === 'away_capture' ? awayEvidenceFrame : captureDesktopFrame(eventType)))
+                            : (eventType === 'away_capture' ? awayEvidenceFrame
+                                : captureDesktopFrame(eventType, freshFrameEvents.includes(eventType))))
                 };
                 let capturedat = Math.floor(captureClock() / 1000);
                 if (eventType === 'screen_capture') {
@@ -1893,7 +1894,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     });
                     return;
                 }
-                if (freshFrameEvents.includes(eventType) && captureDesktop && screenReady && screenMonitorClient) {
+                // screen_marker_missing is logged just after readiness is cleared, while the share is
+                // still live, so evidence availability, not readiness, decides.
+                if (freshFrameEvents.includes(eventType) && captureDesktop && screenEvidenceAvailable() && screenMonitorClient) {
                     // The helper's cached frame can be seconds old: ask for one taken at the event.
                     const eventMs = captureClock();
                     grabSharedScreenFrame(eventMs, eventMs - freshFrameMaxAgeMs).then(function(frame) {

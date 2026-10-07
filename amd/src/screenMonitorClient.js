@@ -52,9 +52,14 @@ define([], function() {
             callbacks = callbacks || {};
 
             const monitorUrl = props.screenmonitorurl || '';
-            const channelName = props.screenmonitorchannel || '';
-            const statusKey = props.screenmonitorstatuskey || '';
-            const windowName = props.screenmonitorwindowname || 'quizaccess_proctoring_screen_monitor';
+            // The attempt page sends only the short key and the names are built from it here, to keep
+            // its JavaScript arguments within Moodle's size limit; the precheck still sends them whole.
+            const monitorKey = props.screenmonitorkey || '';
+            const channelName = props.screenmonitorchannel ||
+                (monitorKey ? 'quizaccess_proctoring_screen_' + monitorKey : '');
+            const statusKey = props.screenmonitorstatuskey ||
+                (monitorKey ? 'quizaccess_proctoring_screen_status_' + monitorKey : '');
+            const windowName = props.screenmonitorwindowname || channelName || 'quizaccess_proctoring_screen_monitor';
             const popupFeatures = 'popup=yes,width=430,height=390,menubar=no,toolbar=no,location=no,status=no';
             let channel = null;
             let statusTimer = null;
