@@ -58,6 +58,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'referencereset', component: 'quizaccess_proctoring'},
                 {key: 'referenceunusable', component: 'quizaccess_proctoring'},
                 {key: 'referencecountdown', component: 'quizaccess_proctoring'},
+                {key: 'preflight:back', component: 'quizaccess_proctoring'},
+                {key: 'preflight:continue', component: 'quizaccess_proctoring'},
+                {key: 'preflight:viewprivacy', component: 'quizaccess_proctoring'},
+                {key: 'preflight:viewhonor', component: 'quizaccess_proctoring'},
+                {key: 'preflight:cancelwithdraw', component: 'quizaccess_proctoring'},
+                {key: 'preflight:cancelwithdrawtitle', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -110,6 +116,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     referencereset: strings[45],
                     referenceunusable: strings[46],
                     referencecountdown: strings[47],
+                    preflightback: strings[48],
+                    preflightcontinue: strings[49],
+                    preflightviewprivacy: strings[50],
+                    preflightviewhonor: strings[51],
+                    preflightcancelwithdraw: strings[52],
+                    preflightcancelwithdrawtitle: strings[53],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -2064,6 +2076,28 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             }
                         }
                     }
+                    // Back to an earlier step, and Continue to return to the current one (CPIT-479).
+                    // A step opened this way stays in view until the student chooses Continue.
+                    const nav = document.createElement('div');
+                    nav.className = 'proctoring-stepper-nav';
+                    const makeNavButton = function(className, label) {
+                        const button = document.createElement('button');
+                        button.type = 'button';
+                        button.className = className;
+                        button.textContent = label || '';
+                        button.hidden = true;
+                        nav.appendChild(button);
+                        return button;
+                    };
+                    const backButton = makeNavButton('btn btn-outline-secondary proctoring-stepper-back', strings.preflightback);
+                    const continueButton = makeNavButton('btn btn-primary proctoring-stepper-continue',
+                        strings.preflightcontinue);
+                    // The privacy notice and honesty statement stay readable from every step.
+                    const privacyLink = makeNavButton('btn btn-link proctoring-stepper-policy', strings.preflightviewprivacy);
+                    privacyLink.dataset.step = 'privacy';
+                    const honorLink = makeNavButton('btn btn-link proctoring-stepper-policy', strings.preflightviewhonor);
+                    honorLink.dataset.step = 'honor';
+                    footer.appendChild(nav);
                     const spacer = document.createElement('div');
                     spacer.className = 'proctoring-stepper-spacer';
                     footer.appendChild(spacer);
@@ -2090,6 +2124,17 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             (submitNode.parentNode === actionRow ? actionRow : submitNode.parentNode)
                                 .insertBefore(cancelNode, submitNode.nextSibling);
                         }
+                        // Leaving is how consent is withdrawn; say so (CPIT-479).
+                        if (cancelNode && strings.preflightcancelwithdraw) {
+                            if (cancelNode.tagName === 'INPUT') {
+                                cancelNode.value = strings.preflightcancelwithdraw;
+                            } else {
+                                cancelNode.textContent = strings.preflightcancelwithdraw;
+                            }
+                            if (strings.preflightcancelwithdrawtitle) {
+                                cancelNode.title = strings.preflightcancelwithdrawtitle;
+                            }
+                        }
                     }
                     wrapper.appendChild(footer);
 
@@ -2107,6 +2152,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         kicker: kicker,
                         progress: progress,
                         items: items,
+                        backButton: backButton,
+                        continueButton: continueButton,
+                        policyLinks: [privacyLink, honorLink],
                     };
                 })();
 
@@ -2124,32 +2172,102 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     });
                 };
 
+                const stepKey = function(item) {
+                    return item.id.replace('proctoring-check-', '');
+                };
+                const stepSection = function(key) {
+                    return stepperNodes.stepsWrap.querySelector(
+                        '.proctoring-preflight-step[data-preflight-step="' + key + '"]'
+                    );
+                };
+                const stepReachable = function(item) {
+                    return item.classList.contains('is-complete') || stepKey(item) === getCurrentPreflightStep();
+                };
+
+                // Show Back while an earlier finished step exists, Continue while an earlier step is
+                // open, and the policy links for the steps that can be opened (CPIT-479).
+                const updateStepNav = function() {
+                    if (!stepperNodes || !stepperNodes.backButton) {
+                        return;
+                    }
+                    const viewing = stepperNodes.items.find(function(item) {
+                        return item.classList.contains('is-viewing');
+                    });
+                    const shownKey = viewing ? stepKey(viewing) : getCurrentPreflightStep();
+                    const shownIndex = stepperNodes.items.findIndex(function(item) {
+                        return stepKey(item) === shownKey;
+                    });
+                    const limit = shownIndex === -1 ? stepperNodes.items.length : shownIndex;
+                    stepperNodes.backButton.hidden = !stepperNodes.items.slice(0, limit).some(function(item) {
+                        return item.classList.contains('is-complete');
+                    });
+                    stepperNodes.continueButton.hidden = !viewing;
+                    stepperNodes.policyLinks.forEach(function(link) {
+                        const item = document.getElementById('proctoring-check-' + link.dataset.step);
+                        link.hidden = !item || !stepReachable(item) || shownKey === link.dataset.step;
+                    });
+                };
+
+                const viewStep = function(key) {
+                    const item = document.getElementById('proctoring-check-' + key);
+                    const section = stepSection(key);
+                    if (!item || !section || !stepReachable(item)) {
+                        return;
+                    }
+                    clearViewedStep();
+                    if (!section.classList.contains('is-active')) {
+                        section.classList.add('is-viewed');
+                        item.classList.add('is-viewing');
+                        stepperNodes.stepsWrap.classList.add('proctoring-viewing');
+                    }
+                    updateStepNav();
+                };
+
                 if (stepperNodes) {
                     stepperNodes.items.forEach(function(item) {
                         item.addEventListener('click', function() {
-                            const key = item.id.replace('proctoring-check-', '');
-                            const section = stepperNodes.stepsWrap.querySelector(
-                                '.proctoring-preflight-step[data-preflight-step="' + key + '"]'
-                            );
-                            if (!section) {
-                                return;
-                            }
-                            const reachable = item.classList.contains('is-complete') ||
-                                key === getCurrentPreflightStep();
-                            if (!reachable) {
-                                return;
-                            }
-                            clearViewedStep();
-                            if (!section.classList.contains('is-active')) {
-                                section.classList.add('is-viewed');
-                                item.classList.add('is-viewing');
-                                stepperNodes.stepsWrap.classList.add('proctoring-viewing');
-                            }
+                            viewStep(stepKey(item));
                         });
                     });
+                    if (stepperNodes.backButton) {
+                        stepperNodes.backButton.addEventListener('click', function() {
+                            const viewing = stepperNodes.items.find(function(item) {
+                                return item.classList.contains('is-viewing');
+                            });
+                            const shownKey = viewing ? stepKey(viewing) : getCurrentPreflightStep();
+                            let index = stepperNodes.items.findIndex(function(item) {
+                                return stepKey(item) === shownKey;
+                            });
+                            if (index === -1) {
+                                index = stepperNodes.items.length;
+                            }
+                            for (let i = index - 1; i >= 0; i--) {
+                                if (stepperNodes.items[i].classList.contains('is-complete')) {
+                                    viewStep(stepKey(stepperNodes.items[i]));
+                                    return;
+                                }
+                            }
+                        });
+                        stepperNodes.continueButton.addEventListener('click', function() {
+                            clearViewedStep();
+                            updateStepNav();
+                        });
+                        stepperNodes.policyLinks.forEach(function(link) {
+                            link.addEventListener('click', function() {
+                                viewStep(link.dataset.step);
+                            });
+                        });
+                    }
 
                     stepperRefresh = function(ready, currentStep) {
-                        clearViewedStep();
+                        // A step the student opened stays in view while they read or change it; it
+                        // closes only when it has become the current step itself (CPIT-479).
+                        const viewed = stepperNodes.items.find(function(item) {
+                            return item.classList.contains('is-viewing');
+                        });
+                        if (viewed && (stepKey(viewed) === currentStep || !stepReachable(viewed))) {
+                            clearViewedStep();
+                        }
                         const total = stepperNodes.items.length;
                         let doneCount = 0;
                         let currentIndex = -1;
@@ -2169,6 +2287,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         stepperNodes.progress.textContent = (strings.progresscountpattern || '')
                             .replace('__DONE__', String(doneCount))
                             .replace('__TOTAL__', String(total));
+                        updateStepNav();
                     };
                 }
 

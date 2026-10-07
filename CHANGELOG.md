@@ -1,6 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.8 — 2026-10-07
+- **Students can go back in the exam setup (CPIT-479).**
+  - A **Back** button opens the previous finished step.
+  - A step opened from Back or from the list on the left stays open, even while the student changes it, until they press **Continue**. It used to jump back to the current step at the next change.
+  - The privacy notice and the honesty statement can be opened from every step.
+- Cancel now reads **Leave and withdraw consent**. Its tooltip says that photos taken during setup are deleted within 24 hours (CPIT-464).
+
 # v1.12.7 — 2026-10-07
 - **"Photo ID", with what counts as one (CPIT-478).** The ID step, its buttons and all its messages, including the face and name failure messages, now say "photo ID". The step gives Student Affairs' definition: "Your photo ID should include your full name and a photograph, such as a passport, driver's license, government-issued ID, work-issued ID, or school-issued ID."
 - **Launch instructions and help links are settings.** Saylor's wording no longer needs language customisation. The new settings are all empty by default, which shows nothing:
