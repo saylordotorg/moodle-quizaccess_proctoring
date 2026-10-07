@@ -70,27 +70,44 @@ class student_messages {
 
         $rows = [];
         $open = [];
+        $lastpause = null;
         foreach ($events as $event) {
             $detail = json_decode((string)$event->eventdetail, true);
             $detail = is_array($detail) ? $detail : [];
             $time = (int)$event->eventtime;
             switch ($event->eventtype) {
-                case 'warning_shown':
                 case 'face_missing_start':
-                    $key = $event->eventtype === 'face_missing_start' ? 'faceblur' : (string)($detail['key'] ?? '');
-                    $rows[] = ['key' => $key, 'start' => $time, 'seconds' => null];
+                    // A continuation (the student cancelled leaving the page mid-pause) carries on
+                    // the same pause, as face_pauses counts it.
+                    if (!empty($detail['continued']) && $lastpause !== null) {
+                        $open['faceblur'] = $lastpause;
+                        break;
+                    }
+                    $rows[] = ['key' => 'faceblur', 'message' => '', 'start' => $time, 'seconds' => null];
+                    $lastpause = count($rows) - 1;
+                    $open['faceblur'] = $lastpause;
+                    break;
+                case 'warning_shown':
+                    $key = (string)($detail['key'] ?? '');
+                    $rows[] = [
+                        'key' => $key,
+                        'message' => trim((string)($detail['message'] ?? '')),
+                        'start' => $time,
+                        'seconds' => null,
+                    ];
                     $open[$key] = count($rows) - 1;
                     break;
                 case 'warning_cleared':
                 case 'face_missing_end':
                     $key = $event->eventtype === 'face_missing_end' ? 'faceblur' : (string)($detail['key'] ?? '');
-                    if (isset($open[$key])) {
-                        $index = $open[$key];
-                        $rows[$index]['seconds'] = isset($detail['seconds'])
-                            ? max(0, (int)$detail['seconds'])
-                            : max(0, $time - $rows[$index]['start']);
-                        unset($open[$key]);
+                    if (!isset($open[$key])) {
+                        break;
                     }
+                    $index = $open[$key];
+                    $recorded = $detail['seconds'] ?? $detail['durationseconds'] ?? null;
+                    $seconds = $recorded !== null ? max(0, (int)$recorded) : max(0, $time - $rows[$index]['start']);
+                    $rows[$index]['seconds'] = ($rows[$index]['seconds'] ?? 0) + $seconds;
+                    unset($open[$key]);
                     break;
             }
         }
@@ -98,12 +115,17 @@ class student_messages {
         $timeformat = get_string('strftimetime', 'langconfig');
         $out = [];
         foreach ($rows as $row) {
+            // The words logged with the warning; the current string only for older events.
             $stringkey = self::MESSAGES[$row['key']] ?? '';
+            $message = $row['message'];
+            if ($message === '') {
+                $message = $stringkey !== ''
+                    ? trim(strip_tags(get_string($stringkey, 'quizaccess_proctoring')))
+                    : get_string('studentmessages:unknown', 'quizaccess_proctoring', $row['key']);
+            }
             $out[] = [
                 'time' => userdate($row['start'], $timeformat),
-                'message' => $stringkey !== ''
-                    ? trim(strip_tags(get_string($stringkey, 'quizaccess_proctoring')))
-                    : get_string('studentmessages:unknown', 'quizaccess_proctoring', $row['key']),
+                'message' => $message,
                 'duration' => $row['seconds'] === null ? '' : format_time($row['seconds']),
             ];
         }

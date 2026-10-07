@@ -82,6 +82,25 @@ final class student_messages_test extends advanced_testcase {
     }
 
     /**
+     * The wording logged with a warning is shown, and a resumed face pause stays one message.
+     */
+    public function test_logged_wording_and_pause_continuation(): void {
+        $this->resetAfterTest();
+        $start = time() - 600;
+        $this->event('warning_shown', ['key' => 'wrongscreen', 'message' => 'Wording at the time'], $start);
+        $this->event('face_missing_start', ['reason' => 'no_face_in_view'], $start + 10);
+        $this->event('face_missing_end', ['durationseconds' => 20], $start + 30);
+        $this->event('face_missing_start', ['continued' => 1], $start + 31);
+        $this->event('face_missing_end', ['durationseconds' => 15], $start + 46);
+
+        $messages = student_messages::for_attempt(2, 3, 4, 5);
+
+        $this->assertCount(2, $messages);
+        $this->assertSame('Wording at the time', $messages[0]['message']);
+        $this->assertSame(format_time(35), $messages[1]['duration']);
+    }
+
+    /**
      * Warning events are neutral: never counted as suspicious activity.
      */
     public function test_warning_events_are_neutral(): void {

@@ -698,6 +698,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     pendingWarningLogs.push([eventType, detail]);
                 }
             };
+            // The words the student saw, kept with the event: a later change to the language
+            // string must not rewrite what an appeal is checked against (CPIT-481 review).
+            const plainText = function(html) {
+                const holder = document.createElement('div');
+                holder.innerHTML = html || '';
+                return (holder.textContent || '').trim().slice(0, 500);
+            };
             const noteWarningCleared = function(key) {
                 if (!activeAttemptWarnings[key]) {
                     return;
@@ -718,7 +725,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 if (!activeAttemptWarnings[key]) {
                     warningShownAt[key] = Date.now();
-                    noteWarning('warning_shown', {key: key});
+                    noteWarning('warning_shown', {key: key, message: plainText(message)});
                 }
                 activeAttemptWarnings[key] = {
                     message: message,
@@ -2371,6 +2378,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
             return {
                 noteWarning: noteWarning,
+                plainText: plainText,
                 suspend: function() {
                     monitoringActive = false;
                     intervals.forEach(entry => window.clearInterval(entry.id));
@@ -2426,6 +2434,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 // the no-face blur, not to multiple-face detection, which only borrows the model.
                 const captureFaceCheck = faceModelReady && parseInt(props.facemodelformultiplefacesonly || 0, 10) !== 1;
                 let captureFaceMisses = 0;
+                // When the "face not found" notice went up, so its removal can be logged too.
+                let faceNoticeShownAt = 0;
                 // Quiz core renders a lone tertiary-nav "Back" link during attempts;
                 // on a proctored attempt it only walks students out of the exam
                 // mid-attempt (and fires focus-loss violations on the way).
@@ -2812,6 +2822,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             } else if (croppedImage && croppedImage.getAttribute('src')) {
                                 captureFaceMisses = 0;
                                 removeNotifications();
+                                if (faceNoticeShownAt && monitoring && monitoring.noteWarning) {
+                                    monitoring.noteWarning('warning_cleared', {
+                                        key: 'facenotfoundoncam',
+                                        seconds: Math.max(0, Math.round((Date.now() - faceNoticeShownAt) / 1000)),
+                                    });
+                                }
+                                faceNoticeShownAt = 0;
                                 faceFound = 1;
                                 faceImage = croppedImage.src;
                             } else {
@@ -2820,8 +2837,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 captureFaceMisses++;
                                 if (captureFaceMisses >= 2) {
                                     showNotification(strings.facenotfoundoncam, 'error');
-                                    if (monitoring && monitoring.noteWarning) {
-                                        monitoring.noteWarning('warning_shown', {key: 'facenotfoundoncam'});
+                                    // Logged once while it stays up, not at every missed capture.
+                                    if (!faceNoticeShownAt && monitoring && monitoring.noteWarning) {
+                                        faceNoticeShownAt = Date.now();
+                                        monitoring.noteWarning('warning_shown', {
+                                            key: 'facenotfoundoncam',
+                                            message: monitoring.plainText(strings.facenotfoundoncam),
+                                        });
                                     }
                                 }
                                 faceFound = 0;

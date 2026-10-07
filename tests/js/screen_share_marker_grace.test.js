@@ -545,7 +545,9 @@ test('the wrong-screen warning the student sees is logged, after the evidence (C
     }
     const shown = env.loggedEvents.filter((e) => e.eventtype === 'warning_shown');
     assert.strictEqual(shown.length, 1);
-    assert.deepStrictEqual(JSON.parse(shown[0].eventdetail), {key: 'wrongscreen'});
+    const detail = JSON.parse(shown[0].eventdetail);
+    assert.strictEqual(detail.key, 'wrongscreen');
+    assert.ok('message' in detail, 'the wording shown is kept with the event');
     assert.strictEqual(shown[0].screenshot, '', 'a warning carries no screenshot');
 });
 
