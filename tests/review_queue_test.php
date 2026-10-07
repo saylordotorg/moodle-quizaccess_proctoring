@@ -214,7 +214,7 @@ final class review_queue_test extends advanced_testcase {
     public function test_hidden_category_reviewer_can_open_the_queue(): void {
         $this->resetAfterTest();
         $this->two_categories();
-        \core_course_category::get($this->categories['a']->id)->hide();
+        \core_course_category::get($this->categories['a']->id, MUST_EXIST, true)->hide();
 
         $role = reviewer_role::ensure();
         $reviewer = $this->getDataGenerator()->create_user();
