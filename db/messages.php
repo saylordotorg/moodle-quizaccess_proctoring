@@ -32,4 +32,12 @@ $messageproviders = [
             'email' => MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
         ],
     ],
+    // Tells proctoring reviewers that a student asked for a new reference photo (CPIT-476).
+    'referenceresetrequest' => [
+        'capability' => 'quizaccess/proctoring:reviewacrosscourses',
+        'defaults' => [
+            'popup' => MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
+            'email' => MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
+        ],
+    ],
 ];

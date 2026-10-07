@@ -57,6 +57,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'cameradark', component: 'quizaccess_proctoring'},
                 {key: 'referencereset', component: 'quizaccess_proctoring'},
                 {key: 'referenceunusable', component: 'quizaccess_proctoring'},
+                {key: 'referencecountdown', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -108,6 +109,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     cameradark: strings[44],
                     referencereset: strings[45],
                     referenceunusable: strings[46],
+                    referencecountdown: strings[47],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -1737,7 +1739,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     updatePreflightGate();
                 };
 
-                const submitFaceValidation = function(webcamPicture, faceImage, faceFound) {
+                // The photo last sent for checking, so a first-time student can confirm it as their
+                // reference photo without taking another one (CPIT-476).
+                let lastFaceCapture = null;
+
+                const submitFaceValidation = function(webcamPicture, faceImage, faceFound, confirmReference = false) {
                     const courseidInput = document.getElementById('courseidval');
                     const cmidInput = document.getElementById('cmidval');
                     const profileImageInput = document.getElementById('profileimage');
@@ -1751,6 +1757,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             parenttype: 'camshot_image',
                             faceimage: faceImage,
                             facefound: faceFound,
+                            // A first photo is shown to the student before the server keeps it.
+                            confirmreference: confirmReference ? 1 : 0,
                         }
                     };
 
@@ -1771,6 +1779,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
 
                     const status = res.status;
+                    if (status === 'confirmreference') {
+                        showReferenceConfirm(res.message || '');
+                        return false;
+                    }
                     if (status === 'success') {
                         setFaceValidationComplete(strings.facematched);
                         return true;
@@ -1808,11 +1820,78 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return false;
                 };
 
+                // First exam: show the photo and let the student use it or take another (CPIT-476).
+                const showReferenceConfirm = function(message) {
+                    const box = document.getElementById('proctoring-reference-confirm');
+                    const image = document.getElementById('proctoring-reference-confirm-img');
+                    const text = document.getElementById('proctoring-reference-confirm-text');
+                    const validateButton = document.getElementById('fcvalidate');
+                    if (!box || !image || !lastFaceCapture) {
+                        // No confirmation markup on the page: keep the photo as before.
+                        confirmReferencePhoto();
+                        return;
+                    }
+                    image.setAttribute('src', lastFaceCapture.webcamPicture);
+                    if (text) {
+                        text.textContent = message;
+                    }
+                    if (validateButton) {
+                        validateButton.style.display = 'none';
+                    }
+                    $("#face_validation_result").html('');
+                    box.style.display = 'block';
+                    faceReady = false;
+                    setRequirementStatus('face', 'action');
+                    updatePreflightGate();
+                };
+
+                const hideReferenceConfirm = function() {
+                    const box = document.getElementById('proctoring-reference-confirm');
+                    if (box) {
+                        box.style.display = 'none';
+                    }
+                };
+
+                const confirmReferencePhoto = async function() {
+                    if (!lastFaceCapture) {
+                        return false;
+                    }
+                    hideReferenceConfirm();
+                    setFaceValidationPending();
+                    setFaceValidationSpinner(true);
+                    try {
+                        const res = await submitFaceValidation(
+                            lastFaceCapture.webcamPicture,
+                            lastFaceCapture.faceImage,
+                            lastFaceCapture.faceFound,
+                            true
+                        );
+                        return applyFaceValidationResponse(res);
+                    } catch (error) {
+                        setFaceValidationSpinner(false);
+                        setFaceValidationAction(strings.facequalityfailed);
+                        Notification.exception(error);
+                        return false;
+                    }
+                };
+
+                $('#proctoring-reference-use').on('click', function(event) {
+                    event.preventDefault();
+                    confirmReferencePhoto();
+                });
+                $('#proctoring-reference-retake').on('click', function(event) {
+                    event.preventDefault();
+                    hideReferenceConfirm();
+                    lastFaceCapture = null;
+                    $('#fcvalidate').trigger('click');
+                });
+
                 const validateFacePreflightImage = async function(webcamPicture, faceImage, faceFound) {
                     if (!faceRequired) {
                         return true;
                     }
 
+                    lastFaceCapture = {webcamPicture, faceImage, faceFound};
                     setFaceValidationPending();
                     setFaceValidationSpinner(true);
                     try {
@@ -2927,6 +3006,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                     event.preventDefault();
                     setFaceValidationPending();
+                    hideReferenceConfirm();
+                    // A first-time student gets a moment to settle before their reference photo is
+                    // taken (CPIT-476).
+                    const registrationInput = document.getElementById('faceregistrationneeded');
+                    if (registrationInput && registrationInput.value === '1') {
+                        for (let second = 3; second > 0; second--) {
+                            $("#face_validation_result").text(`${strings.referencecountdown} ${second}`);
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
+                    }
                     const photo = document.getElementById('photo');
                     const canvas = document.getElementById('canvas');
                     const video = document.getElementById('video');

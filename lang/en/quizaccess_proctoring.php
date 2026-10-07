@@ -1545,3 +1545,36 @@ $string['facematchstatus:referenceunusable'] = 'Reference photo unusable';
 $string['reportcaptures:badgereferenceunusable'] = 'Reference photo unusable';
 $string['setting:replaceunusablereference'] = 'Let students replace an unusable reference photo';
 $string['setting:replaceunusablereference_desc'] = 'When the face-match service finds no face at all in a student\'s self-registered reference photo, clear it during the precheck so the student\'s next capture saves a new one under the same checks as a first registration. A reference photo with no face cannot identify anyone, so nothing is lost. Photos uploaded by staff are never cleared. Untick to keep the photo and tell the student to contact support instead.';
+$string['event:referencephotoreset'] = 'Proctoring reference photo reset';
+$string['event:referenceresetrequested'] = 'New proctoring reference photo requested';
+$string['messageprovider:referenceresetrequest'] = 'Requests from students for a new proctoring reference photo';
+$string['myphoto:intro'] = 'This is the reference photo your proctored exams compare your webcam with, to confirm it is you.';
+$string['myphoto:none'] = 'You have no reference photo on file. You take one at the start of your first proctored exam.';
+$string['myphoto:reason'] = 'What is wrong with the photo? (optional)';
+$string['myphoto:requestbutton'] = 'Ask for a new photo';
+$string['myphoto:requestheading'] = 'Need a new photo?';
+$string['myphoto:requestintro'] = 'If this photo is unclear or is not of you, ask Student Affairs to reset it. You then take a new one at your next proctored exam.';
+$string['myphoto:requestpending'] = 'Your request has been sent to Student Affairs. You can send another one tomorrow.';
+$string['myphoto:requestsent'] = 'Your request has been sent to Student Affairs.';
+$string['myphoto:title'] = 'My proctoring photo';
+$string['privacy:metadata:preference:referenceresetrequested'] = 'When you last asked for a new proctoring reference photo.';
+$string['referenceconfirm:imagealt'] = 'Your new reference photo';
+$string['referenceconfirm:intro'] = 'This will be your reference photo. On your proctored exams, your webcam photos are compared with it to confirm it is you. It is kept for {$a} days after your last proctored exam. Check that your face is clear and well lit, then use this photo or take another one.';
+$string['referenceconfirm:intronolimit'] = 'This will be your reference photo. On your proctored exams, your webcam photos are compared with it to confirm it is you. Check that your face is clear and well lit, then use this photo or take another one.';
+$string['referenceconfirm:retake'] = 'Take another photo';
+$string['referenceconfirm:use'] = 'Use this photo';
+$string['referencecountdown'] = 'Taking your photo in';
+$string['referencerequest:body'] = '{$a->student} ({$a->email}) asked for a new proctoring reference photo.
+
+What is wrong with it: {$a->reason}
+
+To reset it, open the student\'s proctoring report for one of their proctored quizzes and choose "Reset reference photo". The student then takes a new photo at their next exam.
+
+Profile: {$a->profileurl}';
+$string['referencerequest:subject'] = 'New reference photo requested: {$a->student}';
+$string['referencereset:busy'] = 'The reference photo is being changed right now. Try again in a moment.';
+$string['referencereset:button'] = 'Reset reference photo';
+$string['referencereset:done'] = 'The reference photo was reset. The student takes a new one at their next proctored exam.';
+$string['referencereset:reason'] = 'Reason (recorded in the logs)';
+$string['referencereset:reasonrequired'] = 'Enter a reason to reset the reference photo.';
+$string['referencereset:submit'] = 'Reset the photo';

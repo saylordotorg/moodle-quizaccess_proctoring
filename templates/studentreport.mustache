@@ -505,6 +505,22 @@
             <div class="proctoring-idband-photo">
                 <img src="{{userimageurl}}" alt="{{#str}}reportcaptures:profilephoto, quizaccess_proctoring{{/str}}" id="proctoring-profile-img">
                 <div class="proctoring-idband-caption">{{#str}}reportcaptures:profilephoto, quizaccess_proctoring{{/str}}</div>
+                {{#resetreference}}
+                <details class="proctoring-reference-reset small mt-1">
+                    <summary>{{#str}}referencereset:button, quizaccess_proctoring{{/str}}</summary>
+                    <form method="post" action="{{actionurl}}" class="mt-1">
+                        <input type="hidden" name="sesskey" value="{{sesskey}}">
+                        <input type="hidden" name="courseid" value="{{courseid}}">
+                        <input type="hidden" name="cmid" value="{{cmid}}">
+                        <input type="hidden" name="studentid" value="{{studentid}}">
+                        <input type="hidden" name="reportid" value="{{reportid}}">
+                        <input type="hidden" name="resetreference" value="1">
+                        <label for="proctoring-reset-reason">{{#str}}referencereset:reason, quizaccess_proctoring{{/str}}</label>
+                        <textarea id="proctoring-reset-reason" name="resetreason" rows="2" maxlength="1000" required class="form-control mb-1"></textarea>
+                        <button type="submit" class="btn btn-sm btn-outline-danger">{{#str}}referencereset:submit, quizaccess_proctoring{{/str}}</button>
+                    </form>
+                </details>
+                {{/resetreference}}
             </div>
             <div class="proctoring-idband-symbol">{{comparesymbol}}</div>
             <div class="proctoring-idband-photo">

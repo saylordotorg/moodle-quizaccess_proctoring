@@ -838,6 +838,12 @@ class quizaccess_proctoring_external extends external_api {
                 'parenttype' => new external_value(PARAM_RAW, 'Face image parent type'),
                 'faceimage' => new external_value(PARAM_RAW, 'Face Image'),
                 'facefound' => new external_value(PARAM_INT, 'Face found flag'),
+                'confirmreference' => new external_value(
+                    PARAM_INT,
+                    'For a first photo: 1 saves it as the reference photo, 0 asks the student to confirm it first',
+                    VALUE_DEFAULT,
+                    1
+                ),
             ]
         );
     }
@@ -856,6 +862,8 @@ class quizaccess_proctoring_external extends external_api {
      * @param mixed $parenttype The type of parent image (e.g., Admin or Webcam).
      * @param mixed $faceimage The face image captured.
      * @param bool $facefound Flag indicating whether a face was detected (0 or 1).
+     * @param int $confirmreference For a first photo: 1 saves it as the reference photo, 0 returns
+     *                              'confirmreference' so the student can see it and confirm or retake it.
      *
      * @return array An array containing the `screenshotid`, `status`, and `warnings`.
      *
@@ -864,7 +872,16 @@ class quizaccess_proctoring_external extends external_api {
      * @throws invalid_parameter_exception If any of the parameters are invalid.
      * @throws stored_file_creation_exception If there is an error creating the stored file.
      */
-    public static function validate_face($courseid, $cmid, $profileimage, $webcampicture, $parenttype, $faceimage, $facefound) {
+    public static function validate_face(
+        $courseid,
+        $cmid,
+        $profileimage,
+        $webcampicture,
+        $parenttype,
+        $faceimage,
+        $facefound,
+        $confirmreference = 1
+    ) {
         global $DB, $USER, $CFG;
 
         // Validate the params.
@@ -878,6 +895,7 @@ class quizaccess_proctoring_external extends external_api {
                 'parenttype' => $parenttype,
                 'faceimage' => $faceimage,
                 'facefound' => $facefound,
+                'confirmreference' => $confirmreference,
             ]
         );
 
@@ -913,6 +931,20 @@ class quizaccess_proctoring_external extends external_api {
                 $result['status'] = 'faceunclear';
                 $result['warnings'] = $warnings;
                 return $result;
+            }
+
+            // A first photo is shown to the student before it is kept (CPIT-476): nothing is saved
+            // until they choose to use it.
+            if (!(int)$confirmreference) {
+                $days = (int)get_config('quizaccess_proctoring', 'referenceretentiondays');
+                return [
+                    'screenshotid' => 0,
+                    'status' => 'confirmreference',
+                    'warnings' => $warnings,
+                    'message' => $days > 0
+                        ? get_string('referenceconfirm:intro', 'quizaccess_proctoring', $days)
+                        : get_string('referenceconfirm:intronolimit', 'quizaccess_proctoring'),
+                ];
             }
 
             // Registration takes the same lock as a staff upload, the retirement of an unusable photo
@@ -1083,6 +1115,7 @@ class quizaccess_proctoring_external extends external_api {
             [
                 'screenshotid' => new external_value(PARAM_INT, 'screenshot sent id'),
                 'status' => new external_value(PARAM_TEXT, 'validation response'),
+                'message' => new external_value(PARAM_TEXT, 'text to show the student', VALUE_OPTIONAL),
                 'warnings' => new external_warnings(),
             ]
         );

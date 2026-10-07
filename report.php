@@ -391,6 +391,31 @@ if ($riskaction === 'confirm' && $holdid > 0) {
     ]), get_string('riskreview:confirmednotice', 'quizaccess_proctoring'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
+// Reset the student's reference photo, so they take a new one at their next exam (CPIT-476). Staff
+// who review proctoring can do this without site administration rights; the reason is logged.
+if (optional_param('resetreference', 0, PARAM_BOOL) && $studentid && $reportid) {
+    require_sesskey();
+    require_capability('quizaccess/proctoring:reviewriskholds', $context);
+    $backurl = new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
+        'courseid' => $courseid,
+        'cmid' => $cmid,
+        'studentid' => $studentid,
+        'reportid' => $reportid,
+    ]);
+    $resetreason = trim(optional_param('resetreason', '', PARAM_TEXT));
+    if ($resetreason === '') {
+        redirect($backurl, get_string('referencereset:reasonrequired', 'quizaccess_proctoring'), null,
+            \core\output\notification::NOTIFY_WARNING);
+    }
+    $wasreset = \quizaccess_proctoring\local\reference_photo::reset((int)$studentid, $resetreason, $context);
+    redirect(
+        $backurl,
+        get_string($wasreset ? 'referencereset:done' : 'referencereset:busy', 'quizaccess_proctoring'),
+        null,
+        $wasreset ? \core\output\notification::NOTIFY_SUCCESS : \core\output\notification::NOTIFY_WARNING
+    );
+}
+
 if ($fpaction === 'mark' && $studentid && $reportid && $fpfactorkey !== '') {
     require_sesskey();
     require_capability('quizaccess/proctoring:reviewriskholds', $context);
@@ -1887,6 +1912,15 @@ if (
             'hasevents' => !empty($eventrecords),
             'collaboration' => $collaboration,
             'idverification' => $idvcontext,
+            'resetreference' => $profileimageurl
+                && has_capability('quizaccess/proctoring:reviewriskholds', $context) ? [
+                'actionurl' => (new moodle_url('/mod/quiz/accessrule/proctoring/report.php'))->out(false),
+                'sesskey' => sesskey(),
+                'courseid' => (int)$courseid,
+                'cmid' => (int)$cmid,
+                'studentid' => (int)$studentid,
+                'reportid' => (int)$reportid,
+            ] : null,
         ];
         echo $OUTPUT->render_from_template('quizaccess_proctoring/studentreport', $templatecontext);
     }

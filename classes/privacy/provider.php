@@ -43,6 +43,7 @@ use dml_exception;
 class provider implements
     \core_privacy\local\metadata\provider,
     \core_privacy\local\request\plugin\provider,
+    \core_privacy\local\request\user_preference_provider,
     core_userlist_provider {
     /**
      * Provides metadata about the user data stored by quizaccess_proctoring.
@@ -327,7 +328,31 @@ class provider implements
             'privacy:metadata:core_files'
         );
 
+        // When the student last asked for a new reference photo (CPIT-476).
+        $collection->add_user_preference(
+            \quizaccess_proctoring\local\reference_photo::REQUEST_PREFERENCE,
+            'privacy:metadata:preference:referenceresetrequested'
+        );
+
         return $collection;
+    }
+
+    /**
+     * Export the user's proctoring preferences.
+     *
+     * @param int $userid The user.
+     */
+    public static function export_user_preferences(int $userid) {
+        $name = \quizaccess_proctoring\local\reference_photo::REQUEST_PREFERENCE;
+        $requested = get_user_preferences($name, null, $userid);
+        if ($requested !== null) {
+            writer::export_user_preference(
+                'quizaccess_proctoring',
+                $name,
+                transform::datetime((int)$requested),
+                get_string('privacy:metadata:preference:referenceresetrequested', 'quizaccess_proctoring')
+            );
+        }
     }
 
     /**

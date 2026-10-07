@@ -144,6 +144,16 @@ function quizaccess_proctoring_can_review_across_courses(): bool {
  * @param stdClass|null $course Course the profile is viewed in.
  */
 function quizaccess_proctoring_myprofile_navigation(\core_user\output\myprofile\tree $tree, $user, $iscurrentuser, $course) {
+    if ($iscurrentuser && \quizaccess_proctoring\local\reference_photo::exists((int)$user->id)) {
+        // The student's own reference photo, and a way to ask for a new one (CPIT-476).
+        $tree->add_node(new \core_user\output\myprofile\node(
+            'miscellaneous',
+            'quizaccess_proctoring_myphoto',
+            get_string('myphoto:title', 'quizaccess_proctoring'),
+            null,
+            new moodle_url('/mod/quiz/accessrule/proctoring/my_photo.php')
+        ));
+    }
     if (!$iscurrentuser || !isloggedin() || isguestuser() || !quizaccess_proctoring_can_review_across_courses()) {
         return;
     }

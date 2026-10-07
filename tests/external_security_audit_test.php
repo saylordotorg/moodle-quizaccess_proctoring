@@ -119,6 +119,27 @@ final class external_security_audit_test extends \advanced_testcase {
     }
 
     /**
+     * A first photo is shown to the student and kept only once they choose to use it (CPIT-476).
+     */
+    public function test_first_photo_waits_for_the_students_confirmation(): void {
+        global $DB, $USER;
+        $this->resetAfterTest();
+        [$course, $cm] = $this->create_fixture();
+        $image = $this->make_image();
+        set_config('referenceretentiondays', 365, 'quizaccess_proctoring');
+
+        $preview = \quizaccess_proctoring_external::validate_face($course->id, $cm->id, '', $image, 'camshot_image', $image, 1, 0);
+        $this->assertSame('confirmreference', $preview['status']);
+        $this->assertStringContainsString('365', $preview['message']);
+        $this->assertFalse($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $USER->id]));
+        $this->assertFalse(\quizaccess_proctoring_has_face_preflight_passed((int)$cm->id));
+
+        $used = \quizaccess_proctoring_external::validate_face($course->id, $cm->id, '', $image, 'camshot_image', $image, 1, 1);
+        $this->assertSame('registered', $used['status']);
+        $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $USER->id]));
+    }
+
+    /**
      * A self-registered reference the provider finds no face in is retired, not reported as a mismatch (CPIT-453).
      */
     public function test_faceless_self_registered_reference_is_retired_and_reregistered(): void {

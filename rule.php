@@ -1731,6 +1731,31 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 $pending,
                 $validateface
             );
+            if ($registerface) {
+                // A first-time student sees the photo and chooses to use it or retake it before it
+                // becomes their reference photo (CPIT-476). Filled and shown by startAttempt.js.
+                $actionbtns .= html_writer::div(
+                    html_writer::tag('p', '', ['id' => 'proctoring-reference-confirm-text']) .
+                    html_writer::empty_tag('img', [
+                        'id' => 'proctoring-reference-confirm-img',
+                        'alt' => get_string('referenceconfirm:imagealt', 'quizaccess_proctoring'),
+                        'width' => 240,
+                        'class' => 'img-thumbnail mb-2 d-block',
+                    ]) .
+                    html_writer::tag('button', get_string('referenceconfirm:use', 'quizaccess_proctoring'), [
+                        'type' => 'button',
+                        'id' => 'proctoring-reference-use',
+                        'class' => 'btn btn-primary mr-2 me-2',
+                    ]) .
+                    html_writer::tag('button', get_string('referenceconfirm:retake', 'quizaccess_proctoring'), [
+                        'type' => 'button',
+                        'id' => 'proctoring-reference-retake',
+                        'class' => 'btn btn-secondary',
+                    ]),
+                    'alert alert-info mt-3',
+                    ['id' => 'proctoring-reference-confirm', 'style' => 'display: none;', 'aria-live' => 'polite']
+                );
+            }
         }
 
         if (!empty($actionbtns)) {
