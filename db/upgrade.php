@@ -1450,5 +1450,28 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100602, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026100608) {
+        // The SIS summary web service, its capability and the off-by-default sisexportenabled
+        // setting register on this version bump (SIS-204). The service looks captures up by attempt
+        // id, which the logs table stores in `status`; nothing indexed it, so every page scanned the
+        // whole capture history (PR #32 review). The risk calculator's bulk path benefits as well.
+        $table = new xmldb_table('quizaccess_proctoring_logs');
+        $index = new xmldb_index('status', XMLDB_INDEX_NOTUNIQUE, ['status']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        // SIS-204 first shipped on the release/security-readiness-1.11.0 branch as 2026100200,
+        // the savepoint master uses for the Student Handbook link. A site upgraded from that branch
+        // is already past 2026100200, so it skipped the handbook step: apply it here. It only
+        // replaces the old default, so running it twice changes nothing (CPIT-466).
+        $olddefault = 'https://docs.google.com/document/d/1Ol42RIGyLnoDW65vcvile3RuGDmEAJa6sgKLLxzaXdc/edit'
+            . '?tab=t.0#heading=h.5x2pojowsd48';
+        if (get_config('quizaccess_proctoring', 'honorstatementhandbookurl') === $olddefault) {
+            set_config('honorstatementhandbookurl', 'https://saylor.org/handbook', 'quizaccess_proctoring');
+        }
+        upgrade_plugin_savepoint(true, 2026100608, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
