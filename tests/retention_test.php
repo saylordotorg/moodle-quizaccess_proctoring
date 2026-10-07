@@ -41,6 +41,7 @@ require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
  * @covers \quizaccess_proctoring\task\delete_images_task
  * @covers \quizaccess_proctoring\local\user_data_purge
  * @covers \quizaccess_proctoring\task\purge_deleted_user_task
+ * @covers ::quizaccess_proctoring_upgrade_image_retention_default
  */
 final class retention_test extends advanced_testcase {
 
