@@ -1633,3 +1633,4 @@ $string['expectedtools_open'] = 'Open resources (leaving the quiz is not scored)
 $string['setting:detectphonestatus'] = 'Phone detection model';
 $string['setting:detectphonestatus_missing'] = 'Not installed: phone detection will not run, even when switched on. Install the TensorFlow.js and COCO-SSD files in mod/quiz/accessrule/proctoring/thirdpartylibs/objectdetect (see the README there). The report shows phone detection as not monitored meanwhile.';
 $string['setting:detectphonestatus_ready'] = 'Installed. A webcam only sees a phone held up in view; this catches careless use, not a phone below the desk. Pilot it before relying on it.';
+$string['eventtype:possible_screenshot'] = 'PrintScreen key pressed (context only, not scored; other screenshot methods cannot be seen by the browser)';

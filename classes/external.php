@@ -430,6 +430,8 @@ class quizaccess_proctoring_external extends external_api {
             'face_missing_start',
             'face_missing_end',
             'away_capture',
+            // The PrintScreen key (CPIT-485): context only, never scored.
+            'possible_screenshot',
             // What the page told the student, and when it stopped (CPIT-481). Never scored.
             'warning_shown',
             'warning_cleared',

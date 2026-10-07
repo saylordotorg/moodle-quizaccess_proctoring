@@ -142,6 +142,20 @@ final class activity_grouper_test extends advanced_testcase {
     }
 
     /**
+     * A PrintScreen key press is listed for context, never as a flagged event (CPIT-485, PR #55 review).
+     */
+    public function test_possible_screenshot_is_routine_context(): void {
+        $grouped = activity_grouper::group([
+            self::event(1, 'possible_screenshot', 100),
+        ]);
+
+        $this->assertSame([], $grouped['episodes']);
+        $this->assertCount(1, $grouped['routine']);
+        $this->assertNotContains('possible_screenshot', \quizaccess_proctoring\local\monitoring_coverage::NEUTRAL_EVENTS);
+        $this->assertContains('possible_screenshot', \quizaccess_proctoring\local\monitoring_coverage::CONTEXT_EVENTS);
+    }
+
+    /**
      * A departure with no recorded return stays open: null duration, not counted in away seconds.
      */
     public function test_open_episode_has_null_duration(): void {
