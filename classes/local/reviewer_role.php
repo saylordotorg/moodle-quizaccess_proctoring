@@ -43,6 +43,8 @@ class reviewer_role {
         'moodle/course:viewhiddencourses',
         'moodle/course:viewhiddenactivities',
         'moodle/course:ignoreavailabilityrestrictions',
+        // Attempt reviews in quizzes with separate groups, which the reviewer is in none of.
+        'moodle/site:accessallgroups',
     ];
 
     /** @var int[] Where the role can be assigned: the whole site, or one category. */
