@@ -2260,12 +2260,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
 
                     stepperRefresh = function(ready, currentStep) {
-                        // A step the student opened stays in view while they read or change it; it
-                        // closes only when it has become the current step itself (CPIT-479).
+                        // A step the student opened stays in view while they read or change it, even
+                        // when unticking its box makes it the current step again, until they press
+                        // Continue (CPIT-479, PR #49 review).
                         const viewed = stepperNodes.items.find(function(item) {
                             return item.classList.contains('is-viewing');
                         });
-                        if (viewed && (stepKey(viewed) === currentStep || !stepReachable(viewed))) {
+                        if (viewed && !stepReachable(viewed)) {
                             clearViewedStep();
                         }
                         const total = stepperNodes.items.length;
