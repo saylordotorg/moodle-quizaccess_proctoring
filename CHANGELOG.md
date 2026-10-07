@@ -1,6 +1,12 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.2 — 2026-10-07
+- **The proctoring report opens quickly on large quizzes (CPIT-473).** Staff reported waits of up to ten minutes, and time-outs. The report used to work out the risk score of every student in the quiz, one at a time and about twenty database queries each, and look up each one's hold, AI review and event count, before showing the first 30. It now sorts and pages the list first and scores only the rows on the page, in bulk. Sorting by risk or by findings still scores every row, in bulk too. Event counts, attempt grades and account ages are one query each for the whole list.
+- New indexes on captures (course, quiz, attempt), face-match warnings (course, quiz, student) and face crops (capture), which the report's queries used to scan the whole table for.
+- Finding a student's reference photo reads that student's file instead of every student's. This was run once per row on the reference-photo users page and on every report and precheck.
+- A report that takes longer than 2 seconds to build is logged to the server error log, with its size and sort only.
+
 # v1.12.1 — 2026-10-07
 - **A retention schedule for proctoring data (CPIT-472).** Student data is now kept as follows:
   - **Attempt evidence** (webcam captures, desktop screenshots, browser events, AI review results): 180 days after the attempt, and never while a hold on it is waiting for review. It used to be kept for ever by default. A site still on the old default of 0 moves to 180 on upgrade. A value an administrator chose is kept, including 0: a setting changed after install leaves a record in the config log, and the installed default doesn't.

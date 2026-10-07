@@ -471,9 +471,19 @@ function quizaccess_proctoring_get_image_url($userid) {
     $context = context_system::instance();
     $fs = get_file_storage();
 
-    if ($files = $fs->get_area_files($context->id, 'quizaccess_proctoring', 'user_photo')) {
+    // Only this student's item: reading the whole area loaded every student's reference photo
+    // record for each lookup, once per row on the users list (CPIT-473).
+    $files = $fs->get_area_files(
+        $context->id,
+        'quizaccess_proctoring',
+        'user_photo',
+        (int)$userid,
+        'itemid, filepath, filename',
+        false
+    );
+    if ($files) {
         foreach ($files as $file) {
-            if ($userid == $file->get_itemid() && $file->get_filename() != '.') {
+            if ($file->get_filename() != '.') {
                 $fileurl = moodle_url::make_pluginfile_url(
                     $file->get_contextid(),
                     $file->get_component(),
@@ -577,9 +587,17 @@ function quizaccess_proctoring_get_image_file($userid) {
     $context = context_system::instance();
 
     $fs = get_file_storage();
-    if ($files = $fs->get_area_files($context->id, 'quizaccess_proctoring', 'user_photo')) {
+    $files = $fs->get_area_files(
+        $context->id,
+        'quizaccess_proctoring',
+        'user_photo',
+        (int)$userid,
+        'itemid, filepath, filename',
+        false
+    );
+    if ($files) {
         foreach ($files as $file) {
-            if ($userid == $file->get_itemid() && $file->get_filename() != '.') {
+            if ($file->get_filename() != '.') {
                 // Get the record ID from the database.
                 $recordid = $DB->get_field('quizaccess_proctoring_user_images', 'id', ['user_id' => $userid]);
 

@@ -1499,6 +1499,25 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100610, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026100611) {
+        // Report speed (CPIT-473). The per-quiz report filters captures by course, quiz and status,
+        // joins face-match warnings by course, quiz and student, and reads face crops by their
+        // capture; none of these had an index, so each scanned the whole table.
+        $indexes = [
+            'quizaccess_proctoring_logs' => ['coursequizstatus', ['courseid', 'quizid', 'status']],
+            'quizaccess_proctoring_fm_warnings' => ['coursequizuser', ['courseid', 'quizid', 'userid']],
+            'quizaccess_proctoring_face_images' => ['parent', ['parentid', 'parent_type']],
+        ];
+        foreach ($indexes as $tablename => [$indexname, $fields]) {
+            $table = new xmldb_table($tablename);
+            $index = new xmldb_index($indexname, XMLDB_INDEX_NOTUNIQUE, $fields);
+            if (!$dbman->index_exists($table, $index)) {
+                $dbman->add_index($table, $index);
+            }
+        }
+        upgrade_plugin_savepoint(true, 2026100611, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
 
