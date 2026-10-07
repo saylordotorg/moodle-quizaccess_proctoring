@@ -163,6 +163,39 @@ final class retention_test extends advanced_testcase {
     }
 
     /**
+     * Records left from a quiz deleted before the account have no context, and are purged anyway.
+     */
+    public function test_account_deletion_reaches_records_of_deleted_quizzes(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $student = $this->getDataGenerator()->create_user();
+        $other = $this->getDataGenerator()->create_user();
+        // A course module id that no longer exists, as after the quiz was deleted.
+        $goneid = 987654;
+
+        foreach ([$student, $other] as $user) {
+            $logid = $DB->insert_record('quizaccess_proctoring_logs', (object)[
+                'courseid' => 1, 'quizid' => $goneid, 'userid' => $user->id,
+                'webcampicture' => '', 'status' => 0, 'timemodified' => time(),
+            ]);
+            $DB->insert_record('quizaccess_proctoring_face_images', (object)[
+                'parent_type' => 'camshot_image', 'parentid' => $logid, 'faceimage' => '', 'facefound' => 1,
+                'timemodified' => time(),
+            ]);
+            $this->idv($user->id, $goneid, 0, time());
+        }
+
+        delete_user($student);
+        $this->runAdhocTasks(purge_deleted_user_task::class);
+
+        foreach (['quizaccess_proctoring_logs', 'quizaccess_proctoring_idv'] as $table) {
+            $this->assertFalse($DB->record_exists($table, ['userid' => $student->id]), $table);
+            $this->assertTrue($DB->record_exists($table, ['userid' => $other->id]), $table);
+        }
+        $this->assertEquals(1, $DB->count_records('quizaccess_proctoring_face_images'));
+    }
+
+    /**
      * Insert an ID verification row.
      *
      * @param int $userid Student ID.

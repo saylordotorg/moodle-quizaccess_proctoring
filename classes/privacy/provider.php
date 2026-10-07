@@ -1086,8 +1086,50 @@ class provider implements
                 self::delete_module_data_for_userids($context, [$userid]);
             }
         }
+        // Rows of quizzes or courses deleted before the account have no context left to be found
+        // through, so whatever remains of the user's records is removed directly. Their files went
+        // with the deleted context.
+        self::delete_remaining_user_records($userid);
         // The reference photo lives in the system context whether or not it was listed above.
         self::delete_reference_image_data_for_userids([$userid]);
+    }
+
+    /**
+     * Delete a user's proctoring rows wherever they are, without going through a context.
+     *
+     * @param int $userid The deleted user.
+     */
+    private static function delete_remaining_user_records(int $userid): void {
+        global $DB;
+
+        $logids = $DB->get_fieldset_select('quizaccess_proctoring_logs', 'id', 'userid = :userid', ['userid' => $userid]);
+        foreach (array_chunk($logids, 1000) as $chunk) {
+            self::delete_face_image_records_for_logids($chunk);
+            $DB->delete_records_list('quizaccess_proctoring_facematch_task', 'reportid', $chunk);
+        }
+        foreach (self::module_data_tables() as $table) {
+            $DB->delete_records($table, ['userid' => $userid]);
+        }
+        foreach (
+            [
+            'quizaccess_proctoring_risk_holds' => ['reviewerid'],
+            'quizaccess_proctoring_finding_reviews' => ['reviewerid', 'revokedby'],
+            'quizaccess_proctoring_notes' => ['authorid'],
+            ] as $table => $fields
+        ) {
+            foreach ($fields as $field) {
+                $DB->set_field($table, $field, 0, [$field => $userid]);
+            }
+        }
+
+        $overrideids = $DB->get_fieldset_select('quizaccess_proctoring_overrides', 'id', 'userid = :userid', ['userid' => $userid]);
+        foreach (array_chunk($overrideids, 1000) as $chunk) {
+            $DB->delete_records_list('quizaccess_proctoring_override_audit', 'overrideid', $chunk);
+            $DB->delete_records_list('quizaccess_proctoring_overrides', 'id', $chunk);
+        }
+        $DB->set_field('quizaccess_proctoring_overrides', 'grantedby', 0, ['grantedby' => $userid]);
+        $DB->set_field('quizaccess_proctoring_overrides', 'revokedby', 0, ['revokedby' => $userid]);
+        $DB->set_field('quizaccess_proctoring_override_audit', 'actorid', 0, ['actorid' => $userid]);
     }
 
     /**

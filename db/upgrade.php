@@ -1491,22 +1491,15 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
     if ($oldversion < 2026100610) {
         // Reference retention counts from the last time a proctored attempt used the photo. The
         // capture logs that would show it are themselves deleted after 180 days, so it is kept on
-        // the photo's own row. Existing rows start from the newest capture or the first use.
+        // the photo's own row. The history before this upgrade cannot be trusted - an earlier
+        // capture retention may already have removed the logs of recent use - so every existing
+        // photo starts its retention period now instead of being treated as long unused.
         $table = new xmldb_table('quizaccess_proctoring_user_images');
         $field = new xmldb_field('timelastused', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'timeused');
         if (!$dbman->field_exists($table, $field)) {
             $dbman->add_field($table, $field);
         }
-        $DB->execute(
-            "UPDATE {quizaccess_proctoring_user_images}
-                SET timelastused = COALESCE((SELECT MAX(l.timemodified)
-                                               FROM {quizaccess_proctoring_logs} l
-                                              WHERE l.userid = {quizaccess_proctoring_user_images}.user_id), 0)
-              WHERE timelastused = 0"
-        );
-        $DB->execute(
-            "UPDATE {quizaccess_proctoring_user_images} SET timelastused = timeused WHERE timeused > timelastused"
-        );
+        $DB->set_field_select('quizaccess_proctoring_user_images', 'timelastused', time(), 'timelastused = 0');
         upgrade_plugin_savepoint(true, 2026100610, 'quizaccess', 'proctoring');
     }
 
