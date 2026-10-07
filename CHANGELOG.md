@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.15 — 2026-10-07
+- **The audio factor is removed, not built (CPIT-486).** Nothing in TaView ever listened to the microphone during an attempt, so the factor could never score. Since CPIT-467 it showed as "Not available". It is now gone from scoring, the risk factor settings and the report, and its stored settings are removed on upgrade.
+- Audio flags are among the noisiest signals in proctoring: TVs, family, traffic, reading aloud, assistive technology. They would fall hardest on students who test in shared spaces, and recording audio would add another data stream to justify. If Student Affairs wants audio for specific high-stakes exams later, it should come back as review-only evidence with explicit consent.
+
 # v1.12.14 — 2026-10-07
 - **Screenshots: logged for context, not detected (CPIT-485).** A web page cannot reliably see a screenshot. The Snipping Tool (Win+Shift+S), the macOS shortcuts, the Game Bar, screen recorders and phone photos all happen outside the browser. The only thing a page sees is a PrintScreen key release, and only while the quiz has focus. That release is now logged as "PrintScreen key pressed" in the activity timeline for context. It scores no points and carries no screenshot.
 - Recommended instead: large randomised question pools, question rotation, and, if Student Affairs wants it, a watermark with the student's name on the exam page so that leaked screenshots can be traced. That would be a separate ticket.
