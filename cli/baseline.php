@@ -54,7 +54,16 @@ if ($options['apply-pilot-profile']) {
     foreach ($changes as $name => [$old, $new]) {
         cli_writeln("{$name}: '{$old}' -> '{$new}'");
     }
-    cli_writeln($changes ? 'Pilot profile applied.' : 'The pilot profile was already in place.');
+    cli_writeln($changes ? 'Pilot profile applied to the site settings.' : 'The site settings already match the pilot profile.');
+    $conflicts = \quizaccess_proctoring\local\baseline::pilot_conflicts();
+    if ($conflicts) {
+        cli_writeln('');
+        cli_writeln('These quizzes have their own settings, which win over the site settings, and stay off the pilot profile:');
+        foreach ($conflicts as $line) {
+            cli_writeln('  - ' . $line);
+        }
+        cli_writeln('Change them in each quiz\'s settings if they should follow the pilot.');
+    }
     exit(0);
 }
 

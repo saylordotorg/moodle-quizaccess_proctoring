@@ -31,6 +31,7 @@ defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/rule.php');
 
 /**
  * Baseline tests.
@@ -82,5 +83,13 @@ final class baseline_test extends advanced_testcase {
         $this->assertSame($critical, (int)get_config('quizaccess_proctoring', 'riskreviewthreshold'));
         $this->assertCount(2, $changes);
         $this->assertSame([], baseline::apply_pilot_profile());
+
+        // A quiz that keeps automatic failing is reported, not silently left off the pilot.
+        $course = $this->getDataGenerator()->create_course(['shortname' => 'BUS101']);
+        $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id, 'name' => 'Midterm']);
+        \quizaccess_proctoring::save_settings((object)['id' => $quiz->id, 'proctoringrequired' => 1, 'riskreviewmode' => 2]);
+        $conflicts = baseline::pilot_conflicts();
+        $this->assertCount(1, $conflicts);
+        $this->assertStringContainsString('BUS101, Midterm', $conflicts[0]);
     }
 }

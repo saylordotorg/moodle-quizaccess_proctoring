@@ -69,7 +69,7 @@ class baseline {
         $lines[] = '## What stops a student from starting';
         $lines[] = '';
         $lines[] = '- Privacy notice must be accepted: ' . self::onoff('privacynoticerequired', true);
-        $lines[] = '- Honesty statement must be accepted: ' . self::onoff('honorstatementrequired');
+        $lines[] = '- Honesty statement must be accepted: ' . self::onoff('honorstatementrequired', true);
         $lines[] = '- CAPTCHA before an attempt: ' . self::onoff('captchabeforeattemptenabled');
         $lines[] = '- Photo ID verification: ' . self::onoff('idverificationenabled') .
             '; face threshold ' . self::value('idverificationfacethreshold') .
@@ -77,7 +77,7 @@ class baseline {
             ', name mismatch blocks: ' . self::onoff('idverificationnameblocks');
         $lines[] = '- Face check against the reference photo before starting: ' . self::onoff('fcheckstartchk') .
             '; match threshold ' . self::value('threshold');
-        $lines[] = '- Entire screen must be shared: ' . self::onoff('requireentirescreen') .
+        $lines[] = '- Entire screen must be shared: ' . self::onoff('requireentirescreen', true) .
             '; screen marker required: ' . self::onoff('requirescreenmarker') .
             '; phones and tablets: ' . self::value('mobilescreensharemode');
         $lines[] = '- More than one monitor: mode ' . self::value('multimonitormode');
@@ -201,6 +201,9 @@ class baseline {
      * @return array<string, array{0: string, 1: string}> Setting => [old value, new value].
      */
     public static function apply_pilot_profile(): array {
+        global $CFG;
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+
         $critical = risk_calculator::get_level_boundaries()['critical'];
         $target = [
             'riskreviewenabled' => (string)QUIZACCESS_PROCTORING_RISK_ACTION_HOLD,
@@ -215,5 +218,35 @@ class baseline {
             }
         }
         return $changes;
+    }
+
+    /**
+     * Quizzes whose own settings keep them off the pilot profile: they fail attempts
+     * automatically, or hold them below Critical. Quiz settings win over the site's, so these are
+     * reported rather than changed: a teacher set them on purpose (CPIT-489 review).
+     *
+     * @return string[] One line per quiz.
+     */
+    public static function pilot_conflicts(): array {
+        global $DB;
+
+        $critical = risk_calculator::get_level_boundaries()['critical'];
+        $quizzes = $DB->get_records_sql(
+            "SELECT p.id, p.riskreviewmode, p.riskreviewthreshold, q.name AS quizname, c.shortname
+               FROM {quizaccess_proctoring} p
+               JOIN {quiz} q ON q.id = p.quizid
+               JOIN {course} c ON c.id = q.course
+              WHERE p.riskreviewmode = 2 OR (p.riskreviewthreshold <> -1 AND p.riskreviewthreshold < :critical)
+           ORDER BY c.shortname, q.name",
+            ['critical' => $critical]
+        );
+        $lines = [];
+        foreach ($quizzes as $quiz) {
+            $why = (int)$quiz->riskreviewmode === 2
+                ? 'fails high-risk attempts automatically'
+                : 'holds from risk score ' . (int)$quiz->riskreviewthreshold;
+            $lines[] = format_string($quiz->shortname) . ', ' . format_string($quiz->quizname) . ': ' . $why;
+        }
+        return $lines;
     }
 }
