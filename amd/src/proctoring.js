@@ -2328,9 +2328,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     if (leaving) {
                         request.args.capturedat = capturedat;
                         request.args.requestid = 'pause-' + capturedat + '-' + Math.random().toString(36).slice(2, 10);
-                        if (sendWhileLeaving(request)) {
-                            return;
-                        }
+                        // Also queued under the same request id: if the page stays (a cancelled leave)
+                        // and the keepalive request failed, the queue still delivers it, and the server
+                        // ingests one request id only once.
+                        sendWhileLeaving(request);
                     }
                     uploads.submit(request, capturedat);
                 };
@@ -2345,13 +2346,45 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     facePauseCanvas.getContext('2d').drawImage(video, 0, 0, facePauseCanvas.width, facePauseCanvas.height);
                     return facePauseCanvas.toDataURL('image/jpeg', 0.8);
                 };
-                const endFacePause = (reason) => {
+                // Ending a pause because the page is starting to go is a guess: the student can cancel
+                // at an "unsaved changes" prompt, or a later handler can stop the submit. So the end is
+                // sent at once, and the pause carries straight on as a continuation timed from that
+                // moment. The continuation is only logged (a start marked continued, then its end) if
+                // the page stays; if the page really goes, its few milliseconds are simply dropped. Its
+                // time adds to the same pause in the report; it is not another pause.
+                let facePauseContinuation = false;
+                const endFacePause = (reason, leaving) => {
                     if (!facePauseStartedAt) {
                         return;
                     }
                     const seconds = Math.max(0, Math.round((Date.now() - facePauseStartedAt) / 1000));
+                    if (facePauseContinuation) {
+                        logFacePause('face_missing_start', {reason: 'still_paused', continued: true}, '', leaving);
+                    }
+                    logFacePause('face_missing_end', {durationseconds: seconds, reason: reason}, '', leaving);
                     facePauseStartedAt = 0;
-                    logFacePause('face_missing_end', {durationseconds: seconds, reason: reason}, '', reason === 'page_left');
+                    facePauseContinuation = false;
+                };
+                const endFacePauseForLeaving = () => {
+                    // A submit is followed straight away by beforeunload; the continuation that the
+                    // first one began has nothing in it yet.
+                    if (!facePauseStartedAt || (facePauseContinuation && Date.now() - facePauseStartedAt < 2000)) {
+                        return;
+                    }
+                    endFacePause('page_left', true);
+                    facePauseStartedAt = Date.now();
+                    facePauseContinuation = true;
+                };
+                const endFacePauseOnPagehide = () => {
+                    if (facePauseContinuation && Date.now() - facePauseStartedAt < 2000) {
+                        // Ended a moment ago as the page began to go, and it did go.
+                        facePauseStartedAt = 0;
+                        facePauseContinuation = false;
+                        return;
+                    }
+                    // Either nothing ended the pause early, or the student spent a while at a leave
+                    // prompt before going: that time is logged too.
+                    endFacePause('page_left', true);
                 };
 
                 const setQuizBlurredForFace = (blurred) => {
@@ -2678,9 +2711,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     hideButtons();
                 }
 
+                // A pause still running when the page is left ends as the page starts to go: on a form
+                // submit, or before unload (which also covers the quiz timer's automatic submission).
+                // Both come before the server finishes the attempt; an end logged afterwards would
+                // be timestamped after the attempt finished and refused. pagehide is the last resort.
+                document.addEventListener('submit', endFacePauseForLeaving, true);
+                window.addEventListener('beforeunload', endFacePauseForLeaving, true);
                 window.addEventListener('pagehide', function() {
                     // A pause still running when the page is left ends here, before uploads stop.
-                    endFacePause('page_left');
+                    endFacePauseOnPagehide();
                     pageActive = false;
                     pageGeneration++;
                     uploads.suspend();

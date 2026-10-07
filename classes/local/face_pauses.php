@@ -60,18 +60,24 @@ final class face_pauses {
             '',
             'id, eventtype, eventdetail'
         );
+        $starts = 0;
         $ends = 0;
         foreach ($events as $event) {
+            $detail = json_decode((string)$event->eventdetail, true);
             if ($event->eventtype === 'face_missing_start') {
-                $totals['count']++;
+                $starts++;
+                // A continuation (the student cancelled leaving the page mid-pause) carries on the
+                // same pause: its time counts, but it is not another pause.
+                if (!is_array($detail) || empty($detail['continued'])) {
+                    $totals['count']++;
+                }
                 continue;
             }
             $ends++;
-            $detail = json_decode((string)$event->eventdetail, true);
             $seconds = is_array($detail) ? (int)($detail['durationseconds'] ?? 0) : 0;
             $totals['seconds'] += max(0, min(self::MAX_PAUSE_SECONDS, $seconds));
         }
-        $totals['open'] = max(0, $totals['count'] - $ends);
+        $totals['open'] = min($totals['count'], max(0, $starts - $ends));
         return $totals;
     }
 

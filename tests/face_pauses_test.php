@@ -62,6 +62,12 @@ final class face_pauses_test extends advanced_testcase {
         $totals = face_pauses::for_attempt($courseid, $cmid, $userid, $attemptid);
         $this->assertSame(['count' => 12, 'seconds' => 120, 'open' => 1], $totals);
 
+        // A continuation after a cancelled page leave adds time to its pause, not another pause.
+        $this->event($courseid, $cmid, $userid, $attemptid, 'face_missing_start', ['continued' => true]);
+        $this->event($courseid, $cmid, $userid, $attemptid, 'face_missing_end', ['durationseconds' => 30]);
+        $totals = face_pauses::for_attempt($courseid, $cmid, $userid, $attemptid);
+        $this->assertSame(['count' => 12, 'seconds' => 150, 'open' => 1], $totals);
+
         $summary = face_pauses::summary($courseid, $cmid, $userid, $attemptid);
         $this->assertStringContainsString('12', $summary);
         $this->assertStringContainsString(format_time(120), $summary);
