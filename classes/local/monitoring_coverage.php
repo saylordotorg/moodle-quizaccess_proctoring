@@ -40,6 +40,14 @@ final class monitoring_coverage {
     ];
 
     /**
+     * Events logged for context only (CPIT-485): shown in the activity timeline with the routine
+     * events, but never counted as suspicious anywhere (PR #55 review).
+     */
+    public const CONTEXT_EVENTS = [
+        'possible_screenshot',
+    ];
+
+    /**
      * Record the initial policy when Moodle creates a real, proctored attempt.
      *
      * Page-load fallbacks cannot establish a new screen collection policy for older attempts.

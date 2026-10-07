@@ -39,7 +39,13 @@ class activity_grouper {
     public const AWAY_END = ['focus_returned', 'tab_visible'];
 
     /** @var string[] Informational noise kept out of the episode list. */
-    public const ROUTINE = ['mouse_left_window', 'mouse_returned_window', 'monitor_detection_unavailable'];
+    public const ROUTINE = [
+        'mouse_left_window',
+        'mouse_returned_window',
+        'monitor_detection_unavailable',
+        // A PrintScreen key press is context, not a flagged event (CPIT-485, PR #55 review).
+        'possible_screenshot',
+    ];
 
     /** @var string[] Events that attach to a just-closed gap (e.g. pasting right after returning). */
     public const RETURN_FOLLOWUP = ['clipboard_paste', 'clipboard_copy', 'clipboard_cut', 'contextmenu'];

@@ -394,8 +394,12 @@ class send_daily_report_task extends scheduled_task {
         // (CPIT-465); one past its window goes at the next hourly run.
         $autoreleaseat = $activehold ? quizaccess_proctoring_risk_hold_auto_release_time($hold) : 0;
         $expiringsoon = $autoreleaseat > 0 && $autoreleaseat <= time() + self::EXPIRING_SOON;
+        // Context-only events are not suspicious either (CPIT-485, PR #55 review).
         [$neutralsql, $neutralparams] = $DB->get_in_or_equal(
-            \quizaccess_proctoring\local\monitoring_coverage::NEUTRAL_EVENTS,
+            array_merge(
+                \quizaccess_proctoring\local\monitoring_coverage::NEUTRAL_EVENTS,
+                \quizaccess_proctoring\local\monitoring_coverage::CONTEXT_EVENTS
+            ),
             SQL_PARAMS_NAMED,
             'neutral',
             false
