@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.17 — 2026-10-07
+- **A capture whose image is missing says so (CPIT-488).** Reviewers saw broken or "unavailable" images for some webcam captures. The per-student report now checks, in one query, which capture images are still stored. A missing one shows a placeholder with the reason instead of a broken image: either no image was received, or the file is no longer stored because it was deleted or its upload did not finish.
+- The cause of the captures Student Affairs saw still needs one affected attempt link, so the files and the server's response for those captures can be checked on learn.saylor.org.
+
 # v1.12.16 — 2026-10-07
 - **Supported browsers are stated where students start (CPIT-487).** The quiz page and the device-readiness page now say:
   - Chrome or Edge on a Windows or Mac computer is recommended, for full monitoring;

@@ -548,6 +548,56 @@ function quizaccess_proctoring_delete_pluginfile_url(string $url): void {
  * @return stored_file|null Stored file, or null when it cannot be resolved.
  */
 function quizaccess_proctoring_stored_file_from_pluginfile_url(string $url): ?stored_file {
+    $location = quizaccess_proctoring_parse_pluginfile_url($url);
+    if ($location === null) {
+        return null;
+    }
+    $fs = get_file_storage();
+    $file = $fs->get_file(...array_values($location));
+
+    return $file ?: null;
+}
+
+/**
+ * Which of these plugin file URLs no longer have a stored file (CPIT-488), in one query.
+ *
+ * @param string[] $urls Pluginfile URLs.
+ * @return array<string, true> The missing ones, keyed by URL. A URL that is not one of this
+ *     plugin's file URLs is not reported missing: it cannot be checked.
+ */
+function quizaccess_proctoring_missing_pluginfile_urls(array $urls): array {
+    global $DB;
+
+    $hashes = [];
+    foreach (array_unique($urls) as $url) {
+        $location = quizaccess_proctoring_parse_pluginfile_url((string)$url);
+        if ($location !== null) {
+            $hashes[file_storage::get_pathname_hash(...array_values($location))] = (string)$url;
+        }
+    }
+    $found = [];
+    foreach (array_chunk(array_keys($hashes), 500) as $chunk) {
+        [$insql, $params] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'pnh');
+        foreach ($DB->get_fieldset_select('files', 'pathnamehash', "pathnamehash {$insql}", $params) as $hash) {
+            $found[$hash] = true;
+        }
+    }
+    $missing = [];
+    foreach ($hashes as $hash => $url) {
+        if (!isset($found[$hash])) {
+            $missing[$url] = true;
+        }
+    }
+    return $missing;
+}
+
+/**
+ * Where a plugin file URL points: context, component, area, item, path and name.
+ *
+ * @param string $url Pluginfile URL.
+ * @return array|null [contextid, component, filearea, itemid, filepath, filename], or null.
+ */
+function quizaccess_proctoring_parse_pluginfile_url(string $url): ?array {
     $parts = parse_url(str_replace('&amp;', '&', $url));
     if (empty($parts['path'])) {
         return null;
@@ -586,10 +636,14 @@ function quizaccess_proctoring_stored_file_from_pluginfile_url(string $url): ?st
         return null;
     }
 
-    $fs = get_file_storage();
-    $file = $fs->get_file($contextid, $component, $filearea, $itemid, $filepath, $filename);
-
-    return $file ?: null;
+    return [
+        'contextid' => $contextid,
+        'component' => $component,
+        'filearea' => $filearea,
+        'itemid' => $itemid,
+        'filepath' => $filepath,
+        'filename' => $filename,
+    ];
 }
 
 /**

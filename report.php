@@ -983,6 +983,17 @@ if (
                 $row['timeshort'] = userdate((int)$info->timemodified, $timeformat);
                 $studentdata[] = $row;
         }
+        // A capture whose image is no longer stored gets a placeholder that says so, instead of a
+        // broken image (CPIT-488).
+        $missingimages = quizaccess_proctoring_missing_pluginfile_urls(array_column($studentdata, 'image_url'));
+        foreach ($studentdata as $index => $capture) {
+            if ((string)$capture['image_url'] === '') {
+                $studentdata[$index]['imagemissing'] = get_string('reportcaptures:noimage', 'quizaccess_proctoring');
+            } else if (isset($missingimages[$capture['image_url']])) {
+                $studentdata[$index]['imagemissing'] = get_string('reportcaptures:imagegone', 'quizaccess_proctoring');
+            }
+        }
+
         [$neutralsql, $neutralparams] = $DB->get_in_or_equal(
             \quizaccess_proctoring\local\monitoring_coverage::NEUTRAL_EVENTS,
             SQL_PARAMS_NAMED,

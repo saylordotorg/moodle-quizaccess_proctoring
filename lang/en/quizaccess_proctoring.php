@@ -1637,3 +1637,5 @@ $string['idvreset:done'] = 'The photo ID verification was reset. The student ver
 $string['idvreset:submit'] = 'Reset the verification';
 $string['supportedbrowsers'] = '<strong>Browsers:</strong> use Chrome or Edge on a Windows or Mac computer for full monitoring. Firefox works, without the check for a second monitor. Safari works but has had less testing: if your webcam stops during the exam, switch to Chrome or Edge. Phones and tablets are not recommended for proctored exams.';
 $string['identityrecheck:reset'] = 'Staff reset your photo ID verification for this quiz. Verify your photo ID again before starting.';
+$string['reportcaptures:imagegone'] = 'Image not available: the file is no longer stored. It may have been deleted, or its upload did not finish.';
+$string['reportcaptures:noimage'] = 'No image was received for this capture.';
