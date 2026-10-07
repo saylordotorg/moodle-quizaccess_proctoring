@@ -70,16 +70,17 @@ final class overall_report {
         if (is_siteadmin()) {
             return null;
         }
-        // Every quiz that has had proctoring set up, checked one by one: discovering courses by the
-        // capability first would miss a quiz where it is granted at quiz level only (CPIT-474 review).
+        // Every quiz, checked one by one. Discovering courses by the capability first would miss a
+        // quiz where it is granted at quiz level only, and keeping to quizzes proctored today would
+        // drop the holds and reports of one whose proctoring was later turned off (CPIT-474 review).
+        // The checks run on preloaded contexts, so a site with a few thousand quizzes stays fast.
         $cmids = [];
         $ctxfields = \context_helper::get_preload_record_columns_sql('ctx');
         $rs = $DB->get_recordset_sql(
             "SELECT cm.id, {$ctxfields}
                FROM {course_modules} cm
                JOIN {modules} m ON m.id = cm.module AND m.name = :quiz
-               JOIN {context} ctx ON ctx.instanceid = cm.id AND ctx.contextlevel = :level
-              WHERE EXISTS (SELECT 1 FROM {quizaccess_proctoring} p WHERE p.quizid = cm.instance)",
+               JOIN {context} ctx ON ctx.instanceid = cm.id AND ctx.contextlevel = :level",
             ['quiz' => 'quiz', 'level' => CONTEXT_MODULE]
         );
         foreach ($rs as $record) {
