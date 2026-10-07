@@ -152,7 +152,7 @@ final class retention_test extends advanced_testcase {
         }
 
         delete_user($student);
-        $this->runAdhocTasks(purge_deleted_user_task::class);
+        $this->run_purge();
 
         foreach (['quizaccess_proctoring_logs', 'quizaccess_proctoring_events'] as $table) {
             $this->assertFalse($DB->record_exists($table, ['userid' => $student->id]), $table);
@@ -186,7 +186,7 @@ final class retention_test extends advanced_testcase {
         }
 
         delete_user($student);
-        $this->runAdhocTasks(purge_deleted_user_task::class);
+        $this->run_purge();
 
         foreach (['quizaccess_proctoring_logs', 'quizaccess_proctoring_idv'] as $table) {
             $this->assertFalse($DB->record_exists($table, ['userid' => $student->id]), $table);
@@ -210,6 +210,18 @@ final class retention_test extends advanced_testcase {
             'courseid' => 1, 'quizid' => $cmid, 'userid' => $userid, 'attemptid' => $attemptid,
             'status' => 'pass', 'timecreated' => $time, 'timemodified' => $time,
         ]);
+    }
+
+    /**
+     * Run the queued account-deletion purge, discarding its progress output.
+     */
+    private function run_purge(): void {
+        ob_start();
+        try {
+            $this->runAdhocTasks(purge_deleted_user_task::class);
+        } finally {
+            ob_end_clean();
+        }
     }
 
     /**
