@@ -1742,6 +1742,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 // The photo last sent for checking, so a first-time student can confirm it as their
                 // reference photo without taking another one (CPIT-476).
                 let lastFaceCapture = null;
+                // The capture shown for confirmation: "Use this photo" keeps exactly this one.
+                let pendingConfirmCapture = null;
+                // One capture at a time, so a second click cannot replace the photo being reviewed.
+                let faceCaptureBusy = false;
 
                 const submitFaceValidation = function(webcamPicture, faceImage, faceFound, confirmReference = false) {
                     const courseidInput = document.getElementById('courseidval');
@@ -1827,11 +1831,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     const text = document.getElementById('proctoring-reference-confirm-text');
                     const validateButton = document.getElementById('fcvalidate');
                     if (!box || !image || !lastFaceCapture) {
-                        // No confirmation markup on the page: keep the photo as before.
-                        confirmReferencePhoto();
+                        // Never keep a photo the student has not seen: ask for another capture.
+                        setFaceValidationAction(strings.facequalityfailed);
                         return;
                     }
-                    image.setAttribute('src', lastFaceCapture.webcamPicture);
+                    pendingConfirmCapture = lastFaceCapture;
+                    image.setAttribute('src', pendingConfirmCapture.webcamPicture);
                     if (text) {
                         text.textContent = message;
                     }
@@ -1853,17 +1858,20 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 };
 
                 const confirmReferencePhoto = async function() {
-                    if (!lastFaceCapture) {
+                    const capture = pendingConfirmCapture;
+                    if (!capture || faceCaptureBusy) {
                         return false;
                     }
+                    faceCaptureBusy = true;
+                    pendingConfirmCapture = null;
                     hideReferenceConfirm();
                     setFaceValidationPending();
                     setFaceValidationSpinner(true);
                     try {
                         const res = await submitFaceValidation(
-                            lastFaceCapture.webcamPicture,
-                            lastFaceCapture.faceImage,
-                            lastFaceCapture.faceFound,
+                            capture.webcamPicture,
+                            capture.faceImage,
+                            capture.faceFound,
                             true
                         );
                         return applyFaceValidationResponse(res);
@@ -1872,6 +1880,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         setFaceValidationAction(strings.facequalityfailed);
                         Notification.exception(error);
                         return false;
+                    } finally {
+                        faceCaptureBusy = false;
                     }
                 };
 
@@ -1883,6 +1893,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     event.preventDefault();
                     hideReferenceConfirm();
                     lastFaceCapture = null;
+                    pendingConfirmCapture = null;
                     $('#fcvalidate').trigger('click');
                 });
 
@@ -1891,11 +1902,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         return true;
                     }
 
-                    lastFaceCapture = {webcamPicture, faceImage, faceFound};
+                    const capture = {webcamPicture, faceImage, faceFound};
+                    lastFaceCapture = capture;
                     setFaceValidationPending();
                     setFaceValidationSpinner(true);
                     try {
                         const res = await submitFaceValidation(webcamPicture, faceImage, faceFound);
+                        if (lastFaceCapture !== capture) {
+                            // A newer capture was taken meanwhile; its own response decides.
+                            return false;
+                        }
                         return applyFaceValidationResponse(res);
                     } catch (error) {
                         setFaceValidationSpinner(false);
@@ -3005,7 +3021,20 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 $("#fcvalidate").click(async function(event) {
 
                     event.preventDefault();
+                    if (faceCaptureBusy) {
+                        return;
+                    }
+                    faceCaptureBusy = true;
+                    try {
+                        await captureFaceForValidation();
+                    } finally {
+                        faceCaptureBusy = false;
+                    }
+                });
+
+                const captureFaceForValidation = async function() {
                     setFaceValidationPending();
+                    pendingConfirmCapture = null;
                     hideReferenceConfirm();
                     // A first-time student gets a moment to settle before their reference photo is
                     // taken (CPIT-476).
@@ -3047,8 +3076,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         faceImage = detection.faceImage;
                     }
                     await validateFacePreflightImage(data, faceImage, faceFound);
-
-                });
+                };
 
                 return true;
             }
