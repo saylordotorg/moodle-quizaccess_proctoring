@@ -582,6 +582,18 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let multiFaceLastLogged = 0;
             let multiFaceChecking = false;
             let webcamEvidenceFrame = '';
+            // Repeated captures while away (CPIT-471): one absence shares a key with its leave events.
+            const awayCaptureIntervalMs = Math.min(120, Math.max(5, parseInt(props.awaycaptureinterval, 10) || 15)) * 1000;
+            const awayCaptureMax = Math.min(30, Math.max(0, parseInt(props.awaycapturemax === undefined ? 10 : props.awaycapturemax,
+                10) || 0));
+            let awayKey = '';
+            let awayStartedMs = 0;
+            let awayCaptureCount = 0;
+            let awayCaptureTimer = null;
+            let awayEvidenceFrame = '';
+            // Events whose attached frame must show the screen at the time, not a cached frame.
+            const freshFrameEvents = ['possible_ai_tool', 'screen_marker_missing'];
+            const freshFrameMaxAgeMs = 2000;
             const activeAttemptWarnings = {};
             const attemptWarningTimers = {};
             const markerToken = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -868,14 +880,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             const awayCaptureMinLeadMs = 1000;
             const pendingAwayCaptures = new Set();
 
-            const grabSharedScreenFrame = async function(eventMs) {
+            const grabSharedScreenFrame = async function(eventMs, notBeforeMs) {
                 if (!monitoringActive || !screenReady) {
                     return '';
                 }
                 if (screenMonitorClient) {
                     // Ask the helper for a new frame and accept only one taken after the switch
-                    // (or after the request, when the student came straight back).
-                    const notBefore = Math.min(captureClock(), eventMs + awayCaptureMinLeadMs);
+                    // (or after the request, when the student came straight back), or, when given,
+                    // one no older than notBeforeMs.
+                    const notBefore = notBeforeMs !== undefined ? notBeforeMs :
+                        Math.min(captureClock(), eventMs + awayCaptureMinLeadMs);
                     screenMonitorClient.getLatestScreenshot();
                     const started = Date.now();
                     while (Date.now() - started < awayCaptureTimeoutMs) {
@@ -939,6 +953,67 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         pending.abandon();
                     }
                 });
+            };
+
+            // Why no desktop frame could be attached, for the report (CPIT-471).
+            const captureMissingReason = function() {
+                if (!screenReady) {
+                    return screenMonitorClient ? 'helper_closed' : 'share_stopped';
+                }
+                return 'no_fresh_frame';
+            };
+
+            // While the student is away, capture the shared screen every so often, up to a limit,
+            // so a long absence shows what happened rather than one frame. Each capture carries the
+            // absence's key, which its leave events carry too.
+            const stopAwayCaptures = function() {
+                if (awayCaptureTimer) {
+                    window.clearInterval(awayCaptureTimer);
+                    awayCaptureTimer = null;
+                }
+                awayKey = '';
+                awayStartedMs = 0;
+                awayCaptureCount = 0;
+            };
+            const captureWhileAway = async function() {
+                if (!monitoringActive || !awayKey || awayCaptureCount >= awayCaptureMax) {
+                    if (awayCaptureTimer && awayCaptureCount >= awayCaptureMax) {
+                        window.clearInterval(awayCaptureTimer);
+                        awayCaptureTimer = null;
+                    }
+                    return;
+                }
+                const key = awayKey;
+                awayCaptureCount++;
+                const sequence = awayCaptureCount;
+                const frame = screenReady ? await grabSharedScreenFrame(captureClock(), captureClock() - freshFrameMaxAgeMs)
+                    .catch(() => '') : '';
+                if (!monitoringActive || key !== awayKey) {
+                    return;
+                }
+                const capture = {
+                    awaykey: key,
+                    sequence: sequence,
+                    awayseconds: Math.round((Date.now() - awayStartedMs) / 1000)
+                };
+                if (!frame) {
+                    capture.capturemissing = captureMissingReason();
+                }
+                awayEvidenceFrame = frame || '';
+                logEvent('away_capture', capture);
+                awayEvidenceFrame = '';
+            };
+            const startAwayCaptures = function() {
+                if (awayKey) {
+                    return awayKey;
+                }
+                awayKey = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+                awayStartedMs = Date.now();
+                awayCaptureCount = 0;
+                if (captureDesktop && awayCaptureMax > 0) {
+                    awayCaptureTimer = window.setInterval(captureWhileAway, awayCaptureIntervalMs);
+                }
+                return awayKey;
             };
 
             const drawScreenFrame = function() {
@@ -1703,6 +1778,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (!monitorActivity && !(blockClipboard && clipboardEvents.includes(eventType)) &&
                         !(coverageScreens && eventType === 'screen_capture') &&
                         !(captureDesktop && screenShareEvents.includes(eventType)) &&
+                        !(captureDesktop && eventType === 'away_capture') &&
                         !(monitorDetectionEnabled && multiMonitorEvents.includes(eventType)) &&
                         !(monitorMouseActivity && mouseEvents.includes(eventType)) &&
                         !(detectPhone && ['phone_detected', 'phone_detection_started'].includes(eventType)) &&
@@ -1730,7 +1806,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     pagevisibility: document.visibilityState || '',
                     currenturl: window.location.href,
                     screenshot: eventType === 'phone_detected' ? phoneEvidenceFrame
-                        : (eventType === 'multiple_faces_detected' ? webcamEvidenceFrame : captureDesktopFrame(eventType))
+                        : (eventType === 'multiple_faces_detected' ? webcamEvidenceFrame
+                            : (eventType === 'away_capture' ? awayEvidenceFrame : captureDesktopFrame(eventType)))
                 };
                 let capturedat = Math.floor(captureClock() / 1000);
                 if (eventType === 'screen_capture') {
@@ -1749,18 +1826,39 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     methodname: 'quizaccess_proctoring_log_event',
                     args: args
                 };
-                if (awayCaptureEvents.includes(eventType) && args.screenshot) {
+                const withMissingReason = function(extra) {
+                    // A desktop capture was expected but none is attached: say why (CPIT-471).
+                    const missing = captureDesktop && eventType !== 'away_capture' && desktopCaptureEvents.includes(eventType) &&
+                        !args.screenshot ? captureMissingReason() : '';
+                    args.eventdetail = JSON.stringify(Object.assign({}, detail || {}, extra || {},
+                        missing ? {capturemissing: missing} : {}));
+                };
+                if (awayCaptureEvents.includes(eventType) && captureDesktop && screenReady) {
                     // Keep the event's own time; only the attached frame comes from after the switch.
+                    // Tried even when the event itself had no frame, which used to leave it with none.
                     const eventFrame = args.screenshot;
                     captureAwayFrame(captureClock()).then(function(awayFrame) {
                         args.screenshot = awayFrame || eventFrame;
-                        args.eventdetail = JSON.stringify(Object.assign({}, detail || {}, {
-                            screenshottiming: awayFrame ? 'after_leaving' : 'at_event'
-                        }));
+                        withMissingReason(args.screenshot ? {screenshottiming: awayFrame ? 'after_leaving' : 'at_event'} : {});
                         uploads.submit(request, capturedat);
                     });
                     return;
                 }
+                if (freshFrameEvents.includes(eventType) && captureDesktop && screenReady && screenMonitorClient) {
+                    // The helper's cached frame can be seconds old: ask for one taken at the event.
+                    const eventMs = captureClock();
+                    grabSharedScreenFrame(eventMs, eventMs - freshFrameMaxAgeMs).then(function(frame) {
+                        args.screenshot = frame || '';
+                        withMissingReason(frame ? {screenshottiming: 'fresh'} : {});
+                        uploads.submit(request, capturedat);
+                    }, function() {
+                        args.screenshot = '';
+                        withMissingReason({});
+                        uploads.submit(request, capturedat);
+                    });
+                    return;
+                }
+                withMissingReason({});
                 uploads.submit(request, capturedat);
             };
 
@@ -1937,10 +2035,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     if (document.visibilityState === 'hidden') {
                         hiddenStarted = Date.now();
                         logEvent('tab_hidden', {
+                            awaykey: startAwayCaptures(),
                             reason: 'document_hidden',
                             note: 'Quiz tab was hidden. This can indicate tab switching or opening another browser surface.'
                         });
                     } else if (document.visibilityState === 'visible') {
+                        if (document.hasFocus()) {
+                            stopAwayCaptures();
+                        }
                         logEvent('tab_visible', {
                             reason: 'document_visible',
                             hiddenms: hiddenStarted ? Date.now() - hiddenStarted : 0
@@ -1955,6 +2057,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                     focusLostSince = Date.now();
                     logEvent('focus_lost', {
+                        awaykey: startAwayCaptures(),
                         reason: 'window_blur'
                     });
                 }, true);
@@ -1962,6 +2065,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 window.addEventListener('focus', function() {
                     // Back already: the frame at the moment of return is the closest to where they went.
                     settleAwayCaptures(true);
+                    stopAwayCaptures();
                     if (focusLostSince) {
                         setAttemptWarning('quiznotinview', strings.attemptwarningquiznotinview, 'warning', 12000);
                     }
@@ -2164,6 +2268,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     latestDesktopTime = 0;
                     phoneEvidenceFrame = '';
                     webcamEvidenceFrame = '';
+                    awayEvidenceFrame = '';
+                    stopAwayCaptures();
                     multiFaceConsecutive = 0;
                     if (phoneCanvas) {
                         phoneCanvas.width = 0;

@@ -704,6 +704,22 @@ if ($canmanageproctoring) {
         0
     ));
 
+    // Repeated desktop captures while the student is away from the quiz (CPIT-471).
+    $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/awaycaptureinterval',
+        get_string('setting:awaycaptureinterval', 'quizaccess_proctoring'),
+        get_string('setting:awaycaptureinterval_desc', 'quizaccess_proctoring'),
+        15,
+        PARAM_INT
+    ));
+    $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/awaycapturemax',
+        get_string('setting:awaycapturemax', 'quizaccess_proctoring'),
+        get_string('setting:awaycapturemax_desc', 'quizaccess_proctoring'),
+        10,
+        PARAM_INT
+    ));
+
     $settings->add(new admin_setting_configselect(
         'quizaccess_proctoring/mobilescreensharemode',
         get_string('setting:mobilescreensharemode', 'quizaccess_proctoring'),

@@ -2239,6 +2239,12 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->coveragescreens = !empty($record->captureviolationdesktop) &&
                 (int)get_config('quizaccess_proctoring', 'monitoringcoveragescreens') === 1 ? 1 : 0;
             $record->multimonitormode = self::multi_monitor_mode();
+            // While the student is away from the quiz, the shared screen is captured every so often,
+            // up to a limit per absence, so a long absence is not one frame of evidence (CPIT-471).
+            $awayinterval = (int)(get_config('quizaccess_proctoring', 'awaycaptureinterval') ?: 15);
+            $record->awaycaptureinterval = max(5, min(120, $awayinterval));
+            $awaymax = get_config('quizaccess_proctoring', 'awaycapturemax');
+            $record->awaycapturemax = max(0, min(30, $awaymax === false || $awaymax === '' ? 10 : (int)$awaymax));
             // Log and Warn are explicit "allow extra monitors" policies, so they win
             // over the blur checkbox: the blur enforcement only runs when the mode is
             // Block (belt and braces) or Off (blur as the sole enforcement).
