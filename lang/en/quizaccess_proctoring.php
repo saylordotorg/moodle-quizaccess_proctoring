@@ -757,6 +757,7 @@ $string['privacynotice:item_eventlogs'] = 'Proctoring event logs, timestamps, ri
 $string['privacynotice:item_idverification'] = 'Government or institutional ID image, back ID image when required, live selfie image, extracted ID name, and identity verification result when ID verification is required.';
 $string['privacynotice:item_monitors'] = 'Multi-monitor detection status when supported by the browser.';
 $string['privacynotice:item_mouse'] = 'Desktop mouse or pointer leave and return activity during the attempt.';
+$string['privacynotice:item_multiplefaces'] = 'Automatic counting of the faces in your webcam image during the attempt, done in your browser, to flag another person who stays in view; the flagged webcam frame is stored as evidence for a person to review.';
 $string['privacynotice:item_phonedetection'] = 'Automatic object detection on webcam images to flag a visible mobile phone, with the flagged webcam frame stored as evidence.';
 $string['privacynotice:item_riskreview'] = 'High-risk review status, automatic-failure or grade/certificate hold status, and retake lockout status when configured.';
 $string['privacynotice:item_webcam'] = 'Webcam images, reference face image, face match status, and face quality checks.';

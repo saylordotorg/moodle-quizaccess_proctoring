@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - The report treats it like phone detection. It reads as checked only when the browser reports that the face count started; otherwise it is listed as not monitored. On the risk factor settings page, the factor is no longer labelled "Not available".
 - The browser reports that the face count started only after its first successful check of a webcam frame, so a loaded model with no camera still reads as not monitored. Phone detection now reports the same way. Before, it reported as soon as its model loaded.
 - When AI review of desktop events is on, a multiple-face frame is reviewed with a webcam-specific prompt (is a second person present and helping?), not the desktop-screenshot prompt.
+- With the setting on, the students' privacy checklist lists the face count and the stored frame. On a site set to fail attempts automatically, the reports page no longer says nothing can wait for review, since a multiple-face attempt can now be held.
 - Not included: a second-face count from the face-match service. That service compares only the periodic captures, 30 seconds apart, so it could not tell a walk-past from someone sitting in view. With its current settings, it would also never report an unmatched face.
 
 # v1.11.6 — 2026-10-06

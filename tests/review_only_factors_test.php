@@ -59,6 +59,30 @@ final class review_only_factors_test extends advanced_testcase {
     }
 
     /**
+     * An auto-fail-only site has a review queue once a review-only detector can hold attempts.
+     *
+     * @covers ::quizaccess_proctoring_risk_hold_reachability
+     */
+    public function test_auto_fail_sites_can_reach_holds_through_review_only_factors(): void {
+        global $CFG;
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+
+        $this->resetAfterTest();
+        set_config('riskreviewenabled', QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL, 'quizaccess_proctoring');
+        set_config('cheatinglockoutenabled', 0, 'quizaccess_proctoring');
+
+        set_config('detectmultiplefaces', 0, 'quizaccess_proctoring');
+        $this->assertSame('autofailonly', quizaccess_proctoring_risk_hold_reachability());
+
+        set_config('detectmultiplefaces', 1, 'quizaccess_proctoring');
+        $this->assertSame('reachable', quizaccess_proctoring_risk_hold_reachability());
+
+        // With the factor itself switched off it adds no points, so it can hold nothing.
+        set_config('riskfactor_multiplefaces_enabled', 0, 'quizaccess_proctoring');
+        $this->assertSame('autofailonly', quizaccess_proctoring_risk_hold_reachability());
+    }
+
+    /**
      * The automatic-failure score is capped exactly like the score it is compared against.
      */
     public function test_the_automatic_failure_score_follows_the_score_cap(): void {

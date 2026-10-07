@@ -850,8 +850,21 @@ function quizaccess_proctoring_risk_hold_reachability(): string {
 
     $autofailreachable = $siteaction === QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL
         || $DB->record_exists('quizaccess_proctoring', ['riskreviewmode' => QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL]);
+    if (!$autofailreachable) {
+        return 'off';
+    }
 
-    return $autofailreachable ? 'autofailonly' : 'off';
+    // Review-only evidence never fails an attempt automatically: when it is what takes an
+    // attempt over the threshold, auto-fail mode holds the attempt for a reviewer instead
+    // (CPIT-468), so the review queue is reachable whenever such a detector is running.
+    if (
+        (int)get_config('quizaccess_proctoring', 'detectmultiplefaces') === 1
+        && \quizaccess_proctoring\local\risk_calculator::factor_enabled('multiplefaces')
+    ) {
+        return 'reachable';
+    }
+
+    return 'autofailonly';
 }
 
 /**
