@@ -32,6 +32,8 @@ test('evaluates arithmetic with precedence, parentheses and unary minus', () => 
     assert.strictEqual(calc.evaluate('−3+5'), 2);
     assert.strictEqual(calc.evaluate('-(2-5)*2'), 6);
     assert.strictEqual(calc.format(calc.evaluate('0.1+0.2')), '0.3');
+    // A result shown in exponent form can be used again.
+    assert.strictEqual(calc.format(calc.evaluate(calc.format(calc.evaluate('1/10000000')) + '*10')), '0.000001');
 });
 
 test('rejects anything that is not arithmetic, without evaluating it', () => {
