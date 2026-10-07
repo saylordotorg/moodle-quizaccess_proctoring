@@ -67,7 +67,7 @@ final class name_variants_test extends advanced_testcase {
         $this->assertContains('Ivan Petrov', $this->variants('Иван', 'Петров'));
         $this->assertNotEmpty(array_filter(
             $this->variants('محمد', 'علي'),
-            fn($variant) => preg_match('/^[A-Za-z\' -]+$/', $variant)
+            fn($variant) => preg_match('/^[\p{Latin}\' -]+$/u', $variant)
         ));
     }
 

@@ -2005,8 +2005,11 @@ class quizaccess_proctoring_external extends external_api {
         if (!is_string($latin)) {
             return '';
         }
+        // Keep Latin letters and spaces only: ICU leaves marks such as the ayn (ʿ) of romanised
+        // Arabic, which no ID text reader returns.
+        $latin = preg_replace('/[^\p{Latin}\s\'-]+/u', '', $latin);
         $latin = trim(preg_replace('/\s+/u', ' ', $latin));
-        return preg_match('/^[\p{Latin}\p{Common}\p{Inherited}]+$/u', $latin) ? $latin : '';
+        return preg_match('/\p{Latin}/u', $latin) ? $latin : '';
     }
 
     /**
