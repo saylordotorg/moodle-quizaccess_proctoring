@@ -43,7 +43,7 @@ define([], function() {
         },
         {
             title: 'AI tools & copying',
-            desc: 'The signals most associated with AI-assisted cheating.',
+            desc: 'Signals on the exam page only: AI used in another window, app or device is not detected.',
             factors: ['aitool', 'aitoolscreenshot', 'clipboard'],
         },
         {
@@ -391,8 +391,8 @@ define([], function() {
         screenshare: 'Screen sharing stopped or wrong screen shared',
         multimonitor: 'Extra monitor detected',
         tabactivity: 'Switched away from the exam',
-        aitool: 'Possible AI tool in use',
-        aitoolscreenshot: 'AI panel captured on screen',
+        aitool: 'Possible AI tool: side panel or AI link on the exam page',
+        aitoolscreenshot: 'Desktop captures at a possible AI tool',
         clipboard: 'Copying, pasting or right-clicking',
         f12: 'Developer tools opened (F12)',
         shortcut: 'Other monitored shortcuts',
@@ -417,10 +417,12 @@ define([], function() {
         multimonitor: 'A second screen was connected — it can show notes or another person’s help. Only Chrome and Edge '
             + 'can report this; other browsers show as not monitored.',
         tabactivity: 'The exam window lost focus — often looking something up. Common and usually brief, '
-            + 'so it scores low per event.',
-        aitool: 'Activity matched a known AI chat tool (like ChatGPT) during the exam.',
-        aitoolscreenshot: 'A desktop capture actually shows an AI tool open — stronger evidence than the '
-            + 'signal above.',
+            + 'so it scores low per event. AI used in another window or app shows up only as time away: '
+            + 'check the desktop captures taken while the student was away.',
+        aitool: 'A side panel opened beside the quiz, or an AI link on the exam page was clicked. A side panel may '
+            + 'also be bookmarks or developer tools, so treat it as a reason to look, not as proof.',
+        aitoolscreenshot: 'A desktop capture was taken when a side panel or an AI link was seen. Look at the '
+            + 'capture to see what was actually on screen.',
         clipboard: 'The student copied question text or pasted something into an answer.',
         f12: 'Developer tools can reveal answers hidden in the page or disable monitoring.',
         shortcut: 'Other watched key combinations, like screenshots or window switching.',
