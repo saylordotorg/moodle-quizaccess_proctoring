@@ -88,4 +88,50 @@ final class rule_description_webservice_test extends advanced_testcase {
         $this->assertSame(get_string('proctoringheader', 'quizaccess_proctoring'), $messages[0]);
         $this->assertStringContainsString('<form', $messages[1]);
     }
+
+    /**
+     * The site's launch instructions appear above the start button, and as plain text in the app (CPIT-478).
+     */
+    public function test_launch_instructions_are_shown(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        set_config('launchinstructions', '<p>Have your <strong>photo ID</strong> ready.</p>', 'quizaccess_proctoring');
+        $quizobj = $this->create_quizobj();
+
+        $messages = (new \quizaccess_proctoring($quizobj, time()))->description();
+        $this->assertStringContainsString('<strong>photo ID</strong>', $messages[1]);
+        $this->assertStringContainsString('<form', $messages[2]);
+
+        $rule = new class ($quizobj, time()) extends \quizaccess_proctoring {
+            protected function is_web_service_request(): bool {
+                return true;
+            }
+        };
+        $messages = $rule->description();
+        $this->assertCount(2, $messages);
+        $this->assertSame($messages[1], validate_param($messages[1], PARAM_TEXT));
+        $this->assertStringContainsStringIgnoringCase('photo ID', $messages[1]);
+    }
+
+    /**
+     * Each step links its own help page and the general support page when they are set (CPIT-478).
+     */
+    public function test_step_help_links(): void {
+        $this->resetAfterTest();
+        $heading = new \ReflectionMethod(\quizaccess_proctoring::class, 'make_preflight_step_heading');
+        $heading->setAccessible(true);
+
+        $html = $heading->invoke(null, 'Photo ID', 'Upload it.', 'idrequirementsurl', 'help:idrequirements');
+        $this->assertStringNotContainsString('<a ', $html);
+
+        set_config('idrequirementsurl', 'https://support.example.org/photo-id', 'quizaccess_proctoring');
+        set_config('supporturl', 'https://support.example.org/', 'quizaccess_proctoring');
+        $html = $heading->invoke(null, 'Photo ID', 'Upload it.', 'idrequirementsurl', 'help:idrequirements');
+        $this->assertStringContainsString('https://support.example.org/photo-id', $html);
+        $this->assertStringContainsString(get_string('help:support', 'quizaccess_proctoring'), $html);
+
+        $html = $heading->invoke(null, 'Webcam', 'Look at the camera.');
+        $this->assertStringNotContainsString('photo-id', $html);
+        $this->assertStringContainsString(get_string('help:support', 'quizaccess_proctoring'), $html);
+    }
 }

@@ -306,6 +306,24 @@ if ($canmanageproctoring) {
         PARAM_URL
     ));
 
+    // Saylor's own wording and help pages for students, set here rather than through language
+    // customisation (CPIT-478). Each is empty by default, which shows nothing.
+    $settings->add(new admin_setting_confightmleditor(
+        'quizaccess_proctoring/launchinstructions',
+        get_string('setting:launchinstructions', 'quizaccess_proctoring'),
+        get_string('setting:launchinstructions_desc', 'quizaccess_proctoring'),
+        ''
+    ));
+    foreach (['idrequirementsurl', 'screensharehelpurl', 'supporturl'] as $helpsetting) {
+        $settings->add(new admin_setting_configtext(
+            'quizaccess_proctoring/' . $helpsetting,
+            get_string('setting:' . $helpsetting, 'quizaccess_proctoring'),
+            get_string('setting:' . $helpsetting . '_desc', 'quizaccess_proctoring'),
+            '',
+            PARAM_URL
+        ));
+    }
+
     $settings->add(new admin_setting_configcheckbox(
         'quizaccess_proctoring/privacynoticerequired',
         get_string('setting:privacynoticerequired', 'quizaccess_proctoring'),

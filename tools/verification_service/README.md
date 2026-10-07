@@ -116,15 +116,16 @@ The checked-in source has changed since then. Later dev deployments, newest firs
 
 | Deployed | Dev function version (alias `dev`) | Change | Source SHA-256 | AWS `CodeSha256` |
 | --- | --- | --- | --- | --- |
+| 2026-10-07 | `4` | CPIT-477: names compared in every script; `name_match_reason` and `name_readable`. ZIP holds `lambda_function.py` and `name_matching.py` | `lambda_function.py` `5f1531b5415b291a1c452a67a362d022814f3c5c8970b99bc088fda1bcc2fbc3`, `name_matching.py` `e7ab99c3d3c42ef153d4f40c91e883de846140ff74fd041c996d570bfa9c7833` | `uP/pD9rLv1F6vcYq0x3fWLrgH187uZF6AwM/ztm5a3Y=` |
 | 2026-10-06 | `3` | CPIT-469: `reason: no_face_in_capture`; similarity returned on a non-match | `5c6b1ef23bbffc4aef0a3ddae0a8bd54f1a1ff82a4fd8cc87267aba79d9b3d99` | `7x4Z3rz6xdccxKQOCO9osdp2IwBmSpU6k+VLfkGGjko=` |
 | 2026-10-02 | `2` | CPIT-453: `reason: reference_no_face` | `2fb65bad836a291eceafe44d09ca4ab446a712324458e1204934e375f16a6793` | `Hp+JemfZbzuqIx2ppmL3z6JW5vW3OXfCGcfUgt1zbaI=` |
 
-Version 2's source was checked byte for byte against the source before CPIT-469, and version 3's ZIP holds only `lambda_function.py` from this directory. The previous version is kept for rollback (`update-alias --function-version`). The production function `moodle-proctoring-face-verify` is separate and has not been updated with these changes.
+Version 2's source was checked byte for byte against the source before CPIT-469, and version 3's ZIP holds only `lambda_function.py` from this directory. Version 4's ZIP holds `lambda_function.py` and `name_matching.py` from this directory as merged for 1.12.6. The previous version is kept for rollback (`update-alias --function-version`). The production function `moodle-proctoring-face-verify` is separate and has not been updated with these changes.
 
 Compute the source hash from this directory:
 
 ```sh
-python -B -c "import hashlib, pathlib; print(hashlib.sha256(pathlib.Path('lambda_function.py').read_bytes()).hexdigest())"
+python -B -c "import hashlib, pathlib; [print(n, hashlib.sha256(pathlib.Path(n).read_bytes()).hexdigest()) for n in ('lambda_function.py', 'name_matching.py')]"
 ```
 
 Compare it with the source SHA-256 recorded for the deployment you want to check.
