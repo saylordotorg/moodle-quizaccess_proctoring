@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.13 — 2026-10-07
+- **Phone detection no longer fails silently (CPIT-484).** It needs TensorFlow.js and the COCO-SSD model in `thirdpartylibs/objectdetect`, which the plugin does not ship. Without them it did nothing, even when switched on. The settings page now shows **Phone detection model: Installed / Not installed** under the switch (installed means the libraries, the model and every weight file it names), and says what it can and cannot see: a phone held up in view, not one below the desk. The report already shows phone detection as not monitored when it did not run (CPIT-467).
+- Installing the model files for a pilot on dev is a separate decision: about 12 MB of Apache-2.0 third-party code, either bundled in the plugin or deployed alongside it. With the files in place, pilot on 20+ test sessions before considering learn.saylor.org. Keep the factor low weight (12 points, cap 24) and for review only.
+
 # v1.12.12 — 2026-10-07
 - **The AI-tool factor says what it detects (CPIT-483).** It is now "Possible AI tool: side panel or AI link on the exam page". A side panel is inferred from the window shrinking, so it may also be bookmarks or developer tools; the description says to treat it as a reason to look, not as proof. Its description says that it only sees the exam page in this browser: AI used in another window, another app or on another device is not detected. No browser-based tool can detect that reliably. The description points reviewers to the evidence that does exist: the desktop captures taken while the student was away from the quiz (CPIT-471), and the time away. The tab/focus factor's description says the same, and the AI review settings use the same wording.
 - The other parts of the ticket were already done or are not code:

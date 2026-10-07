@@ -113,6 +113,43 @@ function quizaccess_proctoring_return_to_attempt(stdClass $hold, string $notice)
 }
 
 /**
+ * Whether the phone-detection libraries and model are installed (CPIT-484).
+ *
+ * Phone detection runs TensorFlow.js COCO-SSD in the browser from files in
+ * thirdpartylibs/objectdetect, which the plugin does not ship. Without them the setting has no
+ * effect, so the settings page says so instead of failing silently. Every weight shard the model
+ * manifest names must be there too: a partial copy would otherwise report ready and then fail to
+ * load in the browser (PR #54 review).
+ *
+ * @param string|null $dir The objectdetect directory; the plugin's own by default.
+ * @return bool
+ */
+function quizaccess_proctoring_phone_detection_ready(?string $dir = null): bool {
+    global $CFG;
+    $dir = $dir ?? $CFG->dirroot . '/mod/quiz/accessrule/proctoring/thirdpartylibs/objectdetect';
+    if (!is_file($dir . '/tf.min.js') || !is_file($dir . '/coco-ssd.min.js') || !is_file($dir . '/model/model.json')) {
+        return false;
+    }
+    $model = json_decode((string)file_get_contents($dir . '/model/model.json'), true);
+    $groups = is_array($model) ? ($model['weightsManifest'] ?? null) : null;
+    if (!is_array($groups) || !$groups) {
+        return false;
+    }
+    $shards = 0;
+    foreach ($groups as $group) {
+        foreach ((is_array($group) ? ($group['paths'] ?? []) : []) as $path) {
+            $path = (string)$path;
+            if ($path === '' || strpos($path, '..') !== false || $path[0] === '/' || strpos($path, '\\') !== false
+                    || !is_file($dir . '/model/' . $path)) {
+                return false;
+            }
+            $shards++;
+        }
+    }
+    return $shards > 0;
+}
+
+/**
  * Whether the current user may open the cross-course proctoring review pages (CPIT-474).
  *
  * Proctoring administrators may, and so may anyone holding the cross-course review capability at

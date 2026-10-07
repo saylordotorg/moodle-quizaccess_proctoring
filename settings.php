@@ -804,6 +804,15 @@ if ($canmanageproctoring) {
         get_string('setting:detectphone_desc', 'quizaccess_proctoring'),
         0
     ));
+    // Whether it can run at all: the model files are installed separately (CPIT-484).
+    require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+    $settings->add(new admin_setting_description(
+        'quizaccess_proctoring/detectphonestatus',
+        get_string('setting:detectphonestatus', 'quizaccess_proctoring'),
+        quizaccess_proctoring_phone_detection_ready()
+            ? get_string('setting:detectphonestatus_ready', 'quizaccess_proctoring')
+            : get_string('setting:detectphonestatus_missing', 'quizaccess_proctoring')
+    ));
 
     $settings->add(new admin_setting_configtext(
         'quizaccess_proctoring/detectphoneminscore',
