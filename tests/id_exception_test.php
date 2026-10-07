@@ -184,7 +184,7 @@ final class id_exception_test extends advanced_testcase {
         ], $requestedat);
 
         $sink = $this->redirectEmails();
-        id_exception::decide($cmid, (int)$student->id, true);
+        id_exception::decide($cmid, (int)$student->id, true, 'Checked the employer letter.');
         $messages = $sink->get_messages();
         $sink->close();
 
@@ -193,6 +193,11 @@ final class id_exception_test extends advanced_testcase {
             'quizid' => (int)$cm->instance,
         ], '*', MUST_EXIST);
         $this->assertSame((int)override_resolver::STATE_DISABLED, (int)$override->idverificationstate);
+        // The student's own reason and the reviewer's note are on the record (CPIT-480).
+        $this->assertStringContainsString('My employer holds my passport.', $override->justification);
+        $withheld = get_string('idexemption:category_withheld', 'quizaccess_proctoring');
+        $this->assertStringContainsString($withheld, $override->justification);
+        $this->assertStringContainsString('Checked the employer letter.', $override->justification);
 
         $this->assertCount(1, $messages);
         $message = reset($messages);

@@ -142,9 +142,10 @@ class id_exception {
      * @param int $cmid Quiz course module id the request belongs to.
      * @param int $userid Student the decision is about.
      * @param bool $approved True to approve, false to decline.
+     * @param string $note Optional reviewer note, added to the override's justification.
      * @return void
      */
-    public static function decide(int $cmid, int $userid, bool $approved): void {
+    public static function decide(int $cmid, int $userid, bool $approved, string $note = ''): void {
         global $DB, $USER;
 
         $cm = get_coursemodule_from_id('quiz', $cmid, 0, false, MUST_EXIST);
@@ -154,11 +155,18 @@ class id_exception {
         [$coursename, $quizname] = self::names($cmid, (int)$cm->course);
 
         if ($approved) {
+            $request = null;
+            foreach (self::pending_requests($cmid) as $pending) {
+                if ((int)$pending['userid'] === $userid) {
+                    $request = $pending;
+                    break;
+                }
+            }
             override_manager::create($context, (object)[
                 'quizid' => (int)$cm->instance,
                 'userid' => $userid,
                 'idverificationstate' => override_resolver::STATE_DISABLED,
-                'justification' => get_string('idexemption:justification', 'quizaccess_proctoring'),
+                'justification' => self::approval_justification($request, $note),
             ]);
         }
 
@@ -194,6 +202,36 @@ class id_exception {
             trim((string)get_config('quizaccess_proctoring', 'idexemptioncontactemail')),
             $requestedat
         );
+    }
+
+    /**
+     * The justification recorded on an approved exception: why the student asked, in their own
+     * words, and the reviewer's note (CPIT-480). It used to be one fixed sentence, so the
+     * overrides table never showed the student's reason.
+     *
+     * @param array|null $request The pending request, or null when none is on record.
+     * @param string $note Reviewer's note.
+     * @return string Plain text, within the override justification limit.
+     */
+    public static function approval_justification(?array $request, string $note = ''): string {
+        $component = 'quizaccess_proctoring';
+        $lines = [get_string('idexemption:justification', $component)];
+        if ($request !== null) {
+            $lines[] = get_string('idexemption:justificationreason', $component, self::reason_label($request));
+            $detail = trim((string)($request['detail'] ?? ''));
+            if ($detail !== '') {
+                $lines[] = get_string('idexemption:justificationdetail', $component, $detail);
+            }
+            $alternatives = trim((string)($request['alternatives'] ?? ''));
+            if ($alternatives !== '') {
+                $lines[] = get_string('idexemption:altlabel', $component) . ' ' . $alternatives;
+            }
+        }
+        $note = trim($note);
+        if ($note !== '') {
+            $lines[] = get_string('idexemption:justificationnote', $component, \core_text::substr($note, 0, 400));
+        }
+        return \core_text::substr(implode("\n", $lines), 0, 2000);
     }
 
     /**

@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.9 — 2026-10-07
+- **Approved ID exceptions show the student's reason (CPIT-480).** Approving a student's ID-exception request used to record one fixed justification, so the Manage overrides table never showed why they asked. The justification now carries the student's chosen reason, their own explanation, any alternative documents they offered, and an optional note from the reviewer. The ID exceptions queue has a note field for that.
+- The rest of the Manage overrides feedback is already built in 1.12.0, waiting for release to learn: profile links, separate student, email and ID columns, times in ET with the zone shown, and the Justification column.
+
 # v1.12.8 — 2026-10-07
 - **Students can go back in the exam setup (CPIT-479).**
   - A **Back** button opens the previous finished step.
