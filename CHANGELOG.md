@@ -1,6 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.12 — 2026-10-07
+- **The AI-tool factor says what it detects (CPIT-483).** It is now "AI tool panel or link seen on the exam page". Its description says that it only sees the exam page in this browser: AI used in another window, another app or on another device is not detected. No browser-based tool can detect that reliably. The description points reviewers to the evidence that does exist: the desktop captures taken while the student was away from the quiz (CPIT-471), and the time away. The tab/focus factor's description says the same, and the AI review settings use the same wording.
+- The other parts of the ticket were already done or are not code:
+  - The evidence frame for this event is fresh, not a cached one (CPIT-471).
+  - The fixed "the image is the deciding evidence" text was removed (CPIT-467).
+  - Turning on the speed factor (`speedreviewenabled`) and the exam-design measures (question pools, application questions, time limits, a written AI policy) are decisions for Student Affairs and AA.
+
 # v1.12.11 — 2026-10-07
 - **Per-quiz "Tools the exam allows" (CPIT-482).** A browser cannot tell which app a student switched to, so a desktop calculator was scored as leaving the quiz. The new quiz setting has three options:
   - **None (closed book)**: the default. Nothing changes.
