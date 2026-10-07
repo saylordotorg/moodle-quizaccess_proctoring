@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.16 — 2026-10-07
+- **Supported browsers are stated where students start (CPIT-487).** The quiz page and the device-readiness page now say:
+  - Chrome or Edge on a Windows or Mac computer is recommended, for full monitoring;
+  - Firefox works, without the second-monitor check;
+  - Safari works but has had less testing;
+  - phones and tablets are not recommended.
+
+  The wording is a language string (`supportedbrowsers`), so Student Affairs can adjust it without a release.
+- **Staff can reset a student's photo ID verification on a quiz** from the per-student report, with a required reason. This is for support, and for repeat testing, which was blocked before. The check is kept and marked "Reset by staff", and the reset is logged with who did it and why. It needs `manageoverrides` on the quiz.
+- Not code: reproducing the iPhone Safari photo-ID failure and Safari desktop camera coverage, and filling in the browser test matrix, need devices. IT and Student Affairs will do them on dev.
+
 # v1.12.15 — 2026-10-07
 - **The audio factor is removed, not built (CPIT-486).** Nothing in TaView ever listened to the microphone during an attempt, so the factor could never score. Since CPIT-467 it showed as "Not available". It is now gone from scoring, the risk factor settings and the report, and its stored settings are removed on upgrade.
 - Audio flags are among the noisiest signals in proctoring: TVs, family, traffic, reading aloud, assistive technology. They would fall hardest on students who test in shared spaces, and recording audio would add another data stream to justify. If Student Affairs wants audio for specific high-stakes exams later, it should come back as review-only evidence with explicit consent.

@@ -389,6 +389,38 @@ if ($riskaction === 'confirm' && $holdid > 0) {
     ]), get_string('riskreview:confirmednotice', 'quizaccess_proctoring'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
+// Clear the student's photo ID check on this quiz, so they verify again at their next start
+// (CPIT-487): for support and for repeat testing. The check is kept, marked reset, and logged.
+if (optional_param('resetidverification', 0, PARAM_BOOL) && $studentid && $reportid) {
+    require_sesskey();
+    require_capability('quizaccess/proctoring:manageoverrides', $context);
+    $backurl = new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
+        'courseid' => $courseid,
+        'cmid' => $cmid,
+        'studentid' => $studentid,
+        'reportid' => $reportid,
+    ]);
+    $resetreason = trim(optional_param('resetreason', '', PARAM_TEXT));
+    if ($resetreason === '') {
+        redirect($backurl, get_string('referencereset:reasonrequired', 'quizaccess_proctoring'), null,
+            \core\output\notification::NOTIFY_WARNING);
+    }
+    $DB->set_field_select(
+        'quizaccess_proctoring_idv',
+        'status',
+        'reset',
+        'courseid = :courseid AND quizid = :cmid AND userid = :userid AND status = :pass',
+        ['courseid' => $courseid, 'cmid' => $cmid, 'userid' => $studentid, 'pass' => 'pass']
+    );
+    \quizaccess_proctoring\event\id_verification_reset::create([
+        'context' => $context,
+        'relateduserid' => (int)$studentid,
+        'other' => ['reason' => \core_text::substr($resetreason, 0, 1000)],
+    ])->trigger();
+    redirect($backurl, get_string('idvreset:done', 'quizaccess_proctoring'), null,
+        \core\output\notification::NOTIFY_SUCCESS);
+}
+
 // Reset the student's reference photo, so they take a new one at their next exam (CPIT-476). Staff
 // who review proctoring can do this without site administration rights; the reason is logged.
 if (optional_param('resetreference', 0, PARAM_BOOL) && $studentid && $reportid) {
@@ -1837,6 +1869,7 @@ if (
             $idvstatuslabels = [
                 'pending' => 'reportidv:statuspending',
                 'pass' => 'reportidv:statuspass',
+                'reset' => 'reportidv:statusreset',
                 'failed' => 'reportidv:statusfailed',
                 'retry' => 'reportidv:statusretry',
                 'error' => 'reportidv:statuserror',
@@ -1929,6 +1962,14 @@ if (
             'hasevents' => !empty($eventrecords),
             'collaboration' => $collaboration,
             'idverification' => $idvcontext,
+            'resetidv' => $idvcontext && has_capability('quizaccess/proctoring:manageoverrides', $context) ? [
+                'actionurl' => (new moodle_url('/mod/quiz/accessrule/proctoring/report.php'))->out(false),
+                'sesskey' => sesskey(),
+                'courseid' => (int)$courseid,
+                'cmid' => (int)$cmid,
+                'studentid' => (int)$studentid,
+                'reportid' => (int)$reportid,
+            ] : null,
             'resetreference' => $profileimageurl
                 && has_capability('quizaccess/proctoring:reviewriskholds', $context) ? [
                 'actionurl' => (new moodle_url('/mod/quiz/accessrule/proctoring/report.php'))->out(false),
