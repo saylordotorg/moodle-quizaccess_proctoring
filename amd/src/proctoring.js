@@ -557,6 +557,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let screenVideo = null;
             let screenCanvas = null;
             let screenReady = false;
+            // Why screenReady is false, for missing-capture reasons (CPIT-471): 'wrong_screen' keeps
+            // the share live (only the marker check failed), 'share_stopped' and 'helper_closed' do not.
+            let screenUnavailableReason = '';
             let markerLastSeen = 0;
             let markerMissingLoggedAt = 0;
             let markerFaulted = false;
@@ -833,8 +836,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 bindScreenMarkerPositioning(marker[0]);
             };
 
-            const captureDesktopFrame = function(eventType) {
-                if (!captureDesktop || !desktopCaptureEvents.includes(eventType) || !screenReady) {
+            const captureDesktopFrame = function(eventType, evidenceOnly) {
+                // Evidence of what the student is doing does not depend on the marker check passing,
+                // only on the share still being live (CPIT-471).
+                const available = evidenceOnly ? screenEvidenceAvailable() : screenReady;
+                if (!captureDesktop || !desktopCaptureEvents.includes(eventType) || !available) {
                     return '';
                 }
 
@@ -881,7 +887,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             const pendingAwayCaptures = new Set();
 
             const grabSharedScreenFrame = async function(eventMs, notBeforeMs) {
-                if (!monitoringActive || !screenReady) {
+                if (!monitoringActive || !screenEvidenceAvailable()) {
                     return '';
                 }
                 if (screenMonitorClient) {
@@ -919,7 +925,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         // Fall back to the page's video element below.
                     }
                 }
-                return captureDesktopFrame('focus_lost');
+                return captureDesktopFrame('focus_lost', true);
             };
 
             const captureAwayFrame = function(eventMs) {
@@ -955,10 +961,28 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 });
             };
 
+            // Whether frames of the shared screen can still be had. A failed marker check (another app
+            // covering the quiz for a while) does not end the share, and that is exactly when frames of
+            // what the student is doing are wanted.
+            const screenEvidenceAvailable = function() {
+                if (screenReady) {
+                    return true;
+                }
+                if (screenUnavailableReason !== 'wrong_screen') {
+                    return false;
+                }
+                if (screenMonitorClient) {
+                    return true;
+                }
+                const track = screenStream && screenStream.getVideoTracks ? screenStream.getVideoTracks()[0] : null;
+                return !!track && track.readyState !== 'ended';
+            };
+
             // Why no desktop frame could be attached, for the report (CPIT-471).
             const captureMissingReason = function() {
-                if (!screenReady) {
-                    return screenMonitorClient ? 'helper_closed' : 'share_stopped';
+                if (!screenEvidenceAvailable()) {
+                    return screenUnavailableReason && screenUnavailableReason !== 'wrong_screen' ? screenUnavailableReason :
+                        (screenMonitorClient ? 'helper_closed' : 'share_stopped');
                 }
                 return 'no_fresh_frame';
             };
@@ -986,8 +1010,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const key = awayKey;
                 awayCaptureCount++;
                 const sequence = awayCaptureCount;
-                const frame = screenReady ? await grabSharedScreenFrame(captureClock(), captureClock() - freshFrameMaxAgeMs)
-                    .catch(() => '') : '';
+                const frame = screenEvidenceAvailable() ?
+                    await grabSharedScreenFrame(captureClock(), captureClock() - freshFrameMaxAgeMs).catch(() => '') : '';
                 if (!monitoringActive || key !== awayKey) {
                     return;
                 }
@@ -1271,6 +1295,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     screenCanvas.height = 0;
                 }
                 screenReady = false;
+                screenUnavailableReason = 'share_stopped';
             };
 
             // The marker has to be *on* the shared screen, not visible in the very frame we
@@ -1292,6 +1317,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }
 
                 screenReady = true;
+                screenUnavailableReason = '';
                 setScreenShareStatus(strings.screenshareaccepted, 'success');
                 clearAttemptWarning('wrongscreen');
                 clearAttemptWarning('screenshare');
@@ -1305,6 +1331,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (!markerFaulted) {
                     markerFaulted = true;
                     screenReady = false;
+                    screenUnavailableReason = 'wrong_screen';
                     setScreenShareStatus(strings.screenmarkerwrongmonitor, 'danger');
                     setAttemptWarning('wrongscreen', strings.attemptwarningwrongscreen, 'danger');
                     showScreenShareGate();
@@ -1662,6 +1689,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         onReady: function() {
                             monitorUnavailableSince = 0;
                             screenReady = true;
+                            screenUnavailableReason = '';
                             setScreenShareStatus(strings.screenshareaccepted, 'success');
                             clearAttemptWarning('wrongscreen');
                             clearAttemptWarning('screenshare');
@@ -1683,6 +1711,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 }
                                 monitorUnavailableSince = 0;
                                 screenReady = false;
+                                // A fresh "stopped" from the helper means the share ended; silence means
+                                // the helper window itself is gone or not reporting.
+                                screenUnavailableReason = status && status.stopped === true ? 'share_stopped' : 'helper_closed';
                                 logEvent('screen_share_stopped', {
                                     reason: 'persistent_monitor_unavailable',
                                     statusage: statusAge === null ? null : Math.round(statusAge / 1000),
@@ -1694,12 +1725,29 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 setAttemptWarning('screenshare', strings.attemptwarningscreensharestopped, 'danger');
                                 showScreenShareGate();
                             } else {
+                                // Already not ready because the marker check failed, but the share was
+                                // still live. Once the helper says it stopped, or stays silent past the
+                                // grace period, frames are no longer to be had (CPIT-471).
+                                if (screenUnavailableReason === 'wrong_screen') {
+                                    const now = Date.now();
+                                    const statusAge = status && status.ts ? Math.max(0, now - status.ts) : null;
+                                    const stoppedByHelper = !!(status && status.stopped === true &&
+                                        statusAge !== null && statusAge <= monitorStoppedFreshMs);
+                                    if (!monitorUnavailableSince) {
+                                        monitorUnavailableSince = now;
+                                    }
+                                    if (stoppedByHelper || now - monitorUnavailableSince >= monitorUnavailableGraceMs) {
+                                        monitorUnavailableSince = 0;
+                                        screenUnavailableReason = stoppedByHelper ? 'share_stopped' : 'helper_closed';
+                                    }
+                                }
                                 scheduleScreenShareGate(2500);
                             }
                         },
                         onWrongScreen: function() {
                             monitorUnavailableSince = 0;
                             screenReady = false;
+                            screenUnavailableReason = 'wrong_screen';
                             logEvent('screen_marker_missing', {
                                 reason: 'persistent_monitor_marker_missing',
                                 note: 'The persistent screen monitor did not see the Moodle quiz screen marker.'
@@ -1726,6 +1774,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     screenMonitorClient.start();
                     if (screenMonitorClient.isReady()) {
                         screenReady = true;
+                        screenUnavailableReason = '';
                         hideScreenShareGate();
                     } else {
                         scheduleScreenShareGate(3000);
@@ -1833,7 +1882,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     args.eventdetail = JSON.stringify(Object.assign({}, detail || {}, extra || {},
                         missing ? {capturemissing: missing} : {}));
                 };
-                if (awayCaptureEvents.includes(eventType) && captureDesktop && screenReady) {
+                if (awayCaptureEvents.includes(eventType) && captureDesktop && screenEvidenceAvailable()) {
                     // Keep the event's own time; only the attached frame comes from after the switch.
                     // Tried even when the event itself had no frame, which used to leave it with none.
                     const eventFrame = args.screenshot;
@@ -2040,7 +2089,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             note: 'Quiz tab was hidden. This can indicate tab switching or opening another browser surface.'
                         });
                     } else if (document.visibilityState === 'visible') {
-                        if (document.hasFocus()) {
+                        if (typeof document.hasFocus !== 'function' || document.hasFocus()) {
                             stopAwayCaptures();
                         }
                         logEvent('tab_visible', {
@@ -2051,8 +2100,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                 }, true);
 
-                window.addEventListener('blur', function() {
+                window.addEventListener('blur', function(event) {
                     if (Date.now() < suppressFocusLossUntil) {
+                        return;
+                    }
+                    // The listener captures blur from inputs inside the quiz too; only the window losing
+                    // focus means the student left (CPIT-471).
+                    if (event && event.target && event.target !== window &&
+                            typeof document.hasFocus === 'function' && document.hasFocus()) {
                         return;
                     }
                     focusLostSince = Date.now();

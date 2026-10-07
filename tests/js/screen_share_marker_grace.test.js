@@ -822,3 +822,98 @@ test('mouse movements across the window edge are logged without desktop screensh
     assert.strictEqual(mouseEvents.length, 1);
     assert.strictEqual(mouseEvents[0].screenshot, '');
 });
+
+// CPIT-471: repeated captures while away.
+const AWAY_INTERVAL_MS = 15000;
+const awayCaptures = env => env.loggedEvents.filter(event => event.eventtype === 'away_capture');
+const awayTimers = env => env.intervals.filter(interval => interval.delay === AWAY_INTERVAL_MS && !interval.cleared);
+
+async function runAwayTick(env, image) {
+    env.advance(AWAY_INTERVAL_MS);
+    if (image) {
+        env.monitorCallbacks.onScreenshot({image: image, ts: env.now});
+    }
+    awayTimers(env).forEach(interval => interval.fn());
+    await flush(10);
+    env.advance(3001);
+    await flush(10);
+}
+
+test('while away, the screen is captured repeatedly and each capture carries the absence key', async () => {
+    const env = await bootWithHelper(true);
+    env.monitorCallbacks.onScreenshot({image: 'data:image/jpeg;base64,QUIZ', ts: env.now});
+    await leaveQuizWindow(env);
+    env.advance(3001);
+    await flush(10);
+    const leave = focusLostEvents(env)[0];
+    const awaykey = JSON.parse(leave.eventdetail).awaykey;
+    assert.ok(awaykey, 'the leave event carries the absence key');
+    assert.strictEqual(awayTimers(env).length, 1, 'one capture timer runs while away');
+
+    await runAwayTick(env, 'data:image/jpeg;base64,APP1');
+    await runAwayTick(env, 'data:image/jpeg;base64,APP2');
+
+    const captures = awayCaptures(env);
+    assert.strictEqual(captures.length, 2);
+    assert.deepStrictEqual(captures.map(c => c.screenshot), ['data:image/jpeg;base64,APP1', 'data:image/jpeg;base64,APP2']);
+    captures.forEach((capture, index) => {
+        const detail = JSON.parse(capture.eventdetail);
+        assert.strictEqual(detail.awaykey, awaykey);
+        assert.strictEqual(detail.sequence, index + 1);
+    });
+});
+
+test('away captures continue after the marker check fails, since the share is still live', async () => {
+    const env = await bootWithHelper(true);
+    env.monitorCallbacks.onScreenshot({image: 'data:image/jpeg;base64,QUIZ', ts: env.now});
+    await leaveQuizWindow(env);
+    env.monitorCallbacks.onWrongScreen({});
+    await flush();
+
+    await runAwayTick(env, 'data:image/jpeg;base64,OTHERAPP');
+
+    const captures = awayCaptures(env);
+    assert.strictEqual(captures.length, 1);
+    assert.strictEqual(captures[0].screenshot, 'data:image/jpeg;base64,OTHERAPP');
+});
+
+test('a capture that gets no frame records why, and captures stop at the per-absence limit', async () => {
+    const env = await bootWithHelper(true, {awaycapturemax: 2});
+    await leaveQuizWindow(env);
+    for (let i = 0; i < 4; i++) {
+        await runAwayTick(env, '');
+    }
+    const captures = awayCaptures(env);
+    assert.strictEqual(captures.length, 2, 'no more than the limit per absence');
+    captures.forEach(capture => {
+        assert.strictEqual(capture.screenshot, '');
+        assert.strictEqual(JSON.parse(capture.eventdetail).capturemissing, 'no_fresh_frame');
+    });
+});
+
+test('returning to the quiz stops the away captures', async () => {
+    const env = await bootWithHelper(true);
+    await leaveQuizWindow(env);
+    assert.strictEqual(awayTimers(env).length, 1);
+    (env.windowEvents.focus || []).forEach(callback => callback({}));
+    await flush();
+    assert.strictEqual(awayTimers(env).length, 0);
+    // Let the frame wait started by the return finish, so nothing is left running.
+    env.advance(3001);
+    await flush(10);
+});
+
+test('a share that stops after the marker check failed is reported as stopped, not as a stale frame', async () => {
+    const env = await bootWithHelper(true);
+    await leaveQuizWindow(env);
+    env.monitorCallbacks.onWrongScreen({});
+    env.monitorCallbacks.onUnavailable({stopped: true, ready: false, ts: env.now});
+    await flush();
+
+    await runAwayTick(env, 'data:image/jpeg;base64,LATE');
+
+    const captures = awayCaptures(env);
+    assert.strictEqual(captures.length, 1);
+    assert.strictEqual(captures[0].screenshot, '', 'no frame is taken from a share that has stopped');
+    assert.strictEqual(JSON.parse(captures[0].eventdetail).capturemissing, 'share_stopped');
+});
