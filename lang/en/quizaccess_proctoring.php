@@ -1606,4 +1606,4 @@ $string['preflight:cancelwithdrawtitle'] = 'Leaves the exam setup without starti
 $string['preflight:continue'] = 'Continue';
 $string['preflight:viewhonor'] = 'Honesty statement';
 $string['preflight:viewprivacy'] = 'Privacy notice';
-$string['idexemption:decisionnote'] = 'Note for the approval record (optional; added to the override justification)';
+$string['idexemption:decisionnote'] = 'Note for "Approve selected" (optional): added to the justification of each override it creates. The Approve button on a single row does not use it.';
