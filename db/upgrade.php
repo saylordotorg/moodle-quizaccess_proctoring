@@ -1528,6 +1528,14 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100620, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026100624) {
+        // The audio factor never had a detector and was removed rather than built (CPIT-486).
+        foreach (['enabled', 'points', 'cap'] as $suffix) {
+            unset_config('riskfactor_audio_' . $suffix, 'quizaccess_proctoring');
+        }
+        upgrade_plugin_savepoint(true, 2026100624, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
 

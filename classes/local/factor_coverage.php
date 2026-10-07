@@ -51,8 +51,11 @@ final class factor_coverage {
     /** No webcam capture was checked for a face. */
     public const REASON_NO_FACE_CHECK = 'nofacecheck';
 
-    /** Factors with no detector anywhere in the plugin. */
-    public const FACTORS_WITHOUT_DETECTOR = ['audio'];
+    /**
+     * Factors with no detector anywhere in the plugin. The audio factor was one, and was removed
+     * rather than built (CPIT-486).
+     */
+    public const FACTORS_WITHOUT_DETECTOR = [];
 
     /**
      * Detectors that load a model in the browser and silently give up if they cannot: only an

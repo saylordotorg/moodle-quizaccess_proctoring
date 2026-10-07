@@ -59,7 +59,6 @@ namespace quizaccess_proctoring\local;
  * | Tab/focus activity         |            5 |  20 | events: focus_lost, tab_hidden, page_exit                         |
  * | F12                        |           15 |  15 | shortcut events whose detail resolves to F12                      |
  * | Other keyboard shortcuts   |            8 |  24 | shortcut events that are NOT F12 (Alt+Tab, Ctrl+T/N/W/R/A/L, Ctrl+Shift+I/J/C, Ctrl+C/X/V) |
- * | Audio                      |            6 |  18 | events: audio_detected                                            |
  * | Webcam missing             |           15 |  15 | attempt has no stored webcam capture                              |
  * | Speed (optional)           |           25 |  25 | enabled + seconds-per-question below the configured floor         |
  *
@@ -75,7 +74,6 @@ namespace quizaccess_proctoring\local;
  * - possible_ai_tool                                           -> Possible AI tool (+ AI tool w/ screenshot) factors
  * - shortcut                                                   -> F12 factor (F12 detail) and Other keyboard shortcuts factor (non-F12 detail)
  * - multiple_faces_detected                                    -> Multiple faces factor
- * - audio_detected                                             -> Audio factor
  * - face_missing, no_face_detected                             -> No face factor
  * - phone_detected                                             -> Phone detected factor
  *
@@ -121,7 +119,6 @@ final class risk_calculator {
         'tabactivity' => ['points' => 5, 'cap' => 20],
         'f12' => ['points' => 15, 'cap' => 15],
         'shortcut' => ['points' => 8, 'cap' => 24],
-        'audio' => ['points' => 6, 'cap' => 18],
         'webcammissing' => ['points' => 15, 'cap' => 15],
         'speed' => ['points' => 25, 'cap' => 25],
     ];
@@ -888,11 +885,6 @@ final class risk_calculator {
             $eventparams,
             ['multiple_faces_detected']
         ) : 0;
-        $audioactivitycount = self::factor_enabled('audio') ? self::count_events(
-            $eventwhere,
-            $eventparams,
-            ['audio_detected']
-        ) : 0;
         $phonedetectedcount = self::factor_enabled('phonedetected') ? self::count_events(
             $eventwhere,
             $eventparams,
@@ -938,7 +930,6 @@ final class risk_calculator {
                 'f12' => $f12count,
                 'othershortcut' => $othershortcutcount,
                 'multiplefaces' => $multiplefacescount,
-                'audio' => $audioactivitycount,
                 'phonedetected' => $phonedetectedcount,
             ],
             'durationseconds' => $durationseconds,
@@ -991,7 +982,6 @@ final class risk_calculator {
             'tabactivity' => (int)$counts['tabactivity'],
             'f12' => (int)$counts['f12'],
             'shortcut' => (int)$counts['othershortcut'],
-            'audio' => (int)$counts['audio'],
             'webcammissing' => $webcamcount > 0 ? 0 : 1,
         ];
 
@@ -1191,7 +1181,7 @@ final class risk_calculator {
         $zero = [
             'webcam' => 0, 'facemismatch' => 0, 'nofaceruns' => 0, 'nofaceevent' => 0,
             'tabactivity' => 0, 'clipboard' => 0, 'screenissue' => 0, 'multimonitor' => 0, 'aitool' => 0,
-            'aitoolscreenshot' => 0, 'f12' => 0, 'othershortcut' => 0, 'multiplefaces' => 0, 'audio' => 0,
+            'aitoolscreenshot' => 0, 'f12' => 0, 'othershortcut' => 0, 'multiplefaces' => 0,
             'phonedetected' => 0,
         ];
         $counts = [];
@@ -1215,7 +1205,6 @@ final class risk_calculator {
             'multimonitor' => ['multimonitor', ['multiple_monitors_detected']],
             'aitool' => ['aitool', ['possible_ai_tool']],
             'multiplefaces' => ['multiplefaces', ['multiple_faces_detected']],
-            'audio' => ['audio', ['audio_detected']],
             'phonedetected' => ['phonedetected', ['phone_detected']],
         ];
 

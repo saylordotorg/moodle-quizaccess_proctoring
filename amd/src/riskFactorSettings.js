@@ -401,7 +401,8 @@ define([], function() {
     };
 
     // Factors nothing in the plugin detects (CPIT-467); keep in step with factor_coverage::FACTORS_WITHOUT_DETECTOR.
-    const NOT_AVAILABLE = ['audio'];
+    // Audio was the only one, and was removed rather than built (CPIT-486).
+    const NOT_AVAILABLE = [];
 
     const FACTOR_HELP = {
         facemismatch: 'The person on camera doesn’t look like the student’s profile photo. '

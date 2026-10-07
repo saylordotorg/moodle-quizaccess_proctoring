@@ -49,6 +49,8 @@ final class factor_coverage_test extends advanced_testcase {
      */
     public function test_factors_without_a_detector_are_never_passed(): void {
         $monitors = ['activity' => true, 'clipboard' => true, 'screen' => true, 'multimonitor' => true, 'phone' => true];
+        // The only one, audio, was removed rather than built (CPIT-486).
+        $this->assertSame([], factor_coverage::FACTORS_WITHOUT_DETECTOR);
         foreach (factor_coverage::FACTORS_WITHOUT_DETECTOR as $factorkey) {
             $this->assertSame(
                 factor_coverage::REASON_NOT_BUILT,
@@ -179,7 +181,8 @@ final class factor_coverage_test extends advanced_testcase {
             $this->assertArrayNotHasKey($factorkey, $reasons, $factorkey . ' ran and should read as passed');
         }
         $this->assertSame(factor_coverage::REASON_SETTING_OFF, $reasons['multiplefaces']);
-        $this->assertSame(factor_coverage::REASON_NOT_BUILT, $reasons['audio']);
+        // The audio factor was removed (CPIT-486), not reported as unmonitored.
+        $this->assertArrayNotHasKey('audio', $reasons);
         $this->assertSame(factor_coverage::REASON_SETTING_OFF, $reasons['screenshare']);
         $this->assertSame(factor_coverage::REASON_SETTING_OFF, $reasons['aitoolscreenshot']);
         $this->assertSame(factor_coverage::REASON_SETTING_OFF, $reasons['phonedetected']);

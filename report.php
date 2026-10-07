@@ -224,7 +224,6 @@ function quizaccess_proctoring_event_factor_map(): array {
         'multiple_monitors_detected' => 'multimonitor',
         'possible_ai_tool' => 'aitool',
         'multiple_faces_detected' => 'multiplefaces',
-        'audio_detected' => 'audio',
         'face_missing' => 'noface',
         'no_face_detected' => 'noface',
         'phone_detected' => 'phonedetected',
@@ -251,7 +250,6 @@ function quizaccess_proctoring_factor_color_class(string $key): string {
         'multiplefaces' => 'teal',
         'noface' => 'teal',
         'webcammissing' => 'teal',
-        'audio' => 'magenta',
         'phonedetected' => 'brown',
         'speed' => 'slate',
     ];
