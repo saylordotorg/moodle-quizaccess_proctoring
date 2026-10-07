@@ -120,6 +120,20 @@
 <div class="tab-content proctoring-report-tab-content" id="proctoring-report-tabs-content">
 <div class="tab-pane fade show active" id="proctoring-report-summary" role="tabpanel" aria-labelledby="proctoring-report-summary-tab">
 
+{{#attemptsummary}}
+<div class="proctoring-attempt-summary card card-body mt-3 mb-3">
+    <h4 class="h6 mb-2">{{#str}}attemptsummary:heading, quizaccess_proctoring, {{attemptnumber}}{{/str}}</h4>
+    <dl class="row small mb-0">
+        <dt class="col-sm-3">{{#str}}attemptsummary:state, quizaccess_proctoring{{/str}}</dt><dd class="col-sm-9">{{state}}</dd>
+        <dt class="col-sm-3">{{#str}}attemptsummary:started, quizaccess_proctoring{{/str}}</dt><dd class="col-sm-9">{{started}}</dd>
+        {{#finished}}<dt class="col-sm-3">{{#str}}attemptsummary:finished, quizaccess_proctoring{{/str}}</dt><dd class="col-sm-9">{{finished}}</dd>{{/finished}}
+        {{#timetaken}}<dt class="col-sm-3">{{#str}}attemptsummary:timetaken, quizaccess_proctoring{{/str}}</dt><dd class="col-sm-9">{{timetaken}}</dd>{{/timetaken}}
+        {{#grade}}<dt class="col-sm-3">{{#str}}attemptsummary:grade, quizaccess_proctoring{{/str}}</dt><dd class="col-sm-9">{{grade}}</dd>{{/grade}}
+    </dl>
+    <div class="mt-2"><a class="btn btn-sm btn-secondary" href="{{reviewurl}}">{{#str}}attemptsummary:review, quizaccess_proctoring{{/str}}</a></div>
+</div>
+{{/attemptsummary}}
+
 {{#coverage}}{{> quizaccess_proctoring/monitoring_coverage}}{{/coverage}}
 
 {{#riskscore}}

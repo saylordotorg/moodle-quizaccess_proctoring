@@ -16,7 +16,8 @@
     Self-contained, read-only proctoring summary for a single quiz attempt. Designed to be
     embedded on the quiz attempt-review page (Requirement 14) so a reviewer sees the risk score,
     the resolved certificate label, the AI image-review status, and a plain-language summary
-    alongside the exam attempt. Decision controls (release/confirm) are intentionally omitted.
+    alongside the exam attempt, the flagged moments and captures, and Release / Confirm for an
+    active hold (CPIT-475).
 
     Example context (json):
     {
@@ -45,7 +46,15 @@
             "compactlabel": "20/100 Not suspicious",
             "iscomplete": true,
             "isfailed": false
-        }
+        },
+        "hasflaggedmoments": true,
+        "flaggedmoments": [{ "time": "10:02 AM", "label": "Left the exam tab" }],
+        "moreflaggedmoments": "",
+        "hasflaggedcaptures": true,
+        "flaggedcaptures": [{ "url": "https://example.com/capture.png", "time": "10:03 AM", "label": "no face" }],
+        "moreflaggedcaptures": "and 3 more in the full report",
+        "canacthold": true, "releaseurl": "#", "confirmurl": "#",
+        "reporturl": "https://example.com/report"
     }
 }}
 
@@ -103,6 +112,33 @@
         {{/certificate}}
         {{/hascertificate}}
 
+        {{#hasflaggedmoments}}
+        <div class="proctoring-attempt-panel-moments mt-3">
+            <h4 class="h6">{{#str}}attemptpanel:flaggedmoments, quizaccess_proctoring{{/str}}</h4>
+            <ul class="list-unstyled small mb-0">
+                {{#flaggedmoments}}
+                <li><span class="text-muted">{{time}}</span> {{label}}</li>
+                {{/flaggedmoments}}
+            </ul>
+            {{#moreflaggedmoments}}<div class="small text-muted">{{moreflaggedmoments}}</div>{{/moreflaggedmoments}}
+        </div>
+        {{/hasflaggedmoments}}
+
+        {{#hasflaggedcaptures}}
+        <div class="proctoring-attempt-panel-captures mt-3">
+            <h4 class="h6">{{#str}}attemptpanel:flaggedcaptures, quizaccess_proctoring{{/str}}</h4>
+            <div class="d-flex flex-wrap">
+                {{#flaggedcaptures}}
+                <figure class="mr-2 me-2 mb-2 text-center small">
+                    <a href="{{url}}" target="_blank" rel="noopener"><img src="{{url}}" alt="{{label}} {{time}}" width="120" class="img-thumbnail"></a>
+                    <figcaption>{{time}} &middot; {{label}}</figcaption>
+                </figure>
+                {{/flaggedcaptures}}
+            </div>
+            {{#moreflaggedcaptures}}<div class="small text-muted">{{moreflaggedcaptures}}</div>{{/moreflaggedcaptures}}
+        </div>
+        {{/hasflaggedcaptures}}
+
         {{#hasaireview}}
         {{#aireview}}
         <div class="proctoring-attempt-panel-aireview mt-3">
@@ -117,5 +153,20 @@
         </div>
         {{/aireview}}
         {{/hasaireview}}
+
+        <div class="proctoring-attempt-panel-actions mt-3">
+            {{#canacthold}}
+            <a class="btn btn-sm btn-outline-success mr-2 me-2" href="{{releaseurl}}">{{#str}}heldcertificates:release, quizaccess_proctoring{{/str}}</a>
+            <a class="btn btn-sm btn-outline-danger mr-2 me-2" href="{{confirmurl}}"
+               data-confirmation="modal"
+               data-confirmation-type="delete"
+               data-confirmation-title-str='["overallreport:confirmtitle", "quizaccess_proctoring"]'
+               data-confirmation-content-str='["overallreport:confirmbody", "quizaccess_proctoring"]'
+               data-confirmation-yes-button-str='["heldcertificates:confirm", "quizaccess_proctoring"]'>{{#str}}heldcertificates:confirm, quizaccess_proctoring{{/str}}</a>
+            {{/canacthold}}
+            {{#reporturl}}
+            <a class="btn btn-sm btn-secondary" href="{{reporturl}}">{{#str}}attemptpanel:openreport, quizaccess_proctoring{{/str}}</a>
+            {{/reporturl}}
+        </div>
     </div>
 </section>

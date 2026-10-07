@@ -15,17 +15,19 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version information for the quizaccess_proctoring plugin.
+ * Hook callbacks for quizaccess_proctoring.
  *
  * @package    quizaccess_proctoring
- * @copyright  2024 Saylor Academy
+ * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->component = 'quizaccess_proctoring';
-$plugin->release = '1.12.4';
-$plugin->version = 2026100613;
-$plugin->requires = 2024100700;
-$plugin->maturity = MATURITY_STABLE;
+$callbacks = [
+    [
+        // The proctoring panel on the quiz attempt-review page (CPIT-475).
+        'hook' => \core\hook\output\after_standard_main_region_html_generation::class,
+        'callback' => [\quizaccess_proctoring\hook_callbacks::class, 'after_standard_main_region_html'],
+    ],
+];

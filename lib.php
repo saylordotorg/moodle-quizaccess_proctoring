@@ -75,6 +75,44 @@ function quizaccess_proctoring_can_manage_admin_settings(): bool {
 }
 
 /**
+ * Gets a readable suspicious activity event label.
+ *
+ * @param string $eventtype Event type.
+ * @return string Event label.
+ */
+function quizaccess_proctoring_get_event_label(string $eventtype): string {
+    $key = 'eventtype:' . $eventtype;
+    if (get_string_manager()->string_exists($key, 'quizaccess_proctoring')) {
+        return get_string($key, 'quizaccess_proctoring');
+    }
+
+    return ucfirst(str_replace('_', ' ', $eventtype));
+}
+
+/**
+ * After a hold decision taken from the quiz attempt-review page, go back to that page (CPIT-475).
+ *
+ * The panel there links to the report's hold actions with the attempt it was shown on. The return
+ * goes only to the review page of the hold's own attempt, so the parameter cannot send the reviewer
+ * anywhere else. Does nothing when the decision was not taken from the panel.
+ *
+ * @param stdClass $hold The decided hold.
+ * @param string $notice Message to show after the redirect.
+ */
+function quizaccess_proctoring_return_to_attempt(stdClass $hold, string $notice): void {
+    $returnattempt = optional_param('returnattempt', 0, PARAM_INT);
+    if ($returnattempt <= 0 || $returnattempt !== (int)$hold->attemptid) {
+        return;
+    }
+    redirect(
+        new moodle_url('/mod/quiz/review.php', ['attempt' => $returnattempt]),
+        $notice,
+        null,
+        \core\output\notification::NOTIFY_SUCCESS
+    );
+}
+
+/**
  * Whether the current user may open the cross-course proctoring review pages (CPIT-474).
  *
  * Proctoring administrators may, and so may anyone holding the cross-course review capability at
@@ -4773,26 +4811,24 @@ function quizaccess_proctoring_geturl_of_faceimage(string $data, int $userid, st
 /**
  * Render the inline proctoring summary on the quiz attempt-review page.
  *
- * Seam rationale: the quiz access-rule base class exposes no review-page render hook, so the
- * supported way to contribute output to the attempt-review page is the standard renderer callback
- * {@see core_renderer::standard_after_main_region_html()}, which Moodle invokes for every plugin
- * (including quizaccess plugins) via {@see get_plugins_with_function()}. The callback fires on every
- * page, so it self-scopes to the quiz attempt-review page (pagetype `mod-quiz-review`) and returns
- * an empty string everywhere else.
+ * Called from the output hook {@see \quizaccess_proctoring\hook_callbacks::after_standard_main_region_html()}
+ * (CPIT-475; it used to be the legacy standard_after_main_region_html callback). The hook fires on
+ * every page, so this self-scopes to the quiz attempt-review page (pagetype `mod-quiz-review`) and
+ * returns an empty string everywhere else.
  *
  * When invoked on the review page it resolves the attempt being reviewed (its owner, quiz, course
  * and module) from the `attempt` URL parameter, verifies the quiz is proctored, and — guarded by the
  * existing review capabilities — renders the reusable, read-only per-attempt fragment (risk score,
  * resolved certificate label, AI review status and plain-language summary) inline so exam and
- * proctoring data appear together (Requirements 14.1, 14.2). This is a read/summary surface only;
- * inline decision controls (release/confirm/notes) are intentionally deferred to Requirement 7 (P1).
+ * proctoring data appear together (Requirements 14.1, 14.2), with the flagged moments and captures
+ * and, for a reviewer who may decide it, Release / Confirm on an active hold (CPIT-475).
  *
  * The whole body is defensive: any failure yields an empty string so the inline panel can never
  * break the core review page.
  *
  * @return string Rendered proctoring fragment HTML, or an empty string when it should not be shown.
  */
-function quizaccess_proctoring_standard_after_main_region_html(): string {
+function quizaccess_proctoring_attempt_review_panel_html(): string {
     global $PAGE, $DB;
 
     // Self-scope: only contribute output on the quiz attempt-review page.
