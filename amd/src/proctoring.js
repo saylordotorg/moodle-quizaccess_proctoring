@@ -2302,6 +2302,17 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                 }, true);
 
+                // The PrintScreen key, for context only and never scored (CPIT-485). A page cannot
+                // see screenshots taken with the Snipping Tool, macOS shortcuts or a phone, and the
+                // browser reports this key only on release and only while the quiz has focus.
+                document.addEventListener('keyup', function(event) {
+                    if (event.key === 'PrintScreen') {
+                        logEvent('possible_screenshot', {
+                            key: 'PrintScreen'
+                        });
+                    }
+                }, true);
+
                 document.addEventListener('click', function(event) {
                     const target = event.target && event.target.closest
                         ? event.target.closest('a, button, [role="button"], [aria-label], [title]')
