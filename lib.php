@@ -3715,6 +3715,24 @@ function quizaccess_proctoring_build_ai_review_prompt(stdClass $review, int $ima
                 . "Images provided: " . $imagecount;
         }
 
+        if ($event && (string)$event->eventtype === 'face_missing_start') {
+            return "You are reviewing one webcam frame captured during an online proctored quiz, at the moment "
+                . "the quiz was paused because automatic face detection found no face in view for several seconds. "
+                . "Use only visible evidence in the image and the event metadata below. "
+                . "Do not identify anyone or infer intent from protected traits. "
+                . "An empty seat, a student turned away, poor lighting or a covered camera are expected here and "
+                . "on their own are inconclusive, not cheating. "
+                . "Mark cheating likely only when the frame clearly shows something else: another person at the "
+                . "desk, a phone or notes in use, or the student working on another device. "
+                . "If a face is clearly visible, say so, because the detector may have misfired. "
+                . "Return a cautious review score from 0 to 100 where "
+                . (int)$settings['decisionthreshold'] . "+ means strong visual evidence that needs escalation. "
+                . "This is advisory for a human reviewer, not an automatic misconduct finding.\n\n"
+                . "Event type: " . $eventtype . "\n"
+                . "Event details: " . $eventdetail . "\n"
+                . "Images provided: " . $imagecount;
+        }
+
         if ($event && (string)$event->eventtype === 'multiple_faces_detected') {
             return "You are reviewing one webcam frame captured during an online proctored quiz, after automatic "
                 . "face detection saw more than one face in view across several consecutive checks. "
