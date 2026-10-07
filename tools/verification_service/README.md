@@ -63,13 +63,27 @@ The service compares the ID portrait to the live face with Rekognition `compare_
   "face_score": 91.2,
   "name_score": 100,
   "extracted_name": "Student Name",
+  "matched_profile_name": "Student Name",
+  "name_match_reason": "matched",
+  "name_readable": true,
   "message": "ID verified."
 }
 ```
 
+### Name matching (CPIT-477)
+
+`name_matching.py` compares the text read from the ID with the profile name and with each entry of the optional `profile_name_variants` list Moodle sends. Moodle includes a Latin transliteration of a name in another script. Letters of every script are kept when normalising: names outside a-z used to be erased and scored 0. Cyrillic and Greek profile names are romanised the way passports print them.
+
+Rekognition text detection reads Latin, Cyrillic and Arabic script. The ID text is compared as read, with Cyrillic look-alikes folded to Latin, and romanised; the best comparison counts. `name_match_reason` says why a name could not be compared, instead of a bare 0:
+
+- `unreadable`: no letters could be read from the ID.
+- `script_not_supported`: the profile name and the ID text are in scripts that cannot be compared.
+
+`matched` and `fuzzy` describe a compared name.
+
 ## AWS Lambda
 
-`lambda_function.py` is a Lambda Function URL implementation with the same request and response contract. The deployed ZIP contains this file only and uses boto3 from the managed Python runtime; it does not use FastAPI, Uvicorn, or Mangum. Its handler is `lambda_function.lambda_handler`. The separate `rekognition_bridge.handler` entry point uses Mangum for deployments that choose to package the ASGI application and its dependencies.
+`lambda_function.py` is a Lambda Function URL implementation with the same request and response contract. The deployed ZIP contains `lambda_function.py` and `name_matching.py` (since CPIT-477) and uses boto3 from the managed Python runtime; it does not use FastAPI, Uvicorn, or Mangum. Its handler is `lambda_function.lambda_handler`. The separate `rekognition_bridge.handler` entry point uses Mangum for deployments that choose to package the ASGI application and its dependencies.
 
 The Lambda also accepts authenticated `HEAD` requests for Moodle's readiness checks. It returns `204` with an empty body and `Cache-Control: no-store`, without calling Rekognition. Missing or invalid API keys receive `401`. These probes confirm endpoint reachability and authentication; they do not test a face or ID comparison.
 

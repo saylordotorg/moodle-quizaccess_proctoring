@@ -1972,8 +1972,44 @@ class quizaccess_proctoring_external extends external_api {
                 self::add_unique_name_variant($variants, $aliasvariant);
             }
         }
+        $variants = array_values($variants);
 
-        return array_values($variants);
+        // A name in another script also goes in Latin letters: the ID text reader only reads Latin
+        // script, and the verification service can romanise Cyrillic and Greek only (CPIT-477).
+        foreach ($basevariants as $variant) {
+            $latin = self::latin_name($variant);
+            if ($latin !== '' && $latin !== $variant && !in_array($latin, $variants, true)) {
+                $variants[] = $latin;
+            }
+        }
+
+        return $variants;
+    }
+
+    /**
+     * A name written in Latin letters, through ICU transliteration when it is available.
+     *
+     * @param string $name Name in any script.
+     * @return string The Latin form, or '' when it cannot be made or the name is already Latin.
+     */
+    private static function latin_name(string $name): string {
+        $name = trim($name);
+        if ($name === '' || !preg_match('/[^\p{Latin}\p{Common}\p{Inherited}]/u', $name)) {
+            return '';
+        }
+        if (!class_exists('\Transliterator')) {
+            return '';
+        }
+        $transliterator = \Transliterator::create('Any-Latin; Latin-ASCII');
+        $latin = $transliterator ? $transliterator->transliterate($name) : false;
+        if (!is_string($latin)) {
+            return '';
+        }
+        // Keep Latin letters and spaces only: ICU leaves marks such as the ayn (ʿ) of romanised
+        // Arabic, which no ID text reader returns.
+        $latin = preg_replace('/[^\p{Latin}\s\'-]+/u', '', $latin);
+        $latin = trim(preg_replace('/\s+/u', ' ', $latin));
+        return preg_match('/\p{Latin}/u', $latin) ? $latin : '';
     }
 
     /**
@@ -2265,6 +2301,16 @@ class quizaccess_proctoring_external extends external_api {
             $romanizedname = trim((string)($result['romanizedname'] ?? ''));
             $namematchreason = trim((string)($result['namematchreason'] ?? ''));
             $unknownname = get_string('modal:idverificationnameunknown', 'quizaccess_proctoring');
+            // The verification service answers with reason codes since CPIT-477. Two of them have
+            // their own message; the other two only say how the names compared, which the student
+            // message already does, so they are not shown as an explanation.
+            if (in_array($namematchreason, ['unreadable', 'script_not_supported'], true)) {
+                return get_string('modal:idverificationname_' . str_replace('_', '', $namematchreason), 'quizaccess_proctoring',
+                    $profilename);
+            }
+            if (in_array($namematchreason, ['matched', 'fuzzy'], true)) {
+                $namematchreason = '';
+            }
             if ($romanizedname !== '' || $namematchreason !== '') {
                 return get_string('modal:idverificationfailed_name_multilingual', 'quizaccess_proctoring', (object)[
                     'idname' => $idname !== '' ? $idname : $unknownname,
