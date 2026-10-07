@@ -251,10 +251,48 @@ class delete_images_task extends scheduled_task {
         }
 
         $cutoff = time() - ($retentiondays * DAYSECS);
-        $userids = $DB->get_fieldset_sql(
-            "SELECT ui.user_id
+        $userids = $DB->get_fieldset_sql(self::expired_reference_sql(), self::expired_reference_params($cutoff), 0, 100);
+        if (!$userids) {
+            return;
+        }
+
+        $deleted = 0;
+        foreach ($userids as $userid) {
+            $userid = (int)$userid;
+            // The same lock a precheck holds while it registers or replaces a reference photo, and
+            // a re-check under it: a photo replaced since the query ran is not deleted (CPIT-472).
+            $lock = quizaccess_proctoring_get_reference_lock($userid);
+            if (!$lock) {
+                continue;
+            }
+            try {
+                $stillexpired = $DB->record_exists_sql(
+                    self::expired_reference_sql() . ' AND ui.user_id = :onlyuser',
+                    self::expired_reference_params($cutoff) + ['onlyuser' => $userid]
+                );
+                if ($stillexpired) {
+                    \quizaccess_proctoring\privacy\provider::delete_reference_photos([$userid]);
+                    $deleted++;
+                }
+            } finally {
+                $lock->release();
+            }
+        }
+        if ($deleted) {
+            mtrace('Deleted ' . $deleted . ' reference photo(s) unused for ' . $retentiondays . ' days.');
+        }
+    }
+
+    /**
+     * Reference photos past the retention period: not used, replaced or held since the cutoff.
+     *
+     * @return string SQL selecting ui.user_id.
+     */
+    private static function expired_reference_sql(): string {
+        return "SELECT ui.user_id
                FROM {quizaccess_proctoring_user_images} ui
               WHERE ui.timeused <= :usedcutoff
+                AND ui.timelastused <= :lastcutoff
                 AND NOT EXISTS (
                     SELECT 1
                       FROM {quizaccess_proctoring_logs} l
@@ -270,24 +308,25 @@ class delete_images_task extends scheduled_task {
                     SELECT 1
                       FROM {quizaccess_proctoring_risk_holds} rh
                      WHERE rh.userid = ui.user_id AND rh.status = :activehold
-                )",
-            [
-                'usedcutoff' => $cutoff,
-                'logcutoff' => $cutoff,
-                'component' => 'quizaccess_proctoring',
-                'filearea' => 'user_photo',
-                'filecutoff' => $cutoff,
-                'activehold' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
-            ],
-            0,
-            100
-        );
-        if (!$userids) {
-            return;
-        }
+                )";
+    }
 
-        \quizaccess_proctoring\privacy\provider::delete_reference_photos(array_map('intval', $userids));
-        mtrace('Deleted ' . count($userids) . ' reference photo(s) unused for ' . $retentiondays . ' days.');
+    /**
+     * Parameters for {@see self::expired_reference_sql()}.
+     *
+     * @param int $cutoff Retention cutoff time.
+     * @return array
+     */
+    private static function expired_reference_params(int $cutoff): array {
+        return [
+            'usedcutoff' => $cutoff,
+            'lastcutoff' => $cutoff,
+            'logcutoff' => $cutoff,
+            'component' => 'quizaccess_proctoring',
+            'filearea' => 'user_photo',
+            'filecutoff' => $cutoff,
+            'activehold' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+        ];
     }
 
     /**

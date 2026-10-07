@@ -751,6 +751,7 @@ $string['privacy:metadata:screenshoturl'] = 'A desktop screenshot captured for a
 $string['privacy:metadata:status'] = 'The status of the proctoring.';
 $string['privacy:metadata:timecreated'] = 'The time when the record was created.';
 $string['privacy:metadata:timemodified'] = 'The time when the record was last changed.';
+$string['privacy:metadata:timelastused'] = 'The time a proctored quiz attempt last went ahead with this reference image; the image is deleted after the retention period without further use.';
 $string['privacy:metadata:timeused'] = 'The time a proctored quiz attempt first went ahead with this reference image, which keeps it from being deleted as unused.';
 $string['privacy:metadata:timereviewed'] = 'The time when the risk review hold was released.';
 $string['privacy:metadata:userid'] = 'The ID of the user who took the quiz.';

@@ -83,9 +83,12 @@ final class retention_test extends advanced_testcase {
         $inactive = $this->getDataGenerator()->create_user();
         $active = $this->getDataGenerator()->create_user();
         $held = $this->getDataGenerator()->create_user();
-        foreach ([$inactive, $active, $held] as $user) {
+        $recentuse = $this->getDataGenerator()->create_user();
+        foreach ([$inactive, $active, $held, $recentuse] as $user) {
             $DB->insert_record('quizaccess_proctoring_user_images', (object)[
                 'user_id' => $user->id, 'photo_draft_id' => 0, 'timeused' => $old,
+                // First used long ago, but used again recently; its capture logs are already gone.
+                'timelastused' => $user->id === $recentuse->id ? time() - 30 * DAYSECS : $old,
             ]);
         }
         $DB->insert_record('quizaccess_proctoring_logs', (object)[
@@ -104,6 +107,7 @@ final class retention_test extends advanced_testcase {
         $this->assertFalse($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $inactive->id]));
         $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $active->id]));
         $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $held->id]));
+        $this->assertTrue($DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $recentuse->id]));
 
         // With the limit off, nothing goes.
         set_config('referenceretentiondays', 0, 'quizaccess_proctoring');

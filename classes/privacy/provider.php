@@ -226,6 +226,7 @@ class provider implements
             'user_id' => 'privacy:metadata:userid',
             'photo_draft_id' => 'privacy:metadata:photo_draft_id',
             'timeused' => 'privacy:metadata:timeused',
+            'timelastused' => 'privacy:metadata:timelastused',
         ];
 
         $collection->add_database_table(
@@ -919,7 +920,7 @@ class provider implements
                 $userimage = $DB->get_record(
                     'quizaccess_proctoring_user_images',
                     ['user_id' => $userid],
-                    'id, user_id, photo_draft_id, timeused'
+                    'id, user_id, photo_draft_id, timeused, timelastused'
                 );
                 if ($userimage) {
                     $subcontext = [
@@ -931,6 +932,7 @@ class provider implements
                         'user_id' => $userimage->user_id,
                         'photo_draft_id' => $userimage->photo_draft_id,
                         'timeused' => $userimage->timeused,
+                        'timelastused' => $userimage->timelastused,
                     ];
 
                     writer::with_context($context)
