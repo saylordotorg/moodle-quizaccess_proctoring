@@ -7,7 +7,13 @@ Small FastAPI service that exposes private `/verify`, `/verify-face`, and `/veri
 - `{"image_reference": "...", "image_current": "..."}`
 - `{"reference_image": "...", "current_snap": "..."}`
 
-A non-match normally returns `{"match": false, "message": "Face does not match."}`. When Rekognition finds no face in the reference image itself, the response adds `"reason": "reference_no_face"`. Rekognition reports a missing face in either image the same way, so the service compares the reference with itself to tell them apart, using the same `rekognition:CompareFaces` permission. Moodle records that outcome as "Reference photo unusable", not as a mismatch, and can let the student replace a self-registered reference. Any other error during that second comparison is reported as a plain non-match, so an AWS outage never retires a usable reference.
+A non-match normally returns `{"match": false, "score": 72.5, "similarity": 72.5, "message": "Face does not match."}`. The similarity is included so Moodle can apply its own face-match threshold (the Moodle `threshold` setting); `FACE_SIMILARITY_THRESHOLD` only sets the `match` field.
+
+Rekognition reports a missing face in either image the same way, so after such an error the service compares the reference with itself, using the same `rekognition:CompareFaces` permission:
+
+- no face in the reference either: the response adds `"reason": "reference_no_face"`. Moodle records "Reference photo unusable", not a mismatch, and can let the student replace a self-registered reference;
+- the reference has a face: the webcam image was the one without, and the response adds `"reason": "no_face_in_capture"`. Moodle records it as "no face", not as a mismatch;
+- any other error during that second comparison: a plain non-match with no reason, so an AWS outage never retires a usable reference or blames the webcam image.
 
 ## Run
 

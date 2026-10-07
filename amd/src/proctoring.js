@@ -214,9 +214,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             }
         };
 
-        const detectface = async(input, croppedImage) => {
+        const detectface = async(input, croppedImage, minScore) => {
+            // The configured sensitivity (faceblurminscore), not face-api's built-in 0.5 (CPIT-469).
             // eslint-disable-next-line no-undef
-            const output = await faceapi.detectAllFaces(input);
+            const options = new faceapi.SsdMobilenetv1Options({minConfidence: minScore});
+            // eslint-disable-next-line no-undef
+            const output = await faceapi.detectAllFaces(input, options);
             if (output.length !== 0) {
                 let detections = output[0].box;
                 await extractFaceFromBox(input, detections, croppedImage);
@@ -2192,6 +2195,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 // The per-capture face crop and "face not found" notice belong to face matching and
                 // the no-face blur, not to multiple-face detection, which only borrows the model.
                 const captureFaceCheck = faceModelReady && parseInt(props.facemodelformultiplefacesonly || 0, 10) !== 1;
+                let captureFaceMisses = 0;
                 // Quiz core renders a lone tertiary-nav "Back" link during attempts;
                 // on a proctored attempt it only walks students out of the exam
                 // mid-attempt (and fires focus-loss violations on the way).
@@ -2314,7 +2318,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         faceBlurChecking = true;
                         try {
                             // eslint-disable-next-line no-undef
-                            const detections = await faceapi.detectAllFaces(video);
+                            const detections = await faceapi.detectAllFaces(
+                                video,
+                                // eslint-disable-next-line no-undef
+                                new faceapi.SsdMobilenetv1Options({minConfidence: faceBlurMinScore})
+                            );
                             const faceVisible = detections.some((detection) => detection.score >= faceBlurMinScore);
                             if (faceVisible) {
                                 facePresentCount++;
@@ -2419,7 +2427,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 croppedImage.removeAttribute('src');
                             }
                             if (captureFaceCheck) {
-                                await detectface(photo, croppedImage);
+                                await detectface(photo, croppedImage, faceBlurMinScore);
                             }
                             if (!pageActive || generation !== pageGeneration) {
                                 if (croppedImage) {
@@ -2429,14 +2437,21 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             }
                             let faceFound;
                             let faceImage;
-                            if (croppedImage && croppedImage.getAttribute('src')) {
-                                if (captureFaceCheck) {
-                                    removeNotifications();
-                                }
+                            if (!captureFaceCheck) {
+                                // Not checked: without the face model nothing looked for a face, so
+                                // this capture is neither a face nor a miss (CPIT-469).
+                                faceFound = 2;
+                                faceImage = "";
+                            } else if (croppedImage && croppedImage.getAttribute('src')) {
+                                captureFaceMisses = 0;
+                                removeNotifications();
                                 faceFound = 1;
                                 faceImage = croppedImage.src;
                             } else {
-                                if (captureFaceCheck) {
+                                // One small frame is easily missed in low light or with a turned
+                                // head, so only warn the student after two misses in a row.
+                                captureFaceMisses++;
+                                if (captureFaceMisses >= 2) {
                                     showNotification(strings.facenotfoundoncam, 'error');
                                 }
                                 faceFound = 0;

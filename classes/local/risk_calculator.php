@@ -49,7 +49,7 @@ namespace quizaccess_proctoring\local;
  * |----------------------------|-------------:|----:|-------------------------------------------------------------------|
  * | Face mismatch              |           35 |  35 | logs with awsflag = 2 and awsscore < threshold                    |
  * | Multiple faces             |           30 |  30 | events: multiple_faces_detected                                   |
- * | No face (images/events)    |            8 |  24 | max(no-face face_images, awsflag = 3 logs) + face_missing/no_face_detected events |
+ * | No face (runs/events)      |            8 |  24 | sustained runs of no-face captures (facefound 0 or awsflag 3; see count_no_face_runs()) + face_missing/no_face_detected events |
  * | Phone detected             |           12 |  24 | events: phone_detected (factor shown only when webcam phone detection is enabled or evidence exists) |
  * | Screen-share issues        |           18 |  36 | events: screen_marker_missing, screen_share_stopped               |
  * | Multiple monitors          |           25 |  25 | events: multiple_monitors_detected                                |
@@ -195,6 +195,84 @@ final class risk_calculator {
         }
 
         return $max;
+    }
+
+    /** A no-face run must last at least this many seconds from first to last capture (CPIT-469). */
+    public const NOFACE_MIN_SPAN_SECONDS = 10;
+
+    /**
+     * How many webcam captures in a row must have no face before it counts as "no face".
+     *
+     * One capture is decided from a single small frame, which low light, glare or a turned head
+     * can fail, so a single miss is not evidence that the student left (CPIT-469).
+     *
+     * @return int Captures in a row, 2 to 10 (default 3).
+     */
+    public static function noface_required_captures(): int {
+        $value = (int)get_config('quizaccess_proctoring', 'nofacerequiredcaptures');
+        return $value > 0 ? max(2, min(10, $value)) : 3;
+    }
+
+    /**
+     * SQL condition (on logs aliased l) for a webcam capture in which no face was found.
+     *
+     * Either the browser's face detector found none in a capture it checked (facefound 0; a capture
+     * it could not check is stored as 2 and is not a miss), or the face-match check found none
+     * (awsflag 3). Reference photos are face images too, so only camshot images count.
+     *
+     * @return array [sql, params]
+     */
+    public static function no_face_capture_sql(): array {
+        return [
+            "(l.awsflag = :nofaceawsflag OR EXISTS (
+                SELECT 1
+                  FROM {quizaccess_proctoring_face_images} nofi
+                 WHERE nofi.parentid = l.id AND nofi.parent_type = :nofaceparenttype AND nofi.facefound = :nofacefound
+            ))",
+            ['nofaceawsflag' => 3, 'nofaceparenttype' => 'camshot_image', 'nofacefound' => 0],
+        ];
+    }
+
+    /**
+     * Count sustained stretches without a face from the times of the no-face captures.
+     *
+     * Captures arrive every capture interval, so two no-face captures are consecutive when they are
+     * no further apart than one and a half intervals (plus a little upload slack); a capture with a
+     * face in between leaves a larger gap. A run counts once it has at least
+     * {@see self::noface_required_captures()} captures spanning {@see self::NOFACE_MIN_SPAN_SECONDS}.
+     * Each run is one "no face" event, however long it lasted.
+     *
+     * @param int[] $times Capture times of the attempt's no-face captures.
+     * @param int|null $interval Capture interval in seconds; the site setting when null.
+     * @param int|null $required Captures needed in a row; the site setting when null.
+     * @return int Number of sustained no-face runs.
+     */
+    public static function count_no_face_runs(array $times, ?int $interval = null, ?int $required = null): int {
+        $interval = max(5, $interval ?? ((int)get_config('quizaccess_proctoring', 'autoreconfigurecamshotdelay') ?: 30));
+        $required = $required ?? self::noface_required_captures();
+        $maxgap = (int)ceil($interval * 1.5) + 5;
+        sort($times, SORT_NUMERIC);
+
+        $runs = 0;
+        $start = null;
+        $previous = null;
+        $length = 0;
+        foreach ($times as $time) {
+            if ($previous !== null && $time - $previous <= $maxgap) {
+                $length++;
+            } else {
+                if ($length >= $required && $previous - $start >= self::NOFACE_MIN_SPAN_SECONDS) {
+                    $runs++;
+                }
+                $start = $time;
+                $length = 1;
+            }
+            $previous = $time;
+        }
+        if ($length >= $required && $previous - $start >= self::NOFACE_MIN_SPAN_SECONDS) {
+            $runs++;
+        }
+        return $runs;
     }
 
     /**
@@ -566,7 +644,6 @@ final class risk_calculator {
             'riskfacecmid' => $cmid,
             'riskfacestudentid' => $studentid,
             'riskfacedeletionprogress' => 0,
-            'riskfacefound' => '1',
         ];
         if ($attemptid > 0) {
             $faceimagewhere .= ' AND l.status = :riskfaceattemptid';
@@ -599,23 +676,20 @@ final class risk_calculator {
             );
         }
 
-        $facefailedcount = 0;
-        $nofaceimagecount = 0;
+        $nofaceruncount = 0;
         $nofaceeventcount = 0;
         if (self::factor_enabled('noface')) {
-            $facefailedcount = $DB->count_records_select(
-                'quizaccess_proctoring_logs',
-                $logwhere . ' AND awsflag = :riskawsfailed',
-                $logparams + ['riskawsfailed' => 3]
-            );
-            $nofaceimagecount = $DB->count_records_sql(
-                "SELECT COUNT(1)
-                   FROM {quizaccess_proctoring_face_images} fi
-                   JOIN {quizaccess_proctoring_logs} l ON l.id = fi.parentid
-                  WHERE {$faceimagewhere}
-                    AND fi.facefound <> :riskfacefound",
-                $faceimageparams
-            );
+            [$nofacesql, $nofaceparams] = self::no_face_capture_sql();
+            $nofacetimes = [];
+            foreach ($DB->get_records_sql(
+                "SELECT l.id, l.capturedat, l.timemodified
+                   FROM {quizaccess_proctoring_logs} l
+                  WHERE {$faceimagewhere} AND {$nofacesql}",
+                $faceimageparams + $nofaceparams
+            ) as $row) {
+                $nofacetimes[] = (int)$row->capturedat > 0 ? (int)$row->capturedat : (int)$row->timemodified;
+            }
+            $nofaceruncount = self::count_no_face_runs($nofacetimes);
             $nofaceeventcount = self::count_events(
                 $eventwhere,
                 $eventparams,
@@ -710,8 +784,7 @@ final class risk_calculator {
             'counts' => [
                 'webcam' => $webcamcount,
                 'facemismatch' => $facemismatchcount,
-                'facefailed' => $facefailedcount,
-                'nofaceimage' => $nofaceimagecount,
+                'nofaceruns' => $nofaceruncount,
                 'nofaceevent' => $nofaceeventcount,
                 'tabactivity' => $tabactivitycount,
                 'clipboard' => $clipboardcount,
@@ -765,7 +838,7 @@ final class risk_calculator {
         $factorcounts = [
             'facemismatch' => (int)$counts['facemismatch'],
             'multiplefaces' => (int)$counts['multiplefaces'],
-            'noface' => max((int)$counts['nofaceimage'], (int)$counts['facefailed']) + (int)$counts['nofaceevent'],
+            'noface' => (int)$counts['nofaceruns'] + (int)$counts['nofaceevent'],
             'phonedetected' => $phonedetectedcount,
             'screenshare' => (int)$counts['screenissue'],
             'multimonitor' => (int)$counts['multimonitor'],
@@ -973,7 +1046,7 @@ final class risk_calculator {
         }
 
         $zero = [
-            'webcam' => 0, 'facemismatch' => 0, 'facefailed' => 0, 'nofaceimage' => 0, 'nofaceevent' => 0,
+            'webcam' => 0, 'facemismatch' => 0, 'nofaceruns' => 0, 'nofaceevent' => 0,
             'tabactivity' => 0, 'clipboard' => 0, 'screenissue' => 0, 'multimonitor' => 0, 'aitool' => 0,
             'aitoolscreenshot' => 0, 'f12' => 0, 'othershortcut' => 0, 'multiplefaces' => 0, 'audio' => 0,
             'phonedetected' => 0,
@@ -1076,12 +1149,11 @@ final class risk_calculator {
             $logrows = $DB->get_recordset_sql(
                 "SELECT courseid, quizid, userid, status AS attemptid,
                         SUM(CASE WHEN COALESCE(webcampicture, '') <> '' THEN 1 ELSE 0 END) AS webcam,
-                        SUM(CASE WHEN awsflag = :checked AND awsscore < :threshold THEN 1 ELSE 0 END) AS facemismatch,
-                        SUM(CASE WHEN awsflag = :failed THEN 1 ELSE 0 END) AS facefailed
+                        SUM(CASE WHEN awsflag = :checked AND awsscore < :threshold THEN 1 ELSE 0 END) AS facemismatch
                    FROM {quizaccess_proctoring_logs}
                   WHERE deletionprogress = 0 AND status {$insql}
                GROUP BY courseid, quizid, userid, status",
-                $params + ['checked' => 2, 'threshold' => $threshold, 'failed' => 3]
+                $params + ['checked' => 2, 'threshold' => $threshold]
             );
             foreach ($logrows as $row) {
                 $tuple = $row->courseid . ':' . $row->quizid . ':' . $row->userid . ':' . $row->attemptid;
@@ -1094,29 +1166,30 @@ final class risk_calculator {
                 if (self::factor_enabled('facemismatch')) {
                     $counts[$tuple]['facemismatch'] = (int)$row->facemismatch;
                 }
-                if (self::factor_enabled('noface')) {
-                    $counts[$tuple]['facefailed'] = (int)$row->facefailed;
-                }
             }
             $logrows->close();
 
-            // 4. Stored face images that came back without a face.
+            // 4. Captures with no face, grouped into sustained runs. Only the no-face captures are
+            // read, which are few, so this stays one small query per chunk.
             if (self::factor_enabled('noface')) {
+                [$nofacesql, $nofaceparams] = self::no_face_capture_sql();
                 $facerows = $DB->get_recordset_sql(
-                    "SELECT l.courseid, l.quizid, l.userid, l.status AS attemptid, COUNT(1) AS cnt
-                       FROM {quizaccess_proctoring_face_images} fi
-                       JOIN {quizaccess_proctoring_logs} l ON l.id = fi.parentid
-                      WHERE l.deletionprogress = 0 AND fi.facefound <> :facefound AND l.status {$insql}
-                   GROUP BY l.courseid, l.quizid, l.userid, l.status",
-                    $params + ['facefound' => '1']
+                    "SELECT l.id, l.courseid, l.quizid, l.userid, l.status AS attemptid, l.capturedat, l.timemodified
+                       FROM {quizaccess_proctoring_logs} l
+                      WHERE l.deletionprogress = 0 AND l.status {$insql} AND {$nofacesql}",
+                    $params + $nofaceparams
                 );
+                $nofacetimes = [];
                 foreach ($facerows as $row) {
                     $tuple = $row->courseid . ':' . $row->quizid . ':' . $row->userid . ':' . $row->attemptid;
                     if (isset($counts[$tuple])) {
-                        $counts[$tuple]['nofaceimage'] = (int)$row->cnt;
+                        $nofacetimes[$tuple][] = (int)$row->capturedat > 0 ? (int)$row->capturedat : (int)$row->timemodified;
                     }
                 }
                 $facerows->close();
+                foreach ($nofacetimes as $tuple => $times) {
+                    $counts[$tuple]['nofaceruns'] = self::count_no_face_runs($times);
+                }
             }
 
             // 5. Attempt durations, and the question count each duration is judged against.

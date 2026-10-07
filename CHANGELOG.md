@@ -1,6 +1,20 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.11.8 — 2026-10-06
+- **"No face" no longer flags students who did not move (CPIT-469).** A single missed capture used to count. Each one is decided from one small webcam frame, which low light, glare or a turned head can miss. Now "No face visible" adds points only for a sustained absence:
+  - it takes a run of webcam captures in a row with no face, 3 by default (new setting "Webcam captures in a row without a face before No face counts", 2 to 10), lasting at least 10 seconds;
+  - each run is one event, however long it lasted;
+  - misses found by the browser and misses found by the face-match service count the same way.
+  This changes scores: attempts whose "no face" points came from scattered single misses lose them.
+- **The face-detection sensitivity setting now works.** The browser called face-api without options, so face-api's built-in minimum confidence of 0.5 applied, and "Face blur detection confidence" (0.30 by default) had no effect below 0.5. It now applies to the blur check and to each webcam capture's face check. The precheck keeps the default, because it judges whether a photo is good enough to keep as the reference.
+- **A capture nobody checked is no longer a "no face".** Without the face model (face matching not done by TaView's service and the no-face blur off), every capture was stored as "no face found". It is now stored as not checked (`facefound` 2). It never counts as a miss, and with a face-match service that compares whole frames it is still compared.
+- **No face in the webcam image is no longer a face mismatch.** The face-match service reported a webcam image without a face as "does not match", and Moodle stored it as a 35-point mismatch. When the reference photo has a face, the service now returns `reason: no_face_in_capture`, and Moodle stores a "no face" capture (`awsflag` 3) instead.
+- **Moodle's face-match threshold now decides.** The service compared against its own fixed 80 and returned no score for a non-match, so Moodle's `threshold` setting (68 by default) never applied: scores from 68 to 79 came back as 0, a mismatch. The service now returns the similarity of a non-match too, and Moodle compares it with its own threshold. With an older service nothing changes.
+- The "face not found" notice on the attempt page now appears after two missed captures in a row, not on every single miss.
+- During the attempt, an off-centre face still passes by design. Centring is checked only in the precheck. Strict framing during the exam would penalise normal movement, students with disabilities, small screens and poor lighting.
+- The face-match service change is in `tools/verification_service` and must be deployed separately. Until it is, the plugin changes still apply.
+
 # v1.11.7 — 2026-10-06
 - **Multiple faces in the webcam are now detected (CPIT-468).** The "Multiple faces visible" factor was scored but nothing ever produced it. The webcam capture kept only the first face it found, and the only face count was in the precheck. With the new setting **"Detect multiple faces in the webcam"** on, the browser counts the faces in the webcam every four seconds, using the face model TaView already loads.
   - Only confident faces at least a minimum share of the frame height count. The share is a new setting, 10% by default, so photos, posters and televisions in the background are ignored.

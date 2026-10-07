@@ -734,9 +734,15 @@ class quizaccess_proctoring_external extends external_api {
             return;
         }
 
-        if ($facefound !== 1) {
+        if ($facefound === 0) {
             quizaccess_proctoring_log_fm_warning($reportid);
             quizaccess_proctoring_update_match_result($reportid, 0, 3);
+            return;
+        }
+        // 2: the browser could not check this capture (no face model). That is not a miss: a
+        // service that compares whole frames still gets to look; one that needs the browser's
+        // face crop has nothing to compare, so the capture is left unchecked (CPIT-469).
+        if ($facefound !== 1 && !quizaccess_proctoring_is_custom_ai_method($method)) {
             return;
         }
 

@@ -105,10 +105,18 @@ class LambdaSecurityTests(unittest.TestCase):
         self_check = service.rekognition.compare_faces.call_args_list[1].kwargs
         self.assertEqual(self_check["SourceImage"], self_check["TargetImage"])
 
-    def test_missing_face_in_live_image_is_still_a_plain_mismatch(self):
+    def test_missing_face_in_live_image_is_reported_as_no_face_not_a_mismatch(self):
+        # The reference self-check finds a face, so it was the webcam image that had none.
         service.rekognition.compare_faces.side_effect = [self.no_face_error(), {"FaceMatches": [{"Similarity": 100}]}]
         body = json.loads(self.request({"reference_image": "YWJj", "current_snap": "ZGVm"})["body"])
         self.assertFalse(body["match"])
+        self.assertEqual("no_face_in_capture", body["reason"])
+
+    def test_mismatch_still_reports_its_similarity(self):
+        service.rekognition.compare_faces.return_value = {"FaceMatches": [{"Similarity": 72.456}]}
+        body = json.loads(self.request({"reference_image": "YWJj", "current_snap": "ZGVm"})["body"])
+        self.assertFalse(body["match"])
+        self.assertEqual(72.46, body["similarity"])
         self.assertNotIn("reason", body)
 
     def test_reference_self_check_outage_never_retires_the_reference(self):
