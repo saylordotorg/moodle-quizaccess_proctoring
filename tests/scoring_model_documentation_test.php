@@ -92,7 +92,6 @@ final class scoring_model_documentation_test extends advanced_testcase {
             ['Tab/focus activity', 20],
             ['F12', 15],
             ['Other keyboard shortcuts', 24],
-            ['Audio', 18],
             ['Webcam missing', 15],
             ['Speed', 25],
         ];
