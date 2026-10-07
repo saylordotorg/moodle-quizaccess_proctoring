@@ -156,7 +156,12 @@ if ($action === 'decideexceptions') {
         if (count($parts) !== 2 || (int)$parts[0] <= 0 || (int)$parts[1] <= 0) {
             continue;
         }
-        \quizaccess_proctoring\local\id_exception::decide((int)$parts[0], (int)$parts[1], (bool)$approved);
+        \quizaccess_proctoring\local\id_exception::decide(
+            (int)$parts[0],
+            (int)$parts[1],
+            (bool)$approved,
+            optional_param('decisionnote', '', PARAM_TEXT)
+        );
         $decided++;
     }
 
@@ -427,6 +432,15 @@ if ($view === 'idexceptions') {
     echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'view', 'value' => 'idexceptions']);
     echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'decideexceptions']);
     echo html_writer::table($table);
+    // Recorded with an approval, next to the student's own reason (CPIT-480).
+    echo html_writer::label(get_string('idexemption:decisionnote', 'quizaccess_proctoring'), 'proctoring-idexception-note');
+    echo html_writer::tag('textarea', '', [
+        'id' => 'proctoring-idexception-note',
+        'name' => 'decisionnote',
+        'rows' => 2,
+        'maxlength' => 400,
+        'class' => 'form-control mb-2',
+    ]);
     echo html_writer::div(
         html_writer::tag('button', get_string('idexemption:batchapprove', 'quizaccess_proctoring'), [
             'type' => 'submit',

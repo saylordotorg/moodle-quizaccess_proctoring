@@ -184,7 +184,7 @@ final class id_exception_test extends advanced_testcase {
         ], $requestedat);
 
         $sink = $this->redirectEmails();
-        id_exception::decide($cmid, (int)$student->id, true);
+        id_exception::decide($cmid, (int)$student->id, true, 'Checked the employer letter.');
         $messages = $sink->get_messages();
         $sink->close();
 
@@ -193,6 +193,11 @@ final class id_exception_test extends advanced_testcase {
             'quizid' => (int)$cm->instance,
         ], '*', MUST_EXIST);
         $this->assertSame((int)override_resolver::STATE_DISABLED, (int)$override->idverificationstate);
+        // The student's own reason and the reviewer's note are on the record (CPIT-480).
+        $this->assertStringContainsString('My employer holds my passport.', $override->justification);
+        $withheld = get_string('idexemption:category_withheld', 'quizaccess_proctoring');
+        $this->assertStringContainsString($withheld, $override->justification);
+        $this->assertStringContainsString('Checked the employer letter.', $override->justification);
 
         $this->assertCount(1, $messages);
         $message = reset($messages);
@@ -217,6 +222,24 @@ final class id_exception_test extends advanced_testcase {
             'eventtype' => 'id_exemption_approved',
         ]));
         $this->assertSame([], id_exception::pending_requests($cmid));
+    }
+
+    /**
+     * A full-length reviewer note is kept whole when the student's text is at its longest (PR #50 review).
+     */
+    public function test_long_justification_keeps_the_whole_reviewer_note(): void {
+        $this->resetAfterTest();
+        $note = str_repeat('n', 399) . 'Z';
+        $justification = id_exception::approval_justification([
+            'reason' => id_exception::REASON_NOID,
+            'category' => 'withheld',
+            'detail' => str_repeat('d', id_exception::DETAIL_MAX),
+            'alternatives' => str_repeat('a', id_exception::ALTERNATIVES_MAX),
+        ], $note);
+
+        $this->assertLessThanOrEqual(id_exception::JUSTIFICATION_MAX, \core_text::strlen($justification));
+        $this->assertStringContainsString($note, $justification);
+        $this->assertStringContainsString('…', $justification);
     }
 
     /**
