@@ -144,6 +144,16 @@ function quizaccess_proctoring_can_review_across_courses(): bool {
  * @param stdClass|null $course Course the profile is viewed in.
  */
 function quizaccess_proctoring_myprofile_navigation(\core_user\output\myprofile\tree $tree, $user, $iscurrentuser, $course) {
+    if ($iscurrentuser && \quizaccess_proctoring\local\reference_photo::exists((int)$user->id)) {
+        // The student's own reference photo, and a way to ask for a new one (CPIT-476).
+        $tree->add_node(new \core_user\output\myprofile\node(
+            'miscellaneous',
+            'quizaccess_proctoring_myphoto',
+            get_string('myphoto:title', 'quizaccess_proctoring'),
+            null,
+            new moodle_url('/mod/quiz/accessrule/proctoring/my_photo.php')
+        ));
+    }
     if (!$iscurrentuser || !isloggedin() || isguestuser() || !quizaccess_proctoring_can_review_across_courses()) {
         return;
     }
@@ -426,11 +436,14 @@ function quizaccess_proctoring_user_has_passed_id_verification(
  * @param int $cmid Quiz course module ID.
  */
 function quizaccess_proctoring_set_face_preflight_passed(int $cmid): void {
-    global $SESSION, $USER;
+    global $DB, $SESSION, $USER;
 
     $SESSION->quizaccess_proctoring_facechecks[$cmid] = [
         'userid' => (int)$USER->id,
         'timecreated' => time(),
+        // The reference photo the pass was checked against: a reset by staff deletes it, and the
+        // pass must not outlive it (CPIT-476 review).
+        'referenceid' => (int)$DB->get_field('quizaccess_proctoring_user_images', 'id', ['user_id' => (int)$USER->id]),
     ];
 }
 
@@ -452,12 +465,16 @@ function quizaccess_proctoring_clear_face_preflight(int $cmid): void {
  * @return bool Whether a successful check was recorded in the last ten minutes.
  */
 function quizaccess_proctoring_has_face_preflight_passed(int $cmid): bool {
-    global $SESSION, $USER;
+    global $DB, $SESSION, $USER;
 
     $check = $SESSION->quizaccess_proctoring_facechecks[$cmid] ?? [];
     $created = (int)($check['timecreated'] ?? 0);
-    return $cmid > 0 && !empty($USER->id) && (int)($check['userid'] ?? 0) === (int)$USER->id &&
-        $created <= time() && $created >= time() - 10 * MINSECS;
+    if (!($cmid > 0 && !empty($USER->id) && (int)($check['userid'] ?? 0) === (int)$USER->id &&
+            $created <= time() && $created >= time() - 10 * MINSECS)) {
+        return false;
+    }
+    $referenceid = (int)($check['referenceid'] ?? 0);
+    return $referenceid <= 0 || $DB->record_exists('quizaccess_proctoring_user_images', ['id' => $referenceid]);
 }
 
 /**

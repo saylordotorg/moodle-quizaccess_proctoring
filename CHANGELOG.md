@@ -1,6 +1,12 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.5 — 2026-10-07
+- **Students see and confirm their reference photo before it is kept (CPIT-476).** The first clear photo of a student's first proctored exam used to be saved silently. The student is now given a 3-2-1 countdown, then sees the photo, with what it is used for and how long it is kept. They choose **Use this photo** or **Take another photo**. Nothing is saved until they choose to use it. When the ID check passed, its live photo is offered the same way. That photo was already compared with the ID.
+- **My proctoring photo** (linked from the student's profile) shows the reference photo on file and how long it is kept. The student can ask Student Affairs for a new one, once a day. The request goes to everyone with the cross-course review capability, or to the site administrators if nobody has it, and is logged.
+- **Staff can reset a reference photo without admin rights.** The per-student proctoring report has "Reset reference photo" for anyone who can review holds. A reason is required, and the reset is logged with who did it and why. The student takes a new photo at their next exam.
+- `validate_face` has a new optional parameter `confirmreference`, default 1. The precheck sends 0 to ask before keeping a first photo.
+
 # v1.12.4 — 2026-10-07
 - **Decide a hold from the quiz attempt page (CPIT-475).** Reviewers used to switch between the attempt review and the proctoring report. The proctoring panel on the attempt review page now also shows:
   - the flagged moments, with their times;
