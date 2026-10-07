@@ -226,6 +226,7 @@ class provider implements
             'user_id' => 'privacy:metadata:userid',
             'photo_draft_id' => 'privacy:metadata:photo_draft_id',
             'timeused' => 'privacy:metadata:timeused',
+            'timelastused' => 'privacy:metadata:timelastused',
         ];
 
         $collection->add_database_table(
@@ -919,7 +920,7 @@ class provider implements
                 $userimage = $DB->get_record(
                     'quizaccess_proctoring_user_images',
                     ['user_id' => $userid],
-                    'id, user_id, photo_draft_id, timeused'
+                    'id, user_id, photo_draft_id, timeused, timelastused'
                 );
                 if ($userimage) {
                     $subcontext = [
@@ -931,6 +932,7 @@ class provider implements
                         'user_id' => $userimage->user_id,
                         'photo_draft_id' => $userimage->photo_draft_id,
                         'timeused' => $userimage->timeused,
+                        'timelastused' => $userimage->timelastused,
                     ];
 
                     writer::with_context($context)
@@ -1063,6 +1065,80 @@ class provider implements
                 self::delete_reference_image_data_for_userids([$userid]);
             }
         }
+    }
+
+    /**
+     * Erase everything the plugin holds about one user, in every context (CPIT-472).
+     *
+     * Used when a Moodle account is deleted outside the data-privacy tool, which would otherwise
+     * leave the user's captures, ID images, reference photo and records behind. It removes the
+     * same data as an approved erasure request.
+     *
+     * @param int $userid User ID.
+     */
+    public static function delete_all_user_data(int $userid): void {
+        if ($userid <= 0) {
+            return;
+        }
+        foreach (self::get_contexts_for_userid($userid)->get_contexts() as $context) {
+            self::delete_override_data($context, [$userid]);
+            if ($context->contextlevel === CONTEXT_MODULE) {
+                self::delete_module_data_for_userids($context, [$userid]);
+            }
+        }
+        // Rows of quizzes or courses deleted before the account have no context left to be found
+        // through, so whatever remains of the user's records is removed directly. Their files went
+        // with the deleted context.
+        self::delete_remaining_user_records($userid);
+        // The reference photo lives in the system context whether or not it was listed above.
+        self::delete_reference_image_data_for_userids([$userid]);
+    }
+
+    /**
+     * Delete a user's proctoring rows wherever they are, without going through a context.
+     *
+     * @param int $userid The deleted user.
+     */
+    private static function delete_remaining_user_records(int $userid): void {
+        global $DB;
+
+        $logids = $DB->get_fieldset_select('quizaccess_proctoring_logs', 'id', 'userid = :userid', ['userid' => $userid]);
+        foreach (array_chunk($logids, 1000) as $chunk) {
+            self::delete_face_image_records_for_logids($chunk);
+            $DB->delete_records_list('quizaccess_proctoring_facematch_task', 'reportid', $chunk);
+        }
+        foreach (self::module_data_tables() as $table) {
+            $DB->delete_records($table, ['userid' => $userid]);
+        }
+        foreach (
+            [
+            'quizaccess_proctoring_risk_holds' => ['reviewerid'],
+            'quizaccess_proctoring_finding_reviews' => ['reviewerid', 'revokedby'],
+            'quizaccess_proctoring_notes' => ['authorid'],
+            ] as $table => $fields
+        ) {
+            foreach ($fields as $field) {
+                $DB->set_field($table, $field, 0, [$field => $userid]);
+            }
+        }
+
+        $overrideids = $DB->get_fieldset_select('quizaccess_proctoring_overrides', 'id', 'userid = :userid', ['userid' => $userid]);
+        foreach (array_chunk($overrideids, 1000) as $chunk) {
+            $DB->delete_records_list('quizaccess_proctoring_override_audit', 'overrideid', $chunk);
+            $DB->delete_records_list('quizaccess_proctoring_overrides', 'id', $chunk);
+        }
+        $DB->set_field('quizaccess_proctoring_overrides', 'grantedby', 0, ['grantedby' => $userid]);
+        $DB->set_field('quizaccess_proctoring_overrides', 'revokedby', 0, ['revokedby' => $userid]);
+        $DB->set_field('quizaccess_proctoring_override_audit', 'actorid', 0, ['actorid' => $userid]);
+    }
+
+    /**
+     * Delete the reference photos (and their face crops) of the given users (CPIT-472 retention).
+     *
+     * @param array $userids User IDs.
+     */
+    public static function delete_reference_photos(array $userids): void {
+        self::delete_reference_image_data_for_userids($userids);
     }
 
     /**

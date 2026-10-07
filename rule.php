@@ -1068,6 +1068,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         } else {
             $retention = get_string('privacynotice:retentionmanual', 'quizaccess_proctoring');
         }
+        // The rest of the retention schedule (CPIT-472): ID images and the reference photo.
+        $iddays = (int)get_config('quizaccess_proctoring', 'idverificationretentiondays');
+        if ($iddays > 0) {
+            $retention .= ' ' . get_string('privacynotice:retentionid', 'quizaccess_proctoring', $iddays);
+        }
+        $referencedays = (int)get_config('quizaccess_proctoring', 'referenceretentiondays');
+        if ($referencedays > 0) {
+            $retention .= ' ' . get_string('privacynotice:retentionreference', 'quizaccess_proctoring', $referencedays);
+        }
 
         return html_writer::tag(
             'details',

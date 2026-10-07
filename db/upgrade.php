@@ -1473,5 +1473,56 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100608, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026100609) {
+        // Retention schedule (CPIT-472). Attempt evidence used to ship as 0, kept for ever; it is now
+        // kept 180 days after the attempt, and never while a hold on it is open. Reference photos get
+        // a 365-day limit after the student's last proctoring activity.
+        quizaccess_proctoring_upgrade_image_retention_default();
+        if (get_config('quizaccess_proctoring', 'referenceretentiondays') === false) {
+            set_config('referenceretentiondays', 365, 'quizaccess_proctoring');
+        }
+        upgrade_plugin_savepoint(true, 2026100609, 'quizaccess', 'proctoring');
+    }
+
+    if ($oldversion < 2026100610) {
+        // Reference retention counts from the last time a proctored attempt used the photo. The
+        // capture logs that would show it are themselves deleted after 180 days, so it is kept on
+        // the photo's own row. The history before this upgrade cannot be trusted - an earlier
+        // capture retention may already have removed the logs of recent use - so every existing
+        // photo starts its retention period now instead of being treated as long unused.
+        $table = new xmldb_table('quizaccess_proctoring_user_images');
+        $field = new xmldb_field('timelastused', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'timeused');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        $DB->set_field_select('quizaccess_proctoring_user_images', 'timelastused', time(), 'timelastused = 0');
+        upgrade_plugin_savepoint(true, 2026100610, 'quizaccess', 'proctoring');
+    }
+
     return true;
+}
+
+/**
+ * Move attempt-evidence retention from the old shipped default to 180 days (CPIT-472).
+ *
+ * The old default, 0, kept evidence for ever. A site still on it moves to 180 days. A value an
+ * administrator chose is kept, including 0: an explicit 0 cannot be told from the default by its
+ * value, but changing a setting after install leaves a config_log row with the previous value,
+ * which the installed default does not have (PR #42 review).
+ */
+function quizaccess_proctoring_upgrade_image_retention_default(): void {
+    global $DB;
+
+    $stored = get_config('quizaccess_proctoring', 'imageretentiondays');
+    if ($stored !== false && (string)$stored !== '' && (string)$stored !== '0') {
+        return;
+    }
+    $chosen = $stored !== false && $DB->record_exists_select(
+        'config_log',
+        'plugin = :plugin AND name = :name AND oldvalue IS NOT NULL',
+        ['plugin' => 'quizaccess_proctoring', 'name' => 'imageretentiondays']
+    );
+    if (!$chosen) {
+        set_config('imageretentiondays', 180, 'quizaccess_proctoring');
+    }
 }

@@ -171,6 +171,9 @@ class precheck_evidence {
             'user_id = :userid AND timeused = 0',
             ['userid' => $userid]
         );
+        // Every use counts towards keeping the photo; the retention schedule deletes it a year
+        // after the last one (CPIT-472).
+        $DB->set_field('quizaccess_proctoring_user_images', 'timelastused', time(), ['user_id' => $userid]);
     }
 
     /**

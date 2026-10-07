@@ -915,13 +915,27 @@ class quizaccess_proctoring_external extends external_api {
                 return $result;
             }
 
-            $referenceid = self::save_reference_image($USER->id, $webcampicture, $faceimage, (int)$facefound);
-            quizaccess_proctoring_set_face_preflight_passed((int)$cm->id);
-            $result = [];
-            $result['screenshotid'] = $referenceid;
-            $result['status'] = 'registered';
-            $result['warnings'] = $warnings;
-            return $result;
+            // Registration takes the same lock as a staff upload, the retirement of an unusable photo
+            // and the retention cleanup, and checks again under it: cleanup deletes every reference
+            // file of the student, so a photo saved while it ran would be lost (CPIT-472 review).
+            $lock = quizaccess_proctoring_get_reference_lock((int)$USER->id);
+            if (!$lock) {
+                return ['screenshotid' => 0, 'status' => 'faceunclear', 'warnings' => $warnings];
+            }
+            try {
+                if (!$DB->record_exists('quizaccess_proctoring_user_images', ['user_id' => $USER->id])) {
+                    $referenceid = self::save_reference_image($USER->id, $webcampicture, $faceimage, (int)$facefound);
+                    quizaccess_proctoring_set_face_preflight_passed((int)$cm->id);
+                    $result = [];
+                    $result['screenshotid'] = $referenceid;
+                    $result['status'] = 'registered';
+                    $result['warnings'] = $warnings;
+                    return $result;
+                }
+            } finally {
+                $lock->release();
+            }
+            // A reference was registered while this request waited; compare against it below.
         }
 
         $screenshotid = time();
