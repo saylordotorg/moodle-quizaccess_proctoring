@@ -1,6 +1,19 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.18 — 2026-10-07
+- **A plain-language baseline of the live settings (CPIT-489).** `cli/baseline.php` prints, as Markdown:
+  - what stops a student from starting;
+  - what only flags an attempt (each factor with its points and cap, the detectors, the risk bands);
+  - what holds a grade or certificate;
+  - the retention periods;
+  - the quizzes with their own settings, and the number of active per-student overrides;
+  - every other setting.
+
+  It only reads, and never prints credentials or private endpoints. Run on learn.saylor.org, its output is the baseline page for Confluence.
+- **The "start low" pilot profile**: `cli/baseline.php --apply-pilot-profile --confirm` holds only Critical attempts for review and never fails one automatically. It changes only the grade action; detectors and what stops a student stay as they are. It is for after Student Affairs agrees the profile.
+- **Optional feedback after the exam.** When the site has a student feedback form (`feedbackurl`), a student reviewing their own proctored attempt sees "Tell us how the proctored exam went". The link carries only the course id, quiz id and `source=afterexam`.
+
 # v1.12.17 — 2026-10-07
 - **A capture whose image is missing says so (CPIT-488).** Reviewers saw broken or "unavailable" images for some webcam captures. The per-student report now checks, in one query, which capture images are still stored. A missing one shows a placeholder with the reason instead of a broken image: either no image was received, or the file is no longer stored because it was deleted or its upload did not finish.
 - The cause of the captures Student Affairs saw still needs one affected attempt link, so the files and the server's response for those captures can be checked on learn.saylor.org.

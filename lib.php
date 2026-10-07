@@ -4937,7 +4937,7 @@ function quizaccess_proctoring_geturl_of_faceimage(string $data, int $userid, st
  * @return string Rendered proctoring fragment HTML, or an empty string when it should not be shown.
  */
 function quizaccess_proctoring_attempt_review_panel_html(): string {
-    global $PAGE, $DB;
+    global $PAGE, $DB, $USER;
 
     // Self-scope: only contribute output on the quiz attempt-review page.
     if (!isset($PAGE) || $PAGE->pagetype !== 'mod-quiz-review') {
@@ -4981,7 +4981,19 @@ function quizaccess_proctoring_attempt_review_panel_html(): string {
             ['quizaccess/proctoring:reviewriskholds', 'quizaccess/proctoring:viewreport'],
             $context
         )) {
-            return '';
+            // The student reviewing their own attempt gets an optional feedback link instead,
+            // when the site has a feedback form (CPIT-489).
+            $feedback = trim((string)get_config('quizaccess_proctoring', 'feedbackurl'));
+            $feedback = $feedback === '' ? '' : clean_param($feedback, PARAM_URL);
+            if ((int)$attempt->userid !== (int)$USER->id || $feedback === '') {
+                return '';
+            }
+            $link = new moodle_url($feedback, ['course' => (int)$cm->course, 'exam' => (int)$cm->id, 'source' => 'afterexam']);
+            return html_writer::div(
+                html_writer::link($link, get_string('feedback:afterexam', 'quizaccess_proctoring'),
+                    ['target' => '_blank', 'rel' => 'noopener']),
+                'proctoring-after-exam-feedback alert alert-light mt-3'
+            );
         }
 
         return \quizaccess_proctoring\local\attempt_panel::render(
