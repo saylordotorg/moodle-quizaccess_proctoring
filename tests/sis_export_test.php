@@ -93,7 +93,7 @@ final class sis_export_test extends advanced_testcase {
     private function attempt(\stdClass $quiz, int $attempt, int $modified, int $preview = 0): int {
         global $DB;
         static $uniqueid = 9000;
-        return (int)$DB->insert_record('quiz_attempts', (object)[
+        $attemptid = (int)$DB->insert_record('quiz_attempts', (object)[
             'quiz' => $quiz->id,
             'userid' => $this->student->id,
             'attempt' => $attempt,
@@ -106,6 +106,16 @@ final class sis_export_test extends advanced_testcase {
             'preview' => $preview,
             'sumgrades' => 5,
         ]);
+        // A proctored attempt has what proctoring recorded for it: here, the neutral snapshot written
+        // when it starts, which counts as neither a capture nor a violation.
+        if ((int)$quiz->id === (int)$this->quiz->id) {
+            $DB->insert_record('quizaccess_proctoring_events', (object)[
+                'courseid' => $this->course->id, 'quizid' => $this->cm->id, 'userid' => $this->student->id,
+                'attemptid' => $attemptid, 'reportid' => 0, 'eventtype' => 'monitoring_started',
+                'eventdetail' => '{}', 'timemodified' => $modified - 1800,
+            ]);
+        }
+        return $attemptid;
     }
 
     /**
@@ -140,6 +150,27 @@ final class sis_export_test extends advanced_testcase {
         $this->setUser($manager);
         $this->expectException(\required_capability_exception::class);
         get_attempt_summaries::execute();
+    }
+
+    /**
+     * Whether an attempt was proctored comes from what was recorded for it, not from the quiz's
+     * setting today: turning proctoring off later keeps its attempts, turning it on does not adopt
+     * earlier ones (PR #41 review).
+     */
+    public function test_proctored_attempts_follow_the_recorded_evidence_not_the_current_setting(): void {
+        global $DB;
+        set_config('sisexportenabled', 1, 'quizaccess_proctoring');
+        $now = time();
+
+        $proctored = $this->attempt($this->quiz, 1, $now - 100);
+        $unproctored = $this->attempt($this->plainquiz, 1, $now - 90);
+
+        // Proctoring switched off on the first quiz and on for the second, after the attempts.
+        $DB->set_field('quizaccess_proctoring', 'proctoringrequired', 0, ['quizid' => $this->quiz->id]);
+        $DB->insert_record('quizaccess_proctoring', (object)['quizid' => $this->plainquiz->id, 'proctoringrequired' => 1]);
+
+        $ids = array_column($this->call(['attemptids' => [$proctored, $unproctored]])['attempts'], 'attemptid');
+        $this->assertSame([$proctored], array_map('intval', $ids));
     }
 
     public function test_summarises_only_real_proctored_attempts(): void {

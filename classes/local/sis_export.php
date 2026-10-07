@@ -158,8 +158,14 @@ final class sis_export {
     }
 
     /**
-     * The attempt rows both entry points start from: real (non-preview) attempts on quizzes that
-     * currently require proctoring.
+     * The attempt rows both entry points start from: real (non-preview) attempts that were proctored.
+     *
+     * Whether an attempt was proctored is read from what was recorded for it (captures, browser
+     * events or a hold), not from the quiz's current setting, which an administrator can change after
+     * the fact: turning proctoring on would otherwise export every earlier unproctored attempt, and
+     * turning it off would drop proctored ones even from by_ids() refreshes (PR #41 review). An
+     * attempt whose evidence the retention schedule has since deleted, and that never had a hold, is
+     * no longer listed: there is nothing left to summarise.
      *
      * @return array [sql, params]
      */
@@ -172,10 +178,15 @@ final class sis_export {
                        cm.id AS cmid, c.shortname AS courseshortname, c.idnumber AS courseidnumber
                   FROM {quiz_attempts} qa
                   JOIN {quiz} q ON q.id = qa.quiz
-                  JOIN {quizaccess_proctoring} p ON p.quizid = q.id AND p.proctoringrequired = 1
                   JOIN {course_modules} cm ON cm.instance = q.id AND cm.module = :quizmodule
                   JOIN {course} c ON c.id = q.course
-                 WHERE qa.preview = 0";
+                 WHERE qa.preview = 0
+                   AND (EXISTS (SELECT 1 FROM {quizaccess_proctoring_logs} pl
+                                 WHERE pl.status = qa.id AND pl.userid = qa.userid AND pl.quizid = cm.id)
+                        OR EXISTS (SELECT 1 FROM {quizaccess_proctoring_events} pe
+                                    WHERE pe.attemptid = qa.id AND pe.userid = qa.userid AND pe.quizid = cm.id)
+                        OR EXISTS (SELECT 1 FROM {quizaccess_proctoring_risk_holds} ph
+                                    WHERE ph.attemptid = qa.id AND ph.userid = qa.userid AND ph.quizid = cm.id))";
         return [$sql, ['quizmodule' => $moduleid]];
     }
 
@@ -309,7 +320,8 @@ final class sis_export {
         $params['deletion'] = 0;
         $records = $DB->get_recordset_sql(
             "SELECT l.courseid, l.quizid, l.userid, l.status AS attemptid,
-                    MIN(l.id) AS reportid, MAX(l.timemodified) AS lastactivity, COUNT(l.id) AS capturecount,
+                    MIN(l.id) AS reportid, MAX(l.timemodified) AS lastactivity,
+                    SUM(CASE WHEN COALESCE(l.webcampicture, '') <> '' THEN 1 ELSE 0 END) AS capturecount,
                     SUM(CASE WHEN l.awsflag = 2 AND l.awsscore < :facethreshold THEN 1 ELSE 0 END) AS facemismatch
                FROM {quizaccess_proctoring_logs} l
               WHERE l.status {$insql} AND l.deletionprogress = :deletion
@@ -574,26 +586,43 @@ final class sis_export {
         global $DB;
 
         $byid = self::rows_by_id($rows);
-        [$usersql, $userparams] = $DB->get_in_or_equal(
-            array_values(array_unique(array_map(fn($r) => (int)$r->userid, $byid))), SQL_PARAMS_NAMED, 'ovu');
-        [$coursesql, $courseparams] = $DB->get_in_or_equal(
-            array_values(array_unique(array_map(fn($r) => (int)$r->courseid, $byid))), SQL_PARAMS_NAMED, 'ovc');
+        // Only the (course, student) pairs the page actually has, in chunks, as the ID check lookup
+        // does: separate IN lists would load every page user's overrides in every page course
+        // (PR #41 review).
+        $pairs = [];
+        foreach ($byid as $row) {
+            $pairs[(int)$row->courseid . ':' . (int)$row->userid] = [(int)$row->courseid, (int)$row->userid];
+        }
         $columns = implode(', ', array_values(override_resolver::STATE_COLUMNS));
-        $records = $DB->get_records_select(
-            'quizaccess_proctoring_overrides',
-            "userid {$usersql} AND courseid {$coursesql}",
-            $userparams + $courseparams,
-            '',
-            "id, courseid, quizid, userid, expiry, revoked, timerevoked, timecreated, {$columns}"
-        );
+        $recordsbypair = [];
+        foreach (array_chunk($pairs, 100, true) as $chunk) {
+            $where = [];
+            $params = [];
+            $i = 0;
+            foreach ($chunk as [$courseid, $userid]) {
+                $where[] = "(courseid = :ovc{$i} AND userid = :ovu{$i})";
+                $params["ovc{$i}"] = $courseid;
+                $params["ovu{$i}"] = $userid;
+                $i++;
+            }
+            $records = $DB->get_records_select(
+                'quizaccess_proctoring_overrides',
+                implode(' OR ', $where),
+                $params,
+                '',
+                "id, courseid, quizid, userid, expiry, revoked, timerevoked, timecreated, {$columns}"
+            );
+            foreach ($records as $record) {
+                $recordsbypair[(int)$record->courseid . ':' . (int)$record->userid][] = $record;
+            }
+        }
 
         $out = [];
         foreach ($byid as $attemptid => $row) {
             $start = self::attempt_start($row);
-            $applicable = array_values(array_filter($records, function ($o) use ($row, $start) {
-                return (int)$o->userid === (int)$row->userid
-                    && (int)$o->courseid === (int)$row->courseid
-                    && ((int)$o->quizid === 0 || (int)$o->quizid === (int)$row->quizid)
+            $candidates = $recordsbypair[(int)$row->courseid . ':' . (int)$row->userid] ?? [];
+            $applicable = array_values(array_filter($candidates, function ($o) use ($row, $start) {
+                return ((int)$o->quizid === 0 || (int)$o->quizid === (int)$row->quizid)
                     && (int)$o->timecreated <= $start
                     && ($o->expiry === null || (int)$o->expiry > $start)
                     && ((int)$o->revoked === 0 || ((int)$o->timerevoked > 0 && (int)$o->timerevoked > $start));
