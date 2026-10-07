@@ -1583,3 +1583,5 @@ $string['referencereset:done'] = 'The reference photo was reset. The student tak
 $string['referencereset:reason'] = 'Reason (recorded in the logs)';
 $string['referencereset:reasonrequired'] = 'Enter a reason to reset the reference photo.';
 $string['referencereset:submit'] = 'Reset the photo';
+$string['modal:idverificationname_scriptnotsupported'] = 'The name on your photo ID could not be compared with your profile name ({$a}), because they are written in different scripts. Retake the photo so the name printed in Latin letters is visible, if your ID has one, or ask for an ID exception.';
+$string['modal:idverificationname_unreadable'] = 'No name could be read from your photo ID. Retake the photo in good light, with the whole ID in the frame and the name sharp. If your ID shows your name only in a script other than Latin, Cyrillic or Arabic, ask for an ID exception.';

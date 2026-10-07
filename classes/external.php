@@ -2298,6 +2298,16 @@ class quizaccess_proctoring_external extends external_api {
             $romanizedname = trim((string)($result['romanizedname'] ?? ''));
             $namematchreason = trim((string)($result['namematchreason'] ?? ''));
             $unknownname = get_string('modal:idverificationnameunknown', 'quizaccess_proctoring');
+            // The verification service answers with reason codes since CPIT-477. Two of them have
+            // their own message; the other two only say how the names compared, which the student
+            // message already does, so they are not shown as an explanation.
+            if (in_array($namematchreason, ['unreadable', 'script_not_supported'], true)) {
+                return get_string('modal:idverificationname_' . str_replace('_', '', $namematchreason), 'quizaccess_proctoring',
+                    $profilename);
+            }
+            if (in_array($namematchreason, ['matched', 'fuzzy'], true)) {
+                $namematchreason = '';
+            }
             if ($romanizedname !== '' || $namematchreason !== '') {
                 return get_string('modal:idverificationfailed_name_multilingual', 'quizaccess_proctoring', (object)[
                     'idname' => $idname !== '' ? $idname : $unknownname,
