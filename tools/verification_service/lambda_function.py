@@ -201,13 +201,13 @@ def score_name_match(lines: list[str], payload: dict[str, Any]) -> tuple[float, 
     return best_score, extracted_name or best_line
 
 
-def reference_has_face(reference: bytes) -> bool:
-    """Whether Rekognition can find a face in the reference image at all.
+def reference_face_state(reference: bytes) -> str:
+    """Whether Rekognition can find a face in the reference image: "yes", "no" or "unknown".
 
     compare_faces raises InvalidParameterException when either image has no face, so a
     reference saved with the face out of frame looks exactly like a mismatch. Comparing the
-    reference with itself tells the two apart using the same permission. Any other failure
-    is reported as "has a face" so an outage never retires a usable reference.
+    reference with itself tells the two apart using the same permission. Any other failure is
+    "unknown", so an outage never retires a usable reference or blames the webcam image.
     """
     try:
         rekognition.compare_faces(
@@ -216,10 +216,13 @@ def reference_has_face(reference: bytes) -> bool:
             SimilarityThreshold=0,
         )
     except ClientError as exc:
-        return exc.response.get("Error", {}).get("Code") != "InvalidParameterException"
+        if exc.response.get("Error", {}).get("Code") == "InvalidParameterException":
+            return "no"
+        return "unknown"
     except BotoCoreError:
-        return True
-    return True
+        return "unknown"
+    return "yes"
+
 
 
 def verify_face_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -246,11 +249,20 @@ def verify_face_payload(payload: dict[str, Any]) -> dict[str, Any]:
     except ClientError as exc:
         error_code = exc.response.get("Error", {}).get("Code")
         if error_code == "InvalidParameterException":
-            if not reference_has_face(reference):
+            state = reference_face_state(reference)
+            if state == "no":
                 return response(200, {
                     "match": False,
                     "reason": "reference_no_face",
                     "message": "No face found in the reference image.",
+                })
+            if state == "yes":
+                # The reference has a face, so the webcam image is the one without: the student
+                # was not in view, which is not the same as being someone else.
+                return response(200, {
+                    "match": False,
+                    "reason": "no_face_in_capture",
+                    "message": "No face found in the webcam image.",
                 })
             return response(200, {"match": False, "message": "Face does not match."})
         return response(502, {"detail": "AWS Rekognition compare_faces failed."})
@@ -267,7 +279,14 @@ def verify_face_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "message": "Face verified successfully.",
         })
 
-    return response(200, {"match": False, "message": "Face does not match."})
+    # The similarity is returned for a non-match too, so the caller can apply its own threshold.
+    rounded = round(score, 2)
+    return response(200, {
+        "match": False,
+        "score": rounded,
+        "similarity": rounded,
+        "message": "Face does not match.",
+    })
 
 
 def verify_id_payload(payload: dict[str, Any]) -> dict[str, Any]:

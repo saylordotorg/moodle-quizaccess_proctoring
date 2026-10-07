@@ -166,7 +166,7 @@ final class factor_coverage {
                 "SELECT COUNT(1)
                    FROM {quizaccess_proctoring_face_images} fi
                    JOIN {quizaccess_proctoring_logs} l ON l.id = fi.parentid
-                  WHERE fi.parent_type = :parenttype
+                  WHERE fi.parent_type = :parenttype AND fi.facefound IN (0, 1)
                     AND l.courseid = :courseid AND l.quizid = :cmid AND l.userid = :userid
                     AND l.status = :attemptid AND l.deletionprogress = 0",
                 // Reference photos are face images too, but their parentid points at user_images.

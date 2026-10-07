@@ -7,7 +7,13 @@ Small FastAPI service that exposes private `/verify`, `/verify-face`, and `/veri
 - `{"image_reference": "...", "image_current": "..."}`
 - `{"reference_image": "...", "current_snap": "..."}`
 
-A non-match normally returns `{"match": false, "message": "Face does not match."}`. When Rekognition finds no face in the reference image itself, the response adds `"reason": "reference_no_face"`. Rekognition reports a missing face in either image the same way, so the service compares the reference with itself to tell them apart, using the same `rekognition:CompareFaces` permission. Moodle records that outcome as "Reference photo unusable", not as a mismatch, and can let the student replace a self-registered reference. Any other error during that second comparison is reported as a plain non-match, so an AWS outage never retires a usable reference.
+A non-match normally returns `{"match": false, "score": 72.5, "similarity": 72.5, "message": "Face does not match."}`. The similarity is included so Moodle can apply its own face-match threshold (the Moodle `threshold` setting); `FACE_SIMILARITY_THRESHOLD` only sets the `match` field.
+
+Rekognition reports a missing face in either image the same way, so after such an error the service compares the reference with itself, using the same `rekognition:CompareFaces` permission:
+
+- no face in the reference either: the response adds `"reason": "reference_no_face"`. Moodle records "Reference photo unusable", not a mismatch, and can let the student replace a self-registered reference;
+- the reference has a face: the webcam image was the one without, and the response adds `"reason": "no_face_in_capture"`. Moodle records it as "no face", not as a mismatch;
+- any other error during that second comparison: a plain non-match with no reason, so an AWS outage never retires a usable reference or blames the webcam image.
 
 ## Run
 
@@ -90,13 +96,22 @@ On 2026-09-30 the bridge was deployed separately for `https://dev.sylr.org`. The
 | Original ZIP SHA-256 | `f472ea8d83c2d9e5c08967b1f12401caa050cb4414973e9d7cca7935fd25bbae` |
 | AWS `CodeSha256` | `9HLqjYPC2eXAiWex8SQByqBQy0QUlz6dfMp5Nf0lu64=` |
 
-The source in this directory was checked byte for byte against the `lambda_function.py` member of that original deployment archive. AWS `CodeSha256` is the Base64-encoded SHA-256 of the ZIP bytes, not the source file. Recreating a ZIP can change its archive hash even when the source is identical. The deployment archive and credentials are deliberately not stored here.
+At that deployment the source in this directory was checked byte for byte against the `lambda_function.py` member of the deployed archive (the source SHA-256 above). AWS `CodeSha256` is the Base64-encoded SHA-256 of the ZIP bytes, not the source file. Recreating a ZIP can change its archive hash even when the source is identical. The deployment archive and credentials are deliberately not stored here.
 
-Verify the source independently from this directory:
+**The checked-in source has changed since that deployment and is no longer identical to it.** It now also reports `reason: no_face_in_capture` and returns the similarity of a non-match (CPIT-453, CPIT-469), and that version has not been deployed yet. When it is, record the new deployment here, with its source SHA-256 and `CodeSha256`.
+
+| Item | Value |
+| --- | --- |
+| Checked-in source SHA-256 (CPIT-469) | `5c6b1ef23bbffc4aef0a3ddae0a8bd54f1a1ff82a4fd8cc87267aba79d9b3d99` |
+| Deployed | not yet |
+
+Compute the source hash from this directory:
 
 ```sh
-python -B -c "import hashlib, pathlib; digest = hashlib.sha256(pathlib.Path('lambda_function.py').read_bytes()).hexdigest(); assert digest == 'fb52ea66b35e2352b44b3d32906b8b19cff95036e96c43ba6f4fc95e3a753876'; print(digest)"
+python -B -c "import hashlib, pathlib; print(hashlib.sha256(pathlib.Path('lambda_function.py').read_bytes()).hexdigest())"
 ```
+
+Compare it with the source SHA-256 recorded for the deployment you want to check.
 
 The deployed endpoint passed authenticated readiness probes and rejected missing or invalid API keys. A successful `HEAD` probe does not validate Rekognition permissions or the result of a face or ID comparison.
 

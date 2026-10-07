@@ -4441,15 +4441,26 @@ function quizaccess_proctoring_extracted(
         return;
     }
 
+    // The service found the reference's face but none in the webcam image: the student was not in
+    // view. That is a "no face" capture, not a different person (CPIT-469).
+    if (isset($response->reason) && $response->reason === 'no_face_in_capture') {
+        quizaccess_proctoring_update_match_result($reportid, 0, 3);
+        return;
+    }
+
     if (isset($response->match)) {
         $score = isset($response->score) ? (float)$response->score :
             (isset($response->similarity) ? (float)$response->similarity : 0);
         if (!empty($response->match)) {
             $similarity = $score > 0 ? $score : 100;
-            if ($threshold > 0 && $similarity < $threshold) {
-                quizaccess_proctoring_log_fm_warning($reportid);
-            }
         } else {
+            // A service from 1.11.8 on reports the similarity of a non-match too, so Moodle's own
+            // threshold decides instead of the service's fixed one (CPIT-469). An older service
+            // sends none, which stays a non-match at 0.
+            $similarity = $score;
+        }
+        $matched = $threshold > 0 ? $similarity >= $threshold : !empty($response->match);
+        if (!$matched) {
             quizaccess_proctoring_log_fm_warning($reportid);
         }
 

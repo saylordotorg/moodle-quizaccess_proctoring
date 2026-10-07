@@ -731,6 +731,15 @@ if ($canmanageproctoring) {
         PARAM_FLOAT
     ));
 
+    // How many captures in a row must miss a face before "no face" scores (CPIT-469).
+    $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/nofacerequiredcaptures',
+        get_string('setting:nofacerequiredcaptures', 'quizaccess_proctoring'),
+        get_string('setting:nofacerequiredcaptures_desc', 'quizaccess_proctoring'),
+        3,
+        PARAM_INT
+    ));
+
     $settings->add(new admin_setting_configtext(
         'quizaccess_proctoring/faceblurmisses',
         get_string('setting:faceblurmisses', 'quizaccess_proctoring'),
