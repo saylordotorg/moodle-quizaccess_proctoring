@@ -645,6 +645,31 @@ final class risk_calculator {
     }
 
     /**
+     * Which of these quizzes are open resource, where leaving the quiz page is expected (CPIT-482).
+     *
+     * @param int[] $cmids Quiz course-module ids.
+     * @return array<int, true> The open-resource ones, keyed by course-module id.
+     */
+    public static function open_resource_quizzes(array $cmids): array {
+        global $DB;
+
+        $cmids = array_values(array_unique(array_filter(array_map('intval', $cmids))));
+        if (!$cmids) {
+            return [];
+        }
+        [$insql, $params] = $DB->get_in_or_equal($cmids, SQL_PARAMS_NAMED, 'orq');
+        $open = $DB->get_fieldset_sql(
+            "SELECT cm.id
+               FROM {course_modules} cm
+               JOIN {modules} m ON m.id = cm.module AND m.name = :quiz
+               JOIN {quizaccess_proctoring} p ON p.quizid = cm.instance
+              WHERE cm.id {$insql} AND p.expectedtools = :open",
+            ['quiz' => 'quiz', 'open' => 2] + $params
+        );
+        return array_fill_keys(array_map('intval', $open), true);
+    }
+
+    /**
      * Calculate a proctoring risk score for one quiz attempt.
      *
      * @param int $courseid Course id.
@@ -765,7 +790,7 @@ final class risk_calculator {
             );
         }
 
-        $tabactivitycount = self::factor_enabled('tabactivity') ? self::count_events(
+        $tabactivitycount = self::factor_enabled('tabactivity') && !self::open_resource_quizzes([$cmid]) ? self::count_events(
             $eventwhere,
             $eventparams,
             ['focus_lost', 'tab_hidden', 'page_exit']
@@ -1174,9 +1199,15 @@ final class risk_calculator {
             }
             $rows->close();
 
+            // Switching away is expected on an open-resource exam and is not scored (CPIT-482).
+            $openquizzes = self::open_resource_quizzes(array_map(
+                fn($tuple) => (int)explode(':', $tuple)[1],
+                array_keys($eventcounts)
+            ));
             foreach ($eventcounts as $tuple => $bytype) {
+                $openquiz = isset($openquizzes[(int)explode(':', $tuple)[1]]);
                 foreach ($eventfactors as $countkey => [$factorkey, $types]) {
-                    if (!self::factor_enabled($factorkey)) {
+                    if (!self::factor_enabled($factorkey) || ($factorkey === 'tabactivity' && $openquiz)) {
                         continue;
                     }
                     foreach ($types as $type) {

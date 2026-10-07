@@ -1615,3 +1615,18 @@ $string['studentmessages:message'] = 'Message';
 $string['studentmessages:time'] = 'Time';
 $string['studentmessages:unknown'] = 'Warning "{$a}"';
 $string['studentmessages:untilclosed'] = 'Until the page was left';
+$string['calculator:close'] = 'Close calculator';
+$string['calculator:error'] = 'Error';
+$string['calculator:open'] = 'Calculator';
+$string['calculator:title'] = 'Calculator';
+$string['expectedtools'] = 'Tools the exam allows';
+$string['expectedtools_calculator'] = 'A calculator (shown on the quiz page)';
+$string['expectedtools_help'] = 'A browser cannot tell which app a student switched to, so a desktop calculator looks the same as any other app and is scored as leaving the quiz.
+
+* **None**: closed book. Leaving the quiz page is scored.
+* **A calculator**: a calculator is shown on the quiz page. Using it is not leaving the page, so it adds no risk. Switching to another app is still scored.
+* **Open resources**: students may use other material. Leaving the quiz page is still logged, but it is not scored.
+
+Set this to match the exam\'s policy.';
+$string['expectedtools_none'] = 'None (closed book)';
+$string['expectedtools_open'] = 'Open resources (leaving the quiz is not scored)';

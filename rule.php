@@ -45,6 +45,13 @@ if (class_exists('\mod_quiz\local\access_rule_base')) {
  * Extends the parent class to implement custom proctoring behavior.
  */
 class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
+    /** @var int The exam allows no outside tools (CPIT-482). */
+    const EXPECTED_TOOLS_NONE = 0;
+    /** @var int The exam allows a calculator, offered on the page. */
+    const EXPECTED_TOOLS_CALCULATOR = 1;
+    /** @var int The exam is open resource: switching away is not scored. */
+    const EXPECTED_TOOLS_OPEN = 2;
+
     /** @var string Cloudflare Turnstile token verification endpoint. */
     private const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
     /** @var string Skip desktop screen-share requirements on mobile/tablet browsers. */
@@ -2118,6 +2125,22 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $mform->addRule('riskreviewthreshold', null, 'numeric', null, 'client');
         $mform->addHelpButton('riskreviewthreshold', 'riskreviewthreshold', 'quizaccess_proctoring');
         $mform->hideIf('riskreviewthreshold', 'proctoringrequired', 'eq', 0);
+
+        // What the exam allows (CPIT-482). A browser cannot tell which app a student switched to,
+        // so a calculator is offered on the page, and an open-resource exam does not score switching.
+        $mform->addElement(
+            'select',
+            'expectedtools',
+            get_string('expectedtools', 'quizaccess_proctoring'),
+            [
+                self::EXPECTED_TOOLS_NONE => get_string('expectedtools_none', 'quizaccess_proctoring'),
+                self::EXPECTED_TOOLS_CALCULATOR => get_string('expectedtools_calculator', 'quizaccess_proctoring'),
+                self::EXPECTED_TOOLS_OPEN => get_string('expectedtools_open', 'quizaccess_proctoring'),
+            ]
+        );
+        $mform->setDefault('expectedtools', self::EXPECTED_TOOLS_NONE);
+        $mform->addHelpButton('expectedtools', 'expectedtools', 'quizaccess_proctoring');
+        $mform->hideIf('expectedtools', 'proctoringrequired', 'eq', 0);
     }
 
     /**
@@ -2151,6 +2174,11 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 'captchamode' => isset($quiz->captchamode) ? (int)$quiz->captchamode : -1,
                 'riskreviewmode' => $riskreviewmode,
                 'riskreviewthreshold' => $riskreviewthreshold,
+                'expectedtools' => in_array((int)($quiz->expectedtools ?? 0), [
+                    self::EXPECTED_TOOLS_NONE,
+                    self::EXPECTED_TOOLS_CALCULATOR,
+                    self::EXPECTED_TOOLS_OPEN,
+                ], true) ? (int)$quiz->expectedtools : self::EXPECTED_TOOLS_NONE,
             ];
 
             // Add or update the proctoring settings for this quiz.
@@ -2188,7 +2216,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         return [
             'proctoring.proctoringrequired, proctoring.requireentirescreen, ' .
                 'proctoring.captchamode, proctoring.riskreviewmode, ' .
-                'proctoring.riskreviewthreshold', // Fields to select.
+                'proctoring.riskreviewthreshold, proctoring.expectedtools', // Fields to select.
             'LEFT JOIN {quizaccess_proctoring} proctoring ON proctoring.quizid = quiz.id', // Join clause.
             [], // No additional parameters.
         ];
@@ -2287,6 +2315,12 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         // compete with the preflight's own camera, so leave that page to startAttempt.js.
         if (basename($this->get_topmost_script()) === 'startattempt.php') {
             return;
+        }
+
+        // The exam allows a calculator: offer one on the page, so using it is not a switch away
+        // from the quiz (CPIT-482).
+        if ((int)($this->quiz->expectedtools ?? 0) === self::EXPECTED_TOOLS_CALCULATOR) {
+            $page->requires->js_call_amd('quizaccess_proctoring/calculator', 'init');
         }
 
         if ($cmid) {
