@@ -4872,3 +4872,32 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     color: #b02a37;
     font-weight: bold;
 }
+
+/* On-page calculator for exams that allow one (CPIT-482). */
+.proctoring-calculator-dock {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    z-index: 1040;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.proctoring-calculator {
+    width: 220px;
+    padding: 8px;
+}
+
+.proctoring-calculator-display {
+    margin-bottom: 8px;
+    text-align: right;
+    font-family: monospace;
+}
+
+.proctoring-calculator-keys {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+}

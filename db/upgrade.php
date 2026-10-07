@@ -1518,6 +1518,16 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100611, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026100620) {
+        // What each exam allows (CPIT-482): nothing, an on-page calculator, or open resources.
+        $table = new xmldb_table('quizaccess_proctoring');
+        $field = new xmldb_field('expectedtools', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0', 'captchamode');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_plugin_savepoint(true, 2026100620, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
 
