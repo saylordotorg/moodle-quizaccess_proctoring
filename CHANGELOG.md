@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.7 — 2026-10-07
+- **"Photo ID", with what counts as one (CPIT-478).** The ID step and its messages now say "photo ID". The step gives Student Affairs' definition: "Your photo ID should include your full name and a photograph, such as a passport, driver's license, government-issued ID, work-issued ID, or school-issued ID."
+- **Launch instructions and help links are settings.** Saylor's wording no longer needs language customisation. The new settings are all empty by default, which shows nothing:
+  - **Exam launch instructions** (HTML): shown on every proctored quiz page above the start button, and as plain text in the Moodle app.
+  - **Photo ID requirements page**: linked from the photo ID step.
+  - **Screen sharing help page**: linked from the screen-sharing step.
+  - **Exam setup help page**: linked from every setup step.
+
 # v1.12.6 — 2026-10-07
 - **ID name matching no longer gives names in other scripts a silent 0 (CPIT-477).** The verification service erased every letter outside a-z before comparing names, so a Cyrillic, Arabic or Chinese name always scored 0. The plugin also sent name variants and transliteration hints that the service ignored.
   - The service now keeps letters of every script and compares the ID text with every name variant Moodle sends.

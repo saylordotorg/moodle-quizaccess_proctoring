@@ -1216,12 +1216,49 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @param string $description The short step description.
      * @return string Step heading HTML.
      */
-    private static function make_preflight_step_heading($title, $description) {
+    private static function make_preflight_step_heading($title, $description, string $helpsetting = '', string $helpstring = '') {
+        // A step's own help page, then the general support link, both set by the site (CPIT-478).
+        $links = [];
+        $stephelp = $helpsetting !== '' ? self::help_url($helpsetting) : '';
+        if ($stephelp !== '') {
+            $links[] = html_writer::link($stephelp, get_string($helpstring, 'quizaccess_proctoring'),
+                ['target' => '_blank', 'rel' => 'noopener']);
+        }
+        $support = self::help_url('supporturl');
+        if ($support !== '') {
+            $links[] = html_writer::link($support, get_string('help:support', 'quizaccess_proctoring'),
+                ['target' => '_blank', 'rel' => 'noopener']);
+        }
         return html_writer::div(
             html_writer::div($title, 'proctoring-preflight-step-title') .
-            html_writer::div($description, 'proctoring-preflight-step-description'),
+            html_writer::div($description, 'proctoring-preflight-step-description') .
+            ($links ? html_writer::div(implode(' &middot; ', $links), 'proctoring-preflight-step-help small') : ''),
             'proctoring-preflight-step-heading'
         );
+    }
+
+    /**
+     * A help link configured in the plugin settings, or '' when it is unset or not a URL.
+     *
+     * @param string $name Setting name: idrequirementsurl, screensharehelpurl or supporturl.
+     * @return string
+     */
+    private static function help_url(string $name): string {
+        $url = trim((string)get_config('quizaccess_proctoring', $name));
+        return $url === '' ? '' : clean_param($url, PARAM_URL);
+    }
+
+    /**
+     * The site's launch-page instructions (CPIT-478), formatted, or '' when none are set.
+     *
+     * @return string HTML.
+     */
+    private static function launch_instructions(): string {
+        $html = trim((string)get_config('quizaccess_proctoring', 'launchinstructions'));
+        if ($html === '' || trim(strip_tags($html)) === '') {
+            return '';
+        }
+        return format_text($html, FORMAT_HTML, ['context' => \context_system::instance()]);
     }
 
 
@@ -1662,7 +1699,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 "<section id='proctoring-step-identity' class='proctoring-preflight-step' data-preflight-step='identity'>" .
                 self::make_preflight_step_heading(
                     get_string('preflightstep:idverification:title', 'quizaccess_proctoring'),
-                    get_string('preflightstep:idverification:desc', 'quizaccess_proctoring')
+                    get_string('preflightstep:idverification:desc', 'quizaccess_proctoring') . ' ' .
+                        get_string('preflightstep:idverification:definition', 'quizaccess_proctoring'),
+                    'idrequirementsurl',
+                    'help:idrequirements'
                 ) .
                 $alreadyverified .
                 (!$idverificationpassed ? html_writer::div(
@@ -1778,7 +1818,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 </div></div></div></section>",
                 self::make_preflight_step_heading(
                     get_string('preflightstep:screen:title', 'quizaccess_proctoring'),
-                    get_string('preflightstep:screen:desc', 'quizaccess_proctoring')
+                    get_string('preflightstep:screen:desc', 'quizaccess_proctoring'),
+                    'screensharehelpurl',
+                    'help:screenshare'
                 ),
                 get_string('modal:screenshare', 'quizaccess_proctoring'),
                 get_string('modal:pending', 'quizaccess_proctoring'),
@@ -2167,7 +2209,12 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         // "Invalid response value detected". Web services get the header as plain text only:
         // the button cannot be rendered as text, and there is no page to attach the JS to.
         if ($this->is_web_service_request()) {
-            return [clean_param(get_string('proctoringheader', 'quizaccess_proctoring'), PARAM_TEXT)];
+            $messages = [clean_param(get_string('proctoringheader', 'quizaccess_proctoring'), PARAM_TEXT)];
+            $instructions = self::launch_instructions();
+            if ($instructions !== '') {
+                $messages[] = clean_param(html_to_text($instructions, 0, false), PARAM_TEXT);
+            }
+            return $messages;
         }
 
         // Localized strings for user messages.
@@ -2183,8 +2230,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         // Messages for the quiz view page.
         $messages = [
             get_string('proctoringheader', 'quizaccess_proctoring'),
-            $this->get_download_config_button(),
         ];
+        // The site's own instructions for its students, above the start button (CPIT-478).
+        $instructions = self::launch_instructions();
+        if ($instructions !== '') {
+            $messages[] = html_writer::div($instructions, 'proctoring-launch-instructions');
+        }
+        $messages[] = $this->get_download_config_button();
         if (\quizaccess_proctoring\local\readiness::enabled()) {
             $messages[] = html_writer::link(
                 new moodle_url('/mod/quiz/accessrule/proctoring/readiness.php', ['cmid' => (int)$this->quiz->cmid]),
