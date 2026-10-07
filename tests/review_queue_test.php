@@ -126,7 +126,8 @@ final class review_queue_test extends advanced_testcase {
     }
 
     /**
-     * A system-level reviewer sees every course; a user without the role sees nothing.
+     * A system-level reviewer sees every course except one where the capability is prohibited; a
+     * user without the role sees nothing; only a site administrator skips the per-course check.
      */
     public function test_system_reviewer_and_outsider(): void {
         $this->resetAfterTest();
@@ -138,8 +139,24 @@ final class review_queue_test extends advanced_testcase {
         $reviewer = $this->getDataGenerator()->create_user();
         role_assign($role->id, $reviewer->id, \context_system::instance());
         $this->setUser($reviewer);
+        $scope = overall_report::scoped_course_ids(['quizaccess/proctoring:reviewriskholds']);
+        $this->assertEqualsCanonicalizing([(int)$this->courses['a']->id, (int)$this->courses['b']->id], $scope);
+        $this->assertSame(2, overall_report::held_certificates(0, $scope)['total']);
+
+        // A prohibition in one course keeps it out, although the role is held site-wide.
+        assign_capability(
+            'quizaccess/proctoring:reviewriskholds',
+            CAP_PROHIBIT,
+            $role->id,
+            \context_course::instance($this->courses['b']->id)->id,
+            true
+        );
+        $scope = overall_report::scoped_course_ids(['quizaccess/proctoring:reviewriskholds']);
+        $this->assertSame([(int)$this->courses['a']->id], $scope);
+        $this->assertSame(1, overall_report::held_certificates(0, $scope)['total']);
+
+        $this->setAdminUser();
         $this->assertNull(overall_report::scoped_course_ids(['quizaccess/proctoring:reviewriskholds']));
-        $this->assertSame(2, overall_report::held_certificates(0, null)['total']);
 
         $this->setUser($this->getDataGenerator()->create_user());
         $this->assertFalse(quizaccess_proctoring_can_review_across_courses());

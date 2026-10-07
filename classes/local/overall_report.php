@@ -56,21 +56,22 @@ final class overall_report {
      * The courses in which the current user holds one of the given capabilities.
      *
      * Scopes the cross-course pages to what the viewer may see (CPIT-474): a reviewer whose role
-     * is assigned at system level sees every course; one assigned on a category, or in single
-     * courses, sees only those courses.
+     * is assigned at system level sees every course, one assigned on a category that category's
+     * courses. Permissions are resolved per course, so a capability prohibited or overridden in a
+     * category or course keeps that course out even for a system-level reviewer. Only site
+     * administrators, who hold every capability everywhere, skip the per-course resolution.
      *
      * @param string[] $capabilities Any one of these is enough.
-     * @return int[]|null Course ids, or null when one of the capabilities is held site-wide.
+     * @return int[]|null Course ids, or null for a site administrator (every course).
      */
     public static function scoped_course_ids(array $capabilities): ?array {
         global $USER;
 
-        $system = \context_system::instance();
+        if (is_siteadmin()) {
+            return null;
+        }
         $ids = [];
         foreach ($capabilities as $capability) {
-            if (has_capability($capability, $system)) {
-                return null;
-            }
             $courses = get_user_capability_course($capability, (int)$USER->id, true, '', 'id');
             foreach ($courses ?: [] as $course) {
                 $ids[(int)$course->id] = (int)$course->id;
@@ -513,6 +514,8 @@ final class overall_report {
             'risklevel' => $risklevel,
             'riskmin' => $riskmin,
             'riskmax' => $riskmax,
+            // Decisions return to this report, not to the review queue the page opens on.
+            'view' => 'attempts',
         ];
 
         return [
