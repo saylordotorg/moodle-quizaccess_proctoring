@@ -88,15 +88,15 @@ if ($riskmin > $riskmax) {
     [$riskmin, $riskmax] = [$riskmax, $riskmin];
 }
 
-// Each list is limited to the courses where the viewer holds the capability it needs: a role at
-// system level sees every course, one on a category sees that category (CPIT-474). Each decision
-// checks the capability on the quiz again.
-$reportscope = \quizaccess_proctoring\local\overall_report::scoped_course_ids([
+// Each list is limited to the quizzes where the viewer holds the capability it needs: a role at
+// system level sees every course, one on a category sees that category, and a prohibition on a
+// course or quiz is honoured (CPIT-474). Each decision checks the capability on the quiz again.
+$reportscope = \quizaccess_proctoring\local\overall_report::scoped_quiz_cmids([
     'quizaccess/proctoring:viewreport',
     'quizaccess/proctoring:reviewriskholds',
 ]);
-$holdscope = \quizaccess_proctoring\local\overall_report::scoped_course_ids(['quizaccess/proctoring:reviewriskholds']);
-$exceptionscope = \quizaccess_proctoring\local\overall_report::scoped_course_ids(['quizaccess/proctoring:manageoverrides']);
+$holdscope = \quizaccess_proctoring\local\overall_report::scoped_quiz_cmids(['quizaccess/proctoring:reviewriskholds']);
+$exceptionscope = \quizaccess_proctoring\local\overall_report::scoped_quiz_cmids(['quizaccess/proctoring:manageoverrides']);
 $canviewheld = $holdscope === null || !empty($holdscope);
 $canviewexceptions = $exceptionscope === null || !empty($exceptionscope);
 // The review queue - holds waiting for a decision, oldest first - is what opens by default.
@@ -339,7 +339,7 @@ if ($canviewheld || $canviewexceptions) {
 if ($view === 'idexceptions') {
     $pendingrequests = array_filter(
         \quizaccess_proctoring\local\id_exception::pending_requests(),
-        fn($request) => $exceptionscope === null || in_array((int)$request['courseid'], $exceptionscope, true)
+        fn($request) => $exceptionscope === null || in_array((int)$request['cmid'], $exceptionscope, true)
     );
     $formurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php');
 

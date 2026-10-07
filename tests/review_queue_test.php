@@ -114,8 +114,8 @@ final class review_queue_test extends advanced_testcase {
         $this->assertFalse(quizaccess_proctoring_can_manage_admin_settings());
         $this->assertFalse(has_capability('moodle/site:config', \context_system::instance()));
 
-        $scope = overall_report::scoped_course_ids(['quizaccess/proctoring:reviewriskholds']);
-        $this->assertSame([(int)$this->courses['a']->id], $scope);
+        $scope = overall_report::scoped_quiz_cmids(['quizaccess/proctoring:reviewriskholds']);
+        $this->assertSame([(int)$this->cms['a']->id], $scope);
         $queue = overall_report::held_certificates(0, $scope);
         $this->assertSame(1, $queue['total']);
         $this->assertStringContainsString('holdid=' . $holda, $queue['rows'][0]['releaseurl']);
@@ -139,8 +139,8 @@ final class review_queue_test extends advanced_testcase {
         $reviewer = $this->getDataGenerator()->create_user();
         role_assign($role->id, $reviewer->id, \context_system::instance());
         $this->setUser($reviewer);
-        $scope = overall_report::scoped_course_ids(['quizaccess/proctoring:reviewriskholds']);
-        $this->assertEqualsCanonicalizing([(int)$this->courses['a']->id, (int)$this->courses['b']->id], $scope);
+        $scope = overall_report::scoped_quiz_cmids(['quizaccess/proctoring:reviewriskholds']);
+        $this->assertEqualsCanonicalizing([(int)$this->cms['a']->id, (int)$this->cms['b']->id], $scope);
         $this->assertSame(2, overall_report::held_certificates(0, $scope)['total']);
 
         // A prohibition in one course keeps it out, although the role is held site-wide.
@@ -151,17 +151,47 @@ final class review_queue_test extends advanced_testcase {
             \context_course::instance($this->courses['b']->id)->id,
             true
         );
-        $scope = overall_report::scoped_course_ids(['quizaccess/proctoring:reviewriskholds']);
-        $this->assertSame([(int)$this->courses['a']->id], $scope);
+        $scope = overall_report::scoped_quiz_cmids(['quizaccess/proctoring:reviewriskholds']);
+        $this->assertSame([(int)$this->cms['a']->id], $scope);
         $this->assertSame(1, overall_report::held_certificates(0, $scope)['total']);
 
+        // So does a prohibition on a single quiz.
+        assign_capability(
+            'quizaccess/proctoring:reviewriskholds',
+            CAP_PROHIBIT,
+            $role->id,
+            \context_module::instance($this->cms['a']->id)->id,
+            true
+        );
+        $this->assertSame([], overall_report::scoped_quiz_cmids(['quizaccess/proctoring:reviewriskholds']));
+
         $this->setAdminUser();
-        $this->assertNull(overall_report::scoped_course_ids(['quizaccess/proctoring:reviewriskholds']));
+        $this->assertNull(overall_report::scoped_quiz_cmids(['quizaccess/proctoring:reviewriskholds']));
 
         $this->setUser($this->getDataGenerator()->create_user());
         $this->assertFalse(quizaccess_proctoring_can_review_across_courses());
-        $this->assertSame([], overall_report::scoped_course_ids(['quizaccess/proctoring:reviewriskholds']));
+        $this->assertSame([], overall_report::scoped_quiz_cmids(['quizaccess/proctoring:reviewriskholds']));
         $this->assertSame(0, overall_report::held_certificates(0, [])['total']);
+    }
+
+    /**
+     * A reviewer assigned to a hidden category can still open the queue.
+     */
+    public function test_hidden_category_reviewer_can_open_the_queue(): void {
+        $this->resetAfterTest();
+        $this->two_categories();
+        \core_course_category::get($this->categories['a']->id)->hide();
+
+        $role = reviewer_role::ensure();
+        $reviewer = $this->getDataGenerator()->create_user();
+        role_assign($role->id, $reviewer->id, \context_coursecat::instance($this->categories['a']->id));
+        $this->setUser($reviewer);
+
+        $this->assertTrue(quizaccess_proctoring_can_review_across_courses());
+        $this->assertSame(
+            [(int)$this->cms['a']->id],
+            overall_report::scoped_quiz_cmids(['quizaccess/proctoring:reviewriskholds'])
+        );
     }
 
     /**

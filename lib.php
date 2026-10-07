@@ -89,7 +89,10 @@ function quizaccess_proctoring_can_review_across_courses(): bool {
     if (has_capability('quizaccess/proctoring:reviewacrosscourses', context_system::instance())) {
         return true;
     }
-    return !empty(core_course_category::make_categories_list('quizaccess/proctoring:reviewacrosscourses'));
+    // Any category the capability is held on, visible or not: hiding a category must not lock out
+    // the reviewer assigned to it.
+    [$categories] = get_user_capability_contexts('quizaccess/proctoring:reviewacrosscourses', true, null, true, '', '', '', '', 1);
+    return !empty($categories);
 }
 
 /**

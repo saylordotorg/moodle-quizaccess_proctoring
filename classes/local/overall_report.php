@@ -53,53 +53,77 @@ final class overall_report {
     ];
 
     /**
-     * The courses in which the current user holds one of the given capabilities.
+     * The quizzes (course-module ids) on which the current user holds one of the given capabilities.
      *
      * Scopes the cross-course pages to what the viewer may see (CPIT-474): a reviewer whose role
      * is assigned at system level sees every course, one assigned on a category that category's
-     * courses. Permissions are resolved per course, so a capability prohibited or overridden in a
-     * category or course keeps that course out even for a system-level reviewer. Only site
-     * administrators, who hold every capability everywhere, skip the per-course resolution.
+     * courses. Permissions are resolved on each quiz, so a capability prohibited or overridden in
+     * a category, course or quiz keeps those rows out even for a system-level reviewer. Only site
+     * administrators, who hold every capability everywhere, skip the resolution.
      *
      * @param string[] $capabilities Any one of these is enough.
-     * @return int[]|null Course ids, or null for a site administrator (every course).
+     * @return int[]|null Course-module ids, or null for a site administrator (every quiz).
      */
-    public static function scoped_course_ids(array $capabilities): ?array {
-        global $USER;
+    public static function scoped_quiz_cmids(array $capabilities): ?array {
+        global $DB, $USER;
 
         if (is_siteadmin()) {
             return null;
         }
-        $ids = [];
+        $courseids = [];
         foreach ($capabilities as $capability) {
             $courses = get_user_capability_course($capability, (int)$USER->id, true, '', 'id');
             foreach ($courses ?: [] as $course) {
-                $ids[(int)$course->id] = (int)$course->id;
+                $courseids[(int)$course->id] = (int)$course->id;
             }
         }
-        unset($ids[SITEID]);
-        sort($ids);
-        return $ids;
+        unset($courseids[SITEID]);
+        if (!$courseids) {
+            return [];
+        }
+
+        $cmids = [];
+        $ctxfields = \context_helper::get_preload_record_columns_sql('ctx');
+        foreach (array_chunk(array_values($courseids), 500) as $chunk) {
+            [$insql, $params] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'scc');
+            $rs = $DB->get_recordset_sql(
+                "SELECT cm.id, {$ctxfields}
+                   FROM {course_modules} cm
+                   JOIN {modules} m ON m.id = cm.module AND m.name = :quiz
+                   JOIN {context} ctx ON ctx.instanceid = cm.id AND ctx.contextlevel = :level
+                  WHERE cm.course {$insql}",
+                ['quiz' => 'quiz', 'level' => CONTEXT_MODULE] + $params
+            );
+            foreach ($rs as $record) {
+                \context_helper::preload_from_record($record);
+                if (has_any_capability($capabilities, \context_module::instance((int)$record->id))) {
+                    $cmids[] = (int)$record->id;
+                }
+            }
+            $rs->close();
+        }
+        sort($cmids);
+        return $cmids;
     }
 
     /**
-     * An SQL condition restricting a course id column to a scope from {@see self::scoped_course_ids()}.
+     * An SQL condition restricting a quiz course-module id column to a scope.
      *
-     * @param string $column Column holding the course id.
-     * @param int[]|null $courseids Allowed courses, or null for every course.
+     * @param string $column Column holding the quiz course-module id.
+     * @param int[]|null $cmids Allowed quizzes from {@see self::scoped_quiz_cmids()}, or null for all.
      * @param string $prefix Parameter name prefix.
      * @return array [' AND ...' or '', params]
      */
-    public static function course_scope_sql(string $column, ?array $courseids, string $prefix = 'scope'): array {
+    public static function quiz_scope_sql(string $column, ?array $cmids, string $prefix = 'scope'): array {
         global $DB;
 
-        if ($courseids === null) {
+        if ($cmids === null) {
             return ['', []];
         }
-        if (!$courseids) {
+        if (!$cmids) {
             return [' AND 1 = 0', []];
         }
-        [$insql, $params] = $DB->get_in_or_equal($courseids, SQL_PARAMS_NAMED, $prefix);
+        [$insql, $params] = $DB->get_in_or_equal($cmids, SQL_PARAMS_NAMED, $prefix);
         return [" AND {$column} {$insql}", $params];
     }
 
@@ -162,7 +186,7 @@ final class overall_report {
      * Build select options for the course filter, listing only courses with proctoring data.
      *
      * @param int $selected Selected course id (0 for all courses).
-     * @param int[]|null $scope Courses the viewer may see, or null for every course.
+     * @param int[]|null $scope Quizzes the viewer may see, or null for every quiz.
      * @return array List of option rows for the template.
      */
     public static function course_options(int $selected, ?array $scope = null): array {
@@ -177,7 +201,15 @@ final class overall_report {
                  WHERE courseid > 0";
         $courseids = $DB->get_fieldset_sql($sql);
         if ($scope !== null) {
-            $courseids = array_values(array_intersect(array_map('intval', $courseids), $scope));
+            $scopedcourses = [];
+            foreach (array_chunk($scope, 500) as $chunk) {
+                [$insql, $params] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'occm');
+                $scopedcourses = array_merge(
+                    $scopedcourses,
+                    $DB->get_fieldset_select('course_modules', 'DISTINCT course', "id {$insql}", $params)
+                );
+            }
+            $courseids = array_values(array_intersect(array_map('intval', $courseids), array_map('intval', $scopedcourses)));
         }
 
         $options = [[
@@ -220,7 +252,7 @@ final class overall_report {
      * @param int $riskmin Lowest risk score to include (0 for no lower bound).
      * @param int $riskmax Highest risk score to include; -1, or anything at or above the maximum
      *                     possible score, means no upper bound.
-     * @param int[]|null $scope Courses the viewer may see, or null for every course (CPIT-474).
+     * @param int[]|null $scope Quizzes the viewer may see, or null for every quiz (CPIT-474).
      * @return array Template-ready report data.
      */
     public static function build(
@@ -262,7 +294,7 @@ final class overall_report {
             $logwhere .= ' AND l.timemodified >= :fromtime';
             $logparams['fromtime'] = $fromtime;
         }
-        [$scopesql, $scopeparams] = self::course_scope_sql('l.courseid', $scope, 'lscope');
+        [$scopesql, $scopeparams] = self::quiz_scope_sql('l.quizid', $scope, 'lscope');
         $logwhere .= $scopesql;
         $logparams += $scopeparams;
         $logsql = "SELECT l.courseid, l.quizid, l.userid, l.status AS attemptid,
@@ -309,7 +341,7 @@ final class overall_report {
         [$eventtypesql, $eventtypeparams] = $DB->get_in_or_equal(self::SUSPICIOUS_EVENT_TYPES, SQL_PARAMS_NAMED, 'evt');
         $eventwhere .= " AND e.eventtype {$eventtypesql}";
         $eventparams += $eventtypeparams;
-        [$scopesql, $scopeparams] = self::course_scope_sql('e.courseid', $scope, 'escope');
+        [$scopesql, $scopeparams] = self::quiz_scope_sql('e.quizid', $scope, 'escope');
         $eventwhere .= $scopesql;
         $eventparams += $scopeparams;
         $eventsql = "SELECT e.courseid, e.quizid, e.userid, e.attemptid,
@@ -500,7 +532,7 @@ final class overall_report {
 
         // Release, escalate and sign-off are offered on the rows of courses where the viewer may
         // review holds; each action checks the capability on the quiz again.
-        $holdscope = self::scoped_course_ids(['quizaccess/proctoring:reviewriskholds']);
+        $holdscope = self::scoped_quiz_cmids(['quizaccess/proctoring:reviewriskholds']);
         $filterparams = [
             'courseid' => $courseid,
             'range' => $range,
@@ -780,7 +812,7 @@ final class overall_report {
      * Decorate the visible page of attempts with names, risk score, AI review, hold and links.
      *
      * @param array $pagerows Raw attempt rows for the current page.
-     * @param int[]|null $holdscope Courses where the viewer may release or confirm risk holds, or null for all.
+     * @param int[]|null $holdscope Quizzes where the viewer may release or confirm risk holds, or null for all.
      * @param array $filterparams Current filter params, echoed onto hold action URLs to return here.
      * @return array Template-ready row data.
      */
@@ -877,7 +909,7 @@ final class overall_report {
             ]);
             $userurl = new moodle_url('/user/view.php', ['id' => $a['userid'], 'course' => $a['courseid']]);
 
-            $canmanageholds = $holdscope === null || in_array((int)$a['courseid'], $holdscope, true);
+            $canmanageholds = $holdscope === null || in_array((int)$a['cmid'], $holdscope, true);
 
             // A flagged attempt has no hold, so it gets the sign-off action instead of release and
             // escalate; a signed-off one gets the undo. Both re-check the capability on the course.
@@ -1086,7 +1118,7 @@ final class overall_report {
      * being released without a review.
      *
      * @param int $page Zero-based page number; -1 returns every row, for the CSV download.
-     * @param int[]|null $scope Courses the viewer may review, or null for every course.
+     * @param int[]|null $scope Quizzes the viewer may review, or null for every quiz.
      * @return array Template-ready dashboard data.
      */
     public static function held_certificates(int $page = 0, ?array $scope = null): array {
@@ -1097,7 +1129,7 @@ final class overall_report {
         // Pull active holds, oldest first, bounded by MAX_ATTEMPTS to cap load. The bound keeps the
         // oldest: those are the ones the auto-release reaches first.
         $fields = 'id, courseid, quizid, quizinstance, userid, attemptid, reportid, riskscore, status, timecreated';
-        [$scopesql, $scopeparams] = self::course_scope_sql('courseid', $scope, 'hscope');
+        [$scopesql, $scopeparams] = self::quiz_scope_sql('quizid', $scope, 'hscope');
         $holds = $DB->get_records_select(
             'quizaccess_proctoring_risk_holds',
             'status = :active' . $scopesql,
@@ -1113,7 +1145,7 @@ final class overall_report {
         // candidates too: if the certificate was issued despite the hold it still has to be
         // revoked. They are fetched separately so they cannot crowd active holds out of the cap.
         if ($DB->get_manager()->table_exists('tool_certificate_issues')) {
-            [$scopesql, $scopeparams] = self::course_scope_sql('h.courseid', $scope, 'tscope');
+            [$scopesql, $scopeparams] = self::quiz_scope_sql('h.quizid', $scope, 'tscope');
             $terminal = $DB->get_records_sql(
                 "SELECT {$fields}
                    FROM {quizaccess_proctoring_risk_holds} h
@@ -1201,14 +1233,14 @@ final class overall_report {
      * use the score each hold was created with, as the auto-release rule does.
      *
      * @param int $now Current time.
-     * @param int[]|null $scope Courses the viewer may review, or null for every course.
+     * @param int[]|null $scope Quizzes the viewer may review, or null for every quiz.
      * @return array{critical: int, high: int, lower: int, oldest: int, expiringsoon: int}
      */
     public static function review_backlog(int $now, ?array $scope = null): array {
         global $DB;
 
         ['high' => $high, 'critical' => $critical] = risk_calculator::get_level_boundaries();
-        [$scopesql, $scopeparams] = self::course_scope_sql('courseid', $scope, 'bscope');
+        [$scopesql, $scopeparams] = self::quiz_scope_sql('quizid', $scope, 'bscope');
         $active = ['active' => \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE] + $scopeparams;
         $counts = $DB->get_record_sql(
             "SELECT COUNT(1) AS total,
