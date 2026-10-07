@@ -2475,13 +2475,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 }
                             }
                         } catch (error) {
-                            if (!graceActive) {
-                                faceMissingCount++;
-                                facePresentCount = 0;
-                                if (faceMissingCount >= faceBlurMisses) {
-                                    setQuizBlurredForFace(true);
-                                }
-                            }
+                            // A check that failed or timed out saw nothing either way: it is neither a
+                            // face nor a miss. Counting it as a miss would pause the quiz on a slow device
+                            // that never completes a check, with no way for the student to resume.
                         } finally {
                             faceBlurChecking = false;
                         }
