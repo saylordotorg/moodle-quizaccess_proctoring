@@ -103,6 +103,10 @@ final class overall_report {
      * @return array [' AND ...' or '', params]
      */
     public static function quiz_scope_sql(string $column, ?array $cmids, string $prefix = 'scope'): array {
+        // Callers pass one chunk of a scope at a time, from scope_chunks().
+        if ($cmids !== null && count($cmids) > self::SCOPE_CHUNK) {
+            throw new \coding_exception('Quiz scope chunk too large.');
+        }
         global $DB;
 
         if ($cmids === null) {
@@ -113,6 +117,23 @@ final class overall_report {
         }
         [$insql, $params] = $DB->get_in_or_equal($cmids, SQL_PARAMS_NAMED, $prefix);
         return [" AND {$column} {$insql}", $params];
+    }
+
+    /** @var int Quizzes per IN () list: a system-wide scope can hold thousands (PR #44 review). */
+    private const SCOPE_CHUNK = 1000;
+
+    /**
+     * A scope split into chunks for {@see self::quiz_scope_sql()}: [null] for every quiz, one
+     * empty chunk for none.
+     *
+     * @param int[]|null $scope Quizzes from {@see self::scoped_quiz_cmids()}.
+     * @return array
+     */
+    private static function scope_chunks(?array $scope): array {
+        if ($scope === null) {
+            return [null];
+        }
+        return $scope ? array_chunk($scope, self::SCOPE_CHUNK) : [[]];
     }
 
     /**
@@ -282,35 +303,38 @@ final class overall_report {
             $logwhere .= ' AND l.timemodified >= :fromtime';
             $logparams['fromtime'] = $fromtime;
         }
-        [$scopesql, $scopeparams] = self::quiz_scope_sql('l.quizid', $scope, 'lscope');
-        $logwhere .= $scopesql;
-        $logparams += $scopeparams;
-        $logsql = "SELECT l.courseid, l.quizid, l.userid, l.status AS attemptid,
-                          MIN(l.id) AS reportid,
-                          MAX(l.timemodified) AS lastactivity,
-                          COUNT(l.id) AS capturecount,
-                          SUM(CASE WHEN l.awsflag = 2 AND l.awsscore < :facethreshold THEN 1 ELSE 0 END) AS facemismatch
-                     FROM {quizaccess_proctoring_logs} l
-                    WHERE {$logwhere}
-                 GROUP BY l.courseid, l.quizid, l.userid, l.status";
-        $rs = $DB->get_recordset_sql($logsql, $logparams, 0, self::MAX_ATTEMPTS);
         $count = 0;
-        foreach ($rs as $r) {
-            $key = $r->courseid . ':' . $r->quizid . ':' . $r->userid . ':' . $r->attemptid;
-            $attempts[$key] = [
-                'courseid' => (int)$r->courseid,
-                'cmid' => (int)$r->quizid,
-                'userid' => (int)$r->userid,
-                'attemptid' => (int)$r->attemptid,
-                'reportid' => (int)$r->reportid,
-                'lastactivity' => (int)$r->lastactivity,
-                'capturecount' => (int)$r->capturecount,
-                'facemismatch' => (int)$r->facemismatch,
-                'eventcount' => 0,
-            ];
-            $count++;
+        foreach (self::scope_chunks($scope) as $chunk) {
+            if ($count >= self::MAX_ATTEMPTS) {
+                break;
+            }
+            [$scopesql, $scopeparams] = self::quiz_scope_sql('l.quizid', $chunk, 'lscope');
+            $logsql = "SELECT l.courseid, l.quizid, l.userid, l.status AS attemptid,
+                              MIN(l.id) AS reportid,
+                              MAX(l.timemodified) AS lastactivity,
+                              COUNT(l.id) AS capturecount,
+                              SUM(CASE WHEN l.awsflag = 2 AND l.awsscore < :facethreshold THEN 1 ELSE 0 END) AS facemismatch
+                         FROM {quizaccess_proctoring_logs} l
+                        WHERE {$logwhere}{$scopesql}
+                     GROUP BY l.courseid, l.quizid, l.userid, l.status";
+            $rs = $DB->get_recordset_sql($logsql, $logparams + $scopeparams, 0, self::MAX_ATTEMPTS - $count);
+            foreach ($rs as $r) {
+                $key = $r->courseid . ':' . $r->quizid . ':' . $r->userid . ':' . $r->attemptid;
+                $attempts[$key] = [
+                    'courseid' => (int)$r->courseid,
+                    'cmid' => (int)$r->quizid,
+                    'userid' => (int)$r->userid,
+                    'attemptid' => (int)$r->attemptid,
+                    'reportid' => (int)$r->reportid,
+                    'lastactivity' => (int)$r->lastactivity,
+                    'capturecount' => (int)$r->capturecount,
+                    'facemismatch' => (int)$r->facemismatch,
+                    'eventcount' => 0,
+                ];
+                $count++;
+            }
+            $rs->close();
         }
-        $rs->close();
         $truncated = $truncated || $count >= self::MAX_ATTEMPTS;
 
         // 2. Browser violation events: event count per attempt (also surfaces capture-less attempts).
@@ -329,42 +353,45 @@ final class overall_report {
         [$eventtypesql, $eventtypeparams] = $DB->get_in_or_equal(self::SUSPICIOUS_EVENT_TYPES, SQL_PARAMS_NAMED, 'evt');
         $eventwhere .= " AND e.eventtype {$eventtypesql}";
         $eventparams += $eventtypeparams;
-        [$scopesql, $scopeparams] = self::quiz_scope_sql('e.quizid', $scope, 'escope');
-        $eventwhere .= $scopesql;
-        $eventparams += $scopeparams;
-        $eventsql = "SELECT e.courseid, e.quizid, e.userid, e.attemptid,
-                            MIN(e.reportid) AS reportid,
-                            MAX(e.timemodified) AS lastactivity,
-                            COUNT(e.id) AS eventcount
-                       FROM {quizaccess_proctoring_events} e
-                      WHERE {$eventwhere}
-                   GROUP BY e.courseid, e.quizid, e.userid, e.attemptid";
-        $rs = $DB->get_recordset_sql($eventsql, $eventparams, 0, self::MAX_ATTEMPTS);
         $count = 0;
-        foreach ($rs as $r) {
-            $key = $r->courseid . ':' . $r->quizid . ':' . $r->userid . ':' . $r->attemptid;
-            if (isset($attempts[$key])) {
-                $attempts[$key]['eventcount'] = (int)$r->eventcount;
-                $attempts[$key]['lastactivity'] = max($attempts[$key]['lastactivity'], (int)$r->lastactivity);
-                if (empty($attempts[$key]['reportid'])) {
-                    $attempts[$key]['reportid'] = (int)$r->reportid;
-                }
-            } else {
-                $attempts[$key] = [
-                    'courseid' => (int)$r->courseid,
-                    'cmid' => (int)$r->quizid,
-                    'userid' => (int)$r->userid,
-                    'attemptid' => (int)$r->attemptid,
-                    'reportid' => (int)$r->reportid,
-                    'lastactivity' => (int)$r->lastactivity,
-                    'capturecount' => 0,
-                    'facemismatch' => 0,
-                    'eventcount' => (int)$r->eventcount,
-                ];
+        foreach (self::scope_chunks($scope) as $chunk) {
+            if ($count >= self::MAX_ATTEMPTS) {
+                break;
             }
-            $count++;
+            [$scopesql, $scopeparams] = self::quiz_scope_sql('e.quizid', $chunk, 'escope');
+            $eventsql = "SELECT e.courseid, e.quizid, e.userid, e.attemptid,
+                                MIN(e.reportid) AS reportid,
+                                MAX(e.timemodified) AS lastactivity,
+                                COUNT(e.id) AS eventcount
+                           FROM {quizaccess_proctoring_events} e
+                          WHERE {$eventwhere}{$scopesql}
+                       GROUP BY e.courseid, e.quizid, e.userid, e.attemptid";
+            $rs = $DB->get_recordset_sql($eventsql, $eventparams + $scopeparams, 0, self::MAX_ATTEMPTS - $count);
+            foreach ($rs as $r) {
+                $key = $r->courseid . ':' . $r->quizid . ':' . $r->userid . ':' . $r->attemptid;
+                if (isset($attempts[$key])) {
+                    $attempts[$key]['eventcount'] = (int)$r->eventcount;
+                    $attempts[$key]['lastactivity'] = max($attempts[$key]['lastactivity'], (int)$r->lastactivity);
+                    if (empty($attempts[$key]['reportid'])) {
+                        $attempts[$key]['reportid'] = (int)$r->reportid;
+                    }
+                } else {
+                    $attempts[$key] = [
+                        'courseid' => (int)$r->courseid,
+                        'cmid' => (int)$r->quizid,
+                        'userid' => (int)$r->userid,
+                        'attemptid' => (int)$r->attemptid,
+                        'reportid' => (int)$r->reportid,
+                        'lastactivity' => (int)$r->lastactivity,
+                        'capturecount' => 0,
+                        'facemismatch' => 0,
+                        'eventcount' => (int)$r->eventcount,
+                    ];
+                }
+                $count++;
+            }
+            $rs->close();
         }
-        $rs->close();
         $truncated = $truncated || $count >= self::MAX_ATTEMPTS;
 
         // Derive the violation total and apply the minimum-violations filter.
@@ -1117,43 +1144,48 @@ final class overall_report {
         // Pull active holds, oldest first, bounded by MAX_ATTEMPTS to cap load. The bound keeps the
         // oldest: those are the ones the auto-release reaches first.
         $fields = 'id, courseid, quizid, quizinstance, userid, attemptid, reportid, riskscore, status, timecreated';
-        [$scopesql, $scopeparams] = self::quiz_scope_sql('quizid', $scope, 'hscope');
-        $holds = $DB->get_records_select(
-            'quizaccess_proctoring_risk_holds',
-            'status = :active' . $scopesql,
-            ['active' => \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE] + $scopeparams,
-            'timecreated ASC, id ASC',
-            $fields,
-            0,
-            self::MAX_ATTEMPTS
-        );
+        $holds = [];
+        foreach (self::scope_chunks($scope) as $chunk) {
+            [$scopesql, $scopeparams] = self::quiz_scope_sql('quizid', $chunk, 'hscope');
+            $holds += $DB->get_records_select(
+                'quizaccess_proctoring_risk_holds',
+                'status = :active' . $scopesql,
+                ['active' => \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE] + $scopeparams,
+                'timecreated ASC, id ASC',
+                $fields,
+                0,
+                self::MAX_ATTEMPTS
+            );
+        }
+        $holds = self::oldest_first($holds);
         $truncated = count($holds) >= self::MAX_ATTEMPTS;
 
         // Confirmed and automatically failed holds whose student holds a course certificate are
         // candidates too: if the certificate was issued despite the hold it still has to be
         // revoked. They are fetched separately so they cannot crowd active holds out of the cap.
         if ($DB->get_manager()->table_exists('tool_certificate_issues')) {
-            [$scopesql, $scopeparams] = self::quiz_scope_sql('h.quizid', $scope, 'tscope');
-            $terminal = $DB->get_records_sql(
-                "SELECT {$fields}
-                   FROM {quizaccess_proctoring_risk_holds} h
-                  WHERE (h.status = :confirmed OR h.status = :autofailed)
-                    AND EXISTS (SELECT 1
-                                  FROM {tool_certificate_issues} i
-                                 WHERE i.userid = h.userid AND i.courseid = h.courseid){$scopesql}
-               ORDER BY h.timecreated ASC, h.id ASC",
-                [
-                    'confirmed' => \QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED,
-                    'autofailed' => \QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
-                ] + $scopeparams,
-                0,
-                self::MAX_ATTEMPTS
-            );
+            $terminal = [];
+            foreach (self::scope_chunks($scope) as $chunk) {
+                [$scopesql, $scopeparams] = self::quiz_scope_sql('h.quizid', $chunk, 'tscope');
+                $terminal += $DB->get_records_sql(
+                    "SELECT {$fields}
+                       FROM {quizaccess_proctoring_risk_holds} h
+                      WHERE (h.status = :confirmed OR h.status = :autofailed)
+                        AND EXISTS (SELECT 1
+                                      FROM {tool_certificate_issues} i
+                                     WHERE i.userid = h.userid AND i.courseid = h.courseid){$scopesql}
+                   ORDER BY h.timecreated ASC, h.id ASC",
+                    [
+                        'confirmed' => \QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED,
+                        'autofailed' => \QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
+                    ] + $scopeparams,
+                    0,
+                    self::MAX_ATTEMPTS
+                );
+            }
+            $terminal = self::oldest_first($terminal);
             $truncated = $truncated || count($terminal) >= self::MAX_ATTEMPTS;
-            $holds = $holds + $terminal;
-            uasort($holds, function ($a, $b) {
-                return [(int)$a->timecreated, (int)$a->id] <=> [(int)$b->timecreated, (int)$b->id];
-            });
+            $holds = self::oldest_first($holds + $terminal, 2 * self::MAX_ATTEMPTS);
         }
 
         // Keep only attempts whose certificate label currently resolves to "held". The resolver
@@ -1228,41 +1260,58 @@ final class overall_report {
         global $DB;
 
         ['high' => $high, 'critical' => $critical] = risk_calculator::get_level_boundaries();
-        [$scopesql, $scopeparams] = self::quiz_scope_sql('quizid', $scope, 'bscope');
-        $active = ['active' => \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE] + $scopeparams;
-        $counts = $DB->get_record_sql(
-            "SELECT COUNT(1) AS total,
-                    SUM(CASE WHEN riskscore >= :critical THEN 1 ELSE 0 END) AS critical,
-                    SUM(CASE WHEN riskscore >= :high AND riskscore < :critical2 THEN 1 ELSE 0 END) AS high,
-                    MIN(timecreated) AS oldest
-               FROM {quizaccess_proctoring_risk_holds}
-              WHERE status = :active{$scopesql}",
-            $active + ['critical' => $critical, 'high' => $high, 'critical2' => $critical]
-        );
-        $total = (int)($counts->total ?? 0);
-        $backlog = [
-            'critical' => (int)($counts->critical ?? 0),
-            'high' => (int)($counts->high ?? 0),
-            'lower' => 0,
-            'oldest' => $total > 0 ? (int)$counts->oldest : 0,
-            'expiringsoon' => 0,
-        ];
-        $backlog['lower'] = $total - $backlog['critical'] - $backlog['high'];
-
-        // Same rule as quizaccess_proctoring_risk_hold_auto_release_time(), as a count: active
-        // holds whose window ends within two days, unless the enabled ceiling retains them.
+        $total = 0;
+        $backlog = ['critical' => 0, 'high' => 0, 'lower' => 0, 'oldest' => 0, 'expiringsoon' => 0];
         $days = quizaccess_proctoring_get_risk_review_auto_release_days();
-        if ($days > 0) {
-            $select = 'status = :active AND timecreated > 0 AND timecreated <= :cutoff' . $scopesql;
-            $params = $active + ['cutoff' => $now + 2 * DAYSECS - $days * DAYSECS];
-            $ceiling = quizaccess_proctoring_get_risk_review_ceiling();
-            if ($ceiling <= risk_calculator::max_possible_score()) {
-                $select .= ' AND riskscore < :ceiling';
-                $params['ceiling'] = $ceiling;
+        $ceiling = quizaccess_proctoring_get_risk_review_ceiling();
+        foreach (self::scope_chunks($scope) as $chunk) {
+            [$scopesql, $scopeparams] = self::quiz_scope_sql('quizid', $chunk, 'bscope');
+            $active = ['active' => \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE] + $scopeparams;
+            $counts = $DB->get_record_sql(
+                "SELECT COUNT(1) AS total,
+                        SUM(CASE WHEN riskscore >= :critical THEN 1 ELSE 0 END) AS critical,
+                        SUM(CASE WHEN riskscore >= :high AND riskscore < :critical2 THEN 1 ELSE 0 END) AS high,
+                        MIN(timecreated) AS oldest
+                   FROM {quizaccess_proctoring_risk_holds}
+                  WHERE status = :active{$scopesql}",
+                $active + ['critical' => $critical, 'high' => $high, 'critical2' => $critical]
+            );
+            $chunktotal = (int)($counts->total ?? 0);
+            $total += $chunktotal;
+            $backlog['critical'] += (int)($counts->critical ?? 0);
+            $backlog['high'] += (int)($counts->high ?? 0);
+            if ($chunktotal > 0 && ($backlog['oldest'] === 0 || (int)$counts->oldest < $backlog['oldest'])) {
+                $backlog['oldest'] = (int)$counts->oldest;
             }
-            $backlog['expiringsoon'] = $DB->count_records_select('quizaccess_proctoring_risk_holds', $select, $params);
+
+            // Same rule as quizaccess_proctoring_risk_hold_auto_release_time(), as a count: active
+            // holds whose window ends within two days, unless the enabled ceiling retains them.
+            if ($days > 0) {
+                $select = 'status = :active AND timecreated > 0 AND timecreated <= :cutoff' . $scopesql;
+                $params = $active + ['cutoff' => $now + 2 * DAYSECS - $days * DAYSECS];
+                if ($ceiling <= risk_calculator::max_possible_score()) {
+                    $select .= ' AND riskscore < :ceiling';
+                    $params['ceiling'] = $ceiling;
+                }
+                $backlog['expiringsoon'] += $DB->count_records_select('quizaccess_proctoring_risk_holds', $select, $params);
+            }
         }
+        $backlog['lower'] = $total - $backlog['critical'] - $backlog['high'];
         return $backlog;
+    }
+
+    /**
+     * Hold records sorted oldest first and cut to a limit.
+     *
+     * @param array $holds Hold records keyed by id.
+     * @param int $limit Most to keep.
+     * @return array
+     */
+    private static function oldest_first(array $holds, int $limit = self::MAX_ATTEMPTS): array {
+        uasort($holds, function ($a, $b) {
+            return [(int)$a->timecreated, (int)$a->id] <=> [(int)$b->timecreated, (int)$b->id];
+        });
+        return array_slice($holds, 0, $limit, true);
     }
 
     /**

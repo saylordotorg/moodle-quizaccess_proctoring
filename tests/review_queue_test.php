@@ -262,6 +262,9 @@ final class review_queue_test extends advanced_testcase {
 
         $role = reviewer_role::ensure();
         assign_capability('moodle/site:config', CAP_ALLOW, $role->id, \context_system::instance()->id, true);
+        // An override in a category is reset too.
+        $category = $this->getDataGenerator()->create_category();
+        assign_capability('moodle/course:update', CAP_ALLOW, $role->id, \context_coursecat::instance($category->id)->id, true);
         $again = reviewer_role::ensure();
 
         $this->assertSame((int)$role->id, (int)$again->id);

@@ -71,6 +71,18 @@ class reviewer_role {
         set_role_contextlevels((int)$role->id, self::CONTEXT_LEVELS);
 
         $system = \context_system::instance();
+        // Overrides of this role in a category, course or quiz go too: the role is reset to
+        // exactly its list, wherever it was changed (PR #44 review).
+        $lower = $DB->get_records_select(
+            'role_capabilities',
+            'roleid = :roleid AND contextid <> :system',
+            ['roleid' => $role->id, 'system' => $system->id],
+            '',
+            'id, capability, contextid'
+        );
+        foreach ($lower as $override) {
+            unassign_capability($override->capability, (int)$role->id, (int)$override->contextid);
+        }
         $current = $DB->get_records_menu(
             'role_capabilities',
             ['roleid' => $role->id, 'contextid' => $system->id],
