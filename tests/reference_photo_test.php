@@ -127,5 +127,11 @@ final class reference_photo_test extends advanced_testcase {
         $this->assertStringContainsString('It is blurry', $delivered[0]->fullmessage);
         $this->assertCount(1, $requested);
         $this->assertFalse(reference_photo::can_request((int)$student->id));
+
+        // A second request the same day is refused and notifies nobody.
+        $messages = $this->redirectMessages();
+        $this->assertSame(-1, reference_photo::request_reset((int)$student->id, 'Again'));
+        $this->assertCount(0, $messages->get_messages());
+        $messages->close();
     }
 }

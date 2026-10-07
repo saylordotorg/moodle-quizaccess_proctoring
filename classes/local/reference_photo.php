@@ -94,9 +94,25 @@ class reference_photo {
      *
      * @param int $userid Student asking.
      * @param string $reason What is wrong with the photo, in the student's words.
-     * @return int Number of reviewers notified.
+     * @return int Number of reviewers notified; -1 when a request was already sent today.
      */
     public static function request_reset(int $userid, string $reason): int {
+        // The day's request is claimed under a lock before anyone is notified, so two sessions
+        // submitting at once send one request, not two (PR #46 review).
+        $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring_resetrequest');
+        $lock = $factory->get_lock('user' . $userid, 10);
+        if (!$lock) {
+            return -1;
+        }
+        try {
+            if (!self::can_request($userid)) {
+                return -1;
+            }
+            set_user_preference(self::REQUEST_PREFERENCE, time(), $userid);
+        } finally {
+            $lock->release();
+        }
+
         $student = \core_user::get_user($userid, '*', MUST_EXIST);
         $recipients = get_users_by_capability(
             \context_system::instance(),
@@ -140,7 +156,6 @@ class reference_photo {
                 $sent++;
             }
         }
-        set_user_preference(self::REQUEST_PREFERENCE, time(), $userid);
         \quizaccess_proctoring\event\reference_reset_requested::create([
             'context' => \context_user::instance($userid),
             'relateduserid' => $userid,
