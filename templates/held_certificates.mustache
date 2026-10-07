@@ -28,12 +28,14 @@
                 "fullname": "John Doe", "userurl": "https://example.com/user",
                 "email": "john.doe@example.com", "course": "CS105", "quiz": "Final exam",
                 "attemptfinished": "1 January 2026  9:42 AM EST", "heldsince": "1 January 2026  9:43 AM EST",
+                "autorelease": "5 days", "canact": true, "releaseurl": "#", "confirmurl": "#",
                 "riskscore": 85, "risklevel": "Critical", "riskbadgeclass": "proctoring-risk-badge",
                 "holdlabel": "On hold", "holdclass": "proctoring-cert-held",
                 "viewurl": "https://example.com/report"
             }
         ],
-        "pagingbar": "<nav></nav>"
+        "pagingbar": "<nav></nav>",
+        "downloadurl": "https://example.com/download"
     }
 }}
 
@@ -52,6 +54,7 @@
     {{/truncated}}
 
     {{#hasrows}}
+    <p><a class="btn btn-sm btn-secondary" href="{{downloadurl}}">{{#str}}heldcertificates:downloadcsv, quizaccess_proctoring{{/str}}</a></p>
     <div class="table-responsive">
     <table class="table table-striped proctoring-held-certificates-table">
         <thead>
@@ -62,6 +65,7 @@
                 <th>{{#str}}heldcertificates:colquiz, quizaccess_proctoring{{/str}}</th>
                 <th>{{#str}}heldcertificates:colattemptfinished, quizaccess_proctoring{{/str}}</th>
                 <th>{{#str}}heldcertificates:colheldsince, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}heldcertificates:colautorelease, quizaccess_proctoring{{/str}}</th>
                 <th>{{#str}}heldcertificates:colrisk, quizaccess_proctoring{{/str}}</th>
                 <th>{{#str}}heldcertificates:colcertificate, quizaccess_proctoring{{/str}}</th>
                 <th>{{#str}}heldcertificates:colactions, quizaccess_proctoring{{/str}}</th>
@@ -76,9 +80,21 @@
                 <td>{{quiz}}</td>
                 <td>{{attemptfinished}}</td>
                 <td>{{heldsince}}</td>
+                <td>{{autorelease}}</td>
                 <td><span class="{{riskbadgeclass}}">{{riskscore}}/100 {{risklevel}}</span></td>
                 <td><span class="{{holdclass}}">{{holdlabel}}</span></td>
-                <td><a class="btn btn-sm btn-secondary" href="{{viewurl}}">{{#str}}heldcertificates:view, quizaccess_proctoring{{/str}}</a></td>
+                <td>
+                    <a class="btn btn-sm btn-secondary mb-1" href="{{viewurl}}">{{#str}}heldcertificates:view, quizaccess_proctoring{{/str}}</a>
+                    {{#canact}}
+                    <a class="btn btn-sm btn-outline-success mb-1" href="{{releaseurl}}">{{#str}}heldcertificates:release, quizaccess_proctoring{{/str}}</a>
+                    <a class="btn btn-sm btn-outline-danger mb-1" href="{{confirmurl}}"
+                       data-confirmation="modal"
+                       data-confirmation-type="delete"
+                       data-confirmation-title-str='["overallreport:confirmtitle", "quizaccess_proctoring"]'
+                       data-confirmation-content-str='["overallreport:confirmbody", "quizaccess_proctoring"]'
+                       data-confirmation-yes-button-str='["heldcertificates:confirm", "quizaccess_proctoring"]'>{{#str}}heldcertificates:confirm, quizaccess_proctoring{{/str}}</a>
+                    {{/canact}}
+                </td>
             </tr>
             {{/rows}}
         </tbody>

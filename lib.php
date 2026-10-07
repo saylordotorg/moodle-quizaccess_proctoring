@@ -75,6 +75,47 @@ function quizaccess_proctoring_can_manage_admin_settings(): bool {
 }
 
 /**
+ * Whether the current user may open the cross-course proctoring review pages (CPIT-474).
+ *
+ * Proctoring administrators may, and so may anyone holding the cross-course review capability at
+ * system level or on a course category - a Student Affairs reviewer, without site configuration.
+ *
+ * @return bool
+ */
+function quizaccess_proctoring_can_review_across_courses(): bool {
+    if (quizaccess_proctoring_can_manage_admin_settings()) {
+        return true;
+    }
+    if (has_capability('quizaccess/proctoring:reviewacrosscourses', context_system::instance())) {
+        return true;
+    }
+    return !empty(core_course_category::make_categories_list('quizaccess/proctoring:reviewacrosscourses'));
+}
+
+/**
+ * Link the cross-course review queue from the reviewer's own profile, under Reports (CPIT-474).
+ *
+ * A Student Affairs reviewer has no site administration menu, so the queue needs a way in.
+ *
+ * @param \core_user\output\myprofile\tree $tree Profile tree.
+ * @param stdClass $user Profile owner.
+ * @param bool $iscurrentuser Whether the viewer owns the profile.
+ * @param stdClass|null $course Course the profile is viewed in.
+ */
+function quizaccess_proctoring_myprofile_navigation(\core_user\output\myprofile\tree $tree, $user, $iscurrentuser, $course) {
+    if (!$iscurrentuser || !isloggedin() || isguestuser() || !quizaccess_proctoring_can_review_across_courses()) {
+        return;
+    }
+    $tree->add_node(new \core_user\output\myprofile\node(
+        'reports',
+        'quizaccess_proctoring_reviewqueue',
+        get_string('reviewqueue:profilelink', 'quizaccess_proctoring'),
+        null,
+        new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php')
+    ));
+}
+
+/**
  * Require that the current user may administer the site-wide proctoring settings.
  *
  * @return void

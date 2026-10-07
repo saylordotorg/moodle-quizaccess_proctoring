@@ -53,6 +53,56 @@ final class overall_report {
     ];
 
     /**
+     * The courses in which the current user holds one of the given capabilities.
+     *
+     * Scopes the cross-course pages to what the viewer may see (CPIT-474): a reviewer whose role
+     * is assigned at system level sees every course; one assigned on a category, or in single
+     * courses, sees only those courses.
+     *
+     * @param string[] $capabilities Any one of these is enough.
+     * @return int[]|null Course ids, or null when one of the capabilities is held site-wide.
+     */
+    public static function scoped_course_ids(array $capabilities): ?array {
+        global $USER;
+
+        $system = \context_system::instance();
+        $ids = [];
+        foreach ($capabilities as $capability) {
+            if (has_capability($capability, $system)) {
+                return null;
+            }
+            $courses = get_user_capability_course($capability, (int)$USER->id, true, '', 'id');
+            foreach ($courses ?: [] as $course) {
+                $ids[(int)$course->id] = (int)$course->id;
+            }
+        }
+        unset($ids[SITEID]);
+        sort($ids);
+        return $ids;
+    }
+
+    /**
+     * An SQL condition restricting a course id column to a scope from {@see self::scoped_course_ids()}.
+     *
+     * @param string $column Column holding the course id.
+     * @param int[]|null $courseids Allowed courses, or null for every course.
+     * @param string $prefix Parameter name prefix.
+     * @return array [' AND ...' or '', params]
+     */
+    public static function course_scope_sql(string $column, ?array $courseids, string $prefix = 'scope'): array {
+        global $DB;
+
+        if ($courseids === null) {
+            return ['', []];
+        }
+        if (!$courseids) {
+            return [' AND 1 = 0', []];
+        }
+        [$insql, $params] = $DB->get_in_or_equal($courseids, SQL_PARAMS_NAMED, $prefix);
+        return [" AND {$column} {$insql}", $params];
+    }
+
+    /**
      * Rolling date-range windows, mapping a filter key to its length in seconds (0 = all time).
      *
      * @return array<string, int> Range key to window length in seconds.
@@ -111,9 +161,10 @@ final class overall_report {
      * Build select options for the course filter, listing only courses with proctoring data.
      *
      * @param int $selected Selected course id (0 for all courses).
+     * @param int[]|null $scope Courses the viewer may see, or null for every course.
      * @return array List of option rows for the template.
      */
-    public static function course_options(int $selected): array {
+    public static function course_options(int $selected, ?array $scope = null): array {
         global $DB;
 
         $sql = "SELECT DISTINCT courseid
@@ -124,6 +175,9 @@ final class overall_report {
                   FROM {quizaccess_proctoring_events}
                  WHERE courseid > 0";
         $courseids = $DB->get_fieldset_sql($sql);
+        if ($scope !== null) {
+            $courseids = array_values(array_intersect(array_map('intval', $courseids), $scope));
+        }
 
         $options = [[
             'value' => 0,
@@ -165,6 +219,7 @@ final class overall_report {
      * @param int $riskmin Lowest risk score to include (0 for no lower bound).
      * @param int $riskmax Highest risk score to include; -1, or anything at or above the maximum
      *                     possible score, means no upper bound.
+     * @param int[]|null $scope Courses the viewer may see, or null for every course (CPIT-474).
      * @return array Template-ready report data.
      */
     public static function build(
@@ -179,7 +234,8 @@ final class overall_report {
         string $tilast = '',
         string $risklevel = '',
         int $riskmin = 0,
-        int $riskmax = -1
+        int $riskmax = -1,
+        ?array $scope = null
     ): array {
         global $CFG, $DB;
 
@@ -205,6 +261,9 @@ final class overall_report {
             $logwhere .= ' AND l.timemodified >= :fromtime';
             $logparams['fromtime'] = $fromtime;
         }
+        [$scopesql, $scopeparams] = self::course_scope_sql('l.courseid', $scope, 'lscope');
+        $logwhere .= $scopesql;
+        $logparams += $scopeparams;
         $logsql = "SELECT l.courseid, l.quizid, l.userid, l.status AS attemptid,
                           MIN(l.id) AS reportid,
                           MAX(l.timemodified) AS lastactivity,
@@ -249,6 +308,9 @@ final class overall_report {
         [$eventtypesql, $eventtypeparams] = $DB->get_in_or_equal(self::SUSPICIOUS_EVENT_TYPES, SQL_PARAMS_NAMED, 'evt');
         $eventwhere .= " AND e.eventtype {$eventtypesql}";
         $eventparams += $eventtypeparams;
+        [$scopesql, $scopeparams] = self::course_scope_sql('e.courseid', $scope, 'escope');
+        $eventwhere .= $scopesql;
+        $eventparams += $scopeparams;
         $eventsql = "SELECT e.courseid, e.quizid, e.userid, e.attemptid,
                             MIN(e.reportid) AS reportid,
                             MAX(e.timemodified) AS lastactivity,
@@ -435,7 +497,9 @@ final class overall_report {
         $page = max(0, $page);
         $pagerows = array_slice($attempts, $page * self::PER_PAGE, self::PER_PAGE);
 
-        $canmanageholds = has_capability('quizaccess/proctoring:reviewriskholds', \context_system::instance());
+        // Release, escalate and sign-off are offered on the rows of courses where the viewer may
+        // review holds; each action checks the capability on the quiz again.
+        $holdscope = self::scoped_course_ids(['quizaccess/proctoring:reviewriskholds']);
         $filterparams = [
             'courseid' => $courseid,
             'range' => $range,
@@ -453,7 +517,7 @@ final class overall_report {
 
         return [
             'summary' => $summary,
-            'rows' => self::decorate_rows($pagerows, $canmanageholds, $filterparams),
+            'rows' => self::decorate_rows($pagerows, $holdscope, $filterparams),
             'hasrows' => !empty($pagerows),
             'truncated' => $truncated,
             'total' => $total,
@@ -713,11 +777,11 @@ final class overall_report {
      * Decorate the visible page of attempts with names, risk score, AI review, hold and links.
      *
      * @param array $pagerows Raw attempt rows for the current page.
-     * @param bool $canmanageholds Whether the viewer may release or confirm risk holds.
+     * @param int[]|null $holdscope Courses where the viewer may release or confirm risk holds, or null for all.
      * @param array $filterparams Current filter params, echoed onto hold action URLs to return here.
      * @return array Template-ready row data.
      */
-    private static function decorate_rows(array $pagerows, bool $canmanageholds, array $filterparams): array {
+    private static function decorate_rows(array $pagerows, ?array $holdscope, array $filterparams): array {
         global $CFG, $DB;
 
         // quiz_rescale_grade() turns a raw sumgrades into the grade the quiz reports show.
@@ -809,6 +873,8 @@ final class overall_report {
                 'reportid' => $a['reportid'],
             ]);
             $userurl = new moodle_url('/user/view.php', ['id' => $a['userid'], 'course' => $a['courseid']]);
+
+            $canmanageholds = $holdscope === null || in_array((int)$a['courseid'], $holdscope, true);
 
             // A flagged attempt has no hold, so it gets the sign-off action instead of release and
             // escalate; a signed-off one gets the undo. Both re-check the capability on the course.
@@ -1013,20 +1079,27 @@ final class overall_report {
      * current state whenever a hold is created or its status changes in any course
      * (Requirements 17.1, 17.2).
      *
-     * @param int $page Zero-based page number.
+     * The queue reads oldest first (CPIT-474): the hold that has waited longest is the closest to
+     * being released without a review.
+     *
+     * @param int $page Zero-based page number; -1 returns every row, for the CSV download.
+     * @param int[]|null $scope Courses the viewer may review, or null for every course.
      * @return array Template-ready dashboard data.
      */
-    public static function held_certificates(int $page = 0): array {
+    public static function held_certificates(int $page = 0, ?array $scope = null): array {
         global $CFG, $DB;
 
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
-        // Pull active holds across every course, newest-first, bounded by MAX_ATTEMPTS to cap load.
+        // Pull active holds, oldest first, bounded by MAX_ATTEMPTS to cap load. The bound keeps the
+        // oldest: those are the ones the auto-release reaches first.
         $fields = 'id, courseid, quizid, quizinstance, userid, attemptid, reportid, riskscore, status, timecreated';
-        $holds = $DB->get_records(
+        [$scopesql, $scopeparams] = self::course_scope_sql('courseid', $scope, 'hscope');
+        $holds = $DB->get_records_select(
             'quizaccess_proctoring_risk_holds',
-            ['status' => \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE],
-            'timecreated DESC, id DESC',
+            'status = :active' . $scopesql,
+            ['active' => \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE] + $scopeparams,
+            'timecreated ASC, id ASC',
             $fields,
             0,
             self::MAX_ATTEMPTS
@@ -1037,25 +1110,26 @@ final class overall_report {
         // candidates too: if the certificate was issued despite the hold it still has to be
         // revoked. They are fetched separately so they cannot crowd active holds out of the cap.
         if ($DB->get_manager()->table_exists('tool_certificate_issues')) {
+            [$scopesql, $scopeparams] = self::course_scope_sql('h.courseid', $scope, 'tscope');
             $terminal = $DB->get_records_sql(
                 "SELECT {$fields}
                    FROM {quizaccess_proctoring_risk_holds} h
                   WHERE (h.status = :confirmed OR h.status = :autofailed)
                     AND EXISTS (SELECT 1
                                   FROM {tool_certificate_issues} i
-                                 WHERE i.userid = h.userid AND i.courseid = h.courseid)
-               ORDER BY h.timecreated DESC, h.id DESC",
+                                 WHERE i.userid = h.userid AND i.courseid = h.courseid){$scopesql}
+               ORDER BY h.timecreated ASC, h.id ASC",
                 [
                     'confirmed' => \QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED,
                     'autofailed' => \QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
-                ],
+                ] + $scopeparams,
                 0,
                 self::MAX_ATTEMPTS
             );
             $truncated = $truncated || count($terminal) >= self::MAX_ATTEMPTS;
             $holds = $holds + $terminal;
             uasort($holds, function ($a, $b) {
-                return [(int)$b->timecreated, (int)$b->id] <=> [(int)$a->timecreated, (int)$a->id];
+                return [(int)$a->timecreated, (int)$a->id] <=> [(int)$b->timecreated, (int)$b->id];
             });
         }
 
@@ -1078,6 +1152,8 @@ final class overall_report {
                 continue;
             }
             $held[] = [
+                'holdid' => (int)$hold->id,
+                'status' => (int)$hold->status,
                 'courseid' => (int)$hold->courseid,
                 'cmid' => (int)$hold->quizid,
                 'userid' => (int)$hold->userid,
@@ -1089,23 +1165,28 @@ final class overall_report {
             ];
         }
 
-        // Paginate the filtered set (already newest-first from the query order).
+        // Paginate the filtered set (already oldest-first from the query order).
         $total = count($held);
-        $totalpages = (int)ceil($total / self::PER_PAGE);
-        if ($totalpages > 0 && $page > $totalpages - 1) {
-            $page = $totalpages - 1;
+        if ($page < 0) {
+            $pagerows = $held;
+            $page = 0;
+        } else {
+            $totalpages = (int)ceil($total / self::PER_PAGE);
+            if ($totalpages > 0 && $page > $totalpages - 1) {
+                $page = $totalpages - 1;
+            }
+            $page = max(0, $page);
+            $pagerows = array_slice($held, $page * self::PER_PAGE, self::PER_PAGE);
         }
-        $page = max(0, $page);
-        $pagerows = array_slice($held, $page * self::PER_PAGE, self::PER_PAGE);
 
         return [
-            'rows' => self::decorate_held_rows($pagerows),
+            'rows' => self::decorate_held_rows($pagerows, $page),
             'hasrows' => !empty($pagerows),
             'total' => $total,
             'page' => $page,
             'perpage' => self::PER_PAGE,
             'truncated' => $truncated,
-            'backlog' => self::review_backlog(time()),
+            'backlog' => self::review_backlog(time(), $scope),
         ];
     }
 
@@ -1117,20 +1198,22 @@ final class overall_report {
      * use the score each hold was created with, as the auto-release rule does.
      *
      * @param int $now Current time.
+     * @param int[]|null $scope Courses the viewer may review, or null for every course.
      * @return array{critical: int, high: int, lower: int, oldest: int, expiringsoon: int}
      */
-    public static function review_backlog(int $now): array {
+    public static function review_backlog(int $now, ?array $scope = null): array {
         global $DB;
 
         ['high' => $high, 'critical' => $critical] = risk_calculator::get_level_boundaries();
-        $active = ['active' => \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE];
+        [$scopesql, $scopeparams] = self::course_scope_sql('courseid', $scope, 'bscope');
+        $active = ['active' => \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE] + $scopeparams;
         $counts = $DB->get_record_sql(
             "SELECT COUNT(1) AS total,
                     SUM(CASE WHEN riskscore >= :critical THEN 1 ELSE 0 END) AS critical,
                     SUM(CASE WHEN riskscore >= :high AND riskscore < :critical2 THEN 1 ELSE 0 END) AS high,
                     MIN(timecreated) AS oldest
                FROM {quizaccess_proctoring_risk_holds}
-              WHERE status = :active",
+              WHERE status = :active{$scopesql}",
             $active + ['critical' => $critical, 'high' => $high, 'critical2' => $critical]
         );
         $total = (int)($counts->total ?? 0);
@@ -1147,7 +1230,7 @@ final class overall_report {
         // holds whose window ends within two days, unless the enabled ceiling retains them.
         $days = quizaccess_proctoring_get_risk_review_auto_release_days();
         if ($days > 0) {
-            $select = 'status = :active AND timecreated > 0 AND timecreated <= :cutoff';
+            $select = 'status = :active AND timecreated > 0 AND timecreated <= :cutoff' . $scopesql;
             $params = $active + ['cutoff' => $now + 2 * DAYSECS - $days * DAYSECS];
             $ceiling = quizaccess_proctoring_get_risk_review_ceiling();
             if ($ceiling <= risk_calculator::max_possible_score()) {
@@ -1166,9 +1249,10 @@ final class overall_report {
      * computes the live risk score and links each row to the per-attempt report.
      *
      * @param array $pagerows Raw held-certificate rows for the current page.
+     * @param int $page Page the rows are on, so a decision returns to it.
      * @return array Template-ready row data.
      */
-    private static function decorate_held_rows(array $pagerows): array {
+    private static function decorate_held_rows(array $pagerows, int $page = 0): array {
         global $DB;
 
         if (empty($pagerows)) {
@@ -1222,6 +1306,34 @@ final class overall_report {
 
             $attempt = $quizattempts[(int)$a['attemptid']] ?? null;
 
+            // Days left before the auto-release rule releases the hold unreviewed (CPIT-474).
+            $releaseat = quizaccess_proctoring_risk_hold_auto_release_time((object)[
+                'status' => $a['status'],
+                'timecreated' => $a['timecreated'],
+                'riskscore' => $a['riskscore'],
+            ]);
+            if ($releaseat > 0) {
+                $daysleft = max(0, (int)ceil(($releaseat - time()) / DAYSECS));
+                $autorelease = get_string('heldcertificates:autoreleasedays', 'quizaccess_proctoring', $daysleft);
+            } else {
+                $autorelease = get_string('heldcertificates:autoreleasenone', 'quizaccess_proctoring');
+            }
+
+            // One-click decisions on an active hold; the action checks the capability on the quiz.
+            $releaseurl = '';
+            $confirmurl = '';
+            if ($a['status'] === \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
+                $actionbase = ['view' => 'held', 'page' => $page, 'holdid' => $a['holdid'], 'sesskey' => sesskey()];
+                $releaseurl = (new moodle_url(
+                    '/mod/quiz/accessrule/proctoring/overall_reports.php',
+                    $actionbase + ['action' => 'release']
+                ))->out(false);
+                $confirmurl = (new moodle_url(
+                    '/mod/quiz/accessrule/proctoring/overall_reports.php',
+                    $actionbase + ['action' => 'confirm']
+                ))->out(false);
+            }
+
             $rows[] = [
                 'fullname' => $user ? fullname($user) : get_string('overallreport:unknownuser', 'quizaccess_proctoring'),
                 'email' => $user ? $user->email : '',
@@ -1230,6 +1342,11 @@ final class overall_report {
                 'quiz' => $quizcache[$a['cmid']],
                 'attemptfinished' => $attempt ? display_time::staff((int)$attempt->timefinish) : '',
                 'heldsince' => display_time::staff((int)$a['timecreated']),
+                'autorelease' => $autorelease,
+                'releaseat' => $releaseat,
+                'canact' => $releaseurl !== '',
+                'releaseurl' => $releaseurl,
+                'confirmurl' => $confirmurl,
                 'riskscore' => $risk['score'],
                 'risklevel' => $risk['level'],
                 'riskbadgeclass' => $risk['badgeclass'],
