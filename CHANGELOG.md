@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.6 — 2026-10-07
+- **ID name matching no longer gives names in other scripts a silent 0 (CPIT-477).** The verification service erased every letter outside a-z before comparing names, so a Cyrillic, Arabic or Chinese name always scored 0. The plugin also sent name variants and transliteration hints that the service ignored.
+  - The service now keeps letters of every script and compares the ID text with every name variant Moodle sends.
+  - Moodle sends a Latin transliteration of a name written in another script.
+  - The service romanises Cyrillic and Greek names the way passports print them.
+- The ID text reader (Amazon Rekognition) only reads Latin script. When no name can be read from the ID, or the profile name has no Latin form, the report says so ("Not readable", with the reason) instead of a 0 that looks like a measured mismatch.
+- The name check stays advisory by default: a strong face match passes and the name score is recorded. Profiles do not need legal names.
+- Verification service: name matching moved to `name_matching.py`, shared by the Lambda and the ASGI bridge. The Lambda ZIP now contains both files.
+
 # v1.12.5 — 2026-10-07
 - **Students see and confirm their reference photo before it is kept (CPIT-476).** The first clear photo of a student's first proctored exam used to be saved silently. The student is now given a 3-2-1 countdown, then sees the photo, with what it is used for and how long it is kept. They choose **Use this photo** or **Take another photo**. Nothing is saved until they choose to use it. When the ID check passed, its live photo is offered the same way. That photo was already compared with the ID.
 - **My proctoring photo** (linked from the student's profile) shows the reference photo on file and how long it is kept. The student can ask Student Affairs for a new one, once a day. The request goes to everyone with the cross-course review capability, or to the site administrators if nobody has it, and is logged.

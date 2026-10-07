@@ -1972,8 +1972,41 @@ class quizaccess_proctoring_external extends external_api {
                 self::add_unique_name_variant($variants, $aliasvariant);
             }
         }
+        $variants = array_values($variants);
 
-        return array_values($variants);
+        // A name in another script also goes in Latin letters: the ID text reader only reads Latin
+        // script, and the verification service can romanise Cyrillic and Greek only (CPIT-477).
+        foreach ($basevariants as $variant) {
+            $latin = self::latin_name($variant);
+            if ($latin !== '' && $latin !== $variant && !in_array($latin, $variants, true)) {
+                $variants[] = $latin;
+            }
+        }
+
+        return $variants;
+    }
+
+    /**
+     * A name written in Latin letters, through ICU transliteration when it is available.
+     *
+     * @param string $name Name in any script.
+     * @return string The Latin form, or '' when it cannot be made or the name is already Latin.
+     */
+    private static function latin_name(string $name): string {
+        $name = trim($name);
+        if ($name === '' || !preg_match('/[^\p{Latin}\p{Common}\p{Inherited}]/u', $name)) {
+            return '';
+        }
+        if (!class_exists('\Transliterator')) {
+            return '';
+        }
+        $transliterator = \Transliterator::create('Any-Latin; Latin-ASCII');
+        $latin = $transliterator ? $transliterator->transliterate($name) : false;
+        if (!is_string($latin)) {
+            return '';
+        }
+        $latin = trim(preg_replace('/\s+/u', ' ', $latin));
+        return preg_match('/^[\p{Latin}\p{Common}\p{Inherited}]+$/u', $latin) ? $latin : '';
     }
 
     /**

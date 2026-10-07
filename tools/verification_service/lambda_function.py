@@ -1,15 +1,14 @@
 import base64
-from difflib import SequenceMatcher
 import hmac
 import json
 import math
 import os
-import re
-import unicodedata
 from typing import Any
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
+
+from name_matching import profile_names, score_name_match
 
 
 API_KEY = os.getenv("FACE_API_KEY", "")
@@ -22,48 +21,6 @@ MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_IMAGE_TEXT = ((MAX_IMAGE_BYTES + 2) // 3) * 4 + 64
 
 rekognition = boto3.client("rekognition", region_name=AWS_REGION)
-
-OCR_CONFUSABLES = str.maketrans({
-    "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O",
-    "Р": "P", "С": "C", "Т": "T", "У": "Y", "Х": "X",
-    "а": "a", "в": "b", "е": "e", "к": "k", "м": "m", "н": "h", "о": "o",
-    "р": "p", "с": "c", "т": "t", "у": "y", "х": "x",
-})
-
-NICKNAME_GROUPS = [
-    ("alex", "alexander", "alexandra"),
-    ("andy", "andrew"),
-    ("ben", "benjamin"),
-    ("beth", "elizabeth", "liz"),
-    ("bill", "billy", "will", "william"),
-    ("bob", "bobby", "rob", "robert"),
-    ("chris", "christopher", "christine", "christina"),
-    ("dan", "danny", "daniel"),
-    ("dave", "david"),
-    ("ed", "eddie", "edward"),
-    ("frank", "francis"),
-    ("fred", "frederick"),
-    ("jim", "jimmy", "james"),
-    ("joe", "joey", "joseph"),
-    ("jon", "john", "jonathan"),
-    ("kate", "katherine", "kathryn", "katie"),
-    ("ken", "kenneth"),
-    ("matt", "matthew"),
-    ("mike", "michael"),
-    ("nick", "nicholas"),
-    ("pat", "patrick", "patricia"),
-    ("rick", "richard", "ricky"),
-    ("sam", "samantha", "samuel"),
-    ("steve", "stephen", "steven"),
-    ("sue", "susan", "susanne"),
-    ("tom", "tommy", "thomas"),
-    ("tony", "anthony"),
-]
-NICKNAME_ALIASES = {
-    name: set(group)
-    for group in NICKNAME_GROUPS
-    for name in group
-}
 
 
 def response(status_code: int, body: dict[str, Any]) -> dict[str, Any]:
@@ -124,42 +81,6 @@ def best_similarity(compare_response: dict[str, Any]) -> float:
     return max(float(match.get("Similarity", 0)) for match in matches)
 
 
-def normalized_text(value: str) -> str:
-    value = unicodedata.normalize("NFKD", value.translate(OCR_CONFUSABLES))
-    value = "".join(char for char in value if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9 ]+", " ", value.lower()).strip()
-
-
-def format_id_name(value: str) -> str:
-    return " ".join(token.capitalize() for token in normalized_text(value).split() if token)
-
-
-def extract_id_name(lines: list[str]) -> str:
-    numbered_fields: dict[str, str] = {}
-    for line in lines:
-        match = re.match(r"^([12])\s+(.+)$", normalized_text(line))
-        if match:
-            numbered_fields[match.group(1)] = match.group(2)
-
-    if numbered_fields.get("1") and numbered_fields.get("2"):
-        return format_id_name(f"{numbered_fields['2']} {numbered_fields['1']}")
-
-    if numbered_fields.get("1"):
-        return format_id_name(numbered_fields["1"])
-
-    if numbered_fields.get("2"):
-        return format_id_name(numbered_fields["2"])
-
-    return ""
-
-
-def token_matches_id(profile_token: str, id_tokens: set[str]) -> bool:
-    if profile_token in id_tokens:
-        return True
-
-    return bool(NICKNAME_ALIASES.get(profile_token, set()) & id_tokens)
-
-
 def detect_id_text(id_image: bytes) -> list[str]:
     detect_response = rekognition.detect_text(Image={"Bytes": id_image})
     return [
@@ -167,38 +88,6 @@ def detect_id_text(id_image: bytes) -> list[str]:
         for item in detect_response.get("TextDetections", [])
         if item.get("Type") == "LINE" and item.get("DetectedText")
     ]
-
-
-def score_name_match(lines: list[str], payload: dict[str, Any]) -> tuple[float, str]:
-    profile_name = payload.get("profile_fullname") or " ".join(
-        part for part in [payload.get("profile_firstname"), payload.get("profile_lastname")] if part
-    )
-    profile = normalized_text(profile_name or "")
-    combined = normalized_text(" ".join(lines))
-
-    if not profile or not combined:
-        return 0.0, ""
-
-    extracted_name = extract_id_name(lines)
-    tokens = [token for token in profile.split(" ") if token]
-    combined_tokens = set(combined.split())
-    if tokens and all(token_matches_id(token, combined_tokens) for token in tokens):
-        return 100.0, extracted_name or profile_name or ""
-
-    best_line = ""
-    best_score = 0.0
-    for line in lines:
-        score = SequenceMatcher(None, profile, normalized_text(line)).ratio() * 100
-        if score > best_score:
-            best_score = score
-            best_line = line
-
-    combined_score = SequenceMatcher(None, profile, combined).ratio() * 100
-    if combined_score > best_score:
-        best_score = combined_score
-        best_line = " ".join(lines)
-
-    return best_score, extracted_name or best_line
 
 
 def reference_face_state(reference: bytes) -> str:
@@ -299,6 +188,13 @@ def verify_id_payload(payload: dict[str, Any]) -> dict[str, Any]:
         value = payload.get(field)
         if value is not None and (not isinstance(value, str) or len(value) > 600):
             return response(422, {"detail": "Invalid profile name."})
+    variants = payload.get("profile_name_variants")
+    if variants is not None and (
+        not isinstance(variants, list)
+        or len(variants) > 100
+        or any(not isinstance(item, str) or len(item) > 600 for item in variants)
+    ):
+        return response(422, {"detail": "Invalid profile name variants."})
     check_face = payload_bool(payload, "check_face", True)
     check_name = payload_bool(payload, "check_name", True)
     if not check_face and not check_name:
@@ -340,7 +236,18 @@ def verify_id_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return response(502, {"detail": "AWS Rekognition ID verification failed."})
 
     face_score = best_similarity(compare_response) if check_face else 100.0
-    name_score, extracted_name = score_name_match(text_lines, payload) if check_name else (100.0, "")
+    if check_name:
+        names = profile_names(
+            payload.get("profile_fullname"),
+            payload.get("profile_firstname"),
+            payload.get("profile_lastname"),
+            variants,
+        )
+        name = score_name_match(text_lines, names)
+    else:
+        name = {"name_score": 100.0, "extracted_name": "", "matched_profile_name": "",
+                "name_match_reason": "", "name_readable": True}
+    name_score = name["name_score"]
     verified = (not check_face or face_score >= face_threshold) and (not check_name or name_score >= name_threshold)
 
     return response(200, {
@@ -348,7 +255,10 @@ def verify_id_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "status": "pass" if verified else "failed",
         "face_score": round(face_score, 2),
         "name_score": round(name_score, 2),
-        "extracted_name": extracted_name,
+        "extracted_name": name["extracted_name"],
+        "matched_profile_name": name["matched_profile_name"],
+        "name_match_reason": name["name_match_reason"],
+        "name_readable": name["name_readable"],
         "message": "ID verified." if verified else "ID verification did not pass.",
     })
 

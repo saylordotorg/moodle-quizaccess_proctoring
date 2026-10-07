@@ -1808,6 +1808,14 @@ if (
             );
             $idvnamenotchecked = (int)$idverification->namescore >= 100
                 && trim((string)($idverification->extractedname ?? '')) === '';
+            // The verification service names why it could not compare the name (CPIT-477). The
+            // score is then 0 for the decision, but "0" would read as a measured mismatch.
+            $idvreason = trim((string)($idverification->namematchreason ?? ''));
+            $idvnamenotreadable = in_array($idvreason, ['unreadable', 'script_not_supported'], true);
+            $idvreasonkey = 'reportidv:reason:' . str_replace('_', '', $idvreason);
+            if ($idvreason !== '' && get_string_manager()->string_exists($idvreasonkey, 'quizaccess_proctoring')) {
+                $idvreason = get_string($idvreasonkey, 'quizaccess_proctoring');
+            }
             $idvimages = [];
             $idvimagefields = [
                 'idimageurl' => 'reportidv:imagefront',
@@ -1847,7 +1855,7 @@ if (
                 'romanizedname' => trim((string)($idverification->romanizedname ?? '')),
                 'matchedprofilename' => trim((string)($idverification->matchedprofilename ?? '')),
                 'profilename' => trim((string)($idverification->profilename ?? '')),
-                'namematchreason' => trim((string)($idverification->namematchreason ?? '')),
+                'namematchreason' => $idvreason,
                 'errormessage' => trim((string)($idverification->errormessage ?? '')),
                 'checkedat' => \quizaccess_proctoring\local\display_time::staff((int)$idverification->timemodified),
                 // A pass whose name score is under the threshold was either carried by the face
@@ -1862,7 +1870,9 @@ if (
                 'namenotchecked' => $idvnamenotchecked,
                 'namescorelabel' => $idvnamenotchecked
                     ? get_string('reportidv:namenotchecked', 'quizaccess_proctoring')
-                    : (string)(int)$idverification->namescore,
+                    : ($idvnamenotreadable
+                        ? get_string('reportidv:namenotreadable', 'quizaccess_proctoring')
+                        : (string)(int)$idverification->namescore),
                 'images' => $idvimages,
                 'hasimages' => !empty($idvimages),
                 // A check recorded against another attempt is still worth showing, but the reader
