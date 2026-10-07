@@ -43,6 +43,8 @@ GREEK_LATIN = {
     "κ": "k", "λ": "l", "μ": "m", "ν": "n", "ξ": "x", "ο": "o", "π": "p", "ρ": "r", "σ": "s",
     "ς": "s", "τ": "t", "υ": "y", "φ": "f", "χ": "ch", "ψ": "ps", "ω": "o",
 }
+# Vowel pairs that passports (ELOT 743) romanise as a pair.
+GREEK_DIGRAPHS = {"ου": "ou", "αυ": "av", "ευ": "ev"}
 
 NICKNAME_GROUPS = [
     ("alex", "alexander", "alexandra"),
@@ -100,14 +102,32 @@ def normalized_text(value: str, ocr: bool = False) -> str:
     value = unicodedata.normalize("NFKD", value)
     value = "".join(char for char in value if not unicodedata.combining(char))
     value = value.casefold().translate(LATIN_FOLDS)
-    value = "".join(char if char.isalnum() else " " for char in value)
+    value = "".join(fold_latin(char) if char.isalnum() else " " for char in value)
     return re.sub(r"\s+", " ", value).strip()
+
+
+def fold_latin(char: str) -> str:
+    """A Latin letter outside a-z that has no decomposition, such as ħ, as its base letter.
+
+    Unicode names it "LATIN SMALL LETTER H WITH STROKE"; the letter after LETTER is the base.
+    Letters of other scripts, and digits, are returned unchanged.
+    """
+    if "a" <= char <= "z" or not char.isalpha():
+        return char
+    match = re.match(r"LATIN (?:SMALL|CAPITAL) LETTER ([A-Z]{1,2})(?: |$)", unicodedata.name(char, ""))
+    return match.group(1).lower() if match else char
 
 
 def romanize(value: str) -> str:
     """Romanise Cyrillic and Greek letters; anything else is kept as it is."""
+    # Accents off first: an accented vowel such as the iota in "Νίκος" is a separate code point
+    # that the tables below do not list.
+    value = unicodedata.normalize("NFKD", value)
+    value = "".join(char for char in value if not unicodedata.combining(char)).lower()
+    for digraph, latin in GREEK_DIGRAPHS.items():
+        value = value.replace(digraph, latin)
     out = []
-    for char in unicodedata.normalize("NFC", value):
+    for char in value:
         lower = char.lower()
         if lower in CYRILLIC_LATIN:
             out.append(CYRILLIC_LATIN[lower])

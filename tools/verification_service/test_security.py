@@ -205,6 +205,12 @@ class NameMatchingTests(unittest.TestCase):
     def test_accented_and_folded_latin_letters_match(self):
         self.assertEqual(100.0, self.score(["SOREN KIERKEGAARD"], "Søren Kierkegaard")["name_score"])
         self.assertEqual(100.0, self.score(["JOSE GARCIA"], "José García")["name_score"])
+        # Letters with no decomposition are folded by their Unicode name, not rejected as another script.
+        self.assertEqual(100.0, self.score(["HASAN BORG"], "Ħasan Borg")["name_score"])
+
+    def test_accented_greek_name_is_romanised(self):
+        result = self.score(["NIKOS", "PAPADOPOULOS"], "Νίκος Παπαδόπουλος")
+        self.assertEqual(100.0, result["name_score"])
 
     def test_ocr_confusables_are_folded_only_in_id_text(self):
         # Rekognition sometimes returns Cyrillic look-alikes inside a Latin word.
