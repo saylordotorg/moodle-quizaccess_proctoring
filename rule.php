@@ -2167,6 +2167,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 $riskreviewthreshold = max(1, min(100, $riskreviewthreshold));
             }
 
+            $expectedtools = (int)($quiz->expectedtools ?? self::EXPECTED_TOOLS_NONE);
             $record = (object)[
                 'quizid' => $quiz->id,
                 'proctoringrequired' => 1,
@@ -2174,11 +2175,11 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 'captchamode' => isset($quiz->captchamode) ? (int)$quiz->captchamode : -1,
                 'riskreviewmode' => $riskreviewmode,
                 'riskreviewthreshold' => $riskreviewthreshold,
-                'expectedtools' => in_array((int)($quiz->expectedtools ?? 0), [
+                'expectedtools' => in_array($expectedtools, [
                     self::EXPECTED_TOOLS_NONE,
                     self::EXPECTED_TOOLS_CALCULATOR,
                     self::EXPECTED_TOOLS_OPEN,
-                ], true) ? (int)$quiz->expectedtools : self::EXPECTED_TOOLS_NONE,
+                ], true) ? $expectedtools : self::EXPECTED_TOOLS_NONE,
             ];
 
             // Add or update the proctoring settings for this quiz.

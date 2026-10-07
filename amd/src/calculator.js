@@ -43,7 +43,8 @@ define(['core/str'], function(Str) {
         };
         let expression;
         const number = function() {
-            const match = /^(\d+\.?\d*|\.\d+)/.exec(text.slice(pos));
+            // Exponents too: a very small or large result is shown as, say, 1e-7, and can be reused.
+            const match = /^(\d+\.?\d*|\.\d+)(e[+-]?\d+)?/i.exec(text.slice(pos));
             if (!match) {
                 fail();
             }
