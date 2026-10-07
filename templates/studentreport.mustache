@@ -134,6 +134,30 @@
 </div>
 {{/attemptsummary}}
 
+{{#hasstudentmessages}}
+<details class="proctoring-student-messages card card-body mt-3 mb-3">
+    <summary class="h6 mb-0">{{#str}}studentmessages:heading, quizaccess_proctoring{{/str}}</summary>
+    <table class="table table-sm mt-2 mb-0">
+        <thead>
+            <tr>
+                <th>{{#str}}studentmessages:time, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}studentmessages:message, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}studentmessages:duration, quizaccess_proctoring{{/str}}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#studentmessages}}
+            <tr>
+                <td>{{time}}</td>
+                <td>{{message}}</td>
+                <td>{{#duration}}{{duration}}{{/duration}}{{^duration}}{{#str}}studentmessages:untilclosed, quizaccess_proctoring{{/str}}{{/duration}}</td>
+            </tr>
+            {{/studentmessages}}
+        </tbody>
+    </table>
+</details>
+{{/hasstudentmessages}}
+
 {{#coverage}}{{> quizaccess_proctoring/monitoring_coverage}}{{/coverage}}
 
 {{#riskscore}}

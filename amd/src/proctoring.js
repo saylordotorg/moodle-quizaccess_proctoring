@@ -681,6 +681,55 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 warning.style.display = 'block';
             };
 
+            // What the student was told is logged too, so staff can see it in the report and an
+            // appeal can be checked against it (CPIT-481). Warnings shown before the event logger
+            // below is set up wait in a queue.
+            const warningShownAt = {};
+            const pendingWarningLogs = [];
+            let warningLogger = null;
+            // Evidence events still waiting for a screen frame before they are queued for upload.
+            const pendingEvidence = new Set();
+            const trackEvidence = function(promise) {
+                pendingEvidence.add(promise);
+                const done = function() {
+                    pendingEvidence.delete(promise);
+                };
+                promise.then(done, done);
+            };
+            const noteWarning = function(eventType, detail) {
+                if (warningLogger) {
+                    // After the current task, and after any evidence still waiting for a frame,
+                    // so the event that caused the warning is queued for upload first: uploads go
+                    // one at a time (PR #51 review).
+                    window.setTimeout(function() {
+                        const waits = Array.from(pendingEvidence).map(function(promise) {
+                            return promise.catch(function() {
+                                return null;
+                            });
+                        });
+                        Promise.all(waits).then(function() {
+                            warningLogger(eventType, detail);
+                        });
+                    }, 0);
+                } else {
+                    pendingWarningLogs.push([eventType, detail]);
+                }
+            };
+            // The words the student saw, kept with the event: a later change to the language
+            // string must not rewrite what an appeal is checked against (CPIT-481 review).
+            const plainText = function(html) {
+                const holder = document.createElement('div');
+                holder.innerHTML = html || '';
+                return (holder.textContent || '').trim().slice(0, 500);
+            };
+            const noteWarningCleared = function(key) {
+                if (!activeAttemptWarnings[key]) {
+                    return;
+                }
+                const seconds = Math.max(0, Math.round((Date.now() - (warningShownAt[key] || Date.now())) / 1000));
+                noteWarning('warning_cleared', {key: key, seconds: seconds});
+            };
+
             const setAttemptWarning = function(key, message, type, timeoutMs) {
                 if (!message) {
                     return;
@@ -691,6 +740,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     attemptWarningTimers[key] = null;
                 }
 
+                if (!activeAttemptWarnings[key]) {
+                    warningShownAt[key] = Date.now();
+                    noteWarning('warning_shown', {key: key, message: plainText(message)});
+                }
                 activeAttemptWarnings[key] = {
                     message: message,
                     type: type || 'warning'
@@ -699,6 +752,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 if (timeoutMs) {
                     attemptWarningTimers[key] = window.setTimeout(function() {
+                        noteWarningCleared(key);
                         delete activeAttemptWarnings[key];
                         attemptWarningTimers[key] = null;
                         renderAttemptWarnings();
@@ -711,6 +765,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     window.clearTimeout(attemptWarningTimers[key]);
                     attemptWarningTimers[key] = null;
                 }
+                noteWarningCleared(key);
                 delete activeAttemptWarnings[key];
                 renderAttemptWarnings();
             };
@@ -1887,11 +1942,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     // Keep the event's own time; only the attached frame comes from after the switch.
                     // Tried even when the event itself had no frame, which used to leave it with none.
                     const eventFrame = args.screenshot;
-                    captureAwayFrame(captureClock()).then(function(awayFrame) {
+                    trackEvidence(captureAwayFrame(captureClock()).then(function(awayFrame) {
                         args.screenshot = awayFrame || eventFrame;
                         withMissingReason(args.screenshot ? {screenshottiming: awayFrame ? 'after_leaving' : 'at_event'} : {});
                         uploads.submit(request, capturedat);
-                    });
+                    }));
                     return;
                 }
                 // screen_marker_missing is logged just after readiness is cleared, while the share is
@@ -1899,7 +1954,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (freshFrameEvents.includes(eventType) && captureDesktop && screenEvidenceAvailable() && screenMonitorClient) {
                     // The helper's cached frame can be seconds old: ask for one taken at the event.
                     const eventMs = captureClock();
-                    grabSharedScreenFrame(eventMs, eventMs - freshFrameMaxAgeMs).then(function(frame) {
+                    trackEvidence(grabSharedScreenFrame(eventMs, eventMs - freshFrameMaxAgeMs).then(function(frame) {
                         args.screenshot = frame || '';
                         withMissingReason(frame ? {screenshottiming: 'fresh'} : {});
                         uploads.submit(request, capturedat);
@@ -1907,12 +1962,37 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         args.screenshot = '';
                         withMissingReason({});
                         uploads.submit(request, capturedat);
-                    });
+                    }));
                     return;
                 }
                 withMissingReason({});
                 uploads.submit(request, capturedat);
             };
+
+            // Warnings are logged without a screenshot and regardless of which detectors are on:
+            // they record what the page said, not a suspicious action (CPIT-481).
+            warningLogger = function(eventType, detail) {
+                if (!monitoringActive) {
+                    return;
+                }
+                uploads.submit({
+                    methodname: 'quizaccess_proctoring_log_event',
+                    args: {
+                        courseid: parseInt(props.courseid, 10) || 0,
+                        quizid: parseInt(props.quizid, 10) || 0,
+                        attemptid: parseInt(props.status, 10) || 0,
+                        reportid: parseInt(props.id, 10) || 0,
+                        eventtype: eventType,
+                        eventdetail: JSON.stringify(detail || {}),
+                        pagevisibility: document.visibilityState || '',
+                        currenturl: window.location.href,
+                        screenshot: '',
+                    }
+                }, Math.floor(captureClock() / 1000));
+            };
+            pendingWarningLogs.splice(0).forEach(function(entry) {
+                warningLogger(entry[0], entry[1]);
+            });
 
             const getPointerBoundary = function(event) {
                 const x = typeof event.clientX === 'number' ? event.clientX : null;
@@ -2314,6 +2394,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             }, true);
 
             return {
+                noteWarning: noteWarning,
+                plainText: plainText,
                 suspend: function() {
                     monitoringActive = false;
                     intervals.forEach(entry => window.clearInterval(entry.id));
@@ -2369,6 +2451,41 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 // the no-face blur, not to multiple-face detection, which only borrows the model.
                 const captureFaceCheck = faceModelReady && parseInt(props.facemodelformultiplefacesonly || 0, 10) !== 1;
                 let captureFaceMisses = 0;
+                // When the "face not found" notice went up, so its removal can be logged too.
+                let faceNoticeShownAt = 0;
+                // Face matching or the no-face blur can run without the activity monitor; the face
+                // notice is then logged here directly, after the current task like the monitor's
+                // warnings (PR #51 review).
+                const noteFaceWarning = function(eventType, detail) {
+                    if (monitoring && monitoring.noteWarning) {
+                        monitoring.noteWarning(eventType, detail);
+                        return;
+                    }
+                    window.setTimeout(function() {
+                        if (!pageActive) {
+                            return;
+                        }
+                        uploads.submit({
+                            methodname: 'quizaccess_proctoring_log_event',
+                            args: {
+                                courseid: parseInt(props.courseid, 10) || 0,
+                                quizid: parseInt(props.quizid, 10) || 0,
+                                attemptid: parseInt(props.status, 10) || 0,
+                                reportid: parseInt(props.id, 10) || 0,
+                                eventtype: eventType,
+                                eventdetail: JSON.stringify(detail || {}),
+                                pagevisibility: document.visibilityState || '',
+                                currenturl: window.location.href,
+                                screenshot: '',
+                            }
+                        }, Math.floor(captureClock() / 1000));
+                    }, 0);
+                };
+                const faceNoticeText = function() {
+                    const holder = document.createElement('div');
+                    holder.innerHTML = strings.facenotfoundoncam || '';
+                    return (holder.textContent || '').trim().slice(0, 500);
+                };
                 // Quiz core renders a lone tertiary-nav "Back" link during attempts;
                 // on a proctored attempt it only walks students out of the exam
                 // mid-attempt (and fires focus-loss violations on the way).
@@ -2755,6 +2872,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             } else if (croppedImage && croppedImage.getAttribute('src')) {
                                 captureFaceMisses = 0;
                                 removeNotifications();
+                                if (faceNoticeShownAt) {
+                                    noteFaceWarning('warning_cleared', {
+                                        key: 'facenotfoundoncam',
+                                        seconds: Math.max(0, Math.round((Date.now() - faceNoticeShownAt) / 1000)),
+                                    });
+                                }
+                                faceNoticeShownAt = 0;
                                 faceFound = 1;
                                 faceImage = croppedImage.src;
                             } else {
@@ -2763,6 +2887,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 captureFaceMisses++;
                                 if (captureFaceMisses >= 2) {
                                     showNotification(strings.facenotfoundoncam, 'error');
+                                    // Logged once while it stays up, not at every missed capture.
+                                    if (!faceNoticeShownAt) {
+                                        faceNoticeShownAt = Date.now();
+                                        noteFaceWarning('warning_shown', {
+                                            key: 'facenotfoundoncam',
+                                            message: faceNoticeText(),
+                                        });
+                                    }
                                 }
                                 faceFound = 0;
                                 faceImage = "";

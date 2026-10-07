@@ -531,6 +531,26 @@ test('a marker missing for the whole grace period faults, keeps the stream, and 
     assert.strictEqual(env.displayMediaCalls, 1, 'recovery must not need a fresh share prompt');
 });
 
+test('the wrong-screen warning the student sees is logged, after the evidence (CPIT-481)', async () => {
+    const env = await bootWithShare();
+
+    env.advance(GRACE_MS + 1000);
+    env.tickWatcher();
+    const order = () => env.loggedEvents.map((e) => e.eventtype)
+        .filter((type) => type === 'screen_marker_missing' || type === 'warning_shown');
+    assert.deepStrictEqual(order(), ['screen_marker_missing'], 'the evidence goes first');
+
+    for (let i = 0; i < 5; i++) {
+        await new Promise((resolve) => setImmediate(resolve));
+    }
+    const shown = env.loggedEvents.filter((e) => e.eventtype === 'warning_shown');
+    assert.strictEqual(shown.length, 1);
+    const detail = JSON.parse(shown[0].eventdetail);
+    assert.strictEqual(detail.key, 'wrongscreen');
+    assert.ok('message' in detail, 'the wording shown is kept with the event');
+    assert.strictEqual(shown[0].screenshot, '', 'a warning carries no screenshot');
+});
+
 test('with the marker requirement off, an entire-screen share is accepted outright', async () => {
     const env = await bootWithShare({screenmarkerrequired: 0});
 
