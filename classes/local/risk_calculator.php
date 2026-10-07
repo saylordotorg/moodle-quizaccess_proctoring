@@ -445,6 +445,53 @@ final class risk_calculator {
     }
 
     /**
+     * Whether a shortcut event is one that leaves the quiz page: Alt+Tab, or Ctrl/Cmd with T, N, W,
+     * R or L. On an open-resource exam these are expected, like switching tabs (PR #52 review).
+     *
+     * @param string $eventdetail JSON event detail.
+     * @return bool
+     */
+    public static function is_navigation_shortcut(string $eventdetail): bool {
+        $decoded = json_decode($eventdetail, true);
+        if (!is_array($decoded) || empty($decoded['shortcut'])) {
+            return false;
+        }
+        $parts = explode('+', strtoupper((string)$decoded['shortcut']));
+        $key = array_pop($parts);
+        if ($key === 'TAB') {
+            return in_array('ALT', $parts, true);
+        }
+        return in_array($key, ['T', 'N', 'W', 'R', 'L'], true)
+            && (in_array('CTRL', $parts, true) || in_array('META', $parts, true));
+    }
+
+    /**
+     * Count shortcut events that leave the quiz page.
+     *
+     * @param string $eventwhere Base event WHERE clause.
+     * @param array $eventparams Base event query params.
+     * @return int
+     */
+    public static function count_navigation_shortcuts(string $eventwhere, array $eventparams): int {
+        global $DB;
+
+        $records = $DB->get_records_select(
+            'quizaccess_proctoring_events',
+            $eventwhere . ' AND eventtype = :risknavshortcuttype',
+            $eventparams + ['risknavshortcuttype' => 'shortcut'],
+            '',
+            'id, eventdetail'
+        );
+        $count = 0;
+        foreach ($records as $record) {
+            if (self::is_navigation_shortcut((string)$record->eventdetail)) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    /**
      * Count attempt events for one or more event types.
      *
      * @param string $eventwhere Base event WHERE clause.
@@ -790,7 +837,8 @@ final class risk_calculator {
             );
         }
 
-        $tabactivitycount = self::factor_enabled('tabactivity') && !self::open_resource_quizzes([$cmid]) ? self::count_events(
+        $openresource = (bool)self::open_resource_quizzes([$cmid]);
+        $tabactivitycount = self::factor_enabled('tabactivity') && !$openresource ? self::count_events(
             $eventwhere,
             $eventparams,
             ['focus_lost', 'tab_hidden', 'page_exit']
@@ -829,9 +877,11 @@ final class risk_calculator {
         // Non-F12 monitored shortcuts (Alt+Tab, Ctrl+T/N/W/R/A/L, Ctrl+Shift+I/J/C, Ctrl+C/X/V).
         // overall_report counts every 'shortcut' event as a violation, but only F12 was scored; the
         // remaining shortcut rows are scored here. F12 rows are excluded so no row is scored twice.
+        // On an open-resource exam the shortcuts that leave the page are not scored either.
         $othershortcutcount = self::factor_enabled('shortcut') ? max(
             0,
             self::count_events($eventwhere, $eventparams, ['shortcut']) - $f12count
+                - ($openresource ? self::count_navigation_shortcuts($eventwhere, $eventparams) : 0)
         ) : 0;
         $multiplefacescount = self::factor_enabled('multiplefaces') ? self::count_events(
             $eventwhere,
@@ -1228,10 +1278,16 @@ final class risk_calculator {
                       WHERE eventtype = :shortcuttype AND attemptid {$insql}",
                     $params + ['shortcuttype' => 'shortcut']
                 );
+                $navigation = [];
                 foreach ($shortcutrows as $row) {
                     $tuple = $row->courseid . ':' . $row->quizid . ':' . $row->userid . ':' . $row->attemptid;
-                    if (isset($counts[$tuple]) && self::event_has_shortcut($row->eventdetail, 'F12')) {
+                    if (!isset($counts[$tuple])) {
+                        continue;
+                    }
+                    if (self::event_has_shortcut($row->eventdetail, 'F12')) {
                         $counts[$tuple]['f12']++;
+                    } else if (isset($openquizzes[(int)$row->quizid]) && self::is_navigation_shortcut((string)$row->eventdetail)) {
+                        $navigation[$tuple] = ($navigation[$tuple] ?? 0) + 1;
                     }
                 }
                 $shortcutrows->close();
@@ -1239,7 +1295,7 @@ final class risk_calculator {
                 if (self::factor_enabled('shortcut')) {
                     foreach ($shortcuttuples as $tuple => $unused) {
                         $total = $eventcounts[$tuple]['shortcut'][0] ?? 0;
-                        $counts[$tuple]['othershortcut'] = max(0, $total - $counts[$tuple]['f12']);
+                        $counts[$tuple]['othershortcut'] = max(0, $total - $counts[$tuple]['f12'] - ($navigation[$tuple] ?? 0));
                     }
                 }
             }

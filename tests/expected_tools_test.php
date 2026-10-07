@@ -40,6 +40,7 @@ require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/rule.php');
  *
  * @covers \quizaccess_proctoring::save_settings
  * @covers \quizaccess_proctoring\local\risk_calculator::open_resource_quizzes
+ * @covers \quizaccess_proctoring\local\risk_calculator::is_navigation_shortcut
  */
 final class expected_tools_test extends advanced_testcase {
 
@@ -106,6 +107,63 @@ final class expected_tools_test extends advanced_testcase {
 
         // The events are still recorded for reviewers to see.
         $this->assertSame(3, $DB->count_records('quizaccess_proctoring_events', ['quizid' => $cmid]));
+    }
+
+    /**
+     * Shortcuts that leave the page are not scored on an open-resource exam; F12 and DevTools still are
+     * (PR #52 review).
+     */
+    public function test_open_resource_exam_does_not_score_navigation_shortcuts(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        $points = [];
+        foreach ([\quizaccess_proctoring::EXPECTED_TOOLS_NONE, \quizaccess_proctoring::EXPECTED_TOOLS_OPEN] as $tools) {
+            [$course, $cmid, $logid] = $this->attempt_with_switches($tools);
+            foreach (['Alt+TAB', 'Ctrl+T', 'Meta+L', 'F12', 'Ctrl+Shift+I'] as $shortcut) {
+                $DB->insert_record('quizaccess_proctoring_events', (object)[
+                    'courseid' => $course->id, 'quizid' => $cmid, 'userid' => 7, 'attemptid' => 900,
+                    'reportid' => $logid, 'eventtype' => 'shortcut',
+                    'eventdetail' => json_encode(['shortcut' => $shortcut]), 'timemodified' => time(),
+                ]);
+            }
+            $single = risk_calculator::calculate_attempt((int)$course->id, $cmid, 7, $logid);
+            $bulk = risk_calculator::calculate_many([[
+                'courseid' => (int)$course->id, 'cmid' => $cmid, 'userid' => 7, 'reportid' => $logid, 'attemptid' => 900,
+            ]]);
+            $points[$tools] = [
+                $this->factor_points($single, 'shortcut'), $this->factor_points(reset($bulk), 'shortcut'),
+                $this->factor_points($single, 'f12'), $this->factor_points(reset($bulk), 'f12'),
+            ];
+        }
+
+        [$closedsingle, $closedbulk, $closedf12, $closedf12bulk] = $points[\quizaccess_proctoring::EXPECTED_TOOLS_NONE];
+        [$opensingle, $openbulk, $openf12, $openf12bulk] = $points[\quizaccess_proctoring::EXPECTED_TOOLS_OPEN];
+        // Closed book: four non-F12 shortcuts, capped. Open resource: only Ctrl+Shift+I.
+        $this->assertGreaterThan($opensingle, $closedsingle);
+        $this->assertSame($closedsingle, $closedbulk);
+        $this->assertSame($opensingle, $openbulk);
+        $this->assertGreaterThan(0, $opensingle);
+        $this->assertSame($closedf12, $openf12);
+        $this->assertSame($openf12, $openf12bulk);
+        $this->assertGreaterThan(0, $openf12);
+        $this->assertSame($closedf12, $closedf12bulk);
+    }
+
+    /**
+     * A factor's points in a result.
+     *
+     * @param array $risk Risk result.
+     * @param string $key Factor key.
+     * @return int
+     */
+    private function factor_points(array $risk, string $key): int {
+        foreach ($risk['factors'] as $factor) {
+            if (($factor['key'] ?? '') === $key) {
+                return (int)$factor['points'];
+            }
+        }
+        return 0;
     }
 
     /**

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 - **Per-quiz "Tools the exam allows" (CPIT-482).** A browser cannot tell which app a student switched to, so a desktop calculator was scored as leaving the quiz. The new quiz setting has three options:
   - **None (closed book)**: the default. Nothing changes.
   - **A calculator**: a calculator is shown on the quiz page (bottom left). Using it is not leaving the page, so it adds no risk. Switching to another app is still scored.
-  - **Open resources**: leaving the quiz page is still logged and shown to reviewers, but the tab/focus factor is not scored for that quiz.
+  - **Open resources**: leaving the quiz page is still logged and shown to reviewers, but the tab/focus factor is not scored for that quiz, and neither are the shortcuts that leave the page (Alt+Tab, Ctrl or Cmd with T, N, W, R or L). F12, DevTools and clipboard shortcuts are still scored.
 - Which setting each exam uses is a Student Affairs and AA policy decision, and the handbook should match. An allowlist of desktop apps is not possible from a browser.
 - The calculator parses arithmetic itself and never evaluates the student's input as code.
 
