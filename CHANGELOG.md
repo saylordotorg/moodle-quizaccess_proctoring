@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.1 — 2026-10-07
+- **A retention schedule for proctoring data (CPIT-472).** Student data is now kept as follows:
+  - **Attempt evidence** (webcam captures, desktop screenshots, browser events, AI review results): 180 days after the attempt, and never while a hold on it is waiting for review. It used to be kept for ever by default. A site still on the old default of 0 moves to 180 on upgrade; a period an administrator chose is kept.
+  - **Photo ID images:** still 30 days, but now kept while a hold on that attempt is waiting for review. They used to be deleted even then, losing the evidence for an appeal.
+  - **Reference photos:** deleted after 365 days without proctoring activity, unless the student has a hold waiting for review. The new setting is "Delete reference photos after days without proctoring". The student takes a new photo at their next exam. Reference photos used to have no limit.
+  - **Abandoned prechecks:** 24 hours (since 1.11.4).
+- **Deleting a Moodle account now removes the user's proctoring data and files.** Before, only a data-privacy request did; an ordinary account deletion left captures, ID images and the reference photo behind. This runs in an ad hoc task.
+- **The cleanup task no longer hides failures.** It used to catch and print every error, so a failed run looked successful. A failure now fails the task, so Moodle retries it and shows it as failed. The settings page shows when the cleanup last finished without an error.
+- The privacy notice states the retention for ID images and reference photos, and that the data is deleted with the account.
+- `PRIVACY_DATA_INVENTORY.md` lists what is stored, where, which processors receive it, and for how long, for the DPIA.
+
 # v1.12.0 — 2026-10-07
 - **One release line again (CPIT-466).** This release brings the Saylor SIS work (SIS-204), first built on the release/security-readiness-1.11.0 branch as 1.12.0 / 2026100200, together with everything on master up to 1.11.10. The release branch used a version lower than master and the same upgrade step master uses for the Student Handbook link, so the two could not both be deployed. Its logs index now runs in its own step, and a site already upgraded from the release branch gets the handbook link fix it skipped.
 - **Share per-attempt proctoring summaries with the Saylor SIS (SIS-204).** A new read-only web service, `quizaccess_proctoring_get_attempt_summaries`, returns one summary per proctored attempt: the risk score and band (from the same risk calculator the reports use), capture, face-mismatch and violation counts, the ID check outcome (including `reused_pass` when an earlier pass on the same quiz covered the attempt), the grade-hold decision, the attempt-level AI review status and decision, whether a reviewer signed the attempt off and whether that sign-off is still current, which requirements a per-student override changed, and a link to the attempt report. It never returns images, ID scans, screenshots, names read from an ID, AI review text, reviewer notes or override justifications.

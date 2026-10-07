@@ -1110,8 +1110,25 @@ if ($canmanageproctoring) {
         'quizaccess_proctoring/imageretentiondays',
         get_string('setting:imageretentiondays', 'quizaccess_proctoring'),
         get_string('setting:imageretentiondays_desc', 'quizaccess_proctoring'),
-        0,
+        180,
         PARAM_INT
+    ));
+
+    // Reference photos (biometric data) are deleted after a year without proctoring (CPIT-472).
+    $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/referenceretentiondays',
+        get_string('setting:referenceretentiondays', 'quizaccess_proctoring'),
+        get_string('setting:referenceretentiondays_desc', 'quizaccess_proctoring'),
+        365,
+        PARAM_INT
+    ));
+
+    // The cleanup task now fails visibly; show when it last finished without error (CPIT-472).
+    $lastcleanup = (int)get_config('quizaccess_proctoring', 'lastcleanupsuccess');
+    $settings->add(new admin_setting_description(
+        'quizaccess_proctoring/lastcleanupsuccessinfo',
+        get_string('setting:lastcleanupsuccess', 'quizaccess_proctoring'),
+        $lastcleanup > 0 ? userdate($lastcleanup) : get_string('setting:lastcleanupnever', 'quizaccess_proctoring')
     ));
 
     $pageurl = new moodle_url('/mod/quiz/accessrule/proctoring/trigger_delete.php', ['sesskey' => sesskey()]);

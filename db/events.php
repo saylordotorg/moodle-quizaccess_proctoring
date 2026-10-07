@@ -47,4 +47,9 @@ $observers = [
         'eventname' => '\core\event\user_graded',
         'callback' => '\quizaccess_proctoring\local\risk_hold_enforcer::handle_user_graded',
     ],
+    [
+        // Deleting an account removes the user's proctoring data too, not only a privacy request (CPIT-472).
+        'eventname' => '\core\event\user_deleted',
+        'callback' => '\quizaccess_proctoring\local\user_data_purge::user_deleted',
+    ],
 ];

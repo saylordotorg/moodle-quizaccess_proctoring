@@ -1473,5 +1473,20 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100608, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026100609) {
+        // Retention schedule (CPIT-472). Attempt evidence used to ship as 0, kept for ever; it is now
+        // kept 180 days after the attempt, and never while a hold on it is open. A site still on the
+        // old shipped value moves to 180; a period an administrator chose is left alone. Reference
+        // photos get a 365-day limit after the student's last proctoring activity.
+        $stored = get_config('quizaccess_proctoring', 'imageretentiondays');
+        if ($stored === false || (string)$stored === '0' || (string)$stored === '') {
+            set_config('imageretentiondays', 180, 'quizaccess_proctoring');
+        }
+        if (get_config('quizaccess_proctoring', 'referenceretentiondays') === false) {
+            set_config('referenceretentiondays', 365, 'quizaccess_proctoring');
+        }
+        upgrade_plugin_savepoint(true, 2026100609, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }

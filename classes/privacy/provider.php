@@ -1066,6 +1066,38 @@ class provider implements
     }
 
     /**
+     * Erase everything the plugin holds about one user, in every context (CPIT-472).
+     *
+     * Used when a Moodle account is deleted outside the data-privacy tool, which would otherwise
+     * leave the user's captures, ID images, reference photo and records behind. It removes the
+     * same data as an approved erasure request.
+     *
+     * @param int $userid User ID.
+     */
+    public static function delete_all_user_data(int $userid): void {
+        if ($userid <= 0) {
+            return;
+        }
+        foreach (self::get_contexts_for_userid($userid)->get_contexts() as $context) {
+            self::delete_override_data($context, [$userid]);
+            if ($context->contextlevel === CONTEXT_MODULE) {
+                self::delete_module_data_for_userids($context, [$userid]);
+            }
+        }
+        // The reference photo lives in the system context whether or not it was listed above.
+        self::delete_reference_image_data_for_userids([$userid]);
+    }
+
+    /**
+     * Delete the reference photos (and their face crops) of the given users (CPIT-472 retention).
+     *
+     * @param array $userids User IDs.
+     */
+    public static function delete_reference_photos(array $userids): void {
+        self::delete_reference_image_data_for_userids($userids);
+    }
+
+    /**
      * Deletes module evidence and user-owned proctoring files for selected users.
      *
      * @param context $context Module context.
