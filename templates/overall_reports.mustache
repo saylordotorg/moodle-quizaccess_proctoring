@@ -56,6 +56,7 @@
 
     {{! Filters: student search + course + period + sort + minimum detected events. }}
     <form method="get" action="{{formurl}}" class="proctoring-overview-filters">
+        <input type="hidden" name="view" value="attempts">
         <input type="hidden" name="queue" value="{{queue}}">
         <input type="hidden" name="tifirst" value="{{tifirst}}">
         <input type="hidden" name="tilast" value="{{tilast}}">

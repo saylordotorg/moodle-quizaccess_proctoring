@@ -1,6 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.3 — 2026-10-07
+- **A cross-course review queue for Student Affairs, without site administration rights (CPIT-474).** The Overall reports page used to open only for site administrators. It now also opens for the new capability `quizaccess/proctoring:reviewacrosscourses`, given at system level or on a course category. Each list on the page shows only the courses where the viewer has the matching capability: the review queue needs `reviewriskholds`, the attempts report `viewreport` or `reviewriskholds`, and ID exceptions `manageoverrides`. A reviewer on one category sees that category's courses.
+- The page now opens on the **review queue**: holds waiting for a decision, oldest first, so the one closest to automatic release is at the top. It has a "Released automatically" column showing the days left, and one-click Release and Confirm violation buttons. Confirm still asks first. Each decision checks the capability on the quiz again.
+- The queue can be downloaded as CSV.
+- `cli/create_reviewer_role.php` creates the "Proctoring reviewer (Student Affairs)" role. Running it again resets the role's capabilities. The role can review and decide holds, read the proctoring and quiz reports, manage per-student overrides, and open the courses it reviews without being enrolled. It has no site configuration rights. The script never assigns the role to anyone.
+- Reviewers reach the queue from **Reports** on their own profile.
+
 # v1.12.2 — 2026-10-07
 - **The proctoring report opens quickly on large quizzes (CPIT-473).** Staff reported waits of up to ten minutes, and time-outs. The report used to work out the risk score of every student in the quiz, one at a time and about twenty database queries each, and look up each one's hold, AI review and event count, before showing the first 30. It now sorts and pages the list first and scores only the rows on the page, in bulk. Sorting by risk or by findings still scores every row, in bulk too. Event counts, attempt grades and account ages are one query each for the whole list.
 - New indexes on captures (course, quiz, attempt), face-match warnings (course, quiz, student) and face crops (capture), which the report's queries used to scan the whole table for.

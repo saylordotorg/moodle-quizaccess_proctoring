@@ -126,4 +126,18 @@ $capabilities = [
         'contextlevel' => CONTEXT_SYSTEM,
         'archetypes' => [],
     ],
+
+    // Opens the cross-course review queue and attempts report without site administration rights,
+    // for a central integrity office such as Student Affairs (CPIT-474). Granted at system level, or
+    // on a category to limit it to that category's courses. It shows only the courses where the
+    // holder also has viewreport, reviewriskholds or manageoverrides, so it widens no access by
+    // itself.
+    'quizaccess/proctoring:reviewacrosscourses' => [
+        'riskbitmask' => RISK_PERSONAL,
+        'captype' => 'read',
+        'contextlevel' => CONTEXT_COURSECAT,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
 ];

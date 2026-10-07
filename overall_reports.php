@@ -27,9 +27,27 @@ require_once($CFG->libdir . '/adminlib.php');
 require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
 require_login();
-quizaccess_proctoring_require_admin_settings_access();
-
-admin_externalpage_setup('quizaccess_proctoring_overall_reports');
+// Student Affairs reviews across courses without site-administration rights (CPIT-474): the page
+// opens for the cross-course review capability as well as for proctoring administrators, and
+// every list on it is limited to the courses the viewer holds the matching capability in.
+if (!quizaccess_proctoring_can_review_across_courses()) {
+    throw new required_capability_exception(
+        context_system::instance(),
+        'quizaccess/proctoring:reviewacrosscourses',
+        'nopermissions',
+        ''
+    );
+}
+if (has_capability('moodle/site:config', context_system::instance())) {
+    admin_externalpage_setup('quizaccess_proctoring_overall_reports');
+} else {
+    // The admin tree is only built for site administrators, so other reviewers get a plain page.
+    $PAGE->set_context(context_system::instance());
+    $PAGE->set_url(new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'));
+    $PAGE->set_pagelayout('report');
+    $PAGE->set_title(get_string('overallreports', 'quizaccess_proctoring'));
+    $PAGE->set_heading(get_string('overallreports', 'quizaccess_proctoring'));
+}
 $PAGE->requires->css('/mod/quiz/accessrule/proctoring/styles.css');
 
 $courseid = optional_param('courseid', 0, PARAM_INT);
@@ -44,7 +62,7 @@ if (!in_array($sort, ['recent', 'oldest', 'violations', 'student', 'email'], tru
 $page = optional_param('page', 0, PARAM_INT);
 $action = optional_param('action', '', PARAM_ALPHA);
 $holdid = optional_param('holdid', 0, PARAM_INT);
-$view = optional_param('view', 'attempts', PARAM_ALPHA);
+$view = optional_param('view', '', PARAM_ALPHA);
 $queue = optional_param('queue', 'needs', PARAM_ALPHA);
 if (!in_array($queue, ['needs', 'all', 'flagged', 'reviewed', 'escalated', 'clean'], true)) {
     $queue = 'needs';
@@ -70,12 +88,21 @@ if ($riskmin > $riskmax) {
     [$riskmin, $riskmax] = [$riskmax, $riskmin];
 }
 
-// The cross-course held-certificate dashboard is a site-wide review surface, so it is guarded by
-// the review capability at the system context. Reviewers without it never see the toggle or view.
-$canviewheld = has_capability('quizaccess/proctoring:reviewriskholds', context_system::instance());
-// Same treatment for the cross-exam ID exception queue: staff need the override capability,
-// which is also what the per-request decision itself re-checks on the target quiz.
-$canviewexceptions = has_capability('quizaccess/proctoring:manageoverrides', context_system::instance());
+// Each list is limited to the quizzes where the viewer holds the capability it needs: a role at
+// system level sees every course, one on a category sees that category, and a prohibition on a
+// course or quiz is honoured (CPIT-474). Each decision checks the capability on the quiz again.
+$reportscope = \quizaccess_proctoring\local\overall_report::scoped_quiz_cmids([
+    'quizaccess/proctoring:viewreport',
+    'quizaccess/proctoring:reviewriskholds',
+]);
+$holdscope = \quizaccess_proctoring\local\overall_report::scoped_quiz_cmids(['quizaccess/proctoring:reviewriskholds']);
+$exceptionscope = \quizaccess_proctoring\local\overall_report::scoped_quiz_cmids(['quizaccess/proctoring:manageoverrides']);
+$canviewheld = $holdscope === null || !empty($holdscope);
+$canviewexceptions = $exceptionscope === null || !empty($exceptionscope);
+// The review queue - holds waiting for a decision, oldest first - is what opens by default.
+if ($view === '') {
+    $view = $canviewheld ? 'held' : 'attempts';
+}
 if (!in_array($view, ['attempts', 'held', 'idexceptions'], true)
         || ($view === 'held' && !$canviewheld)
         || ($view === 'idexceptions' && !$canviewexceptions)) {
@@ -90,6 +117,7 @@ $minviolations = max(0, $minviolations);
 // Every filter that narrows the attempts list, in one place: each link this page emits carries the
 // whole set so paging, cards, pills, initials bars and hold decisions all return to the same view.
 $activefilters = [
+    'view' => 'attempts',
     'courseid' => $courseid,
     'range' => $range,
     'minviolations' => $minviolations,
@@ -107,7 +135,14 @@ $activefilters = [
 // every row is still capability-checked individually by the shared service.
 if ($action === 'decideexceptions') {
     require_sesskey();
-    require_capability('quizaccess/proctoring:manageoverrides', context_system::instance());
+    if (!$canviewexceptions) {
+        throw new required_capability_exception(
+            context_system::instance(),
+            'quizaccess/proctoring:manageoverrides',
+            'nopermissions',
+            ''
+        );
+    }
     $approved = optional_param('approve', 0, PARAM_BOOL);
     $selected = optional_param_array('request', [], PARAM_RAW);
     $exceptionsurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', [
@@ -225,9 +260,12 @@ if (($action === 'release' || $action === 'confirm') && $holdid > 0) {
     $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
     \quizaccess_proctoring\local\report_access::require_review((int)$hold->courseid, (int)$hold->quizid);
 
+    // Back to the view the decision was made from: the review queue or the attempts report.
     $returnurl = new moodle_url(
         '/mod/quiz/accessrule/proctoring/overall_reports.php',
-        $activefilters + ['page' => $page, 'queue' => $queue]
+        $view === 'held'
+            ? ['view' => 'held', 'page' => $page]
+            : $activefilters + ['page' => $page, 'queue' => $queue]
     );
 
     if ((int)$hold->status !== QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
@@ -299,7 +337,10 @@ if ($canviewheld || $canviewexceptions) {
 // Cross-exam ID exception queue: every pending request in one table, so a batch of decisions
 // spanning several exams is one pass here rather than a visit to each quiz in turn.
 if ($view === 'idexceptions') {
-    $pendingrequests = \quizaccess_proctoring\local\id_exception::pending_requests();
+    $pendingrequests = array_filter(
+        \quizaccess_proctoring\local\id_exception::pending_requests(),
+        fn($request) => $exceptionscope === null || in_array((int)$request['cmid'], $exceptionscope, true)
+    );
     $formurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php');
 
     echo $OUTPUT->header();
@@ -414,7 +455,31 @@ if ($view === 'idexceptions') {
 }
 
 if ($view === 'held') {
-    $data = \quizaccess_proctoring\local\overall_report::held_certificates($page);
+    // The whole queue as a spreadsheet, for the office's own tracking (CPIT-474).
+    if (optional_param('download', '', PARAM_ALPHA) === 'csv') {
+        require_sesskey();
+        $all = \quizaccess_proctoring\local\overall_report::held_certificates(-1, $holdscope);
+        $columns = [];
+        foreach (['student', 'email', 'course', 'quiz', 'attemptfinished', 'heldsince', 'autorelease', 'risk',
+                'certificate'] as $column) {
+            $columns[$column] = get_string('heldcertificates:col' . $column, 'quizaccess_proctoring');
+        }
+        $csvrows = array_map(fn($row) => [
+            'student' => $row['fullname'],
+            'email' => $row['email'],
+            'course' => $row['course'],
+            'quiz' => $row['quiz'],
+            'attemptfinished' => $row['attemptfinished'],
+            'heldsince' => $row['heldsince'],
+            'autorelease' => $row['autorelease'],
+            'risk' => $row['riskscore'] . ' ' . $row['risklevel'],
+            'certificate' => $row['holdlabel'],
+        ], $all['rows']);
+        \core\dataformat::download_data('proctoring-review-queue-' . date('Y-m-d'), 'csv', $columns, $csvrows);
+        exit;
+    }
+
+    $data = \quizaccess_proctoring\local\overall_report::held_certificates($page, $holdscope);
 
     $baseurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', ['view' => 'held']);
     $pagingbar = $OUTPUT->paging_bar($data['total'], $data['page'], $data['perpage'], $baseurl);
@@ -442,6 +507,7 @@ if ($view === 'held') {
             \quizaccess_proctoring\local\overall_report::MAX_ATTEMPTS
         ),
         'pagingbar' => $pagingbar,
+        'downloadurl' => (new moodle_url($baseurl, ['download' => 'csv', 'sesskey' => sesskey()]))->out(false),
     ];
 
     echo $OUTPUT->header();
@@ -464,7 +530,8 @@ $data = \quizaccess_proctoring\local\overall_report::build(
     $tilast,
     $risklevel,
     $riskmin,
-    $riskmax
+    $riskmax,
+    $reportscope
 );
 
 $baseurl = new moodle_url(
@@ -604,7 +671,7 @@ $hasriskfilter = $risklevel !== '' || $riskmin > 0 || $riskmax < $scoremax;
 $templatecontext = [
     'formurl' => (new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'))->out(false),
     'intro' => get_string('overallreport:intro', 'quizaccess_proctoring'),
-    'courseoptions' => \quizaccess_proctoring\local\overall_report::course_options($courseid),
+    'courseoptions' => \quizaccess_proctoring\local\overall_report::course_options($courseid, $reportscope),
     'rangeoptions' => \quizaccess_proctoring\local\overall_report::range_options($range),
     'sortoptions' => \quizaccess_proctoring\local\overall_report::sort_options($sort),
     'risklevoptions' => \quizaccess_proctoring\local\overall_report::risk_level_options($risklevel),
