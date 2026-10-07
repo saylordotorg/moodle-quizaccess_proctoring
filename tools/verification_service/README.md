@@ -96,13 +96,22 @@ On 2026-09-30 the bridge was deployed separately for `https://dev.sylr.org`. The
 | Original ZIP SHA-256 | `f472ea8d83c2d9e5c08967b1f12401caa050cb4414973e9d7cca7935fd25bbae` |
 | AWS `CodeSha256` | `9HLqjYPC2eXAiWex8SQByqBQy0QUlz6dfMp5Nf0lu64=` |
 
-The source in this directory was checked byte for byte against the `lambda_function.py` member of that original deployment archive. AWS `CodeSha256` is the Base64-encoded SHA-256 of the ZIP bytes, not the source file. Recreating a ZIP can change its archive hash even when the source is identical. The deployment archive and credentials are deliberately not stored here.
+At that deployment the source in this directory was checked byte for byte against the `lambda_function.py` member of the deployed archive (the source SHA-256 above). AWS `CodeSha256` is the Base64-encoded SHA-256 of the ZIP bytes, not the source file. Recreating a ZIP can change its archive hash even when the source is identical. The deployment archive and credentials are deliberately not stored here.
 
-Verify the source independently from this directory:
+**The checked-in source has changed since that deployment and is no longer identical to it.** It now also reports `reason: no_face_in_capture` and returns the similarity of a non-match (CPIT-453, CPIT-469), and that version has not been deployed yet. When it is, record the new deployment here, with its source SHA-256 and `CodeSha256`.
+
+| Item | Value |
+| --- | --- |
+| Checked-in source SHA-256 (CPIT-469) | `5c6b1ef23bbffc4aef0a3ddae0a8bd54f1a1ff82a4fd8cc87267aba79d9b3d99` |
+| Deployed | not yet |
+
+Compute the source hash from this directory:
 
 ```sh
-python -B -c "import hashlib, pathlib; digest = hashlib.sha256(pathlib.Path('lambda_function.py').read_bytes()).hexdigest(); assert digest == 'fb52ea66b35e2352b44b3d32906b8b19cff95036e96c43ba6f4fc95e3a753876'; print(digest)"
+python -B -c "import hashlib, pathlib; print(hashlib.sha256(pathlib.Path('lambda_function.py').read_bytes()).hexdigest())"
 ```
+
+Compare it with the source SHA-256 recorded for the deployment you want to check.
 
 The deployed endpoint passed authenticated readiness probes and rejected missing or invalid API keys. A successful `HEAD` probe does not validate Rekognition permissions or the result of a face or ID comparison.
 

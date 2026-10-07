@@ -1011,7 +1011,7 @@ class quizaccess_proctoring_external extends external_api {
         $threshhold = (int)quizaccess_proctoring_get_proctoring_settings('threshold');
 
         if (
-            (int)$currentdata->awsflag === 2 && $awsscore > $threshhold &&
+            (int)$currentdata->awsflag === 2 && $awsscore >= $threshhold &&
                 !\quizaccess_proctoring\local\precheck_evidence::protect_matched_reference((int)$USER->id)
         ) {
             // The reference was removed as abandoned while the match was running: the student
@@ -1022,7 +1022,7 @@ class quizaccess_proctoring_external extends external_api {
                 'warnings' => $warnings,
             ];
         }
-        if ((int)$currentdata->awsflag === 2 && $awsscore > $threshhold) {
+        if ((int)$currentdata->awsflag === 2 && $awsscore >= $threshhold) {
             // The matched photo now has another day before the cleanup may remove it, so it cannot
             // disappear between this check and the attempt starting (which marks it used).
             $status = "success";
