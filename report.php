@@ -390,7 +390,9 @@ if ($riskaction === 'confirm' && $holdid > 0) {
 }
 
 // Clear the student's photo ID check on this quiz, so they verify again at their next start
-// (CPIT-487): for support and for repeat testing. The check is kept, marked reset, and logged.
+// (CPIT-487): for support and for repeat testing. The checks are kept as they were: they still
+// show which earlier attempts were verified (the SIS export reads them). A reset marker makes
+// any pass older than it unusable for a new start, and the reset is logged.
 if (optional_param('resetidverification', 0, PARAM_BOOL) && $studentid && $reportid) {
     require_sesskey();
     require_capability('quizaccess/proctoring:manageoverrides', $context);
@@ -405,13 +407,7 @@ if (optional_param('resetidverification', 0, PARAM_BOOL) && $studentid && $repor
         redirect($backurl, get_string('referencereset:reasonrequired', 'quizaccess_proctoring'), null,
             \core\output\notification::NOTIFY_WARNING);
     }
-    $DB->set_field_select(
-        'quizaccess_proctoring_idv',
-        'status',
-        'reset',
-        'courseid = :courseid AND quizid = :cmid AND userid = :userid AND status = :pass',
-        ['courseid' => $courseid, 'cmid' => $cmid, 'userid' => $studentid, 'pass' => 'pass']
-    );
+    \quizaccess_proctoring\local\identity_recheck_policy::reset((int)$courseid, (int)$cmid, (int)$studentid);
     \quizaccess_proctoring\event\id_verification_reset::create([
         'context' => $context,
         'relateduserid' => (int)$studentid,
@@ -1869,7 +1865,6 @@ if (
             $idvstatuslabels = [
                 'pending' => 'reportidv:statuspending',
                 'pass' => 'reportidv:statuspass',
-                'reset' => 'reportidv:statusreset',
                 'failed' => 'reportidv:statusfailed',
                 'retry' => 'reportidv:statusretry',
                 'error' => 'reportidv:statuserror',

@@ -1635,5 +1635,5 @@ $string['event:idverificationreset'] = 'Photo ID verification reset';
 $string['idvreset:button'] = 'Reset photo ID verification';
 $string['idvreset:done'] = 'The photo ID verification was reset. The student verifies again before their next attempt on this quiz.';
 $string['idvreset:submit'] = 'Reset the verification';
-$string['reportidv:statusreset'] = 'Reset by staff';
 $string['supportedbrowsers'] = '<strong>Browsers:</strong> use Chrome or Edge on a Windows or Mac computer for full monitoring. Firefox works, without the check for a second monitor. Safari works but has had less testing: if your webcam stops during the exam, switch to Chrome or Edge. Phones and tablets are not recommended for proctored exams.';
+$string['identityrecheck:reset'] = 'Staff reset your photo ID verification for this quiz. Verify your photo ID again before starting.';

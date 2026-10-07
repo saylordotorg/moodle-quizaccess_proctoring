@@ -166,8 +166,55 @@ final class identity_recheck_policy {
             $freshid,
             $now
         );
+        // A pass from before a staff reset no longer lets the student start (CPIT-487).
+        if ($result['passed'] && $record && self::reset_after($courseid, $cmid, $userid, (int)$record->timemodified)) {
+            $result['passed'] = false;
+            $result['reason'] = 'reset';
+        }
         $result['message'] = $result['passed'] ? '' : get_string('identityrecheck:' . $result['reason'], 'quizaccess_proctoring');
         return $result;
+    }
+
+    /**
+     * Staff reset the student's photo ID verification on a quiz (CPIT-487).
+     *
+     * The checks themselves are left as they were, so they still show which earlier attempts were
+     * verified. A marker event makes any pass from before it unusable for a new start.
+     *
+     * @param int $courseid Course ID.
+     * @param int $cmid Quiz course-module ID.
+     * @param int $userid Student.
+     */
+    public static function reset(int $courseid, int $cmid, int $userid): void {
+        global $DB;
+        $DB->insert_record('quizaccess_proctoring_events', (object)[
+            'courseid' => $courseid,
+            'quizid' => $cmid,
+            'userid' => $userid,
+            'attemptid' => 0,
+            'reportid' => 0,
+            'eventtype' => 'id_verification_reset',
+            'eventdetail' => '{}',
+            'timemodified' => time(),
+        ]);
+    }
+
+    /**
+     * Whether staff reset the verification at or after a given time.
+     *
+     * @param int $courseid Course ID.
+     * @param int $cmid Quiz course-module ID.
+     * @param int $userid Student.
+     * @param int $since Time of the pass.
+     * @return bool
+     */
+    private static function reset_after(int $courseid, int $cmid, int $userid, int $since): bool {
+        global $DB;
+        return $DB->record_exists_select(
+            'quizaccess_proctoring_events',
+            'courseid = :courseid AND quizid = :cmid AND userid = :userid AND eventtype = :type AND timemodified >= :since',
+            ['courseid' => $courseid, 'cmid' => $cmid, 'userid' => $userid, 'type' => 'id_verification_reset', 'since' => $since]
+        );
     }
 
     /**

@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
   - phones and tablets are not recommended.
 
   The wording is a language string (`supportedbrowsers`), so Student Affairs can adjust it without a release.
-- **Staff can reset a student's photo ID verification on a quiz** from the per-student report, with a required reason. This is for support, and for repeat testing, which was blocked before. The check is kept and marked "Reset by staff", and the reset is logged with who did it and why. It needs `manageoverrides` on the quiz.
+- **Staff can reset a student's photo ID verification on a quiz** from the per-student report, with a required reason. This is for support, and for repeat testing, which was blocked before. The checks are kept as they were, so they still show which earlier attempts were verified (the SIS export reads them). A reset marker stops any older pass being used for a new start, and the reset is logged with who did it and why. It needs `manageoverrides` on the quiz.
 - Not code: reproducing the iPhone Safari photo-ID failure and Safari desktop camera coverage, and filling in the browser test matrix, need devices. IT and Student Affairs will do them on dev.
 
 # v1.12.15 — 2026-10-07

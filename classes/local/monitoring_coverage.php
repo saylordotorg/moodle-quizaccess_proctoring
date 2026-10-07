@@ -34,6 +34,8 @@ final class monitoring_coverage {
         'screen_capture',
         'phone_detection_started',
         'multiple_faces_detection_started',
+        // A staff reset of the photo ID verification (CPIT-487): an action by staff, not the student.
+        'id_verification_reset',
         // Warnings shown to the student (CPIT-481): a record of the page, not an action.
         'warning_shown',
         'warning_cleared',
