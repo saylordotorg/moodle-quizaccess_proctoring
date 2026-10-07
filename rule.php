@@ -2397,10 +2397,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                     time(),
                     [$resolver::REQ_PHONEDETECTION => true]
                 );
-                $phonelibdir = $CFG->dirroot . '/mod/quiz/accessrule/proctoring/thirdpartylibs/objectdetect';
-                $phonelibsready = file_exists($phonelibdir . '/tf.min.js')
-                    && file_exists($phonelibdir . '/coco-ssd.min.js')
-                    && file_exists($phonelibdir . '/model/model.json');
+                $phonelibsready = quizaccess_proctoring_phone_detection_ready();
                 if (!$phonelibsready) {
                     debugging(
                         'quizaccess_proctoring: phone detection is enabled but the object-detection'

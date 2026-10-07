@@ -1630,3 +1630,6 @@ $string['expectedtools_help'] = 'A browser cannot tell which app a student switc
 Set this to match the exam\'s policy.';
 $string['expectedtools_none'] = 'None (closed book)';
 $string['expectedtools_open'] = 'Open resources (leaving the quiz is not scored)';
+$string['setting:detectphonestatus'] = 'Phone detection model';
+$string['setting:detectphonestatus_missing'] = 'Not installed: phone detection will not run, even when switched on. Install the TensorFlow.js and COCO-SSD files in mod/quiz/accessrule/proctoring/thirdpartylibs/objectdetect (see the README there). The report shows phone detection as not monitored meanwhile.';
+$string['setting:detectphonestatus_ready'] = 'Installed. A webcam only sees a phone held up in view; this catches careless use, not a phone below the desk. Pilot it before relying on it.';

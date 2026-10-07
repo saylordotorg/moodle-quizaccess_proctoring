@@ -113,6 +113,22 @@ function quizaccess_proctoring_return_to_attempt(stdClass $hold, string $notice)
 }
 
 /**
+ * Whether the phone-detection libraries and model are installed (CPIT-484).
+ *
+ * Phone detection runs TensorFlow.js COCO-SSD in the browser from files in
+ * thirdpartylibs/objectdetect, which the plugin does not ship. Without them the setting has no
+ * effect, so the settings page says so instead of failing silently.
+ *
+ * @return bool
+ */
+function quizaccess_proctoring_phone_detection_ready(): bool {
+    global $CFG;
+    $dir = $CFG->dirroot . '/mod/quiz/accessrule/proctoring/thirdpartylibs/objectdetect';
+    return file_exists($dir . '/tf.min.js') && file_exists($dir . '/coco-ssd.min.js')
+        && file_exists($dir . '/model/model.json');
+}
+
+/**
  * Whether the current user may open the cross-course proctoring review pages (CPIT-474).
  *
  * Proctoring administrators may, and so may anyone holding the cross-course review capability at
