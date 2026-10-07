@@ -141,12 +141,14 @@ final class attempt_panel {
                   AND eventtype {$typesql}";
         $params = ['courseid' => $courseid, 'cmid' => $cmid, 'userid' => $userid, 'attemptid' => $attemptid] + $typeparams;
         $total = $DB->count_records_select('quizaccess_proctoring_events', $where, $params);
-        $events = $DB->get_records_select(
-            'quizaccess_proctoring_events',
-            $where,
+        // When it happened in the browser: evidence resent after a dropped connection keeps its
+        // capture time, and only its arrival is late (CPIT-475 review).
+        $events = $DB->get_records_sql(
+            "SELECT id, eventtype, CASE WHEN capturedat > 0 THEN capturedat ELSE timemodified END AS evidencetime
+               FROM {quizaccess_proctoring_events}
+              WHERE {$where}
+           ORDER BY evidencetime ASC, id ASC",
             $params,
-            'timemodified ASC, id ASC',
-            'id, eventtype, timemodified',
             0,
             self::FLAGGED_LIMIT
         );
@@ -154,7 +156,7 @@ final class attempt_panel {
         $moments = [];
         foreach ($events as $event) {
             $moments[] = [
-                'time' => userdate((int)$event->timemodified, $timeformat),
+                'time' => userdate((int)$event->evidencetime, $timeformat),
                 'label' => quizaccess_proctoring_get_event_label((string)$event->eventtype),
             ];
         }
@@ -198,10 +200,11 @@ final class attempt_panel {
         ] + $nofaceparams;
         $total = $DB->count_records_sql("SELECT COUNT(1) FROM {quizaccess_proctoring_logs} l WHERE {$where}", $params);
         $logs = $DB->get_records_sql(
-            "SELECT l.id, l.webcampicture, l.awsflag, l.awsscore, l.timemodified
+            "SELECT l.id, l.webcampicture, l.awsflag, l.awsscore,
+                    CASE WHEN l.capturedat > 0 THEN l.capturedat ELSE l.timemodified END AS evidencetime
                FROM {quizaccess_proctoring_logs} l
               WHERE {$where}
-           ORDER BY l.timemodified ASC, l.id ASC",
+           ORDER BY evidencetime ASC, l.id ASC",
             $params,
             0,
             self::FLAGGED_LIMIT
@@ -211,7 +214,7 @@ final class attempt_panel {
         foreach ($logs as $log) {
             $captures[] = [
                 'url' => (string)$log->webcampicture,
-                'time' => userdate((int)$log->timemodified, $timeformat),
+                'time' => userdate((int)$log->evidencetime, $timeformat),
                 'label' => (int)$log->awsflag === 2 && (int)$log->awsscore < $threshold
                     ? get_string('reportcaptures:badgemismatch', 'quizaccess_proctoring', (int)$log->awsscore)
                     : get_string('reportcaptures:badgenoface', 'quizaccess_proctoring'),
