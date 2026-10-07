@@ -127,7 +127,13 @@ class proctoring_observer {
                 (!empty($risksettings['enabled']) || $risklockoutenabled) &&
                     (int)$risk['score'] >= (int)$risksettings['threshold']
             ) {
-                if ($riskaction === \QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL) {
+                // Review-only evidence (a second face) can hold an attempt but never fail it: fail
+                // automatically only when the rest of the evidence reaches the threshold on its own.
+                if (
+                    $riskaction === \QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL
+                    && \quizaccess_proctoring\local\risk_calculator::score_without_review_only_factors($risk)
+                        >= (int)$risksettings['threshold']
+                ) {
                     $holdid = \quizaccess_proctoring_fail_high_risk_attempt(
                         (int)$quiz->course,
                         (int)$cm->id,

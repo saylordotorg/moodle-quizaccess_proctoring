@@ -127,6 +127,33 @@ final class risk_calculator {
     ];
 
     /**
+     * Factors that may put an attempt on hold for review but never fail it automatically.
+     *
+     * A second face is often a family member walking past or sitting nearby; only a person can
+     * judge it from the webcam frame (CPIT-468).
+     */
+    public const REVIEW_ONLY_FACTORS = ['multiplefaces'];
+
+    /**
+     * The attempt's score without the points of review-only factors, capped like the score.
+     *
+     * Used to decide automatic failure: an attempt is only failed automatically when it would reach
+     * the threshold without them; otherwise it is held for a reviewer.
+     *
+     * @param array $risk Result of {@see self::calculate_attempt()}.
+     * @return int Score excluding {@see self::REVIEW_ONLY_FACTORS}.
+     */
+    public static function score_without_review_only_factors(array $risk): int {
+        $score = 0;
+        foreach ($risk['factors'] ?? [] as $factor) {
+            if (!in_array((string)($factor['key'] ?? ''), self::REVIEW_ONLY_FACTORS, true)) {
+                $score += (int)($factor['points'] ?? 0);
+            }
+        }
+        return self::score_cap_enabled() ? min(100, $score) : $score;
+    }
+
+    /**
      * Determine whether the attempt risk score is capped at 100.
      *
      * Off by default. The 100 boundary is a presentation choice, not a measurement: while the

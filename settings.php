@@ -770,6 +770,22 @@ if ($canmanageproctoring) {
         PARAM_INT
     ));
 
+    // Multiple faces in the webcam (CPIT-468). Off by default, like phone detection: pilot first.
+    $settings->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/detectmultiplefaces',
+        get_string('setting:detectmultiplefaces', 'quizaccess_proctoring'),
+        get_string('setting:detectmultiplefaces_desc', 'quizaccess_proctoring'),
+        0
+    ));
+
+    $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/multiplefacesminsize',
+        get_string('setting:multiplefacesminsize', 'quizaccess_proctoring'),
+        get_string('setting:multiplefacesminsize_desc', 'quizaccess_proctoring'),
+        10,
+        PARAM_INT
+    ));
+
     $settings->add(new admin_setting_heading(
         'quizaccess_proctoring_riskheading',
         get_string('setting:riskheading', 'quizaccess_proctoring'),

@@ -29,7 +29,12 @@ namespace quizaccess_proctoring\local;
  */
 final class monitoring_coverage {
     /** Neutral event types excluded from suspicious activity and AI review. */
-    public const NEUTRAL_EVENTS = ['monitoring_started', 'screen_capture', 'phone_detection_started'];
+    public const NEUTRAL_EVENTS = [
+        'monitoring_started',
+        'screen_capture',
+        'phone_detection_started',
+        'multiple_faces_detection_started',
+    ];
 
     /**
      * Record the initial policy when Moodle creates a real, proctored attempt.

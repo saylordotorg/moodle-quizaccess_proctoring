@@ -52,7 +52,16 @@ final class factor_coverage {
     public const REASON_NO_FACE_CHECK = 'nofacecheck';
 
     /** Factors with no detector anywhere in the plugin. */
-    public const FACTORS_WITHOUT_DETECTOR = ['multiplefaces', 'audio'];
+    public const FACTORS_WITHOUT_DETECTOR = ['audio'];
+
+    /**
+     * Detectors that load a model in the browser and silently give up if they cannot: only an
+     * event from the browser (it started, or it detected something) proves one ran.
+     */
+    private const DETECTOR_START_EVENTS = [
+        'phonedetected' => ['phone_detection_started', 'phone_detected'],
+        'multiplefaces' => ['multiple_faces_detection_started', 'multiple_faces_detected'],
+    ];
 
     /**
      * The in-browser monitor each browser-side factor depends on. Every listed monitor must have
@@ -68,6 +77,7 @@ final class factor_coverage {
         'screenshare' => ['screen'],
         'multimonitor' => ['multimonitor'],
         'phonedetected' => ['phone'],
+        'multiplefaces' => ['multiplefaces'],
     ];
 
     /**
@@ -88,7 +98,7 @@ final class factor_coverage {
         $os = '';
         $browserdata = false;
         $monitorunsupported = false;
-        $phonestarted = false;
+        $detectorsstarted = [];
         // Unknown until the attempt's captures are counted; an attempt without an id has none to count.
         $comparedcount = -1;
         $facecheckcount = -1;
@@ -120,15 +130,15 @@ final class factor_coverage {
                 $scope + ['eventtype' => 'multiple_monitors_detected']
             );
 
-            // Phone detection loads a model in the browser and silently gives up if it cannot, so
-            // only the browser saying it started proves it ran.
-            $phonestarted = $DB->record_exists(
-                'quizaccess_proctoring_events',
-                $scope + ['eventtype' => 'phone_detection_started']
-            ) || $DB->record_exists(
-                'quizaccess_proctoring_events',
-                $scope + ['eventtype' => 'phone_detected']
-            );
+            foreach (self::DETECTOR_START_EVENTS as $factorkey => $eventtypes) {
+                [$typesql, $typeparams] = $DB->get_in_or_equal($eventtypes, SQL_PARAMS_NAMED, 'started');
+                $detectorsstarted[$factorkey] = $DB->record_exists_select(
+                    'quizaccess_proctoring_events',
+                    'courseid = :courseid AND quizid = :quizid AND userid = :userid AND attemptid = :attemptid
+                        AND eventtype ' . $typesql,
+                    $scope + $typeparams
+                );
+            }
 
             $logwhere = 'courseid = :courseid AND quizid = :cmid AND userid = :userid
                 AND status = :attemptid AND deletionprogress = 0';
@@ -173,7 +183,7 @@ final class factor_coverage {
                 $monitorunsupported,
                 $comparedcount,
                 $facecheckcount,
-                $phonestarted
+                $detectorsstarted
             );
             if ($reason !== null) {
                 $reasons[$factorkey] = $reason;
@@ -192,7 +202,7 @@ final class factor_coverage {
      * @param bool $monitorunsupported Whether the browser said it cannot count monitors.
      * @param int $comparedcount Webcam captures compared with the reference photo, or -1 when unknown.
      * @param int $facecheckcount Webcam captures checked for a face, or -1 when unknown.
-     * @param bool $phonestarted Whether the browser reported that phone detection started.
+     * @param array $detectorsstarted Factor key => whether the browser reported that its detector started.
      * @return string|null One of the REASON_* constants, or null when the check ran.
      */
     public static function reason(
@@ -202,7 +212,7 @@ final class factor_coverage {
         bool $monitorunsupported,
         int $comparedcount,
         int $facecheckcount,
-        bool $phonestarted = false
+        array $detectorsstarted = []
     ): ?string {
         if (in_array($factorkey, self::FACTORS_WITHOUT_DETECTOR, true)) {
             return self::REASON_NOT_BUILT;
@@ -233,7 +243,7 @@ final class factor_coverage {
         if ($factorkey === 'multimonitor' && $monitorunsupported) {
             return self::REASON_BROWSER_UNSUPPORTED;
         }
-        if ($factorkey === 'phonedetected' && !$phonestarted) {
+        if (isset(self::DETECTOR_START_EVENTS[$factorkey]) && empty($detectorsstarted[$factorkey])) {
             return self::REASON_DETECTOR_FAILED;
         }
         return null;

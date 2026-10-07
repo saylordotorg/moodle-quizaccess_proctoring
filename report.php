@@ -176,7 +176,7 @@ function quizaccess_proctoring_not_monitored_item(string $factorkey, string $rea
  */
 function quizaccess_proctoring_finding_description(string $factorkey, bool $hasimage): string {
     $desc = get_string('riskfactordesc:' . $factorkey, 'quizaccess_proctoring');
-    if (in_array($factorkey, ['aitoolscreenshot', 'phonedetected'], true)) {
+    if (in_array($factorkey, ['aitoolscreenshot', 'phonedetected', 'multiplefaces'], true)) {
         $desc .= ' ' . get_string($hasimage ? 'riskfactorimage:attached' : 'riskfactorimage:none', 'quizaccess_proctoring');
     }
     return $desc;

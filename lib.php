@@ -850,8 +850,21 @@ function quizaccess_proctoring_risk_hold_reachability(): string {
 
     $autofailreachable = $siteaction === QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL
         || $DB->record_exists('quizaccess_proctoring', ['riskreviewmode' => QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL]);
+    if (!$autofailreachable) {
+        return 'off';
+    }
 
-    return $autofailreachable ? 'autofailonly' : 'off';
+    // Review-only evidence never fails an attempt automatically: when it is what takes an
+    // attempt over the threshold, auto-fail mode holds the attempt for a reviewer instead
+    // (CPIT-468), so the review queue is reachable whenever such a detector is running.
+    if (
+        (int)get_config('quizaccess_proctoring', 'detectmultiplefaces') === 1
+        && \quizaccess_proctoring\local\risk_calculator::factor_enabled('multiplefaces')
+    ) {
+        return 'reachable';
+    }
+
+    return 'autofailonly';
 }
 
 /**
@@ -3694,6 +3707,25 @@ function quizaccess_proctoring_build_ai_review_prompt(stdClass $review, int $ima
                 . "Objects that merely resemble a phone (calculator, remote control, glasses case, mug) or a phone "
                 . "lying face-down and untouched should be rated suspicious or inconclusive, not cheating likely. "
                 . "If no phone-like object is visible at all, say so: the detector may have misfired. "
+                . "Return a cautious review score from 0 to 100 where "
+                . (int)$settings['decisionthreshold'] . "+ means strong visual evidence that needs escalation. "
+                . "This is advisory for a human reviewer, not an automatic misconduct finding.\n\n"
+                . "Event type: " . $eventtype . "\n"
+                . "Event details: " . $eventdetail . "\n"
+                . "Images provided: " . $imagecount;
+        }
+
+        if ($event && (string)$event->eventtype === 'multiple_faces_detected') {
+            return "You are reviewing one webcam frame captured during an online proctored quiz, after automatic "
+                . "face detection saw more than one face in view across several consecutive checks. "
+                . "Use only visible evidence in the image and the event metadata below. "
+                . "Do not identify anyone or infer intent from protected traits. "
+                . "Mark cheating likely only when a second person is clearly present and appears to be helping: "
+                . "looking at the screen with the student, pointing, talking to them, or passing material. "
+                . "A person who is simply in the room, passing behind, or not engaged with the student, should be "
+                . "rated suspicious or inconclusive, not cheating likely. "
+                . "Faces in photos, posters, screens or reflections are not a second person: if that is all that "
+                . "is visible, or only one face is visible, say so, because the detector may have misfired. "
                 . "Return a cautious review score from 0 to 100 where "
                 . (int)$settings['decisionthreshold'] . "+ means strong visual evidence that needs escalation. "
                 . "This is advisory for a human reviewer, not an automatic misconduct finding.\n\n"

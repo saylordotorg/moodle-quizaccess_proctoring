@@ -61,18 +61,27 @@ final class factor_coverage_test extends advanced_testcase {
      * Browser-side factors need their monitor on, the browser to have reported in, and browser support.
      */
     public function test_browser_factors_need_their_monitor_and_browser_data(): void {
-        $all = ['activity' => true, 'clipboard' => true, 'screen' => true, 'multimonitor' => true, 'phone' => true];
+        $all = ['activity' => true, 'clipboard' => true, 'screen' => true, 'multimonitor' => true, 'phone' => true,
+            'multiplefaces' => true];
+        $started = ['phonedetected' => true, 'multiplefaces' => true];
 
         // Everything on and the browser reported in: passed.
         foreach (['aitool', 'aitoolscreenshot', 'clipboard', 'tabactivity', 'f12', 'shortcut', 'screenshare',
-                'multimonitor', 'phonedetected'] as $factorkey) {
-            $this->assertNull(factor_coverage::reason($factorkey, $all, true, false, 1, 1, true), $factorkey);
+                'multimonitor', 'phonedetected', 'multiplefaces'] as $factorkey) {
+            $this->assertNull(factor_coverage::reason($factorkey, $all, true, false, 1, 1, $started), $factorkey);
         }
 
-        // Phone detection switched on is not enough: the browser has to say the detector started.
+        // A model-based detector switched on is not enough: the browser has to say it started.
+        foreach (['phonedetected', 'multiplefaces'] as $factorkey) {
+            $this->assertSame(
+                factor_coverage::REASON_DETECTOR_FAILED,
+                factor_coverage::reason($factorkey, $all, true, false, 1, 1, [$factorkey => false] + $started)
+            );
+        }
+        // Attempts recorded before multiple-face detection existed have no such monitor: switched off.
         $this->assertSame(
-            factor_coverage::REASON_DETECTOR_FAILED,
-            factor_coverage::reason('phonedetected', $all, true, false, 1, 1, false)
+            factor_coverage::REASON_SETTING_OFF,
+            factor_coverage::reason('multiplefaces', array_diff_key($all, ['multiplefaces' => 1]), true, false, 1, 1, $started)
         );
 
         // The attempt predates monitor recording.
@@ -169,7 +178,7 @@ final class factor_coverage_test extends advanced_testcase {
                 'shortcut'] as $factorkey) {
             $this->assertArrayNotHasKey($factorkey, $reasons, $factorkey . ' ran and should read as passed');
         }
-        $this->assertSame(factor_coverage::REASON_NOT_BUILT, $reasons['multiplefaces']);
+        $this->assertSame(factor_coverage::REASON_SETTING_OFF, $reasons['multiplefaces']);
         $this->assertSame(factor_coverage::REASON_NOT_BUILT, $reasons['audio']);
         $this->assertSame(factor_coverage::REASON_SETTING_OFF, $reasons['screenshare']);
         $this->assertSame(factor_coverage::REASON_SETTING_OFF, $reasons['aitoolscreenshot']);
