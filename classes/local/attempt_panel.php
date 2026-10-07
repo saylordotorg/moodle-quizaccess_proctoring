@@ -36,9 +36,12 @@ namespace quizaccess_proctoring\local;
  *  - the AI image-review status with its compact status data (C3/C4),
  *  - the plain-language session summary (C9).
  *
- * The builder is deliberately read-only: it performs only lookups and never mutates state, so it
- * is safe to embed on the quiz attempt-review page (Requirement 14). Decision controls
- * (release/confirm/notes) are intentionally omitted here — those belong to Requirement 7 (P1).
+ * The builder is read-only: it performs only lookups and never mutates state, so it is safe to
+ * embed on the quiz attempt-review page (Requirement 14). Since CPIT-475 the panel also carries
+ * what a reviewer needs to decide a typical hold without leaving that page: the flagged moments
+ * with their times, a strip of the flagged webcam captures, and Release / Confirm links. The links
+ * go to the per-quiz report's existing hold actions, which check the capability and the session
+ * key and then return to the attempt.
  *
  * The report keys several helpers off a proctoring report id (a
  * {@see quizaccess_proctoring_logs} row id), whereas this fragment is keyed by quiz attempt id.
@@ -104,6 +107,157 @@ final class attempt_panel {
             'aireview' => $aireviewdata,
             'hasaireview' => $aireviewdata !== null,
             'coverage' => monitoring_coverage::for_attempt($courseid, $cmid, $userid, $effectiveattemptid),
+            'reporturl' => $reportid > 0 ? (new \moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
+                'courseid' => $courseid,
+                'cmid' => $cmid,
+                'studentid' => $userid,
+                'reportid' => $reportid,
+            ]))->out(false) : '',
+        ] + self::flagged_moments($courseid, $cmid, $userid, $effectiveattemptid)
+          + self::flagged_captures($courseid, $cmid, $userid, $effectiveattemptid)
+          + self::hold_controls($courseid, $cmid, $userid, $effectiveattemptid, $reportid);
+    }
+
+    /** @var int How many flagged moments and captures the panel lists before pointing to the report. */
+    private const FLAGGED_LIMIT = 6;
+
+    /**
+     * The attempt's suspicious browser events, earliest first, with their times.
+     *
+     * @param int $courseid Course id.
+     * @param int $cmid Quiz course-module id.
+     * @param int $userid Student id.
+     * @param int $attemptid Quiz attempt id.
+     * @return array Template keys flaggedmoments, hasflaggedmoments, moreflaggedmoments.
+     */
+    private static function flagged_moments(int $courseid, int $cmid, int $userid, int $attemptid): array {
+        global $DB;
+
+        if ($attemptid <= 0) {
+            return ['flaggedmoments' => [], 'hasflaggedmoments' => false, 'moreflaggedmoments' => ''];
+        }
+        [$typesql, $typeparams] = $DB->get_in_or_equal(overall_report::SUSPICIOUS_EVENT_TYPES, SQL_PARAMS_NAMED, 'pt');
+        $where = "courseid = :courseid AND quizid = :cmid AND userid = :userid AND attemptid = :attemptid
+                  AND eventtype {$typesql}";
+        $params = ['courseid' => $courseid, 'cmid' => $cmid, 'userid' => $userid, 'attemptid' => $attemptid] + $typeparams;
+        $total = $DB->count_records_select('quizaccess_proctoring_events', $where, $params);
+        $events = $DB->get_records_select(
+            'quizaccess_proctoring_events',
+            $where,
+            $params,
+            'timemodified ASC, id ASC',
+            'id, eventtype, timemodified',
+            0,
+            self::FLAGGED_LIMIT
+        );
+        $timeformat = get_string('strftimetime', 'langconfig');
+        $moments = [];
+        foreach ($events as $event) {
+            $moments[] = [
+                'time' => userdate((int)$event->timemodified, $timeformat),
+                'label' => quizaccess_proctoring_get_event_label((string)$event->eventtype),
+            ];
+        }
+        return [
+            'flaggedmoments' => $moments,
+            'hasflaggedmoments' => !empty($moments),
+            'moreflaggedmoments' => $total > count($moments)
+                ? get_string('attemptpanel:moreinreport', 'quizaccess_proctoring', $total - count($moments))
+                : '',
+        ];
+    }
+
+    /**
+     * The attempt's webcam captures that did not match the reference or showed no face.
+     *
+     * @param int $courseid Course id.
+     * @param int $cmid Quiz course-module id.
+     * @param int $userid Student id.
+     * @param int $attemptid Quiz attempt id.
+     * @return array Template keys flaggedcaptures, hasflaggedcaptures, moreflaggedcaptures.
+     */
+    private static function flagged_captures(int $courseid, int $cmid, int $userid, int $attemptid): array {
+        global $DB;
+
+        if ($attemptid <= 0) {
+            return ['flaggedcaptures' => [], 'hasflaggedcaptures' => false, 'moreflaggedcaptures' => ''];
+        }
+        $threshold = max(1, (int)quizaccess_proctoring_get_proctoring_settings('threshold'));
+        $where = "courseid = :courseid AND quizid = :cmid AND userid = :userid AND status = :attemptid
+                  AND deletionprogress = 0 AND webcampicture <> ''
+                  AND ((awsflag = 2 AND awsscore < :threshold) OR awsflag = 3)";
+        $params = [
+            'courseid' => $courseid,
+            'cmid' => $cmid,
+            'userid' => $userid,
+            'attemptid' => $attemptid,
+            'threshold' => $threshold,
+        ];
+        $total = $DB->count_records_select('quizaccess_proctoring_logs', $where, $params);
+        $logs = $DB->get_records_select(
+            'quizaccess_proctoring_logs',
+            $where,
+            $params,
+            'timemodified ASC, id ASC',
+            'id, webcampicture, awsflag, awsscore, timemodified',
+            0,
+            self::FLAGGED_LIMIT
+        );
+        $timeformat = get_string('strftimetime', 'langconfig');
+        $captures = [];
+        foreach ($logs as $log) {
+            $captures[] = [
+                'url' => (string)$log->webcampicture,
+                'time' => userdate((int)$log->timemodified, $timeformat),
+                'label' => (int)$log->awsflag === 3
+                    ? get_string('reportcaptures:badgenoface', 'quizaccess_proctoring')
+                    : get_string('reportcaptures:badgemismatch', 'quizaccess_proctoring', (int)$log->awsscore),
+            ];
+        }
+        return [
+            'flaggedcaptures' => $captures,
+            'hasflaggedcaptures' => !empty($captures),
+            'moreflaggedcaptures' => $total > count($captures)
+                ? get_string('attemptpanel:moreinreport', 'quizaccess_proctoring', $total - count($captures))
+                : '',
+        ];
+    }
+
+    /**
+     * Release and Confirm links for an active hold, for a viewer who may decide it.
+     *
+     * @param int $courseid Course id.
+     * @param int $cmid Quiz course-module id.
+     * @param int $userid Student id.
+     * @param int $attemptid Quiz attempt id.
+     * @param int $reportid Representative proctoring log id.
+     * @return array Template keys canacthold, releaseurl, confirmurl.
+     */
+    private static function hold_controls(int $courseid, int $cmid, int $userid, int $attemptid, int $reportid): array {
+        $none = ['canacthold' => false, 'releaseurl' => '', 'confirmurl' => ''];
+        $hold = quizaccess_proctoring_get_risk_hold($courseid, $cmid, $userid, $attemptid, $reportid);
+        if (!$hold || (int)$hold->status !== QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
+            return $none;
+        }
+        $context = \context_module::instance($cmid);
+        if (!has_all_capabilities(['quizaccess/proctoring:reviewriskholds', 'quizaccess/proctoring:viewreport'], $context)) {
+            return $none;
+        }
+        $base = [
+            'courseid' => $courseid,
+            'cmid' => $cmid,
+            'studentid' => $userid,
+            'reportid' => $reportid,
+            'holdid' => (int)$hold->id,
+            'returnattempt' => $attemptid,
+            'sesskey' => sesskey(),
+        ];
+        return [
+            'canacthold' => true,
+            'releaseurl' => (new \moodle_url('/mod/quiz/accessrule/proctoring/report.php', $base + ['riskaction' => 'release']))
+                ->out(false),
+            'confirmurl' => (new \moodle_url('/mod/quiz/accessrule/proctoring/report.php', $base + ['riskaction' => 'confirm']))
+                ->out(false),
         ];
     }
 

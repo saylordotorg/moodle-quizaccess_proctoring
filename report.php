@@ -111,21 +111,6 @@ $url = new moodle_url('/mod/quiz/accessrule/proctoring/report.php', ['courseid' 
 $fcmethod = get_config('quizaccess_proctoring', 'fcmethod');
 
 /**
- * Gets a readable suspicious activity event label.
- *
- * @param string $eventtype Event type.
- * @return string Event label.
- */
-function quizaccess_proctoring_get_event_label(string $eventtype): string {
-    $key = 'eventtype:' . $eventtype;
-    if (get_string_manager()->string_exists($key, 'quizaccess_proctoring')) {
-        return get_string($key, 'quizaccess_proctoring');
-    }
-
-    return ucfirst(str_replace('_', ' ', $eventtype));
-}
-
-/**
  * Formats stored event JSON for the report table.
  *
  * @param string $eventdetail JSON event detail.
@@ -375,6 +360,7 @@ if ($riskaction === 'release' && $holdid > 0) {
     if (!quizaccess_proctoring_release_risk_hold($holdid, $USER->id)) {
         throw new moodle_exception('invalidrequest', 'error');
     }
+    quizaccess_proctoring_return_to_attempt($hold, get_string('riskreview:releasednotice', 'quizaccess_proctoring'));
     redirect(new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
         'courseid' => $courseid,
         'cmid' => $cmid,
@@ -395,6 +381,7 @@ if ($riskaction === 'confirm' && $holdid > 0) {
     if (!quizaccess_proctoring_confirm_risk_hold($holdid, $USER->id)) {
         throw new moodle_exception('invalidrequest', 'error');
     }
+    quizaccess_proctoring_return_to_attempt($hold, get_string('riskreview:confirmednotice', 'quizaccess_proctoring'));
 
     redirect(new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
         'courseid' => $courseid,
@@ -1881,6 +1868,11 @@ if (
             'analyzereportid' => $reportid,
             'sesskey' => sesskey(),
             'riskscore' => $riskscore,
+            // The attempt's grade and timing, so the reviewer needs no second tab (CPIT-475).
+            'attemptsummary' => \quizaccess_proctoring\local\attempt_summary::for_attempt(
+                (int)$riskscore['attemptid'],
+                $quiz
+            ),
             'sessionsummary' => $sessionsummary,
             'hassessionsummary' => ($sessionsummary !== ''),
             'coverage' => \quizaccess_proctoring\local\monitoring_coverage::for_attempt(

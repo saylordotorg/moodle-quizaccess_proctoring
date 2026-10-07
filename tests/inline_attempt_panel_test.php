@@ -43,7 +43,7 @@ require_once($CFG->dirroot . '/question/engine/lib.php');
  * Two surfaces are exercised:
  *  - {@see attempt_panel::build_context()} builds the embeddable fragment context from real attempt
  *    data (risk score, resolved certificate label, AI review status, plain-language summary), and
- *  - {@see quizaccess_proctoring_standard_after_main_region_html()} drives the review-page callback
+ *  - {@see quizaccess_proctoring_attempt_review_panel_html()} drives the review-page callback
  *    end to end: it self-scopes to the `mod-quiz-review` page, reads the reviewed attempt from the
  *    `attempt` parameter, and renders the fragment only for a capable reviewer.
  *
@@ -53,7 +53,9 @@ require_once($CFG->dirroot . '/question/engine/lib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  *
  * @covers \quizaccess_proctoring\local\attempt_panel
- * @covers ::quizaccess_proctoring_standard_after_main_region_html
+ * @covers ::quizaccess_proctoring_attempt_review_panel_html
+ * @covers \quizaccess_proctoring\hook_callbacks
+ * @covers \quizaccess_proctoring\local\attempt_summary
  */
 final class inline_attempt_panel_test extends advanced_testcase {
 
@@ -137,7 +139,7 @@ final class inline_attempt_panel_test extends advanced_testcase {
         $this->setup_review_page($course, $cm, $attemptid);
         $this->setUser($reviewer);
 
-        $html = quizaccess_proctoring_standard_after_main_region_html();
+        $html = quizaccess_proctoring_attempt_review_panel_html();
 
         $this->assertNotSame('', trim($html),
             'the inline panel must render for an authorized reviewer on the review page');
@@ -176,7 +178,7 @@ final class inline_attempt_panel_test extends advanced_testcase {
         $this->setup_review_page($course, $cm, $attemptid);
         $this->setUser($student);
 
-        $html = quizaccess_proctoring_standard_after_main_region_html();
+        $html = quizaccess_proctoring_attempt_review_panel_html();
 
         $this->assertSame('', $html,
             'the inline panel must be hidden for a user lacking the review capability');
@@ -314,5 +316,109 @@ final class inline_attempt_panel_test extends advanced_testcase {
             'deletionprogress' => 0,
             'timemodified' => time(),
         ]);
+    }
+
+    /**
+     * The panel lists the flagged moments and captures, and lets a reviewer decide an active hold
+     * without leaving the review page (CPIT-475).
+     */
+    public function test_panel_carries_flagged_evidence_and_hold_decision(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        [$course, $quiz, $cm] = $this->create_proctored_quiz_fixture();
+        $student = $this->create_enrolled_user($course, 'student');
+        $reviewer = $this->create_enrolled_user($course, 'editingteacher');
+        $attemptid = $this->create_quiz_attempt($quiz, $cm, $student);
+        $reportid = $this->create_proctoring_log($course, $cm, $student, $attemptid);
+        $DB->insert_record('quizaccess_proctoring_logs', (object)[
+            'courseid' => (int)$course->id, 'quizid' => (int)$cm->id, 'userid' => (int)$student->id,
+            'webcampicture' => 'https://example.com/noface.png', 'status' => $attemptid,
+            'awsscore' => 0, 'awsflag' => 3, 'deletionprogress' => 0, 'timemodified' => time(),
+        ]);
+        foreach (['focus_lost', 'tab_visible'] as $type) {
+            $DB->insert_record('quizaccess_proctoring_events', (object)[
+                'courseid' => (int)$course->id, 'quizid' => (int)$cm->id, 'userid' => (int)$student->id,
+                'attemptid' => $attemptid, 'reportid' => $reportid, 'eventtype' => $type,
+                'eventdetail' => '{}', 'timemodified' => time(),
+            ]);
+        }
+        $holdid = $DB->insert_record('quizaccess_proctoring_risk_holds', (object)[
+            'courseid' => (int)$course->id, 'quizid' => (int)$cm->id, 'quizinstance' => (int)$quiz->id,
+            'userid' => (int)$student->id, 'attemptid' => $attemptid, 'reportid' => $reportid,
+            'riskscore' => 80, 'threshold' => 0, 'originalgrade' => null,
+            'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE, 'reviewerid' => 0,
+            'timecreated' => time(), 'timemodified' => time(), 'timereviewed' => 0,
+            'autoreleaseblockedscore' => 0, 'autoreleaseblockedreason' => null,
+        ]);
+
+        $this->setUser($reviewer);
+        $context = attempt_panel::build_context((int)$course->id, (int)$cm->id, (int)$student->id, $attemptid);
+
+        // Only the suspicious event is a flagged moment; the return to the tab is not.
+        $this->assertCount(1, $context['flaggedmoments']);
+        $this->assertCount(1, $context['flaggedcaptures']);
+        $this->assertSame('https://example.com/noface.png', $context['flaggedcaptures'][0]['url']);
+        $this->assertTrue($context['canacthold']);
+        $this->assertStringContainsString('holdid=' . $holdid, $context['releaseurl']);
+        $this->assertStringContainsString('returnattempt=' . $attemptid, $context['confirmurl']);
+        $this->assertStringContainsString('studentid=' . $student->id, $context['reporturl']);
+
+        // A student never gets the decision links.
+        $this->setUser($student);
+        $context = attempt_panel::build_context((int)$course->id, (int)$cm->id, (int)$student->id, $attemptid);
+        $this->assertFalse($context['canacthold']);
+    }
+
+    /**
+     * The panel reaches the review page through the output hook, not the legacy callback.
+     */
+    public function test_hook_adds_the_panel(): void {
+        global $PAGE;
+        $this->resetAfterTest();
+
+        [$course, $quiz, $cm] = $this->create_proctored_quiz_fixture();
+        $student = $this->create_enrolled_user($course, 'student');
+        $reviewer = $this->create_enrolled_user($course, 'editingteacher');
+        $attemptid = $this->create_quiz_attempt($quiz, $cm, $student);
+        $this->create_proctoring_log($course, $cm, $student, $attemptid);
+        $this->setup_review_page($course, $cm, $attemptid);
+        $this->setUser($reviewer);
+
+        $callbacks = \core\di::get(\core\hook\manager::class)->get_callbacks_for_hook(
+            \core\hook\output\after_standard_main_region_html_generation::class
+        );
+        $components = array_column($callbacks, 'component');
+        $this->assertContains('quizaccess_proctoring', $components);
+        $this->assertFalse(function_exists('quizaccess_proctoring_standard_after_main_region_html'));
+
+        $hook = new \core\hook\output\after_standard_main_region_html_generation($PAGE->get_renderer('core'));
+        \quizaccess_proctoring\hook_callbacks::after_standard_main_region_html($hook);
+        $this->assertStringContainsString(
+            get_string('attemptpanel:heading', 'quizaccess_proctoring'),
+            $hook->get_output()
+        );
+    }
+
+    /**
+     * The per-student report states the attempt's own timing and grade (CPIT-475).
+     */
+    public function test_attempt_summary(): void {
+        $this->resetAfterTest();
+
+        [$course, $quiz, $cm] = $this->create_proctored_quiz_fixture();
+        $student = $this->create_enrolled_user($course, 'student');
+        $attemptid = $this->create_quiz_attempt($quiz, $cm, $student);
+
+        $summary = \quizaccess_proctoring\local\attempt_summary::for_attempt($attemptid, $quiz);
+        $this->assertSame(1, $summary['attemptnumber']);
+        $this->assertSame(get_string('statefinished', 'quiz'), $summary['state']);
+        $this->assertSame(format_time(100), $summary['timetaken']);
+        $this->assertStringContainsString('attempt=' . $attemptid, $summary['reviewurl']);
+        $this->assertNull(\quizaccess_proctoring\local\attempt_summary::for_attempt(0, $quiz));
+
+        // An attempt of another quiz is not summarised under this one.
+        $other = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id]);
+        $this->assertNull(\quizaccess_proctoring\local\attempt_summary::for_attempt($attemptid, $other));
     }
 }

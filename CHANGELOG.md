@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.4 — 2026-10-07
+- **Decide a hold from the quiz attempt page (CPIT-475).** Reviewers used to switch between the attempt review and the proctoring report. The proctoring panel on the attempt review page now also shows:
+  - the flagged moments, with their times;
+  - a strip of the flagged webcam captures (no face, or not matching the reference photo);
+  - for a reviewer who may decide it, Release and Confirm violation buttons on an active hold. They return to the attempt.
+  - a link to the full proctoring report.
+- The per-student proctoring report starts with the quiz attempt's status, start and finish times, time taken and grade, and links to the attempt review. Per-question time isn't shown: Moodle records when each answer was saved, not how long a question was on screen.
+- The panel is added through Moodle's output hook (`db/hooks.php`). It replaces the legacy `standard_after_main_region_html` callback.
+
 # v1.12.3 — 2026-10-07
 - **A cross-course review queue for Student Affairs, without site administration rights (CPIT-474).** The Overall reports page used to open only for site administrators. It now also opens for the new capability `quizaccess/proctoring:reviewacrosscourses`, given at system level or on a course category. Each list on the page shows only the courses where the viewer has the matching capability: the review queue needs `reviewriskholds`, the attempts report `viewreport` or `reviewriskholds`, and ID exceptions `manageoverrides`. A reviewer on one category sees that category's courses.
 - The page now opens on the **review queue**: holds waiting for a decision, oldest first, so the one closest to automatic release is at the top. It has a "Released automatically" column showing the days left, and one-click Release and Confirm violation buttons. Confirm still asks first. Each decision checks the capability on the quiz again.
