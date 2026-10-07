@@ -39,24 +39,49 @@ use quizaccess_proctoring\local\risk_calculator;
 final class no_face_runs_test extends advanced_testcase {
 
     /**
-     * Only runs of enough captures in a row, lasting at least 10 seconds, count; each run counts once.
+     * Only runs of enough no-face captures in a row, lasting at least 10 seconds, count; a capture
+     * with a face breaks a run, one nothing could check does not; each run counts once.
      */
     public function test_runs_need_enough_consecutive_captures(): void {
-        // Interval 30 s: captures up to 50 s apart are consecutive.
-        $this->assertSame(0, risk_calculator::count_no_face_runs([], 30, 3));
-        $this->assertSame(0, risk_calculator::count_no_face_runs([1000], 30, 3));
-        $this->assertSame(0, risk_calculator::count_no_face_runs([1000, 1030], 30, 3));
-        $this->assertSame(1, risk_calculator::count_no_face_runs([1000, 1030, 1060], 30, 3));
-        // A long absence is still one event.
-        $this->assertSame(1, risk_calculator::count_no_face_runs(range(1000, 1600, 30), 30, 3));
-        // A capture with a face in between (a 60 s gap) splits the run, and neither half is enough.
-        $this->assertSame(0, risk_calculator::count_no_face_runs([1000, 1030, 1090, 1120], 30, 3));
+        $miss = risk_calculator::CAPTURE_NO_FACE;
+        $face = risk_calculator::CAPTURE_FACE;
+        $unknown = risk_calculator::CAPTURE_UNKNOWN;
+        $misses = static function (array $times) use ($miss): array {
+            return array_map(static function (int $time) use ($miss): array {
+                return [$time, $miss];
+            }, $times);
+        };
+
+        $this->assertSame(0, risk_calculator::count_no_face_runs([], 3));
+        $this->assertSame(0, risk_calculator::count_no_face_runs($misses([1000]), 3));
+        $this->assertSame(0, risk_calculator::count_no_face_runs($misses([1000, 1030]), 3));
+        $this->assertSame(1, risk_calculator::count_no_face_runs($misses([1000, 1030, 1060]), 3));
+        // A long absence is still one event, whatever the capture interval was.
+        $this->assertSame(1, risk_calculator::count_no_face_runs($misses(range(1000, 1600, 60)), 3));
+        // Faces in between break the run, even at a short interval: 10 s captures, misses at 0, 20
+        // and 40 s with a face at 10 and 30 s are three single misses, not an absence.
+        $this->assertSame(0, risk_calculator::count_no_face_runs(
+            [[0, $miss], [10, $face], [20, $miss], [30, $face], [40, $miss]],
+            3
+        ));
+        // Captures nobody could check neither break nor extend a run.
+        $this->assertSame(1, risk_calculator::count_no_face_runs(
+            [[0, $miss], [30, $unknown], [60, $miss], [90, $miss]],
+            3
+        ));
+        $this->assertSame(0, risk_calculator::count_no_face_runs(
+            [[0, $miss], [30, $unknown], [60, $unknown], [90, $miss]],
+            3
+        ));
         // Two separate absences are two events; input order does not matter.
-        $this->assertSame(2, risk_calculator::count_no_face_runs([2060, 1000, 1030, 1060, 2000, 2030], 30, 3));
+        $this->assertSame(2, risk_calculator::count_no_face_runs(
+            array_merge($misses([2060, 2000, 2030]), [[1500, $face]], $misses([1000, 1030, 1060])),
+            3
+        ));
         // Retries of one capture a second apart never make a sustained absence.
-        $this->assertSame(0, risk_calculator::count_no_face_runs([1000, 1001, 1002, 1003], 30, 3));
+        $this->assertSame(0, risk_calculator::count_no_face_runs($misses([1000, 1001, 1002, 1003]), 3));
         // The required length is configurable.
-        $this->assertSame(1, risk_calculator::count_no_face_runs([1000, 1030], 30, 2));
+        $this->assertSame(1, risk_calculator::count_no_face_runs($misses([1000, 1030]), 2));
     }
 
     /**
@@ -79,7 +104,6 @@ final class no_face_runs_test extends advanced_testcase {
         global $DB;
 
         $this->resetAfterTest();
-        set_config('autoreconfigurecamshotdelay', 30, 'quizaccess_proctoring');
         $generator = $this->getDataGenerator();
         $course = $generator->create_course();
         $quiz = $generator->create_module('quiz', ['course' => $course->id]);
