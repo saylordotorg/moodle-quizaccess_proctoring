@@ -65,43 +65,30 @@ final class overall_report {
      * @return int[]|null Course-module ids, or null for a site administrator (every quiz).
      */
     public static function scoped_quiz_cmids(array $capabilities): ?array {
-        global $DB, $USER;
+        global $DB;
 
         if (is_siteadmin()) {
             return null;
         }
-        $courseids = [];
-        foreach ($capabilities as $capability) {
-            $courses = get_user_capability_course($capability, (int)$USER->id, true, '', 'id');
-            foreach ($courses ?: [] as $course) {
-                $courseids[(int)$course->id] = (int)$course->id;
-            }
-        }
-        unset($courseids[SITEID]);
-        if (!$courseids) {
-            return [];
-        }
-
+        // Every quiz that has had proctoring set up, checked one by one: discovering courses by the
+        // capability first would miss a quiz where it is granted at quiz level only (CPIT-474 review).
         $cmids = [];
         $ctxfields = \context_helper::get_preload_record_columns_sql('ctx');
-        foreach (array_chunk(array_values($courseids), 500) as $chunk) {
-            [$insql, $params] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'scc');
-            $rs = $DB->get_recordset_sql(
-                "SELECT cm.id, {$ctxfields}
-                   FROM {course_modules} cm
-                   JOIN {modules} m ON m.id = cm.module AND m.name = :quiz
-                   JOIN {context} ctx ON ctx.instanceid = cm.id AND ctx.contextlevel = :level
-                  WHERE cm.course {$insql}",
-                ['quiz' => 'quiz', 'level' => CONTEXT_MODULE] + $params
-            );
-            foreach ($rs as $record) {
-                \context_helper::preload_from_record($record);
-                if (has_any_capability($capabilities, \context_module::instance((int)$record->id))) {
-                    $cmids[] = (int)$record->id;
-                }
+        $rs = $DB->get_recordset_sql(
+            "SELECT cm.id, {$ctxfields}
+               FROM {course_modules} cm
+               JOIN {modules} m ON m.id = cm.module AND m.name = :quiz
+               JOIN {context} ctx ON ctx.instanceid = cm.id AND ctx.contextlevel = :level
+              WHERE EXISTS (SELECT 1 FROM {quizaccess_proctoring} p WHERE p.quizid = cm.instance)",
+            ['quiz' => 'quiz', 'level' => CONTEXT_MODULE]
+        );
+        foreach ($rs as $record) {
+            \context_helper::preload_from_record($record);
+            if (has_any_capability($capabilities, \context_module::instance((int)$record->id))) {
+                $cmids[] = (int)$record->id;
             }
-            $rs->close();
         }
+        $rs->close();
         sort($cmids);
         return $cmids;
     }

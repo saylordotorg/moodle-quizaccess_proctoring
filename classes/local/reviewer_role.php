@@ -42,6 +42,7 @@ class reviewer_role {
         'moodle/course:view',
         'moodle/course:viewhiddencourses',
         'moodle/course:viewhiddenactivities',
+        'moodle/course:ignoreavailabilityrestrictions',
     ];
 
     /** @var int[] Where the role can be assigned: the whole site, or one category. */

@@ -61,6 +61,21 @@ final class review_queue_test extends advanced_testcase {
             $this->courses[$key] = $this->getDataGenerator()->create_course(['category' => $this->categories[$key]->id]);
             $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $this->courses[$key]->id]);
             $this->cms[$key] = get_coursemodule_from_id('quiz', $quiz->cmid, 0, false, MUST_EXIST);
+            $this->proctor((int)$quiz->id);
+        }
+    }
+
+    /**
+     * Turn proctoring on for a quiz.
+     *
+     * @param int $quizid Quiz instance id.
+     */
+    private function proctor(int $quizid): void {
+        global $DB;
+        if ($DB->record_exists('quizaccess_proctoring', ['quizid' => $quizid])) {
+            $DB->set_field('quizaccess_proctoring', 'proctoringrequired', 1, ['quizid' => $quizid]);
+        } else {
+            $DB->insert_record('quizaccess_proctoring', (object)['quizid' => $quizid, 'proctoringrequired' => 1]);
         }
     }
 
@@ -172,6 +187,25 @@ final class review_queue_test extends advanced_testcase {
         $this->assertFalse(quizaccess_proctoring_can_review_across_courses());
         $this->assertSame([], overall_report::scoped_quiz_cmids(['quizaccess/proctoring:reviewriskholds']));
         $this->assertSame(0, overall_report::held_certificates(0, [])['total']);
+    }
+
+    /**
+     * A review capability granted on a single quiz brings that quiz into the queue.
+     */
+    public function test_quiz_level_grant_is_found(): void {
+        $this->resetAfterTest();
+        $this->two_categories();
+        $this->hold('b', DAYSECS);
+
+        $roleid = $this->getDataGenerator()->create_role();
+        assign_capability('quizaccess/proctoring:reviewriskholds', CAP_ALLOW, $roleid, \context_system::instance()->id, true);
+        $reviewer = $this->getDataGenerator()->create_user();
+        role_assign($roleid, $reviewer->id, \context_module::instance($this->cms['b']->id));
+        $this->setUser($reviewer);
+
+        $scope = overall_report::scoped_quiz_cmids(['quizaccess/proctoring:reviewriskholds']);
+        $this->assertSame([(int)$this->cms['b']->id], $scope);
+        $this->assertSame(1, overall_report::held_certificates(0, $scope)['total']);
     }
 
     /**
