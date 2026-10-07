@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.11.9 — 2026-10-06
+- **No-face pauses no longer stop after a few times (CPIT-470).** There was never a pause limit. If one face-detection call in the browser never finished, its "checking" flag stayed set and no further checks ran, so the quiz stopped pausing. Webcam captures could stall the same way. Every detection call (the no-face pause, the webcam capture's face check, multiple faces and phones) now gives up after 5 seconds, so the next check always runs. A capture whose face check failed or timed out is stored as not checked rather than as "no face", and a failed or timed-out pause check no longer counts towards pausing the quiz, so a slow device cannot leave the student paused for good.
+- **Every pause is logged.** When the quiz pauses because no face is in view, a "Quiz paused: no face in view" event is logged with the webcam frame. When it ends, a "Quiz pause ended" event records how long it lasted and why it ended. A pause still running when the student leaves the page ends there. The report shows how many times the quiz was paused and the total time, next to the score, because the capped "no face" points could not show repeated behaviour. These events are informational and add no points.
+- **The grace period after the attempt starts now runs once per attempt.** It used to restart on every quiz page, so short questions could keep the check inside it.
+- If AI review of event images is on, a pause's webcam frame gets a webcam-specific prompt. The privacy checklist lists the pause logging when the no-face pause is on, and the setting's description no longer says no images leave the browser.
+- Whether the exam should keep pausing, or warn and continue, is a policy decision for Student Affairs. It keeps pausing for as long as the face is not in view.
+- The verification-service README records the dev Lambda deployments of 10/02 (version 2) and 10/06 (version 3, CPIT-469).
+
 # v1.11.8 — 2026-10-06
 - **"No face" no longer flags students who did not move (CPIT-469).** A single missed capture used to count. Each one is decided from one small webcam frame, which low light, glare or a turned head can miss. Now "No face visible" adds points only for a sustained absence:
   - it takes a run of webcam captures in a row with no face, 3 by default (new setting "Webcam captures in a row without a face before No face counts", 2 to 10), lasting at least 10 seconds;

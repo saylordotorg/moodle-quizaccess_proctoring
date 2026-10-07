@@ -1018,6 +1018,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         if (self::site_detects_multiple_faces()) {
             $items[] = get_string('privacynotice:item_multiplefaces', 'quizaccess_proctoring');
         }
+        if ((int)get_config('quizaccess_proctoring', 'blurquizwithoutface') === 1) {
+            $items[] = get_string('privacynotice:item_facepause', 'quizaccess_proctoring');
+        }
         if ((int)$requireentirescreen === 1 || (int)get_config('quizaccess_proctoring', 'captureviolationdesktop') === 1) {
             $items[] = get_string('privacynotice:item_desktop', 'quizaccess_proctoring');
         }

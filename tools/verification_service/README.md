@@ -98,12 +98,14 @@ On 2026-09-30 the bridge was deployed separately for `https://dev.sylr.org`. The
 
 At that deployment the source in this directory was checked byte for byte against the `lambda_function.py` member of the deployed archive (the source SHA-256 above). AWS `CodeSha256` is the Base64-encoded SHA-256 of the ZIP bytes, not the source file. Recreating a ZIP can change its archive hash even when the source is identical. The deployment archive and credentials are deliberately not stored here.
 
-**The checked-in source has changed since that deployment and is no longer identical to it.** It now also reports `reason: no_face_in_capture` and returns the similarity of a non-match (CPIT-453, CPIT-469), and that version has not been deployed yet. When it is, record the new deployment here, with its source SHA-256 and `CodeSha256`.
+The checked-in source has changed since then. Later dev deployments, newest first:
 
-| Item | Value |
-| --- | --- |
-| Checked-in source SHA-256 (CPIT-469) | `5c6b1ef23bbffc4aef0a3ddae0a8bd54f1a1ff82a4fd8cc87267aba79d9b3d99` |
-| Deployed | not yet |
+| Deployed | Dev function version (alias `dev`) | Change | Source SHA-256 | AWS `CodeSha256` |
+| --- | --- | --- | --- | --- |
+| 2026-10-06 | `3` | CPIT-469: `reason: no_face_in_capture`; similarity returned on a non-match | `5c6b1ef23bbffc4aef0a3ddae0a8bd54f1a1ff82a4fd8cc87267aba79d9b3d99` | `7x4Z3rz6xdccxKQOCO9osdp2IwBmSpU6k+VLfkGGjko=` |
+| 2026-10-02 | `2` | CPIT-453: `reason: reference_no_face` | `2fb65bad836a291eceafe44d09ca4ab446a712324458e1204934e375f16a6793` | `Hp+JemfZbzuqIx2ppmL3z6JW5vW3OXfCGcfUgt1zbaI=` |
+
+Version 2's source was checked byte for byte against the source before CPIT-469, and version 3's ZIP holds only `lambda_function.py` from this directory. The previous version is kept for rollback (`update-alias --function-version`). The production function `moodle-proctoring-face-verify` is separate and has not been updated with these changes.
 
 Compute the source hash from this directory:
 

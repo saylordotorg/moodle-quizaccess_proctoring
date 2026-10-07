@@ -1605,6 +1605,12 @@ if (
             ? $sessionsummary
             : get_string('verdict:noflagsheadline', 'quizaccess_proctoring');
         $riskscore['verdictmeta'] = fullname($user) . ($attemptstart > 0 ? ' · ' . userdate($attemptstart) : '');
+        $riskscore['facepauselabel'] = \quizaccess_proctoring\local\face_pauses::summary(
+            (int)$courseid,
+            (int)$cmid,
+            (int)$studentid,
+            (int)$riskscore['attemptid']
+        );
         // Which checks could run depends on the browser, so say which one the attempt used.
         $browserlabel = quizaccess_proctoring_browser_label($factorcoverage['browser'], $factorcoverage['os']);
         if ($browserlabel !== '') {

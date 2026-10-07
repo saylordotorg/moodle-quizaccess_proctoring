@@ -198,32 +198,41 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             isCameraAllowed = false;
         };
 
-        // Function to draw image from the box data.
-        const extractFaceFromBox = async(imageRef, box, croppedImage) => {
+        // Crop the face in the box out of the image, as a data URL ('' when nothing was extracted).
+        const extractFaceFromBox = async(imageRef, box) => {
             const regionsToExtract = [
                 // eslint-disable-next-line no-undef
                 new faceapi.Rect(box.x, box.y, box.width, box.height)
             ];
             // eslint-disable-next-line no-undef
-            let faceImages = await faceapi.extractFaces(imageRef, regionsToExtract);
-
-            if (faceImages.length !== 0) {
-                faceImages.forEach((cnv) => {
-                    croppedImage.src = cnv.toDataURL();
-                });
-            }
+            const faceImages = await faceapi.extractFaces(imageRef, regionsToExtract);
+            return faceImages.length ? faceImages[faceImages.length - 1].toDataURL() : '';
         };
 
-        const detectface = async(input, croppedImage, minScore) => {
+        // A detection call that never settles must not stop every later check: each one gives up
+        // after this long, so the "checking" flags always clear (CPIT-470).
+        const DETECTION_TIMEOUT_MS = 5000;
+        const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
+            const timer = window.setTimeout(() => reject(new Error('detection timed out')), ms);
+            Promise.resolve(promise).then((value) => {
+                window.clearTimeout(timer);
+                resolve(value);
+            }, (error) => {
+                window.clearTimeout(timer);
+                reject(error);
+            });
+        });
+
+        // Returns the face crop as a data URL, or '' when no face was found. It never writes to the
+        // page itself: a call that timed out may still finish later, and must not leave its crop for
+        // the next capture (CPIT-470).
+        const detectface = async(input, minScore) => {
             // The configured sensitivity (faceblurminscore), not face-api's built-in 0.5 (CPIT-469).
             // eslint-disable-next-line no-undef
             const options = new faceapi.SsdMobilenetv1Options({minConfidence: minScore});
             // eslint-disable-next-line no-undef
             const output = await faceapi.detectAllFaces(input, options);
-            if (output.length !== 0) {
-                let detections = output[0].box;
-                await extractFaceFromBox(input, detections, croppedImage);
-            }
+            return output.length ? extractFaceFromBox(input, output[0].box) : '';
         };
 
         const getDesktopPanelSlot = function(slot) {
@@ -1404,7 +1413,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 let predictions = [];
                 try {
-                    predictions = await phoneModel.detect(video) || [];
+                    predictions = await withTimeout(phoneModel.detect(video), DETECTION_TIMEOUT_MS) || [];
                 } catch (error) {
                     return;
                 }
@@ -1473,7 +1482,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 multiFaceChecking = true;
                 let faces = 0;
                 try {
-                    faces = await countWebcamFaces(video);
+                    faces = await withTimeout(countWebcamFaces(video), DETECTION_TIMEOUT_MS);
                 } catch (error) {
                     multiFaceConsecutive = 0;
                     return;
@@ -2273,12 +2282,126 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 let faceBlurChecking = false;
                 let facePresentCount = 0;
                 let faceMissingCount = 0;
+                let facePauseStartedAt = 0;
+                let facePauseCanvas = null;
+
+                // Every pause is logged, with how long it lasted, so a reviewer sees each one rather
+                // than only the capped "no face" points (CPIT-470). The start carries the webcam frame.
+                // The upload queue is disposed as the page goes away, dropping anything still waiting
+                // in it, so an event sent while leaving goes out as a keepalive request instead, which
+                // the browser completes after the page has gone.
+                const sendWhileLeaving = (request) => {
+                    const cfg = window.M && window.M.cfg;
+                    if (!window.fetch || !cfg || !cfg.sesskey || !cfg.wwwroot) {
+                        return false;
+                    }
+                    try {
+                        window.fetch(cfg.wwwroot + '/lib/ajax/service.php?sesskey=' + encodeURIComponent(cfg.sesskey) +
+                            '&info=' + encodeURIComponent(request.methodname), {
+                            method: 'POST',
+                            keepalive: true,
+                            credentials: 'same-origin',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify([{index: 0, methodname: request.methodname, args: request.args}])
+                        }).catch(() => undefined);
+                        return true;
+                    } catch (error) {
+                        return false;
+                    }
+                };
+                const logFacePause = (eventType, detail, screenshot, leaving) => {
+                    const capturedat = Math.floor(captureClock() / 1000);
+                    const request = {
+                        methodname: 'quizaccess_proctoring_log_event',
+                        args: {
+                            courseid: parseInt(props.courseid, 10) || 0,
+                            quizid: parseInt(props.quizid, 10) || 0,
+                            attemptid: parseInt(props.status, 10) || 0,
+                            reportid: parseInt(props.id, 10) || 0,
+                            eventtype: eventType,
+                            eventdetail: JSON.stringify(detail || {}),
+                            pagevisibility: document.visibilityState || '',
+                            currenturl: window.location.href,
+                            screenshot: screenshot || ''
+                        }
+                    };
+                    if (leaving) {
+                        request.args.capturedat = capturedat;
+                        request.args.requestid = 'pause-' + capturedat + '-' + Math.random().toString(36).slice(2, 10);
+                        // Also queued under the same request id: if the page stays (a cancelled leave)
+                        // and the keepalive request failed, the queue still delivers it, and the server
+                        // ingests one request id only once.
+                        sendWhileLeaving(request);
+                    }
+                    uploads.submit(request, capturedat);
+                };
+                const captureFacePauseFrame = () => {
+                    if (!video || !video.videoWidth || !video.videoHeight) {
+                        return '';
+                    }
+                    facePauseCanvas = facePauseCanvas || document.createElement('canvas');
+                    const frameWidth = Math.min(640, video.videoWidth);
+                    facePauseCanvas.width = frameWidth;
+                    facePauseCanvas.height = Math.round(video.videoHeight * (frameWidth / video.videoWidth));
+                    facePauseCanvas.getContext('2d').drawImage(video, 0, 0, facePauseCanvas.width, facePauseCanvas.height);
+                    return facePauseCanvas.toDataURL('image/jpeg', 0.8);
+                };
+                // Ending a pause because the page is starting to go is a guess: the student can cancel
+                // at an "unsaved changes" prompt, or a later handler can stop the submit. So the end is
+                // sent at once, and the pause carries straight on as a continuation timed from that
+                // moment. The continuation is only logged (a start marked continued, then its end) if
+                // the page stays; if the page really goes, its few milliseconds are simply dropped. Its
+                // time adds to the same pause in the report; it is not another pause.
+                let facePauseContinuation = false;
+                const endFacePause = (reason, leaving) => {
+                    if (!facePauseStartedAt) {
+                        return;
+                    }
+                    const seconds = Math.max(0, Math.round((Date.now() - facePauseStartedAt) / 1000));
+                    if (facePauseContinuation) {
+                        logFacePause('face_missing_start', {reason: 'still_paused', continued: true}, '', leaving);
+                    }
+                    logFacePause('face_missing_end', {durationseconds: seconds, reason: reason}, '', leaving);
+                    facePauseStartedAt = 0;
+                    facePauseContinuation = false;
+                };
+                const endFacePauseForLeaving = () => {
+                    // A submit is followed straight away by beforeunload; the continuation that the
+                    // first one began has nothing in it yet.
+                    if (!facePauseStartedAt || (facePauseContinuation && Date.now() - facePauseStartedAt < 2000)) {
+                        return;
+                    }
+                    endFacePause('page_left', true);
+                    facePauseStartedAt = Date.now();
+                    facePauseContinuation = true;
+                };
+                const endFacePauseOnPagehide = () => {
+                    if (facePauseContinuation && Date.now() - facePauseStartedAt < 2000) {
+                        // Ended a moment ago as the page began to go, and it did go.
+                        facePauseStartedAt = 0;
+                        facePauseContinuation = false;
+                        return;
+                    }
+                    // Either nothing ended the pause early, or the student spent a while at a leave
+                    // prompt before going: that time is logged too.
+                    endFacePause('page_left', true);
+                };
 
                 const setQuizBlurredForFace = (blurred) => {
+                    const wasBlurred = document.body.classList.contains('proctoring-face-blur-active');
                     document.body.classList.toggle('proctoring-face-blur-active', blurred);
                     const notice = document.getElementById('proctoring-face-blur-notice');
                     if (notice) {
                         notice.style.display = blurred ? 'block' : 'none';
+                    }
+                    if (!pageActive) {
+                        return;
+                    }
+                    if (blurred && !wasBlurred) {
+                        facePauseStartedAt = Date.now();
+                        logFacePause('face_missing_start', {reason: 'no_face_in_view'}, captureFacePauseFrame());
+                    } else if (!blurred && wasBlurred) {
+                        endFacePause('face_back_in_view');
                     }
                 };
 
@@ -2295,7 +2418,21 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         );
                     }
 
-                    const graceEndsAt = Date.now() + faceBlurInitialGraceMs;
+                    // The grace period runs once per attempt, from its first page, not again on every
+                    // page: short questions would otherwise keep the check inside it (CPIT-470).
+                    let graceStartedAt = Date.now();
+                    const graceKey = 'quizaccess_proctoring_face_grace_' + (parseInt(props.status, 10) || 0);
+                    try {
+                        const stored = parseInt(window.sessionStorage.getItem(graceKey) || '', 10);
+                        if (stored > 0 && stored <= graceStartedAt) {
+                            graceStartedAt = stored;
+                        } else {
+                            window.sessionStorage.setItem(graceKey, String(graceStartedAt));
+                        }
+                    } catch (error) {
+                        // Storage unavailable: the grace period then runs on each page, as before.
+                    }
+                    const graceEndsAt = graceStartedAt + faceBlurInitialGraceMs;
                     setQuizBlurredForFace(false);
 
                     const checkFaceVisibility = async() => {
@@ -2318,11 +2455,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         faceBlurChecking = true;
                         try {
                             // eslint-disable-next-line no-undef
-                            const detections = await faceapi.detectAllFaces(
+                            const detections = await withTimeout(faceapi.detectAllFaces(
                                 video,
                                 // eslint-disable-next-line no-undef
                                 new faceapi.SsdMobilenetv1Options({minConfidence: faceBlurMinScore})
-                            );
+                            ), DETECTION_TIMEOUT_MS);
                             const faceVisible = detections.some((detection) => detection.score >= faceBlurMinScore);
                             if (faceVisible) {
                                 facePresentCount++;
@@ -2338,13 +2475,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 }
                             }
                         } catch (error) {
-                            if (!graceActive) {
-                                faceMissingCount++;
-                                facePresentCount = 0;
-                                if (faceMissingCount >= faceBlurMisses) {
-                                    setQuizBlurredForFace(true);
-                                }
-                            }
+                            // A check that failed or timed out saw nothing either way: it is neither a
+                            // face nor a miss. Counting it as a miss would pause the quiz on a slow device
+                            // that never completes a check, with no way for the student to resume.
                         } finally {
                             faceBlurChecking = false;
                         }
@@ -2426,8 +2559,20 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             if (croppedImage) {
                                 croppedImage.removeAttribute('src');
                             }
+                            let faceChecked = captureFaceCheck;
                             if (captureFaceCheck) {
-                                await detectface(photo, croppedImage, faceBlurMinScore);
+                                try {
+                                    const crop = await withTimeout(detectface(photo, faceBlurMinScore), DETECTION_TIMEOUT_MS);
+                                    if (crop && croppedImage) {
+                                        croppedImage.src = crop;
+                                    }
+                                } catch (error) {
+                                    // A check that failed or timed out found nothing either way.
+                                    faceChecked = false;
+                                    if (croppedImage) {
+                                        croppedImage.removeAttribute('src');
+                                    }
+                                }
                             }
                             if (!pageActive || generation !== pageGeneration) {
                                 if (croppedImage) {
@@ -2437,9 +2582,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             }
                             let faceFound;
                             let faceImage;
-                            if (!captureFaceCheck) {
-                                // Not checked: without the face model nothing looked for a face, so
-                                // this capture is neither a face nor a miss (CPIT-469).
+                            if (!faceChecked) {
+                                // Not checked: without the face model, or when the check failed,
+                                // nothing looked for a face, so this capture is neither a face nor
+                                // a miss (CPIT-469, CPIT-470).
                                 faceFound = 2;
                                 faceImage = "";
                             } else if (croppedImage && croppedImage.getAttribute('src')) {
@@ -2561,7 +2707,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     hideButtons();
                 }
 
+                // A pause still running when the page is left ends as the page starts to go: on a form
+                // submit, or before unload (which also covers the quiz timer's automatic submission).
+                // Both come before the server finishes the attempt; an end logged afterwards would
+                // be timestamped after the attempt finished and refused. pagehide is the last resort.
+                document.addEventListener('submit', endFacePauseForLeaving, true);
+                window.addEventListener('beforeunload', endFacePauseForLeaving, true);
                 window.addEventListener('pagehide', function() {
+                    // A pause still running when the page is left ends here, before uploads stop.
+                    endFacePauseOnPagehide();
                     pageActive = false;
                     pageGeneration++;
                     uploads.suspend();
