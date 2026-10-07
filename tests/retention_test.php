@@ -213,6 +213,32 @@ final class retention_test extends advanced_testcase {
     }
 
     /**
+     * The upgrade moves the untouched old default of 0 to 180 days, but keeps a 0 an administrator
+     * chose.
+     */
+    public function test_upgrade_keeps_an_explicitly_chosen_zero(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/upgradelib.php');
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/db/upgrade.php');
+        $this->resetAfterTest();
+        $log = ['plugin' => 'quizaccess_proctoring', 'name' => 'imageretentiondays'];
+
+        set_config('imageretentiondays', 0, 'quizaccess_proctoring');
+        $DB->delete_records('config_log', $log);
+        quizaccess_proctoring_upgrade_image_retention_default();
+        $this->assertEquals(180, get_config('quizaccess_proctoring', 'imageretentiondays'));
+
+        set_config('imageretentiondays', 0, 'quizaccess_proctoring');
+        add_to_config_log('imageretentiondays', '30', '0', 'quizaccess_proctoring');
+        quizaccess_proctoring_upgrade_image_retention_default();
+        $this->assertEquals(0, get_config('quizaccess_proctoring', 'imageretentiondays'));
+
+        set_config('imageretentiondays', 90, 'quizaccess_proctoring');
+        quizaccess_proctoring_upgrade_image_retention_default();
+        $this->assertEquals(90, get_config('quizaccess_proctoring', 'imageretentiondays'));
+    }
+
+    /**
      * Run the queued account-deletion purge, discarding its progress output.
      */
     private function run_purge(): void {
