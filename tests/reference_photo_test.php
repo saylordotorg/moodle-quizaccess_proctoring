@@ -83,6 +83,23 @@ final class reference_photo_test extends advanced_testcase {
     }
 
     /**
+     * A face check passed against a photo that staff then reset no longer lets the student start.
+     */
+    public function test_reset_invalidates_a_pending_face_pass(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id]);
+        $student = $this->getDataGenerator()->create_user();
+        $this->photo((int)$student->id);
+        $this->setUser($student);
+        quizaccess_proctoring_set_face_preflight_passed((int)$quiz->cmid);
+        $this->assertTrue(quizaccess_proctoring_has_face_preflight_passed((int)$quiz->cmid));
+
+        reference_photo::reset((int)$student->id, 'Wrong person', \context_module::instance($quiz->cmid));
+        $this->assertFalse(quizaccess_proctoring_has_face_preflight_passed((int)$quiz->cmid));
+    }
+
+    /**
      * A student's request goes to the proctoring reviewers, once a day.
      */
     public function test_request_reaches_reviewers_once_a_day(): void {
