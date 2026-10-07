@@ -52,9 +52,9 @@ define([], function() {
             factors: ['f12', 'shortcut'],
         },
         {
-            title: 'Audio & pacing',
-            desc: 'Sounds in the room and how fast the exam was finished.',
-            factors: ['audio', 'speed'],
+            title: 'Pacing',
+            desc: 'How fast the exam was finished.',
+            factors: ['speed'],
         },
     ];
 
@@ -396,7 +396,6 @@ define([], function() {
         clipboard: 'Copying, pasting or right-clicking',
         f12: 'Developer tools opened (F12)',
         shortcut: 'Other monitored shortcuts',
-        audio: 'Voices or sounds detected',
         speed: 'Finished unusually fast',
     };
 
@@ -427,8 +426,6 @@ define([], function() {
         clipboard: 'The student copied question text or pasted something into an answer.',
         f12: 'Developer tools can reveal answers hidden in the page or disable monitoring.',
         shortcut: 'Other watched key combinations, like screenshots or window switching.',
-        audio: 'Not available yet: nothing in TaView listens to the microphone, so this never adds points. '
-            + 'Reports list it as not monitored.',
         speed: 'The attempt was completed faster than the minimum seconds per question set in the main settings. '
             + 'Only scored when speed review is turned on there.',
     };
