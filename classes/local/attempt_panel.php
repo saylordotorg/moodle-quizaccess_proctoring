@@ -183,23 +183,26 @@ final class attempt_panel {
             return ['flaggedcaptures' => [], 'hasflaggedcaptures' => false, 'moreflaggedcaptures' => ''];
         }
         $threshold = max(1, (int)quizaccess_proctoring_get_proctoring_settings('threshold'));
-        $where = "courseid = :courseid AND quizid = :cmid AND userid = :userid AND status = :attemptid
-                  AND deletionprogress = 0 AND webcampicture <> ''
-                  AND ((awsflag = 2 AND awsscore < :threshold) OR awsflag = 3)";
+        // The same no-face rule the risk score counts: the face-match check found no face, or the
+        // browser's detector found none in a capture it checked (CPIT-475 review).
+        [$nofacesql, $nofaceparams] = risk_calculator::no_face_capture_sql();
+        $where = "l.courseid = :courseid AND l.quizid = :cmid AND l.userid = :userid AND l.status = :attemptid
+                  AND l.deletionprogress = 0 AND l.webcampicture <> ''
+                  AND ((l.awsflag = 2 AND l.awsscore < :threshold) OR {$nofacesql})";
         $params = [
             'courseid' => $courseid,
             'cmid' => $cmid,
             'userid' => $userid,
             'attemptid' => $attemptid,
             'threshold' => $threshold,
-        ];
-        $total = $DB->count_records_select('quizaccess_proctoring_logs', $where, $params);
-        $logs = $DB->get_records_select(
-            'quizaccess_proctoring_logs',
-            $where,
+        ] + $nofaceparams;
+        $total = $DB->count_records_sql("SELECT COUNT(1) FROM {quizaccess_proctoring_logs} l WHERE {$where}", $params);
+        $logs = $DB->get_records_sql(
+            "SELECT l.id, l.webcampicture, l.awsflag, l.awsscore, l.timemodified
+               FROM {quizaccess_proctoring_logs} l
+              WHERE {$where}
+           ORDER BY l.timemodified ASC, l.id ASC",
             $params,
-            'timemodified ASC, id ASC',
-            'id, webcampicture, awsflag, awsscore, timemodified',
             0,
             self::FLAGGED_LIMIT
         );
@@ -209,9 +212,9 @@ final class attempt_panel {
             $captures[] = [
                 'url' => (string)$log->webcampicture,
                 'time' => userdate((int)$log->timemodified, $timeformat),
-                'label' => (int)$log->awsflag === 3
-                    ? get_string('reportcaptures:badgenoface', 'quizaccess_proctoring')
-                    : get_string('reportcaptures:badgemismatch', 'quizaccess_proctoring', (int)$log->awsscore),
+                'label' => (int)$log->awsflag === 2 && (int)$log->awsscore < $threshold
+                    ? get_string('reportcaptures:badgemismatch', 'quizaccess_proctoring', (int)$log->awsscore)
+                    : get_string('reportcaptures:badgenoface', 'quizaccess_proctoring'),
             ];
         }
         return [
@@ -246,12 +249,16 @@ final class attempt_panel {
         $base = [
             'courseid' => $courseid,
             'cmid' => $cmid,
-            'studentid' => $userid,
-            'reportid' => $reportid,
             'holdid' => (int)$hold->id,
             'returnattempt' => $attemptid,
             'sesskey' => sesskey(),
         ];
+        // The report checks a student and capture pair when both are given. Once the attempt's
+        // captures were deleted there is no capture to name, and the hold alone identifies the
+        // decision (CPIT-475 review).
+        if ($reportid > 0) {
+            $base += ['studentid' => $userid, 'reportid' => $reportid];
+        }
         return [
             'canacthold' => true,
             'releaseurl' => (new \moodle_url('/mod/quiz/accessrule/proctoring/report.php', $base + ['riskaction' => 'release']))
