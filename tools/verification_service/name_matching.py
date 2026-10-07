@@ -3,10 +3,10 @@
 Shared by the Lambda (lambda_function.py) and the ASGI bridge (rekognition_bridge.py). Pure Python
 with no AWS calls, so it is tested offline.
 
-Text detection only reads Latin script, so a name printed only in another script cannot be read
-from the ID. Such an ID is reported as unreadable instead of scoring a silent 0. A profile name
-written in Cyrillic or Greek is romanised here; other scripts come romanised from Moodle in the
-name variants it sends.
+Text detection reads Latin, Cyrillic and Arabic script. A name printed only in another script
+cannot be read from the ID, and is reported as unreadable instead of scoring a silent 0. Cyrillic
+and Greek are romanised here; other scripts come romanised from Moodle in the name variants it
+sends.
 """
 
 from difflib import SequenceMatcher
@@ -91,6 +91,20 @@ REASON_UNREADABLE = "unreadable"
 REASON_SCRIPT = "script_not_supported"
 
 
+def fold_confusables(value: str, everywhere: bool = False) -> str:
+    """Fold Cyrillic look-alikes to Latin in words that also have Latin letters, or in every word.
+
+    A word mixing the two scripts is a Latin word misread by OCR. A word entirely in Cyrillic is
+    usually Cyrillic, so by default it is left alone.
+    """
+    words = re.split(r"(\s+)", value)
+    out = []
+    for word in words:
+        mixed = any("a" <= char.lower() <= "z" for char in word)
+        out.append(word.translate(OCR_CONFUSABLES) if everywhere or mixed else word)
+    return "".join(out)
+
+
 def normalized_text(value: str, ocr: bool = False) -> str:
     """Casefold, strip accents and punctuation, and keep letters and digits of every script.
 
@@ -98,7 +112,7 @@ def normalized_text(value: str, ocr: bool = False) -> str:
     erased to nothing, which used to make every non-Latin name score 0.
     """
     if ocr:
-        value = value.translate(OCR_CONFUSABLES)
+        value = fold_confusables(value)
     value = unicodedata.normalize("NFKD", value)
     value = "".join(char for char in value if not unicodedata.combining(char))
     value = value.casefold().translate(LATIN_FOLDS)
@@ -138,9 +152,28 @@ def romanize(value: str) -> str:
     return "".join(out)
 
 
-def is_latin(value: str) -> bool:
-    """Whether every letter in the (normalised) value is a-z."""
-    return all(("a" <= char <= "z") or not char.isalpha() for char in value)
+def scripts(value: str) -> set[str]:
+    """The scripts of the letters in a value, by the first word of their Unicode names."""
+    return {unicodedata.name(char, "?").split(" ")[0] for char in value if char.isalpha()}
+
+
+def ocr_forms(lines: list[str]) -> list[list[str]]:
+    """The ID text read three ways: as read, with every look-alike folded to Latin, romanised.
+
+    Text detection reads Latin, Cyrillic and Arabic. As read compares a Cyrillic name with a
+    Cyrillic profile name; folded catches a Latin name OCR spelled with Cyrillic look-alikes;
+    romanised compares a Cyrillic or Greek ID with a Latin profile name.
+    """
+    forms = [
+        [normalized_text(line, ocr=True) for line in lines],
+        [normalized_text(fold_confusables(line, everywhere=True)) for line in lines],
+        [normalized_text(romanize(line)) for line in lines],
+    ]
+    unique: list[list[str]] = []
+    for form in forms:
+        if form not in unique:
+            unique.append(form)
+    return unique
 
 
 def format_id_name(value: str) -> str:
@@ -213,11 +246,12 @@ def _score_one(profile: str, lines: list[str], normalized_lines: list[str], comb
 def score_name_match(lines: list[str], names: Iterable[str]) -> dict[str, Any]:
     """Score the ID text against every profile name variant and keep the best.
 
-    Returns name_score, extracted_name, matched_profile_name, name_match_reason and name_readable.
+    Each profile name is compared as written and romanised, with each form of the ID text from
+    ocr_forms(); the best pair counts. Returns name_score, extracted_name,
+    matched_profile_name, name_match_reason and name_readable.
     """
-    normalized_lines = [normalized_text(line, ocr=True) for line in lines]
-    combined = " ".join(line for line in normalized_lines if line)
-    readable = any(char.isalpha() for char in combined)
+    forms = [(form, " ".join(line for line in form if line)) for form in ocr_forms(lines)]
+    readable = any(char.isalpha() for _, combined in forms for char in combined)
     result: dict[str, Any] = {
         "name_score": 0.0,
         "extracted_name": "",
@@ -228,23 +262,27 @@ def score_name_match(lines: list[str], names: Iterable[str]) -> dict[str, Any]:
     if not readable:
         return result
 
-    extracted_name = extract_id_name(lines)
-    result["extracted_name"] = extracted_name
+    result["extracted_name"] = extract_id_name(lines)
     comparable = False
     best_line = ""
     for name in names:
         for candidate in (name, romanize(name)):
             profile = normalized_text(candidate)
-            # The ID text is Latin script; a profile name still in another script cannot be compared.
-            if not profile or not is_latin(profile):
+            if not profile:
                 continue
-            comparable = True
-            score, line = _score_one(profile, lines, normalized_lines, combined)
-            if score > result["name_score"]:
-                result["name_score"] = score
-                result["matched_profile_name"] = name
-                best_line = line
-            if score >= 100.0:
+            for normalized_lines, combined in forms:
+                # Two names in different scripts cannot be compared letter by letter.
+                if not scripts(profile) & scripts(combined):
+                    continue
+                comparable = True
+                score, line = _score_one(profile, lines, normalized_lines, combined)
+                if score > result["name_score"]:
+                    result["name_score"] = score
+                    result["matched_profile_name"] = name
+                    best_line = line
+                if result["name_score"] >= 100.0:
+                    break
+            if result["name_score"] >= 100.0:
                 break
         if result["name_score"] >= 100.0:
             break

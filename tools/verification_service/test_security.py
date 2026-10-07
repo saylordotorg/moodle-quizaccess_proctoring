@@ -212,6 +212,12 @@ class NameMatchingTests(unittest.TestCase):
         result = self.score(["NIKOS", "PAPADOPOULOS"], "Νίκος Παπαδόπουλος")
         self.assertEqual(100.0, result["name_score"])
 
+    def test_cyrillic_id_text_matches_as_read_and_romanised(self):
+        # Text detection reads Cyrillic: an identical Cyrillic name is an exact match, and a
+        # Cyrillic ID matches a Latin profile name through romanisation.
+        self.assertEqual(100.0, self.score(["Анна"], "Анна")["name_score"])
+        self.assertEqual(100.0, self.score(["ПЕТРОВ ИВАН"], "Ivan Petrov")["name_score"])
+
     def test_ocr_confusables_are_folded_only_in_id_text(self):
         # Rekognition sometimes returns Cyrillic look-alikes inside a Latin word.
         self.assertEqual(100.0, self.score(["ТОМ НАRDY"], "Tom Hardy")["name_score"])

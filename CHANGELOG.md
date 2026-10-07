@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
   - The service now keeps letters of every script and compares the ID text with every name variant Moodle sends.
   - Moodle sends a Latin transliteration of a name written in another script.
   - The service romanises Cyrillic and Greek names the way passports print them.
-- The ID text reader (Amazon Rekognition) only reads Latin script. When no name can be read from the ID, or the profile name has no Latin form, the report says so ("Not readable", with the reason) instead of a 0 that looks like a measured mismatch.
+- The ID text reader (Amazon Rekognition) reads Latin, Cyrillic and Arabic script. A name is compared as read, with Cyrillic look-alike letters folded to Latin, and romanised, and the best comparison counts. When no name can be read from the ID, or the two names are in scripts that cannot be compared, the report says so ("Not readable", with the reason) instead of a 0 that looks like a measured mismatch.
 - The name check stays advisory by default: a strong face match passes and the name score is recorded. Profiles do not need legal names.
 - Verification service: name matching moved to `name_matching.py`, shared by the Lambda and the ASGI bridge. The Lambda ZIP now contains both files.
 

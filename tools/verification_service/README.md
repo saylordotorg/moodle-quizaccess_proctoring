@@ -74,10 +74,10 @@ The service compares the ID portrait to the live face with Rekognition `compare_
 
 `name_matching.py` compares the text read from the ID with the profile name and with each entry of the optional `profile_name_variants` list Moodle sends. Moodle includes a Latin transliteration of a name in another script. Letters of every script are kept when normalising: names outside a-z used to be erased and scored 0. Cyrillic and Greek profile names are romanised the way passports print them.
 
-Rekognition text detection reads Latin script only. `name_match_reason` says why a name could not be compared, instead of a bare 0:
+Rekognition text detection reads Latin, Cyrillic and Arabic script. The ID text is compared as read, with Cyrillic look-alikes folded to Latin, and romanised; the best comparison counts. `name_match_reason` says why a name could not be compared, instead of a bare 0:
 
 - `unreadable`: no letters could be read from the ID.
-- `script_not_supported`: the profile name has no Latin form to compare.
+- `script_not_supported`: the profile name and the ID text are in scripts that cannot be compared.
 
 `matched` and `fuzzy` describe a compared name.
 
