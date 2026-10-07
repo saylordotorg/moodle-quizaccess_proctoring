@@ -702,301 +702,40 @@ if (
         ];
     }
 
-    // Default newest-first ordering at the SQL level (Requirement 13.1). The final ordering is
-    // applied in PHP below because the risk score and violation counts are computed per row in PHP
-    // (not available as SQL columns), so a single consistent PHP sort is used for every sort key.
+    // Newest first at the SQL level (Requirement 13.1); the selected column sort is applied by
+    // report_list, which also cuts the page before scoring anything (CPIT-473).
     $sql .= ' ORDER BY timemodified DESC';
 
-    // Fetch every matching record; filtering (name initials), sorting (selected column), and
-    // pagination are all applied in PHP so they operate over the full result set consistently.
-    $sqlexecuted = $DB->get_records_sql($sql, $params);
-
-       // Print report.
     $islistview = ($studentid == null);
-    $rows = [];
-    foreach ($sqlexecuted as $info) {
-            // Apply the A–Z name-initial filter on the all-users list view (Requirement 13.3).
-        if (
-            $islistview && !quizaccess_proctoring_name_matches_initials(
-                (string)$info->firstname,
-                (string)$info->lastname,
-                $firstnameinitial,
-                $lastnameinitial
-            )
-        ) {
-            continue;
-        }
-            $row = [];
-            // Carried on the row so the post-pass below can key the score and account-age lookups
-            // off it without re-reading the recordset.
-            $row['studentid'] = (int)$info->studentid;
-            $row['userlink'] = $CFG->wwwroot . '/user/view.php?id=' . $info->studentid . '&course=' . $courseid;
-            $row['fullname'] = $info->firstname . ' ' . $info->lastname;
-            $row['email'] = $info->email;
-            // Use Moodle's locale/timezone-aware date formatting so the proctoring report matches
-            // the quiz results report (Requirement 18.1).
-            $row['timemodified'] = userdate((int)$info->timemodified);
-            // Raw values used only for the PHP-side column sort (Requirement 13.2); harmless in the template.
-            $row['sortlastname'] = \core_text::strtolower((string)$info->lastname);
-            $row['sortfirstname'] = \core_text::strtolower((string)$info->firstname);
-            $row['sorttimemodified'] = (int)$info->timemodified;
-            $row['warningicon'] = ($info->warningid == '') ? true : false;
-            // Identity Mismatch rendered as a localized Yes/No (Requirement 18.2). A present
-            // face-match warning row (non-empty warningid) means the identity did not match.
-            $row['identitymismatch'] = quizaccess_proctoring_identity_mismatch_label($info->warningid);
-            // Count only the event types that can score, which is what the report body shows and
-            // what the site-wide dashboard counts. Counting every stored row instead made this
-            // column read "724 suspicious activities" for an attempt with four findings: the table
-            // was totalling recovery and informational events too, and no reviewer could reconcile
-            // that number with anything on the page.
-            [$evtsql, $evtparams] = $DB->get_in_or_equal(
-                \quizaccess_proctoring\local\overall_report::SUSPICIOUS_EVENT_TYPES,
-                SQL_PARAMS_NAMED,
-                'evt'
-            );
-            $row['eventcount'] = $DB->count_records_select(
-                'quizaccess_proctoring_events',
-                "courseid = :courseid AND quizid = :quizid AND userid = :userid AND eventtype {$evtsql}",
-                ['courseid' => $courseid, 'quizid' => $cmid, 'userid' => $info->studentid] + $evtparams
-            );
-            $risk = quizaccess_proctoring_calculate_attempt_risk(
-                (int)$courseid,
-                (int)$cmid,
-                (int)$info->studentid,
-                (int)$info->reportid
-            );
-            $row['riskscore'] = $risk['score'];
-            $row['risklevel'] = $risk['level'];
-            $row['riskbadgeclass'] = $risk['badgeclass'];
-            $row['timetaken'] = $risk['durationformatted'];
-            // The findings the report body actually shows: risk factors that scored, minus any a
-            // reviewer has already dismissed as a false positive. This is the number the reviewer
-            // is counting on screen, so it leads the column and the raw event total sits behind it.
-            $findingcount = 0;
-        foreach ($risk['factors'] as $factor) {
-            if (!empty($factor['falsepositive'])) {
-                continue;
-            }
-            if ((int)($factor['points'] ?? 0) > 0) {
-                $findingcount++;
-            }
-        }
-            $row['findingcount'] = $findingcount;
-            $row['findinglabel'] = $findingcount > 0
-                ? (string)$findingcount
-                : get_string('report:nofindings', 'quizaccess_proctoring');
-            $row['eventcountlabel'] = get_string(
-                'report:fromevents',
-                'quizaccess_proctoring',
-                (int)$row['eventcount']
-            );
-            $row['findingtitle'] = get_string('report:findingcounttitle', 'quizaccess_proctoring', (object)[
-                'findings' => $findingcount,
-                'events' => (int)$row['eventcount'],
-            ]);
-            $row['eventwarning'] = $findingcount > 0;
-            $row['attemptid'] = (int)$risk['attemptid'];
-            $row['attempturl'] = (int)$risk['attemptid'] > 0
-                ? (new moodle_url('/mod/quiz/review.php', ['attempt' => (int)$risk['attemptid']]))->out(false)
-                : '';
-            // Raw values used only for the PHP-side column sort (Requirement 13.2).
-            $row['sortriskscore'] = (int)$risk['score'];
-            $row['sorteventcount'] = (int)$row['eventcount'];
-            $row['sortfindingcount'] = $findingcount;
-            $row['sortemail'] = \core_text::strtolower((string)$info->email);
-            $hold = quizaccess_proctoring_get_risk_hold(
-                (int)$courseid,
-                (int)$cmid,
-                (int)$info->studentid,
-                (int)$risk['attemptid'],
-                (int)$info->reportid
-            );
-        if ($hold) {
-            $cert = quizaccess_proctoring_resolve_certificate_label(
-                (int)$courseid,
-                (int)$cmid,
-                (int)$info->studentid,
-                (int)$risk['attemptid'],
-                (int)$info->reportid
-            );
-            if ($cert['label'] !== '') {
-                $row['riskholdstatus'] = $cert['label'];
-                $row['riskholdactive'] = $cert['state'] === 'held' ||
-                    ($cert['state'] === 'conflict' && (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE);
-            }
-        }
-            $aireview = quizaccess_proctoring_get_ai_review(
-                (int)$courseid,
-                (int)$cmid,
-                (int)$info->studentid,
-                (int)$risk['attemptid'],
-                (int)$info->reportid
-            );
-        if ($aireview) {
-            $row['aireview'] = quizaccess_proctoring_format_ai_review_for_template($aireview);
-        }
-
-            $viewurl = new moodle_url($PAGE->url, [
-                'courseid' => $courseid,
-                'quizid' => $cmid,
-                'cmid' => $cmid,
-                'studentid' => $info->studentid,
-                'reportid' => $info->reportid,
-            ]);
-
-            // View report is the primary, emphasized action (Requirement 18.3): rendered as a
-            // prominent primary button rather than hidden inside the kebab menu.
-            $viewbutton = html_writer::link(
-                $viewurl,
-                $OUTPUT->pix_icon('i/report', '', 'moodle') . ' '
-                    . get_string('viewimages', 'quizaccess_proctoring'),
-                [
-                    'class' => 'btn btn-primary btn-sm',
-                    'role' => 'button',
-                ]
-            );
-
-            $deleteform = '';
-        if (has_capability('quizaccess/proctoring:deletecamshots', $context, $USER->id)) {
-            $deleteurl = new moodle_url('/mod/quiz/accessrule/proctoring/report.php');
-            $deleteparams = [
-                'courseid' => $courseid,
-                'cmid' => $cmid,
-                'studentid' => $info->studentid,
-                'reportid' => $info->reportid,
-                'logaction' => 'delete',
-                'sesskey' => sesskey(),
-            ];
-            $deleteform = html_writer::start_tag('form', [
-                'method' => 'post',
-                'action' => $deleteurl->out(false),
-                'class' => 'd-inline ml-2',
-            ]);
-            foreach ($deleteparams as $name => $value) {
-                $deleteform .= html_writer::empty_tag('input', [
-                    'type' => 'hidden',
-                    'name' => $name,
-                    'value' => $value,
-                ]);
-            }
-            $deleteform .= html_writer::tag(
-                'button',
-                $OUTPUT->pix_icon('t/delete', '') . ' ' . get_string('delete'),
-                [
-                    'type' => 'submit',
-                    // De-emphasized (Requirement 18.3): a muted link, not a prominent/danger button.
-                    // The destructive confirm() guard is retained.
-                    'class' => 'btn btn-link btn-sm text-muted p-0',
-                    'onclick' => 'return confirm(' . json_encode(get_string(
-                        'areyousure_delete_record',
-                        'quizaccess_proctoring'
-                    )) . ');',
-                ]
-            );
-            $deleteform .= html_writer::end_tag('form');
-        }
-
-            // Add rendered HTML to template context: View report primary/emphasized first, Delete
-            // de-emphasized after it (Requirement 18.3).
-            $row['actionmenu'] = $viewbutton . $deleteform;
-            $rows[] = $row;
+    $buildstart = microtime(true);
+    $list = \quizaccess_proctoring\local\report_list::build($DB->get_records_sql($sql, $params), [
+        'courseid' => (int)$courseid,
+        'cmid' => (int)$cmid,
+        'quiz' => $quiz,
+        'context' => $context,
+        'baseurl' => $PAGE->url,
+        'islistview' => $islistview,
+        'firstnameinitial' => $firstnameinitial,
+        'lastnameinitial' => $lastnameinitial,
+        'sort' => (string)$sort,
+        'dir' => (string)$dir,
+        'offset' => $offset,
+        'perpage' => $perpage,
+    ]);
+    $rows = $list['rows'];
+    $totalrecords = $list['total'];
+    // A slow build is logged with sizes only, no student data, so it can be found in the server
+    // log without anyone having to report it (CPIT-473).
+    $buildseconds = microtime(true) - $buildstart;
+    if ($buildseconds > 2) {
+        error_log(sprintf(
+            'quizaccess_proctoring: report for cmid %d built in %.1fs (%d rows, sort "%s")',
+            (int)$cmid,
+            $buildseconds,
+            $totalrecords,
+            clean_param((string)$sort, PARAM_ALPHA)
+        ));
     }
-
-    // What the attempt scored and how old the account was. Both come from one query each over the
-    // whole result set rather than per row: a reviewer asks these two questions about every row,
-    // and until now had to open the grade report and the profile to answer them.
-    $rowattemptids = [];
-    $rowuserids = [];
-    foreach ($rows as $row) {
-        if (!empty($row['attemptid'])) {
-            $rowattemptids[(int)$row['attemptid']] = true;
-        }
-        if (!empty($row['studentid'])) {
-            $rowuserids[(int)$row['studentid']] = true;
-        }
-    }
-    // quiz_rescale_grade() turns a raw sumgrades into the grade the quiz reports show.
-    require_once($CFG->dirroot . '/mod/quiz/locallib.php');
-    $rowattempts = !empty($rowattemptids)
-        ? $DB->get_records_list('quiz_attempts', 'id', array_keys($rowattemptids), '', 'id, sumgrades')
-        : [];
-    $rowusers = !empty($rowuserids)
-        ? $DB->get_records_list('user', 'id', array_keys($rowuserids), '', 'id, timecreated')
-        : [];
-    foreach ($rows as $index => $row) {
-        $attempt = $rowattempts[(int)($row['attemptid'] ?? 0)] ?? null;
-        $rows[$index]['scorelabel'] = '';
-        $rows[$index]['sortscore'] = -1.0;
-        if ($attempt) {
-            $rows[$index]['scorelabel'] = $attempt->sumgrades === null
-                ? get_string('overallreport:notgraded', 'quizaccess_proctoring')
-                : get_string('overallreport:scoreoutof', 'quizaccess_proctoring', (object)[
-                    'score' => quiz_rescale_grade($attempt->sumgrades, $quiz, true),
-                    'max' => format_float($quiz->grade, $quiz->decimalpoints),
-                ]);
-            if ($attempt->sumgrades !== null) {
-                $rows[$index]['sortscore'] = (float)$attempt->sumgrades;
-            }
-        }
-
-        // Keyed off the signup date, not the elapsed time: an account created minutes ago has an
-        // age of about zero, which format_time() renders as "now" - the truth, where a blank cell
-        // would read as "we do not know".
-        $created = isset($rowusers[(int)($row['studentid'] ?? 0)])
-            ? (int)$rowusers[(int)$row['studentid']]->timecreated
-            : 0;
-        $rows[$index]['accountage'] = $created > 0 ? format_time(max(0, time() - $created)) : '';
-        $rows[$index]['accountcreated'] = \quizaccess_proctoring\local\display_time::staff($created);
-        // Older account first when sorting ascending, so the sort reads the way the column does.
-        $rows[$index]['sortaccountage'] = $created > 0 ? $created : PHP_INT_MAX;
-    }
-
-    // Apply the selected column sort over the full result set (Requirement 13.2). The safe
-    // ORDER BY fragment comes from the allowlist helper and is translated into an in-PHP sort so
-    // that PHP-computed columns (risk score, violation count) sort consistently with SQL columns
-    // (name, date). Unknown/blank sort keys fall back to newest-first (Requirement 13.1).
-    $orderby = quizaccess_proctoring_report_order_by($sort, $dir);
-    $sortfieldmap = [
-        'lastname' => 'sortlastname',
-        'firstname' => 'sortfirstname',
-        'email' => 'sortemail',
-        'timemodified' => 'sorttimemodified',
-        'riskscore' => 'sortriskscore',
-        'findingcount' => 'sortfindingcount',
-        'eventcount' => 'sorteventcount',
-        'score' => 'sortscore',
-        'accountage' => 'sortaccountage',
-    ];
-    $sortpairs = [];
-    foreach (explode(',', $orderby) as $fragment) {
-        $bits = preg_split('/\s+/', trim($fragment));
-        if (empty($bits[0]) || !isset($sortfieldmap[$bits[0]])) {
-            continue;
-        }
-        $direction = (isset($bits[1]) && strtoupper($bits[1]) === 'ASC') ? 'ASC' : 'DESC';
-        $sortpairs[] = [$sortfieldmap[$bits[0]], $direction];
-    }
-    if (!empty($sortpairs)) {
-        usort($rows, function ($a, $b) use ($sortpairs) {
-            foreach ($sortpairs as [$key, $direction]) {
-                $avalue = $a[$key] ?? null;
-                $bvalue = $b[$key] ?? null;
-                if (is_string($avalue) || is_string($bvalue)) {
-                    $cmp = strcmp((string)$avalue, (string)$bvalue);
-                } else {
-                    $cmp = $avalue <=> $bvalue;
-                }
-                if ($cmp !== 0) {
-                    return $direction === 'ASC' ? $cmp : -$cmp;
-                }
-            }
-            return 0;
-        });
-    }
-
-    // Paginate in PHP over the filtered/sorted rows.
-    $totalrecords = count($rows);
-    $rows = array_slice($rows, $offset, $perpage);
 
     // Build column-sort headers and the A–Z initial bars for the list view.
     $sortkey = strtolower(trim($sort));
