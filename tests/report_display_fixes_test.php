@@ -97,7 +97,8 @@ final class report_display_fixes_test extends advanced_testcase {
      * Validates: Requirements 18.3
      */
     public function test_view_report_primary_and_delete_deemphasized(): void {
-        $report = $this->read_plugin_file('report.php');
+        // The row actions are built in report_list since CPIT-473.
+        $report = $this->read_plugin_file('report.php') . $this->read_plugin_file('classes/local/report_list.php');
 
         // "View report" is the primary action (the viewimages string key is kept for translations).
         $this->assertStringContainsString("get_string('viewimages', 'quizaccess_proctoring')", $report,
