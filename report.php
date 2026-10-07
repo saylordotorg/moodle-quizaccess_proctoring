@@ -139,6 +139,12 @@ function quizaccess_proctoring_format_event_detail(string $eventdetail): string 
 
     $parts = [];
     foreach ($decoded as $key => $value) {
+        // Why a capture is missing is shown in words, not as a code (CPIT-471).
+        if ($key === 'capturemissing' && is_string($value)
+                && get_string_manager()->string_exists('capturemissing:' . $value, 'quizaccess_proctoring')) {
+            $parts[] = get_string('capturemissing:' . $value, 'quizaccess_proctoring');
+            continue;
+        }
         if (is_array($value) || is_object($value)) {
             $value = json_encode($value);
         } else if (is_bool($value)) {
@@ -1605,6 +1611,12 @@ if (
             ? $sessionsummary
             : get_string('verdict:noflagsheadline', 'quizaccess_proctoring');
         $riskscore['verdictmeta'] = fullname($user) . ($attemptstart > 0 ? ' · ' . userdate($attemptstart) : '');
+        $riskscore['desktopcapturelabel'] = \quizaccess_proctoring\local\desktop_captures::summary(
+            (int)$courseid,
+            (int)$cmid,
+            (int)$studentid,
+            (int)$riskscore['attemptid']
+        );
         $riskscore['facepauselabel'] = \quizaccess_proctoring\local\face_pauses::summary(
             (int)$courseid,
             (int)$cmid,

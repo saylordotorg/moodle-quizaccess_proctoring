@@ -429,6 +429,7 @@ class quizaccess_proctoring_external extends external_api {
             'multiple_faces_detection_started',
             'face_missing_start',
             'face_missing_end',
+            'away_capture',
             ];
 
             if (!in_array($eventtype, $allowedevents, true)) {
@@ -524,6 +525,11 @@ class quizaccess_proctoring_external extends external_api {
                         $DB->delete_records('quizaccess_proctoring_events', ['id' => $eventid]);
                         throw $e;
                     }
+                    // Keep the event, but say why its capture is missing instead of nothing (CPIT-471).
+                    $failed = json_decode((string)$record->eventdetail, true);
+                    $failed = is_array($failed) ? $failed : [];
+                    $failed['capturemissing'] = 'upload_failed';
+                    $DB->set_field('quizaccess_proctoring_events', 'eventdetail', json_encode($failed), ['id' => $eventid]);
                     // Keep the event log even if the optional desktop capture cannot be stored.
                     debugging(
                         'quizaccess_proctoring: failed to store desktop event screenshot: ' . $e->getMessage(),

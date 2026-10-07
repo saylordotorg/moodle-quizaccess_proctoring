@@ -2239,6 +2239,12 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->coveragescreens = !empty($record->captureviolationdesktop) &&
                 (int)get_config('quizaccess_proctoring', 'monitoringcoveragescreens') === 1 ? 1 : 0;
             $record->multimonitormode = self::multi_monitor_mode();
+            // While the student is away from the quiz, the shared screen is captured every so often,
+            // up to a limit per absence, so a long absence is not one frame of evidence (CPIT-471).
+            $awayinterval = (int)(get_config('quizaccess_proctoring', 'awaycaptureinterval') ?: 15);
+            $record->awaycaptureinterval = max(5, min(120, $awayinterval));
+            $awaymax = get_config('quizaccess_proctoring', 'awaycapturemax');
+            $record->awaycapturemax = max(0, min(30, $awaymax === false || $awaymax === '' ? 10 : (int)$awaymax));
             // Log and Warn are explicit "allow extra monitors" policies, so they win
             // over the blur checkbox: the blur enforcement only runs when the mode is
             // Block (belt and braces) or Off (blur as the sole enforcement).
@@ -2308,10 +2314,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 'key' => $screenmonitorkey,
             ]);
             $record->screenmonitorurl = $usepersistentmonitor ? $screenmonitorurl->out(false) : '';
-            $record->screenmonitorchannel = $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '';
-            $record->screenmonitorstatuskey = $usepersistentmonitor ?
-                'quizaccess_proctoring_screen_status_' . $screenmonitorkey : '';
-            $record->screenmonitorwindowname = $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '';
+            // Only the key: screenMonitorClient builds the channel, status key and window name from it
+            // (quizaccess_proctoring_screen_<key>, ..._screen_status_<key>), which keeps the
+            // arguments below within Moodle's 1024-character limit for js_call_amd().
+            $record->screenmonitorkey = $usepersistentmonitor ? $screenmonitorkey : '';
 
             $coveragepolicy = \quizaccess_proctoring\local\monitoring_coverage::start_attempt(
                 (int)$COURSE->id,
@@ -2368,7 +2374,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             // Initialise the proctoring setup with JavaScript.
             $browserconfig = clone $record;
             // Keep database-only attributes and an unused navigation URL out of the browser configuration.
-            unset($browserconfig->userid, $browserconfig->timemodified, $browserconfig->quizurl);
+            unset($browserconfig->userid, $browserconfig->timemodified, $browserconfig->quizurl, $browserconfig->webcampicture);
             $page->requires->js_call_amd('quizaccess_proctoring/proctoring', 'setup', [$browserconfig, $modelurl]);
         }
     }
