@@ -2,7 +2,7 @@
 All notable changes to this project will be documented in this file.
 
 # v1.12.7 — 2026-10-07
-- **"Photo ID", with what counts as one (CPIT-478).** The ID step and its messages now say "photo ID". The step gives Student Affairs' definition: "Your photo ID should include your full name and a photograph, such as a passport, driver's license, government-issued ID, work-issued ID, or school-issued ID."
+- **"Photo ID", with what counts as one (CPIT-478).** The ID step, its buttons and all its messages, including the face and name failure messages, now say "photo ID". The step gives Student Affairs' definition: "Your photo ID should include your full name and a photograph, such as a passport, driver's license, government-issued ID, work-issued ID, or school-issued ID."
 - **Launch instructions and help links are settings.** Saylor's wording no longer needs language customisation. The new settings are all empty by default, which shows nothing:
   - **Exam launch instructions** (HTML): shown on every proctored quiz page above the start button, and as plain text in the Moodle app.
   - **Photo ID requirements page**: linked from the photo ID step.
