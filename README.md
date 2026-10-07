@@ -206,6 +206,19 @@ Use these settings to control operational reporting and cleanup:
 - Whether the daily report includes all attempts or only high-risk/held attempts.
 - Whether empty reports are sent.
 - Image retention days for captured attempt images and related records.
+- **Share proctoring summaries with the SIS** (`sisexportenabled`, site administrators only, default off). See below.
+
+### Sharing Summaries With The SIS
+
+The Saylor SIS can read a summary of each proctored attempt through the web service `quizaccess_proctoring_get_attempt_summaries`: risk score and band, capture/face-mismatch/violation counts, ID check outcome, grade-hold decision, AI review status and decision, reviewer sign-off, per-student override states, and a link back to the attempt report. Images, ID scans, screenshots, AI review text, reviewer notes and override justifications are never returned.
+
+To turn it on for a site (the degree site only; leave it off on certificate sites):
+
+1. Turn on **Share proctoring summaries with the SIS** in the Reports section of the plugin settings.
+2. Grant `quizaccess/proctoring:exportsummaries` at system context to the role held by the SIS web-service user. No archetype has it.
+3. Confirm the function is in the SIS web service ("Completion History SIS" adds it automatically when `local_completionhistory` is installed; otherwise add it under Site administration > Server > Web services > External services).
+
+With the setting off the function refuses with `sisexportdisabled`, even for a token that holds the capability.
 
 ## Quiz Configuration
 
@@ -301,6 +314,8 @@ Depending on enabled settings, the plugin may store:
 - Browser activity events.
 - Risk scores and review decisions.
 - AI image review summaries and evidence notes.
+
+When an administrator turns on sharing with the SIS, a summary of each proctored attempt (scores, counts, statuses and decisions; no images or notes) is readable by the SIS web-service user.
 
 Pluginfile access is restricted to the owning student or users with report capability in the relevant Moodle context. Outbound AI and ID verification endpoints must use publicly routable HTTPS with a trusted TLS certificate. Destinations are validated and pinned before proctoring images are sent; private-network endpoints and redirects are rejected.
 

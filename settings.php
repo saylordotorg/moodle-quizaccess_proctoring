@@ -1088,6 +1088,18 @@ if ($canmanageproctoring) {
         PARAM_FLOAT
     ));
 
+    // Sharing proctoring summaries with the SIS sends per-student integrity data off the site, so it
+    // is a site-administrator decision like the AI review section, not one for capability holders.
+    // Off by default: the certificate site (learn.saylor.org) never turns it on (SIS-204).
+    if ($hassiteconfig) {
+        $settings->add(new admin_setting_configcheckbox(
+            'quizaccess_proctoring/sisexportenabled',
+            get_string('setting:sisexportenabled', 'quizaccess_proctoring'),
+            get_string('setting:sisexportenabled_desc', 'quizaccess_proctoring'),
+            0
+        ));
+    }
+
     $settings->add(new admin_setting_heading(
         'quizaccess_proctoring_retentionheading',
         get_string('setting:retentionheading', 'quizaccess_proctoring'),

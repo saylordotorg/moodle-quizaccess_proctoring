@@ -92,4 +92,19 @@ $functions = [
         'capabilities' => 'quizaccess/proctoring:sendcamshot',
         'services'     => [MOODLE_OFFICIAL_MOBILE_SERVICE],
     ],
+
+    // Read-only per-attempt proctoring summaries for the Saylor SIS (SIS-204). A web-service
+    // function, not AJAX: it reads every student's attempts, so it needs a system capability no
+    // archetype holds, and it refuses unless the site setting sisexportenabled is on. Listing the
+    // SIS connector's service joins it there automatically where that plugin is installed; Moodle
+    // skips the entry silently where it is not.
+    'quizaccess_proctoring_get_attempt_summaries' => [
+        'classname'    => 'quizaccess_proctoring\external\get_attempt_summaries',
+        'methodname'   => 'execute',
+        'description'  => 'Page proctored attempt summaries (risk, ID check, hold and review outcomes) for the SIS.',
+        'type'         => 'read',
+        'ajax'         => false,
+        'capabilities' => 'quizaccess/proctoring:exportsummaries',
+        'services'     => ['completionhistory_sis'],
+    ],
 ];

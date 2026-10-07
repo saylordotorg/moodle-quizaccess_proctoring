@@ -115,4 +115,15 @@ $capabilities = [
             'manager' => CAP_ALLOW, // Managers can administer the proctoring settings.
         ],
     ],
+
+    // This capability lets the SIS web-service user read per-attempt proctoring summaries for every
+    // student (SIS-204). System context and no archetype: it is granted to one integration role on
+    // purpose, never inherited by managers or teachers. Summaries carry no images or notes, but they
+    // are still per-student integrity data, hence RISK_PERSONAL.
+    'quizaccess/proctoring:exportsummaries' => [
+        'riskbitmask' => RISK_PERSONAL,
+        'captype' => 'read',
+        'contextlevel' => CONTEXT_SYSTEM,
+        'archetypes' => [],
+    ],
 ];
