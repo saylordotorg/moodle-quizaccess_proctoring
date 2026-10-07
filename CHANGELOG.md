@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.10 — 2026-10-07
+- **Staff can see the warnings a student was shown (CPIT-481).** In-exam warnings were browser banners only, so an appeal like "the system told me X" could not be checked.
+  - The exam page now logs `warning_shown` when a warning appears and `warning_cleared` when it goes, with how long it was up. This covers quiz not in view, wrong screen, screen sharing stopped, multiple monitors, and "face not found".
+  - The per-student report has a **Messages shown to the student** list: when each message appeared, what it said, and for how long. The quiz blurring for no face in view is listed too.
+  - Warning events carry no screenshot and never count towards the risk score or the activity totals.
+  - A warning is logged just after the event that caused it, so the evidence is uploaded first.
+- `STUDENT_MESSAGES.md` lists every student-facing message by where it appears, for Student Affairs to review the wording. Moodle's language customisation changes any of them.
+- Messages during setup are not logged. They are shown before an attempt exists, and setup data is deleted within 24 hours when no attempt follows (CPIT-464).
+
 # v1.12.9 — 2026-10-07
 - **Approved ID exceptions show the student's reason (CPIT-480).** Approving a student's ID-exception request used to record one fixed justification, so the Manage overrides table never showed why they asked. The justification now carries the student's chosen reason, their own explanation, any alternative documents they offered, and an optional note from the reviewer. The ID exceptions queue has a note field for that.
 - The rest of the Manage overrides feedback is already built in 1.12.0, waiting for release to learn: profile links, separate student, email and ID columns, times in ET with the zone shown, and the Justification column.

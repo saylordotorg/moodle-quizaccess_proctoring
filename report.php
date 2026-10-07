@@ -1887,6 +1887,13 @@ if (
         if (!$userimageurl) {
             $userimageurl = $OUTPUT->image_url('u/f2');
         }
+        // Every warning the student saw, with when and for how long (CPIT-481).
+        $studentmessages = \quizaccess_proctoring\local\student_messages::for_attempt(
+            (int)$courseid,
+            (int)$cmid,
+            (int)$studentid,
+            (int)$riskscore['attemptid']
+        );
         $templatecontext = (object)[
             'issiteadmin' => (is_siteadmin() && !$profileimageurl ? true : false),
             'redirecturl' => $redirecturl,
@@ -1908,6 +1915,8 @@ if (
                 (int)$riskscore['attemptid'],
                 $quiz
             ),
+            'studentmessages' => $studentmessages,
+            'hasstudentmessages' => !empty($studentmessages),
             'sessionsummary' => $sessionsummary,
             'hassessionsummary' => ($sessionsummary !== ''),
             'coverage' => \quizaccess_proctoring\local\monitoring_coverage::for_attempt(

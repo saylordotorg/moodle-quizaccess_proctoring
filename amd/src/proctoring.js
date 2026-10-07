@@ -681,6 +681,31 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 warning.style.display = 'block';
             };
 
+            // What the student was told is logged too, so staff can see it in the report and an
+            // appeal can be checked against it (CPIT-481). Warnings shown before the event logger
+            // below is set up wait in a queue.
+            const warningShownAt = {};
+            const pendingWarningLogs = [];
+            let warningLogger = null;
+            const noteWarning = function(eventType, detail) {
+                if (warningLogger) {
+                    // After the current task, so the evidence event that caused the warning is
+                    // queued for upload first: uploads go one at a time.
+                    window.setTimeout(function() {
+                        warningLogger(eventType, detail);
+                    }, 0);
+                } else {
+                    pendingWarningLogs.push([eventType, detail]);
+                }
+            };
+            const noteWarningCleared = function(key) {
+                if (!activeAttemptWarnings[key]) {
+                    return;
+                }
+                const seconds = Math.max(0, Math.round((Date.now() - (warningShownAt[key] || Date.now())) / 1000));
+                noteWarning('warning_cleared', {key: key, seconds: seconds});
+            };
+
             const setAttemptWarning = function(key, message, type, timeoutMs) {
                 if (!message) {
                     return;
@@ -691,6 +716,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     attemptWarningTimers[key] = null;
                 }
 
+                if (!activeAttemptWarnings[key]) {
+                    warningShownAt[key] = Date.now();
+                    noteWarning('warning_shown', {key: key});
+                }
                 activeAttemptWarnings[key] = {
                     message: message,
                     type: type || 'warning'
@@ -699,6 +728,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 if (timeoutMs) {
                     attemptWarningTimers[key] = window.setTimeout(function() {
+                        noteWarningCleared(key);
                         delete activeAttemptWarnings[key];
                         attemptWarningTimers[key] = null;
                         renderAttemptWarnings();
@@ -711,6 +741,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     window.clearTimeout(attemptWarningTimers[key]);
                     attemptWarningTimers[key] = null;
                 }
+                noteWarningCleared(key);
                 delete activeAttemptWarnings[key];
                 renderAttemptWarnings();
             };
@@ -1914,6 +1945,31 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 uploads.submit(request, capturedat);
             };
 
+            // Warnings are logged without a screenshot and regardless of which detectors are on:
+            // they record what the page said, not a suspicious action (CPIT-481).
+            warningLogger = function(eventType, detail) {
+                if (!monitoringActive) {
+                    return;
+                }
+                uploads.submit({
+                    methodname: 'quizaccess_proctoring_log_event',
+                    args: {
+                        courseid: parseInt(props.courseid, 10) || 0,
+                        quizid: parseInt(props.quizid, 10) || 0,
+                        attemptid: parseInt(props.status, 10) || 0,
+                        reportid: parseInt(props.id, 10) || 0,
+                        eventtype: eventType,
+                        eventdetail: JSON.stringify(detail || {}),
+                        pagevisibility: document.visibilityState || '',
+                        currenturl: window.location.href,
+                        screenshot: '',
+                    }
+                }, Math.floor(captureClock() / 1000));
+            };
+            pendingWarningLogs.splice(0).forEach(function(entry) {
+                warningLogger(entry[0], entry[1]);
+            });
+
             const getPointerBoundary = function(event) {
                 const x = typeof event.clientX === 'number' ? event.clientX : null;
                 const y = typeof event.clientY === 'number' ? event.clientY : null;
@@ -2314,6 +2370,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             }, true);
 
             return {
+                noteWarning: noteWarning,
                 suspend: function() {
                     monitoringActive = false;
                     intervals.forEach(entry => window.clearInterval(entry.id));
@@ -2763,6 +2820,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 captureFaceMisses++;
                                 if (captureFaceMisses >= 2) {
                                     showNotification(strings.facenotfoundoncam, 'error');
+                                    if (monitoring && monitoring.noteWarning) {
+                                        monitoring.noteWarning('warning_shown', {key: 'facenotfoundoncam'});
+                                    }
                                 }
                                 faceFound = 0;
                                 faceImage = "";
