@@ -2,7 +2,7 @@
 All notable changes to this project will be documented in this file.
 
 # v1.12.13 — 2026-10-07
-- **Phone detection no longer fails silently (CPIT-484).** It needs TensorFlow.js and the COCO-SSD model in `thirdpartylibs/objectdetect`, which the plugin does not ship. Without them it did nothing, even when switched on. The settings page now shows **Phone detection model: Installed / Not installed** under the switch, and says what it can and cannot see: a phone held up in view, not one below the desk. The report already shows phone detection as not monitored when it did not run (CPIT-467).
+- **Phone detection no longer fails silently (CPIT-484).** It needs TensorFlow.js and the COCO-SSD model in `thirdpartylibs/objectdetect`, which the plugin does not ship. Without them it did nothing, even when switched on. The settings page now shows **Phone detection model: Installed / Not installed** under the switch (installed means the libraries, the model and every weight file it names), and says what it can and cannot see: a phone held up in view, not one below the desk. The report already shows phone detection as not monitored when it did not run (CPIT-467).
 - Installing the model files for a pilot on dev is a separate decision: about 12 MB of Apache-2.0 third-party code, either bundled in the plugin or deployed alongside it. With the files in place, pilot on 20+ test sessions before considering learn.saylor.org. Keep the factor low weight (12 points, cap 24) and for review only.
 
 # v1.12.12 — 2026-10-07
