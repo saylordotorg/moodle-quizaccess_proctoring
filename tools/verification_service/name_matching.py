@@ -81,6 +81,26 @@ NICKNAME_ALIASES = {
     for name in group
 }
 
+# Words printed on ID documents as labels, not names. Text made only of these (and of numbers and
+# single letters) holds no name, so the name is reported as unreadable rather than scored.
+DOCUMENT_LABEL_WORDS = frozenset("""
+    address america apellidos authority birth card class code country date dd department dl dob
+    document donor driver drivers duplicate endorsements end exp expiration expires expiry eyes
+    female given hair height hgt id identification identity iss issue issued license licence
+    male motor name names national nationality nombre nom none number of operator organ passport
+    permit place prenom real republic rest restrictions sex signature state states surname the
+    type united usa valid vehicle vehicles veteran weight wgt
+""".split())
+
+
+def has_name_candidate(text: str) -> bool:
+    """Whether normalised ID text has a word that could be part of a name, not only labels."""
+    return any(
+        len(word) > 1 and word.isalpha() and word not in DOCUMENT_LABEL_WORDS
+        for word in text.split()
+    )
+
+
 # The most profile name variants considered, and their longest accepted length.
 MAX_VARIANTS = 40
 MAX_NAME_LENGTH = 600
@@ -251,7 +271,7 @@ def score_name_match(lines: list[str], names: Iterable[str]) -> dict[str, Any]:
     matched_profile_name, name_match_reason and name_readable.
     """
     forms = [(form, " ".join(line for line in form if line)) for form in ocr_forms(lines)]
-    readable = any(char.isalpha() for _, combined in forms for char in combined)
+    readable = any(has_name_candidate(combined) for _, combined in forms)
     result: dict[str, Any] = {
         "name_score": 0.0,
         "extracted_name": "",

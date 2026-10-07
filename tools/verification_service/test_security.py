@@ -196,7 +196,9 @@ class NameMatchingTests(unittest.TestCase):
         self.assertEqual("script_not_supported", result["name_match_reason"])
 
     def test_id_without_readable_text_is_reported(self):
-        for lines in ([], ["12345", "2020-01-01"]):
+        # Document labels alone are not a name (PR #47 review).
+        labels_only = ["DRIVER LICENSE", "EXPIRATION 01/02/2030", "DOB 01/01/1990", "SEX M"]
+        for lines in ([], ["12345", "2020-01-01"], labels_only):
             with self.subTest(lines=lines):
                 result = self.score(lines, "John Smith")
                 self.assertFalse(result["name_readable"])
