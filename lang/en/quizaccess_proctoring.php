@@ -1639,3 +1639,4 @@ $string['supportedbrowsers'] = '<strong>Browsers:</strong> use Chrome or Edge on
 $string['identityrecheck:reset'] = 'Staff reset your photo ID verification for this quiz. Verify your photo ID again before starting.';
 $string['reportcaptures:imagegone'] = 'Image not available: the file is no longer stored. It may have been deleted, or its upload did not finish.';
 $string['reportcaptures:noimage'] = 'No image was received for this capture.';
+$string['feedback:afterexam'] = 'Tell us how the proctored exam went (optional, opens in a new tab)';
