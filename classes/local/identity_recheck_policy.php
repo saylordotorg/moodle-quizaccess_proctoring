@@ -166,8 +166,76 @@ final class identity_recheck_policy {
             $freshid,
             $now
         );
+        // A pass from before a staff reset no longer lets the student start (CPIT-487).
+        if ($result['passed'] && $record && self::reset_after($courseid, $cmid, $userid, $record)) {
+            $result['passed'] = false;
+            $result['reason'] = 'reset';
+        }
         $result['message'] = $result['passed'] ? '' : get_string('identityrecheck:' . $result['reason'], 'quizaccess_proctoring');
         return $result;
+    }
+
+    /**
+     * Staff reset the student's photo ID verification on a quiz (CPIT-487).
+     *
+     * The checks themselves are left as they were, so they still show which earlier attempts were
+     * verified. A marker event makes any pass from before it unusable for a new start. The marker
+     * records the newest check that existed, so a check made in the same second as the reset is
+     * still told apart from the ones before it (PR #57 review).
+     *
+     * @param int $courseid Course ID.
+     * @param int $cmid Quiz course-module ID.
+     * @param int $userid Student.
+     */
+    public static function reset(int $courseid, int $cmid, int $userid): void {
+        global $DB;
+        $lastid = (int)$DB->get_field_sql(
+            'SELECT MAX(id) FROM {quizaccess_proctoring_idv} WHERE courseid = :courseid AND quizid = :cmid AND userid = :userid',
+            ['courseid' => $courseid, 'cmid' => $cmid, 'userid' => $userid]
+        );
+        $DB->insert_record('quizaccess_proctoring_events', (object)[
+            'courseid' => $courseid,
+            'quizid' => $cmid,
+            'userid' => $userid,
+            'attemptid' => 0,
+            'reportid' => 0,
+            'eventtype' => 'id_verification_reset',
+            'eventdetail' => json_encode(['lastverificationid' => $lastid]),
+            'timemodified' => time(),
+        ]);
+    }
+
+    /**
+     * Whether staff reset the verification after this check was made.
+     *
+     * A check that already existed when the reset was made (its id is at most the newest id the
+     * marker recorded) is from before it. A marker without that id falls back to the times.
+     *
+     * @param int $courseid Course ID.
+     * @param int $cmid Quiz course-module ID.
+     * @param int $userid Student.
+     * @param \stdClass $record The passing check.
+     * @return bool
+     */
+    private static function reset_after(int $courseid, int $cmid, int $userid, \stdClass $record): bool {
+        global $DB;
+        $markers = $DB->get_records(
+            'quizaccess_proctoring_events',
+            ['courseid' => $courseid, 'quizid' => $cmid, 'userid' => $userid, 'eventtype' => 'id_verification_reset'],
+            '',
+            'id, eventdetail, timemodified'
+        );
+        foreach ($markers as $marker) {
+            $detail = json_decode((string)$marker->eventdetail, true);
+            if (is_array($detail) && isset($detail['lastverificationid'])) {
+                if ((int)$record->id <= (int)$detail['lastverificationid']) {
+                    return true;
+                }
+            } else if ((int)$marker->timemodified >= (int)$record->timemodified) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

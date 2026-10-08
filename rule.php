@@ -2273,6 +2273,11 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 ['class' => 'btn btn-outline-secondary']
             );
         }
+        // Which browsers work, before the student starts (CPIT-487).
+        $messages[] = html_writer::div(
+            get_string('supportedbrowsers', 'quizaccess_proctoring'),
+            'proctoring-supported-browsers small text-muted'
+        );
 
         return $messages;
     }

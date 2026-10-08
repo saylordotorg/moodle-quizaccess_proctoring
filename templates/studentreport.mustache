@@ -520,6 +520,22 @@
         {{/namenotchecked}}
         {{#namematchreason}}<div class="proctoring-idv-reason">{{namematchreason}}</div>{{/namematchreason}}
         {{#errormessage}}<div class="proctoring-idv-reason">{{errormessage}}</div>{{/errormessage}}
+        {{#resetidv}}
+        <details class="proctoring-idv-reset small mt-2">
+            <summary>{{#str}}idvreset:button, quizaccess_proctoring{{/str}}</summary>
+            <form method="post" action="{{actionurl}}" class="mt-1">
+                <input type="hidden" name="sesskey" value="{{sesskey}}">
+                <input type="hidden" name="courseid" value="{{courseid}}">
+                <input type="hidden" name="cmid" value="{{cmid}}">
+                <input type="hidden" name="studentid" value="{{studentid}}">
+                <input type="hidden" name="reportid" value="{{reportid}}">
+                <input type="hidden" name="resetidverification" value="1">
+                <label for="proctoring-idv-reset-reason">{{#str}}referencereset:reason, quizaccess_proctoring{{/str}}</label>
+                <textarea id="proctoring-idv-reset-reason" name="resetreason" rows="2" maxlength="1000" required class="form-control mb-1"></textarea>
+                <button type="submit" class="btn btn-sm btn-outline-danger">{{#str}}idvreset:submit, quizaccess_proctoring{{/str}}</button>
+            </form>
+        </details>
+        {{/resetidv}}
     </div>
     {{/idverification}}
 

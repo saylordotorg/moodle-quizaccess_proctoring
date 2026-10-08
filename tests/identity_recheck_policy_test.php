@@ -149,6 +149,27 @@ final class identity_recheck_policy_test extends \advanced_testcase {
     }
 
     /**
+     * A staff reset blocks earlier passes, but not a new check made in the same second (CPIT-487, PR #57 review).
+     */
+    public function test_reset_blocks_earlier_passes_only(): void {
+        global $DB;
+        [$course, $cm, $user] = $this->fixture();
+        $this->pass($course, $cm, $user);
+        $this->assertTrue(policy::status($course->id, $cm->id, $user->id)['passed']);
+
+        policy::reset($course->id, $cm->id, $user->id);
+        $result = policy::status($course->id, $cm->id, $user->id);
+        $this->assertFalse($result['passed']);
+        $this->assertSame('reset', $result['reason']);
+
+        $resetat = (int)$DB->get_field('quizaccess_proctoring_events', 'timemodified',
+            ['userid' => $user->id, 'eventtype' => 'id_verification_reset']);
+        $new = $this->pass($course, $cm, $user);
+        $DB->set_field('quizaccess_proctoring_idv', 'timemodified', $resetat, ['id' => $new->id]);
+        $this->assertTrue(policy::status($course->id, $cm->id, $user->id)['passed']);
+    }
+
+    /**
      * A consumed preflight cannot start a second attempt, and its binding cannot be overwritten.
      */
     public function test_prepare_consumes_evidence_and_start_event_binds_it_once(): void {
