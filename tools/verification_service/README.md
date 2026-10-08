@@ -120,7 +120,18 @@ The checked-in source has changed since then. Later dev deployments, newest firs
 | 2026-10-06 | `3` | CPIT-469: `reason: no_face_in_capture`; similarity returned on a non-match | `5c6b1ef23bbffc4aef0a3ddae0a8bd54f1a1ff82a4fd8cc87267aba79d9b3d99` | `7x4Z3rz6xdccxKQOCO9osdp2IwBmSpU6k+VLfkGGjko=` |
 | 2026-10-02 | `2` | CPIT-453: `reason: reference_no_face` | `2fb65bad836a291eceafe44d09ca4ab446a712324458e1204934e375f16a6793` | `Hp+JemfZbzuqIx2ppmL3z6JW5vW3OXfCGcfUgt1zbaI=` |
 
-Version 2's source was checked byte for byte against the source before CPIT-469, and version 3's ZIP holds only `lambda_function.py` from this directory. Version 4's ZIP holds `lambda_function.py` and `name_matching.py` from this directory as merged for 1.12.6. The previous version is kept for rollback (`update-alias --function-version`). The production function `moodle-proctoring-face-verify` is separate and has not been updated with these changes.
+Version 2's source was checked byte for byte against the source before CPIT-469, and version 3's ZIP holds only `lambda_function.py` from this directory. Version 4's ZIP holds `lambda_function.py` and `name_matching.py` from this directory as merged for 1.12.6. The previous version is kept for rollback (`update-alias --function-version`).
+
+## Production deployment
+
+The production function `moodle-proctoring-face-verify` serves learn.saylor.org. Its function URL points at `$LATEST` (there is no alias), so a code update is live at once. Each deployment publishes an immutable version. To roll back, re-upload that version's code to `$LATEST`.
+
+| Deployed | Production version | Change | Source SHA-256 | AWS `CodeSha256` |
+| --- | --- | --- | --- | --- |
+| 2026-10-08 | `3` | Same ZIP as dev version `4` (repo 1.12.18): CPIT-477 name matching, with the 1.11.0 request hardening and CPIT-469, which production did not have | `lambda_function.py` `5f1531b5415b291a1c452a67a362d022814f3c5c8970b99bc088fda1bcc2fbc3`, `name_matching.py` `e7ab99c3d3c42ef153d4f40c91e883de846140ff74fd041c996d570bfa9c7833` | `uP/pD9rLv1F6vcYq0x3fWLrgH187uZF6AwM/ztm5a3Y=` |
+| 2026-10-03 | `2` | CPIT-453 `reason: reference_no_face` on the June 2026 service, without the 1.11.0 hardening (source not in this repository) | `c112d190cae81fdcca88545b87effea5b07e1cc7e670659026eca02b31db62a3` | `AMN9rvdHg52oBrdzZtEVxzo70uoOHVJhFrB1aDuKZ0A=` |
+
+Before version 3, plugins from 1.9.1 on were checked against the new responses: they clamp the face and name thresholds to 1-100 (the hardened service rejects other values), read a face score only on a match (version 3 also returns it on a non-match), and already send the name variants that the new name matching uses.
 
 Compute the source hash from this directory:
 
