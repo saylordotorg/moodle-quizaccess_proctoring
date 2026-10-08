@@ -54,8 +54,23 @@ final class review_queue_navigation_test extends advanced_testcase {
         $page->set_context(\context_system::instance());
         $page->set_url('/my/');
         $primary = new \core\navigation\views\primary($page);
-        $primary->initialise();
+        // The callback alone: building the whole bar also builds settings navigation, which other
+        // plugins need a full page request for.
+        hook_callbacks::extend_primary_navigation(new \core\hook\navigation\primary_extend($primary));
         return (bool)$primary->get('quizaccess_proctoring_reviewqueue');
+    }
+
+    /**
+     * The callback is registered for the top navigation hook.
+     */
+    public function test_callback_is_registered(): void {
+        global $CFG;
+        $callbacks = [];
+        require($CFG->dirroot . '/mod/quiz/accessrule/proctoring/db/hooks.php');
+        $registered = array_filter($callbacks, fn($callback) =>
+            $callback['hook'] === \core\hook\navigation\primary_extend::class
+            && $callback['callback'] === [hook_callbacks::class, 'extend_primary_navigation']);
+        $this->assertCount(1, $registered);
     }
 
     /**
