@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.19 — 2026-10-08
+- **"Proctoring reviews" in the top navigation for reviewers (CPIT-492).** The review queue was only linked from the Reports section of the reviewer's own profile page, which a Student Affairs tester could not find: the Reports item in the user menu is Moodle's custom reports. Anyone who can review across courses (the Proctoring reviewer role, or a site administrator) now sees "Proctoring reviews" in the navigation bar on every page. Students and teachers without the capability see nothing new. The check is remembered in the session for five minutes, so a newly assigned role shows within that time. The profile link stays.
+
 # v1.12.18 — 2026-10-07
 - **A plain-language baseline of the live settings (CPIT-489).** `cli/baseline.php` prints, as Markdown:
   - what stops a student from starting;

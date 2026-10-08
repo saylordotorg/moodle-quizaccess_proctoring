@@ -30,4 +30,9 @@ $callbacks = [
         'hook' => \core\hook\output\after_standard_main_region_html_generation::class,
         'callback' => [\quizaccess_proctoring\hook_callbacks::class, 'after_standard_main_region_html'],
     ],
+    [
+        // "Proctoring reviews" in the top navigation for cross-course reviewers (CPIT-492).
+        'hook' => \core\hook\navigation\primary_extend::class,
+        'callback' => [\quizaccess_proctoring\hook_callbacks::class, 'extend_primary_navigation'],
+    ],
 ];
