@@ -938,6 +938,7 @@ if (
         $lowestscore = null;
         $bestscore = null;
         $bestcaptureurl = '';
+        $comparedcaptures = [];
         foreach ($sqlexecuted as $info) {
                 $row = [];
                 $row['firstname'] = $info->firstname;
@@ -974,10 +975,7 @@ if (
                 $capturecounts[$statuskey]++;
             if ($awsflag === 2) {
                 $lowestscore = ($lowestscore === null) ? $awsscore : min($lowestscore, $awsscore);
-                if ($bestscore === null || $awsscore > $bestscore) {
-                    $bestscore = $awsscore;
-                    $bestcaptureurl = (string)$info->webcampicture;
-                }
+                $comparedcaptures[] = [$awsscore, (string)$info->webcampicture];
             }
                 $row['statuskey'] = $statuskey;
                 $row['timeshort'] = userdate((int)$info->timemodified, $timeformat);
@@ -991,6 +989,17 @@ if (
                 $studentdata[$index]['imagemissing'] = get_string('reportcaptures:noimage', 'quizaccess_proctoring');
             } else if (isset($missingimages[$capture['image_url']])) {
                 $studentdata[$index]['imagemissing'] = get_string('reportcaptures:imagegone', 'quizaccess_proctoring');
+            }
+        }
+        // The verdict band shows the best-matching capture whose image is still stored, never a
+        // broken one (PR #58 review).
+        foreach ($comparedcaptures as [$score, $url]) {
+            if ($url === '' || isset($missingimages[$url])) {
+                continue;
+            }
+            if ($bestscore === null || $score > $bestscore) {
+                $bestscore = $score;
+                $bestcaptureurl = $url;
             }
         }
 
