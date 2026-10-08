@@ -28,8 +28,8 @@ namespace quizaccess_proctoring\local;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class baseline {
-    /** @var string[] Setting names never printed: credentials and keys. */
-    private const SECRET_PATTERNS = ['key', 'secret', 'token', 'password', 'endpoint'];
+    /** @var string[] Setting names never printed: credentials, keys and staff email addresses (PR #59 review). */
+    private const SECRET_PATTERNS = ['key', 'secret', 'token', 'password', 'endpoint', 'mail'];
 
     /**
      * A setting's stored value, or a label when it was never set.
@@ -86,7 +86,7 @@ class baseline {
         $lines[] = '## What only flags an attempt for review';
         $lines[] = '';
         $lines[] = 'Each factor adds points per event up to its cap. Score cap at 100: ' .
-            self::onoff('riskscorecapenabled', true) . '.';
+            (risk_calculator::score_cap_enabled() ? 'on' : 'off') . '.';
         $lines[] = '';
         $lines[] = '| Factor | Scored | Points per event | Cap |';
         $lines[] = '| --- | --- | --- | --- |';
@@ -222,7 +222,8 @@ class baseline {
 
     /**
      * Quizzes whose own settings keep them off the pilot profile: they fail attempts
-     * automatically, or hold them below Critical. Quiz settings win over the site's, so these are
+     * automatically, or hold them below Critical. A quiz with holding switched off holds nothing,
+     * whatever its threshold, so it is not listed (PR #59 review). Quiz settings win over the site's, so these are
      * reported rather than changed: a teacher set them on purpose (CPIT-489 review).
      *
      * @return string[] One line per quiz.
@@ -236,7 +237,8 @@ class baseline {
                FROM {quizaccess_proctoring} p
                JOIN {quiz} q ON q.id = p.quizid
                JOIN {course} c ON c.id = q.course
-              WHERE p.riskreviewmode = 2 OR (p.riskreviewthreshold <> -1 AND p.riskreviewthreshold < :critical)
+              WHERE p.riskreviewmode = 2
+                    OR (p.riskreviewmode IN (-1, 1) AND p.riskreviewthreshold > 0 AND p.riskreviewthreshold < :critical)
            ORDER BY c.shortname, q.name",
             ['critical' => $critical]
         );

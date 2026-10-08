@@ -51,6 +51,8 @@ final class baseline_test extends advanced_testcase {
         set_config('custom_api_key', 'do-not-print-this', 'quizaccess_proctoring');
         set_config('idverificationendpoint', 'https://private.example.org/verify-id', 'quizaccess_proctoring');
         set_config('imageretentiondays', 180, 'quizaccess_proctoring');
+        set_config('dailyreportemails', 'reviewer@example.org', 'quizaccess_proctoring');
+        set_config('idexemptioncontactemail', 'support@example.org', 'quizaccess_proctoring');
         $course = $this->getDataGenerator()->create_course(['shortname' => 'CS101']);
         $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id, 'name' => 'Final exam']);
         \quizaccess_proctoring::save_settings((object)[
@@ -66,6 +68,9 @@ final class baseline_test extends advanced_testcase {
         $this->assertStringContainsString('CS101, Final exam: riskreviewthreshold 60', $page);
         $this->assertStringNotContainsString('do-not-print-this', $page);
         $this->assertStringNotContainsString('private.example.org', $page);
+        $this->assertStringNotContainsString('@example.org', $page);
+        // The score cap is off unless it was switched on, as in scoring (PR #59 review).
+        $this->assertStringContainsString('Score cap at 100: off.', $page);
     }
 
     /**
@@ -88,6 +93,11 @@ final class baseline_test extends advanced_testcase {
         $course = $this->getDataGenerator()->create_course(['shortname' => 'BUS101']);
         $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id, 'name' => 'Midterm']);
         \quizaccess_proctoring::save_settings((object)['id' => $quiz->id, 'proctoringrequired' => 1, 'riskreviewmode' => 2]);
+        // A quiz with holding switched off holds nothing, whatever its threshold.
+        $quiet = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id, 'name' => 'Practice']);
+        \quizaccess_proctoring::save_settings((object)[
+            'id' => $quiet->id, 'proctoringrequired' => 1, 'riskreviewmode' => 0, 'riskreviewthreshold' => 10,
+        ]);
         $conflicts = baseline::pilot_conflicts();
         $this->assertCount(1, $conflicts);
         $this->assertStringContainsString('BUS101, Midterm', $conflicts[0]);
