@@ -4901,3 +4901,15 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     grid-template-columns: repeat(4, 1fr);
     gap: 4px;
 }
+
+/* A capture whose image is no longer stored (CPIT-488). */
+.proctoring-capture-missing {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    padding: 8px;
+    background: #f1f3f5;
+    color: #495057;
+    text-align: center;
+}

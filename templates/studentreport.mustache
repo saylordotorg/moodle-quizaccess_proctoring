@@ -612,10 +612,18 @@
     <div class="proctoring-captures-grid">
         {{#data}}
         <figure class="proctoring-capture-item" data-proctoring-capture-status="{{statuskey}}">
+            {{#imagemissing}}
+            <div class="proctoring-capture-frame proctoring-capture-missing proctoring-capture-ring-{{statuskey}}" role="img" aria-label="{{imagemissing}}">
+                <span class="proctoring-capture-missing-text small">{{imagemissing}}</span>
+                <span class="proctoring-capture-badge proctoring-capture-badge-{{statuskey}}">{{badgelabel}}</span>
+            </div>
+            {{/imagemissing}}
+            {{^imagemissing}}
             <a href="{{image_url}}" class="proctoring-capture-frame proctoring-capture-ring-{{statuskey}}" data-lightbox="proc-images" data-title="{{name}} · {{face_match_status}}">
                 <img id="{{img_id}}" src="{{image_url}}" alt="{{name}} · {{face_match_status}}" loading="lazy">
                 <span class="proctoring-capture-badge proctoring-capture-badge-{{statuskey}}">{{badgelabel}}</span>
             </a>
+            {{/imagemissing}}
             <figcaption class="proctoring-capture-time">{{timeshort}}</figcaption>
         </figure>
         {{/data}}

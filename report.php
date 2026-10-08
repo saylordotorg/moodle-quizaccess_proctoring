@@ -938,6 +938,7 @@ if (
         $lowestscore = null;
         $bestscore = null;
         $bestcaptureurl = '';
+        $comparedcaptures = [];
         foreach ($sqlexecuted as $info) {
                 $row = [];
                 $row['firstname'] = $info->firstname;
@@ -974,15 +975,34 @@ if (
                 $capturecounts[$statuskey]++;
             if ($awsflag === 2) {
                 $lowestscore = ($lowestscore === null) ? $awsscore : min($lowestscore, $awsscore);
-                if ($bestscore === null || $awsscore > $bestscore) {
-                    $bestscore = $awsscore;
-                    $bestcaptureurl = (string)$info->webcampicture;
-                }
+                $comparedcaptures[] = [$awsscore, (string)$info->webcampicture];
             }
                 $row['statuskey'] = $statuskey;
                 $row['timeshort'] = userdate((int)$info->timemodified, $timeformat);
                 $studentdata[] = $row;
         }
+        // A capture whose image is no longer stored gets a placeholder that says so, instead of a
+        // broken image (CPIT-488).
+        $missingimages = quizaccess_proctoring_missing_pluginfile_urls(array_column($studentdata, 'image_url'));
+        foreach ($studentdata as $index => $capture) {
+            if ((string)$capture['image_url'] === '') {
+                $studentdata[$index]['imagemissing'] = get_string('reportcaptures:noimage', 'quizaccess_proctoring');
+            } else if (isset($missingimages[$capture['image_url']])) {
+                $studentdata[$index]['imagemissing'] = get_string('reportcaptures:imagegone', 'quizaccess_proctoring');
+            }
+        }
+        // The verdict band shows the best-matching capture whose image is still stored, never a
+        // broken one (PR #58 review).
+        foreach ($comparedcaptures as [$score, $url]) {
+            if ($url === '' || isset($missingimages[$url])) {
+                continue;
+            }
+            if ($bestscore === null || $score > $bestscore) {
+                $bestscore = $score;
+                $bestcaptureurl = $url;
+            }
+        }
+
         [$neutralsql, $neutralparams] = $DB->get_in_or_equal(
             \quizaccess_proctoring\local\monitoring_coverage::NEUTRAL_EVENTS,
             SQL_PARAMS_NAMED,
