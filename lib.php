@@ -171,6 +171,28 @@ function quizaccess_proctoring_can_review_across_courses(): bool {
 }
 
 /**
+ * Whether the current user may open the review pages, remembered for a few minutes in the session.
+ *
+ * The top navigation asks on every page (CPIT-492), so the capability query runs at most once
+ * every few minutes per session. A role change shows within that time; the pages themselves
+ * always check the capability afresh.
+ *
+ * @return bool
+ */
+function quizaccess_proctoring_can_review_across_courses_cached(): bool {
+    global $SESSION, $USER;
+
+    $userid = (int)($USER->id ?? 0);
+    $cached = $SESSION->quizaccess_proctoring_canreview ?? null;
+    if (is_array($cached) && (int)($cached['userid'] ?? -1) === $userid && (int)($cached['time'] ?? 0) > time() - 300) {
+        return !empty($cached['value']);
+    }
+    $value = quizaccess_proctoring_can_review_across_courses();
+    $SESSION->quizaccess_proctoring_canreview = ['userid' => $userid, 'time' => time(), 'value' => $value];
+    return $value;
+}
+
+/**
  * Link the cross-course review queue from the reviewer's own profile, under Reports (CPIT-474).
  *
  * A Student Affairs reviewer has no site administration menu, so the queue needs a way in.

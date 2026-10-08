@@ -16,6 +16,7 @@
 
 namespace quizaccess_proctoring;
 
+use core\hook\navigation\primary_extend;
 use core\hook\output\after_standard_main_region_html_generation;
 
 /**
@@ -42,5 +43,32 @@ class hook_callbacks {
         if ($html !== '') {
             $hook->add_html($html);
         }
+    }
+
+    /**
+     * Add "Proctoring reviews" to the top navigation for anyone who can review across courses.
+     *
+     * The profile page link alone was too hard to find (CPIT-492). Students and teachers without
+     * the capability see nothing; the check is cached for the session so it costs no query per page.
+     *
+     * @param primary_extend $hook The hook.
+     */
+    public static function extend_primary_navigation(primary_extend $hook): void {
+        global $CFG;
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+
+        if (!isloggedin() || isguestuser() || during_initial_install()) {
+            return;
+        }
+        if (!quizaccess_proctoring_can_review_across_courses_cached()) {
+            return;
+        }
+        $hook->get_primaryview()->add(
+            get_string('reviewqueue:navlink', 'quizaccess_proctoring'),
+            new \moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'),
+            \navigation_node::TYPE_CUSTOM,
+            null,
+            'quizaccess_proctoring_reviewqueue'
+        );
     }
 }

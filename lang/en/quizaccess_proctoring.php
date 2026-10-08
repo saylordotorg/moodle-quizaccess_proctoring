@@ -810,6 +810,7 @@ $string['proctoring:reviewacrosscourses'] = 'Review proctoring across courses (r
 $string['proctoring:reviewriskholds'] = 'Review and release high-risk grade holds';
 $string['reviewerrole:description'] = 'Reviews proctoring holds and reports across courses, and manages per-student proctoring overrides, without site administration rights. Created by the quizaccess_proctoring CLI script cli/create_reviewer_role.php.';
 $string['reviewerrole:name'] = 'Proctoring reviewer (Student Affairs)';
+$string['reviewqueue:navlink'] = 'Proctoring reviews';
 $string['reviewqueue:profilelink'] = 'Proctoring review queue';
 $string['proctoring:sendcamshot'] = 'Proctoring send webcam photo';
 $string['proctoring:viewreport'] = 'Proctoring view report';
