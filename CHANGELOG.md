@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.20 — 2026-10-12
+- **The capture grid no longer lists rows that are not captures (CPIT-488).** Every load of an attempt page writes an image-less row, the report record for that page. The per-student report listed those rows with the webcam captures, so an attempt showed one "unavailable" capture for each page the student opened (shown as "No image was received for this capture" since 1.12.17). They also counted as "not analysed" in the identity verdict. The grid and the verdict now use only the captures. This is the likely cause of the unavailable captures Student Affairs reported. Captures whose image file is gone still show the reason.
+
 # v1.12.19 — 2026-10-08
 - **"Proctoring reviews" in the top navigation for reviewers (CPIT-492).** The review queue was only linked from the Reports section of the reviewer's own profile page, which a Student Affairs tester could not find: the Reports item in the user menu is Moodle's custom reports. Anyone who can review across courses (the Proctoring reviewer role, or a site administrator) now sees "Proctoring reviews" in the navigation bar on every page. Students and teachers without the capability see nothing new. The check is remembered in the session for five minutes, so a newly assigned role shows within that time. The profile link stays.
 

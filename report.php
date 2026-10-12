@@ -914,7 +914,11 @@ if (
         WHERE e.courseid = :courseid
           AND e.quizid = :cmid
           AND u.id = :studentid
-          AND e.deletionprogress = :deletionprogress";
+          AND e.deletionprogress = :deletionprogress
+          AND e.webcampicture <> ''";
+        // Every load of an attempt page also writes an image-less row (the report record of that
+        // page), which is not a capture: listing it showed a broken or "no image" capture and
+        // counted it as not analysed (CPIT-488).
         $params = [
             'courseid' => $courseid,
             'cmid' => $cmid,
