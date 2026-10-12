@@ -342,34 +342,23 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 // A tablet asking for the desktop site looks like a computer to the server, so it is
                 // asked to share a screen it cannot share. When the site lets phones and tablets
-                // skip screen sharing, report it and reload once (CPIT-495).
-                if (screenRequired && parseInt(props.tabletbypass || 0, 10) === 1 && isPhoneOrTablet()
+                // skip screen sharing, report it and reload (CPIT-495). The server says whether this
+                // login already has a report, so the page reloads at most once per login, and an
+                // override that still requires screen sharing cannot loop.
+                if (screenRequired && parseInt(props.tabletbypass || 0, 10) === 1
+                        && parseInt(props.tabletreported || 0, 10) !== 1 && isPhoneOrTablet()
                         && !(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)) {
-                    const reloadKey = 'quizaccess_proctoring_tabletreport_' + props.cmid;
-                    let reloaded = false;
                     try {
-                        reloaded = window.sessionStorage.getItem(reloadKey) === '1';
-                    } catch (error) {
-                        reloaded = false;
-                    }
-                    if (!reloaded) {
-                        try {
-                            const result = await Ajax.call([{
-                                methodname: 'quizaccess_proctoring_report_tablet',
-                                args: {cmid: parseInt(props.cmid, 10)},
-                            }])[0];
-                            if (result && result.accepted) {
-                                try {
-                                    window.sessionStorage.setItem(reloadKey, '1');
-                                } catch (error) {
-                                    // Without storage the page still reloads; the server no longer asks.
-                                }
-                                window.location.reload();
-                                return;
-                            }
-                        } catch (error) {
-                            // Not accepted: the screen step explains that a computer is needed.
+                        const result = await Ajax.call([{
+                            methodname: 'quizaccess_proctoring_report_tablet',
+                            args: {cmid: parseInt(props.cmid, 10)},
+                        }])[0];
+                        if (result && result.accepted) {
+                            window.location.reload();
+                            return;
                         }
+                    } catch (error) {
+                        // Not accepted: the screen step explains that a computer is needed.
                     }
                 }
                 const screenMarkerRequired = parseInt(

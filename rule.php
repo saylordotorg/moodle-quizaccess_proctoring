@@ -1372,6 +1372,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             // Whether a tablet the server took for a computer may report itself and skip screen
             // sharing, as detected phones and tablets do (CPIT-495).
             'tabletbypass' => \quizaccess_proctoring\local\device::mobile_mode() === 'bypass' ? 1 : 0,
+            'tabletreported' => \quizaccess_proctoring\local\device::reported_tablet() ? 1 : 0,
         ];
 
         // Include Face API JS library if required.
