@@ -1,5 +1,25 @@
 define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proctoring/screenMonitorClient'],
     function($, Ajax, Notification, Str, ScreenMonitorClient) {
+        // Whether this looks like a phone or tablet. Only asked once screen sharing has turned out
+        // to be unavailable: a tablet asking for the desktop site reports a desktop operating
+        // system, so the touch screen is the tell (CPIT-495).
+        const isPhoneOrTablet = function() {
+            const ua = navigator.userAgent || '';
+            if (navigator.userAgentData && navigator.userAgentData.mobile) {
+                return true;
+            }
+            if (/Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua)) {
+                return true;
+            }
+            // A tablet asking for the desktop site reports Linux (Android) or a Mac (iPad), with a
+            // touch screen and no mouse or trackpad: Windows, Chromebook and Linux touch laptops
+            // have a fine pointer that can hover, so they are computers (PR #63 review).
+            const touchOnly = typeof window.matchMedia === 'function'
+                && window.matchMedia('(pointer: coarse)').matches && window.matchMedia('(hover: none)').matches;
+            return (navigator.maxTouchPoints || 0) > 1 && touchOnly
+                && /Macintosh|X11; Linux/.test(ua) && !/CrOS|Windows/.test(ua);
+        };
+
         const loadStrings = async function() {
             const stringkeys = [
                 {key: 'facematched', component: 'quizaccess_proctoring'},
@@ -64,6 +84,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'preflight:viewhonor', component: 'quizaccess_proctoring'},
                 {key: 'preflight:cancelwithdraw', component: 'quizaccess_proctoring'},
                 {key: 'preflight:cancelwithdrawtitle', component: 'quizaccess_proctoring'},
+                {key: 'screensharenotonmobile', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -122,6 +143,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     preflightviewhonor: strings[51],
                     preflightcancelwithdraw: strings[52],
                     preflightcancelwithdrawtitle: strings[53],
+                    screensharenotonmobile: strings[54],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -321,6 +343,28 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 const actionBar = $("#form_activate");
                 const faceRequired = parseInt(props.faceidcheck, 10) === 1;
                 const screenRequired = parseInt(props.requireentirescreen, 10) === 1;
+
+                // A tablet asking for the desktop site looks like a computer to the server, so it is
+                // asked to share a screen it cannot share. When the site lets phones and tablets
+                // skip screen sharing, report it and reload (CPIT-495). The server says whether this
+                // login already has a report, so the page reloads at most once per login, and an
+                // override that still requires screen sharing cannot loop.
+                if (screenRequired && parseInt(props.tabletbypass || 0, 10) === 1
+                        && parseInt(props.tabletreported || 0, 10) !== 1 && isPhoneOrTablet()
+                        && !(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia)) {
+                    try {
+                        const result = await Ajax.call([{
+                            methodname: 'quizaccess_proctoring_report_tablet',
+                            args: {cmid: parseInt(props.cmid, 10)},
+                        }])[0];
+                        if (result && result.accepted) {
+                            window.location.reload();
+                            return;
+                        }
+                    } catch (error) {
+                        // Not accepted: the screen step explains that a computer is needed.
+                    }
+                }
                 const screenMarkerRequired = parseInt(
                     props.screenmarkerrequired === undefined ? 1 : props.screenmarkerrequired,
                     10
@@ -3045,7 +3089,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
 
                     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-                        setScreenResult(strings.screensharenotsupported, false);
+                        // No browser on a phone or tablet can share the screen, so "use Chrome"
+                        // would send the student round in circles (CPIT-495).
+                        setScreenResult(isPhoneOrTablet() ? strings.screensharenotonmobile
+                            : strings.screensharenotsupported, false);
                         setRequirementStatus('screen', 'action');
                         screenReady = false;
                         setScreenConfirmed(false);

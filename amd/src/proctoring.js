@@ -6,6 +6,26 @@ let precheckStream = null;
 define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proctoring/screenMonitorClient',
     'quizaccess_proctoring/evidenceQueue'],
     function($, Ajax, Notification, Str, ScreenMonitorClient, EvidenceQueue) {
+        // Whether this looks like a phone or tablet. Only asked once screen sharing has turned out
+        // to be unavailable: a tablet asking for the desktop site reports a desktop operating
+        // system, so the touch screen is the tell (CPIT-495).
+        const isPhoneOrTablet = function() {
+            const ua = navigator.userAgent || '';
+            if (navigator.userAgentData && navigator.userAgentData.mobile) {
+                return true;
+            }
+            if (/Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua)) {
+                return true;
+            }
+            // A tablet asking for the desktop site reports Linux (Android) or a Mac (iPad), with a
+            // touch screen and no mouse or trackpad: Windows, Chromebook and Linux touch laptops
+            // have a fine pointer that can hover, so they are computers (PR #63 review).
+            const touchOnly = typeof window.matchMedia === 'function'
+                && window.matchMedia('(pointer: coarse)').matches && window.matchMedia('(hover: none)').matches;
+            return (navigator.maxTouchPoints || 0) > 1 && touchOnly
+                && /Macintosh|X11; Linux/.test(ua) && !/CrOS|Windows/.test(ua);
+        };
+
         const loadStrings = async function() {
             const stringkeys = [
                 {key: 'facenotfoundoncam', component: 'quizaccess_proctoring'},
@@ -41,6 +61,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'coverage:recovered', component: 'quizaccess_proctoring'},
                 {key: 'coverage:device', component: 'quizaccess_proctoring'},
                 {key: 'coverage:rejected', component: 'quizaccess_proctoring'},
+                {key: 'screensharenotonmobile', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -78,6 +99,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     coveragerecovered: strings[30],
                     coveragedevice: strings[31],
                     coveragerejected: strings[32],
+                    screensharenotonmobile: strings[33],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -1448,7 +1470,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }
 
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-                    setScreenShareStatus(strings.screensharenotsupported, 'danger');
+                    setScreenShareStatus(isPhoneOrTablet() ? strings.screensharenotonmobile
+                        : strings.screensharenotsupported, 'danger');
                     return;
                 }
 

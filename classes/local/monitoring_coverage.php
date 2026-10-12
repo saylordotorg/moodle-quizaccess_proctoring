@@ -80,11 +80,7 @@ final class monitoring_coverage {
         if (!in_array($mobilemode, ['bypass', 'require', 'block'], true)) {
             $mobilemode = 'bypass';
         }
-        if (
-            in_array(\core_useragent::get_device_type(), [
-                \core_useragent::DEVICETYPE_MOBILE, \core_useragent::DEVICETYPE_TABLET,
-            ], true) && $mobilemode === 'bypass'
-        ) {
+        if (device::is_phone_or_tablet() && $mobilemode === 'bypass') {
             $desktop = false;
         }
         self::start_attempt(
