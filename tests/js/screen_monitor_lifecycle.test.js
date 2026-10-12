@@ -313,6 +313,18 @@ test('a phone or tablet without screen sharing is told to use a computer, not an
     await phone.share();
     assert.equal(phone.status.textContent, 'notonmobile');
 
+    // An iPad asking for the desktop site reports a Mac, with a touch screen.
+    const ipad = helper({navigator: {userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605.1.15',
+        maxTouchPoints: 5}});
+    await ipad.share();
+    assert.equal(ipad.status.textContent, 'notonmobile');
+
+    // A Windows touchscreen laptop is a computer: it gets the browser advice.
+    const touchlaptop = helper({navigator: {userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) OldBrowser/1.0',
+        maxTouchPoints: 10, mediaDevices: {}}});
+    await touchlaptop.share();
+    assert.equal(touchlaptop.status.textContent, 'unsupported');
+
     // A desktop browser without screen sharing still gets the browser advice.
     const desktop = helper({navigator: {userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) OldBrowser/1.0',
         maxTouchPoints: 0, mediaDevices: {}}});

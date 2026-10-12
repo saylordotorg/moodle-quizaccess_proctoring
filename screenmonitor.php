@@ -438,7 +438,8 @@ $js = <<<JS
             // desktop site is told apart by its touch screen (CPIT-495).
             const ua = navigator.userAgent || '';
             const mobile = (navigator.userAgentData && navigator.userAgentData.mobile)
-                || /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua) || (navigator.maxTouchPoints || 0) > 1;
+                || /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua)
+                || ((navigator.maxTouchPoints || 0) > 1 && /Macintosh|X11; Linux/.test(ua) && !/CrOS|Windows/.test(ua));
             setStatus(mobile ? config.strings.notonmobile : config.strings.unsupported, 'danger');
             clearStatus();
             return;

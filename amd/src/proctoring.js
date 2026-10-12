@@ -14,7 +14,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             if (navigator.userAgentData && navigator.userAgentData.mobile) {
                 return true;
             }
-            return /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua) || (navigator.maxTouchPoints || 0) > 1;
+            if (/Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua)) {
+                return true;
+            }
+            // A tablet asking for the desktop site reports Linux (Android) or a Mac (iPad), with a
+            // touch screen. Windows and Chromebook touch laptops are computers (PR review).
+            return (navigator.maxTouchPoints || 0) > 1 && /Macintosh|X11; Linux/.test(ua) && !/CrOS|Windows/.test(ua);
         };
 
         const loadStrings = async function() {
