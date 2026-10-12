@@ -136,4 +136,23 @@ final class report_display_fixes_test extends advanced_testcase {
         $this->assertStringNotContainsString('This can include', $build,
             'the non-actionable "This can include…" note must be removed from the built bundle');
     }
+
+    /**
+     * The capture grid lists captures only, not the image-less row each attempt page load writes
+     * (CPIT-488): those showed as unavailable captures and counted as not analysed.
+     */
+    public function test_capture_grid_skips_page_rows_without_an_image(): void {
+        $report = $this->read_plugin_file('report.php');
+        $start = strpos($report, 'SELECT e.id AS reportid,');
+        $this->assertNotFalse($start, 'the capture grid query must exist');
+        $end = strpos($report, 'get_recordset_sql($sql, $params)', $start);
+        $this->assertNotFalse($end);
+        $query = substr($report, $start, $end - $start);
+        // Built with the database layer, so the TEXT column check works on every supported database.
+        $this->assertStringContainsString("sql_isnotempty('quizaccess_proctoring_logs', 'e.webcampicture', false, true)", $query,
+            'the capture grid must leave out rows that have no image');
+
+        // The rows it leaves out are the ones the attempt page writes.
+        $this->assertStringContainsString("'webcampicture' => '',", $this->read_plugin_file('rule.php'));
+    }
 }
