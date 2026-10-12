@@ -439,7 +439,9 @@ $js = <<<JS
             const ua = navigator.userAgent || '';
             const mobile = (navigator.userAgentData && navigator.userAgentData.mobile)
                 || /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua)
-                || ((navigator.maxTouchPoints || 0) > 1 && /Macintosh|X11; Linux/.test(ua) && !/CrOS|Windows/.test(ua));
+                || ((navigator.maxTouchPoints || 0) > 1 && typeof window.matchMedia === 'function'
+                    && window.matchMedia('(pointer: coarse)').matches && window.matchMedia('(hover: none)').matches
+                    && /Macintosh|X11; Linux/.test(ua) && !/CrOS|Windows/.test(ua));
             setStatus(mobile ? config.strings.notonmobile : config.strings.unsupported, 'danger');
             clearStatus();
             return;

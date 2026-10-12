@@ -12,8 +12,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 return true;
             }
             // A tablet asking for the desktop site reports Linux (Android) or a Mac (iPad), with a
-            // touch screen. Windows and Chromebook touch laptops are computers (PR review).
-            return (navigator.maxTouchPoints || 0) > 1 && /Macintosh|X11; Linux/.test(ua) && !/CrOS|Windows/.test(ua);
+            // touch screen and no mouse or trackpad: Windows, Chromebook and Linux touch laptops
+            // have a fine pointer that can hover, so they are computers (PR #63 review).
+            const touchOnly = typeof window.matchMedia === 'function'
+                && window.matchMedia('(pointer: coarse)').matches && window.matchMedia('(hover: none)').matches;
+            return (navigator.maxTouchPoints || 0) > 1 && touchOnly
+                && /Macintosh|X11; Linux/.test(ua) && !/CrOS|Windows/.test(ua);
         };
 
         const loadStrings = async function() {
