@@ -1634,6 +1634,7 @@ $string['setting:detectphonestatus_missing'] = 'Not installed: phone detection w
 $string['setting:detectphonestatus_ready'] = 'Installed. A webcam only sees a phone held up in view; this catches careless use, not a phone below the desk. Pilot it before relying on it.';
 $string['eventtype:possible_screenshot'] = 'PrintScreen key pressed (context only, not scored; other screenshot methods cannot be seen by the browser)';
 $string['event:idverificationreset'] = 'Photo ID verification reset';
+$string['event:tabletreported'] = 'Screen sharing skipped on a tablet';
 $string['idvreset:button'] = 'Reset photo ID verification';
 $string['idvreset:done'] = 'The photo ID verification was reset. The student verifies again before their next attempt on this quiz.';
 $string['idvreset:submit'] = 'Reset the verification';

@@ -384,12 +384,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @return bool True for Moodle-detected mobile/tablet browsers.
      */
     private static function is_mobile_or_tablet() {
-        $devicetype = \core_useragent::get_device_type();
-
-        return in_array($devicetype, [
-            \core_useragent::DEVICETYPE_MOBILE,
-            \core_useragent::DEVICETYPE_TABLET,
-        ], true);
+        // Includes a tablet asking for the desktop site, which the precheck reported (CPIT-495).
+        return \quizaccess_proctoring\local\device::is_phone_or_tablet();
     }
 
     /**
@@ -1373,6 +1369,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             'screenmonitorchannel' => $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '',
             'screenmonitorstatuskey' => $usepersistentmonitor ? 'quizaccess_proctoring_screen_status_' . $screenmonitorkey : '',
             'screenmonitorwindowname' => $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '',
+            // Whether a tablet the server took for a computer may report itself and skip screen
+            // sharing, as detected phones and tablets do (CPIT-495).
+            'tabletbypass' => \quizaccess_proctoring\local\device::mobile_mode() === 'bypass' ? 1 : 0,
         ];
 
         // Include Face API JS library if required.

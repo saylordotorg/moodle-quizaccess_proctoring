@@ -93,6 +93,17 @@ $functions = [
         'services'     => [MOODLE_OFFICIAL_MOBILE_SERVICE],
     ],
 
+    // The precheck page reports a tablet that asks for the desktop site and cannot share its
+    // screen, so the phone/tablet screen-sharing setting applies to it (CPIT-495).
+    'quizaccess_proctoring_report_tablet' => [
+        'classname'    => 'quizaccess_proctoring\external\report_tablet',
+        'methodname'   => 'execute',
+        'description'  => 'Treat this session as a tablet that cannot share its screen.',
+        'type'         => 'write',
+        'ajax'         => true,
+        'capabilities' => 'mod/quiz:attempt',
+    ],
+
     // Read-only per-attempt proctoring summaries for the Saylor SIS (SIS-204). A web-service
     // function, not AJAX: it reads every student's attempts, so it needs a system capability no
     // archetype holds, and it refuses unless the site setting sisexportenabled is on. Listing the

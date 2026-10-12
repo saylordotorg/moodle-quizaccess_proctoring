@@ -74,11 +74,7 @@ final class readiness {
             $mobilemode = 'bypass';
         }
         // Match preflight: apply the device default before any explicit student override.
-        if (
-            $mobilemode === 'bypass' && in_array(\core_useragent::get_device_type(), [
-                \core_useragent::DEVICETYPE_MOBILE, \core_useragent::DEVICETYPE_TABLET,
-            ], true)
-        ) {
+        if ($mobilemode === 'bypass' && device::is_phone_or_tablet()) {
             $screen = 0;
         }
         return override_resolver::resolve_all((int)$cm->course, (int)$cm->instance, $userid, time(), [
