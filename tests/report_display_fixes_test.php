@@ -148,7 +148,8 @@ final class report_display_fixes_test extends advanced_testcase {
         $end = strpos($report, 'get_recordset_sql($sql, $params)', $start);
         $this->assertNotFalse($end);
         $query = substr($report, $start, $end - $start);
-        $this->assertStringContainsString("AND e.webcampicture <> ''", $query,
+        // Built with the database layer, so the TEXT column check works on every supported database.
+        $this->assertStringContainsString("sql_isnotempty('quizaccess_proctoring_logs', 'e.webcampicture', false, true)", $query,
             'the capture grid must leave out rows that have no image');
 
         // The rows it leaves out are the ones the attempt page writes.

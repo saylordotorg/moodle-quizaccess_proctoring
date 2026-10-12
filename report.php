@@ -915,7 +915,7 @@ if (
           AND e.quizid = :cmid
           AND u.id = :studentid
           AND e.deletionprogress = :deletionprogress
-          AND e.webcampicture <> ''";
+          AND " . $DB->sql_isnotempty('quizaccess_proctoring_logs', 'e.webcampicture', false, true);
         // Every load of an attempt page also writes an image-less row (the report record of that
         // page), which is not a capture: listing it showed a broken or "no image" capture and
         // counted it as not analysed (CPIT-488).
