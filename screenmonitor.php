@@ -57,6 +57,7 @@ $config = [
         'ready' => get_string('screenmonitor:ready', 'quizaccess_proctoring'),
         'stopped' => get_string('screenmonitor:stopped', 'quizaccess_proctoring'),
         'unsupported' => get_string('screenmonitor:unsupported', 'quizaccess_proctoring'),
+        'notonmobile' => get_string('screensharenotonmobile', 'quizaccess_proctoring'),
         'wrongmonitor' => get_string('screenmonitor:wrongmonitor', 'quizaccess_proctoring'),
         'permissiondenied' => get_string('screenmonitor:permissiondenied', 'quizaccess_proctoring'),
         'captureunavailable' => get_string('screenmonitor:captureunavailable', 'quizaccess_proctoring'),
@@ -433,7 +434,12 @@ $js = <<<JS
         }
 
         if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-            setStatus(config.strings.unsupported, 'danger');
+            // No browser on a phone or tablet can share the screen; a tablet asking for the
+            // desktop site is told apart by its touch screen (CPIT-495).
+            const ua = navigator.userAgent || '';
+            const mobile = (navigator.userAgentData && navigator.userAgentData.mobile)
+                || /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua) || (navigator.maxTouchPoints || 0) > 1;
+            setStatus(mobile ? config.strings.notonmobile : config.strings.unsupported, 'danger');
             clearStatus();
             return;
         }

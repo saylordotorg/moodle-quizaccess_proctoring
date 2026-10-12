@@ -27,7 +27,7 @@ function helper(options = {}) {
     const source = fs.readFileSync(path.resolve(__dirname, '../../screenmonitor.php'), 'utf8')
         .match(/\$js = <<<JS\r?\n([\s\S]*?)\r?\nJS;/)[1];
     const config = {channel: 'fixture', statuskey: 'fixture', markerrequired: !!options.markerrequired, strings: {
-        ready: 'ready', stopped: 'stopped', unsupported: 'unsupported',
+        ready: 'ready', stopped: 'stopped', unsupported: 'unsupported', notonmobile: 'notonmobile',
         permissiondenied: 'permissiondenied', captureunavailable: 'captureunavailable',
         windowinactive: 'windowinactive', requestfailed: 'requestfailed',
         playbackfailed: 'playbackfailed', noframes: 'noframes',
@@ -51,7 +51,7 @@ function helper(options = {}) {
             constructor() { channel = this; }
             postMessage(value) { messages.push(value); }
         },
-        navigator: {mediaDevices: {
+        navigator: options.navigator || {mediaDevices: {
             getDisplayMedia() { return new Promise((resolve, reject) => pending.push({resolve, reject})); }
         }},
         document: {
@@ -299,4 +299,23 @@ test('late permission from an older share request cannot replace a newer live st
     assert.equal(newerTrack.stopped, false);
     env.events.pagehide();
     assert.equal(newerTrack.stopped, true);
+});
+
+test('a phone or tablet without screen sharing is told to use a computer, not another browser (CPIT-495)', async () => {
+    // Chrome on an Android tablet asks for the desktop site: a Linux user agent, a touch screen.
+    const tablet = helper({navigator: {userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/129.0 Safari/537.36',
+        maxTouchPoints: 5, mediaDevices: {}}});
+    await tablet.share();
+    assert.equal(tablet.status.textContent, 'notonmobile');
+
+    const phone = helper({navigator: {userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) Mobile Safari/537.36',
+        maxTouchPoints: 5}});
+    await phone.share();
+    assert.equal(phone.status.textContent, 'notonmobile');
+
+    // A desktop browser without screen sharing still gets the browser advice.
+    const desktop = helper({navigator: {userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) OldBrowser/1.0',
+        maxTouchPoints: 0, mediaDevices: {}}});
+    await desktop.share();
+    assert.equal(desktop.status.textContent, 'unsupported');
 });

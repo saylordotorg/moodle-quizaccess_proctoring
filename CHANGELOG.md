@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.21 — 2026-10-12
+- **Phones and tablets are told to use a computer for screen sharing (CPIT-495).** A student on an Android tablet was told "This browser does not support screen sharing. Use a supported browser such as Chrome or Edge" while already using Chrome, and tried several browsers. No browser on a phone or tablet can share the screen. Chrome on an Android tablet usually asks for the desktop site, so the server cannot tell it from a computer and the phone/tablet setting does not apply to it. When screen sharing is unavailable on a touch device, the setup page, the attempt page and the screen-sharing window now say: "Screen sharing is not available on phones or tablets, in any browser. To take this exam, use a Windows or Mac computer with Chrome or Edge. If you cannot use a computer, contact student support." A computer without screen sharing still gets the browser advice.
+
 # v1.12.20 — 2026-10-12
 - **The capture grid no longer lists rows that are not captures (CPIT-488).** Every load of an attempt page writes an image-less row, the report record for that page. The per-student report listed those rows with the webcam captures, so an attempt showed one "unavailable" capture for each page the student opened (shown as "No image was received for this capture" since 1.12.17). They also counted as "not analysed" in the identity verdict. The grid and the verdict now use only the captures. This is the likely cause of the unavailable captures Student Affairs reported. Captures whose image file is gone still show the reason.
 

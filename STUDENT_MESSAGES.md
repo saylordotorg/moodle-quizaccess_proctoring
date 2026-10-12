@@ -148,6 +148,7 @@ Generated from `lang/en/quizaccess_proctoring.php`; `{$a}` and `{$a->...}` are f
 | `screenmarkerwrongmonitor` | The shared screen does not show this quiz page. Move the quiz window to the shared monitor or share the monitor containing the quiz. |
 | `screenshareaccepted` | Entire screen shared. You can continue. |
 | `screensharedenied` | Screen sharing was cancelled or blocked. Share your entire screen to continue. |
+| `screensharenotonmobile` | Screen sharing is not available on phones or tablets, in any browser. To take this exam, use a Windows or Mac computer with Chrome or Edge. If you cannot use a computer, contact student support. |
 | `screensharenotsupported` | This browser does not support screen sharing. Use a supported browser such as Chrome or Edge. |
 | `screensharestopped` | Screen sharing stopped. Share your entire screen again to continue. |
 

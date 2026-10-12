@@ -1,5 +1,16 @@
 define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proctoring/screenMonitorClient'],
     function($, Ajax, Notification, Str, ScreenMonitorClient) {
+        // Whether this looks like a phone or tablet. Only asked once screen sharing has turned out
+        // to be unavailable: a tablet asking for the desktop site reports a desktop operating
+        // system, so the touch screen is the tell (CPIT-495).
+        const isPhoneOrTablet = function() {
+            const ua = navigator.userAgent || '';
+            if (navigator.userAgentData && navigator.userAgentData.mobile) {
+                return true;
+            }
+            return /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua) || (navigator.maxTouchPoints || 0) > 1;
+        };
+
         const loadStrings = async function() {
             const stringkeys = [
                 {key: 'facematched', component: 'quizaccess_proctoring'},
@@ -64,6 +75,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'preflight:viewhonor', component: 'quizaccess_proctoring'},
                 {key: 'preflight:cancelwithdraw', component: 'quizaccess_proctoring'},
                 {key: 'preflight:cancelwithdrawtitle', component: 'quizaccess_proctoring'},
+                {key: 'screensharenotonmobile', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -122,6 +134,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     preflightviewhonor: strings[51],
                     preflightcancelwithdraw: strings[52],
                     preflightcancelwithdrawtitle: strings[53],
+                    screensharenotonmobile: strings[54],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -3045,7 +3058,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
 
                     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-                        setScreenResult(strings.screensharenotsupported, false);
+                        // No browser on a phone or tablet can share the screen, so "use Chrome"
+                        // would send the student round in circles (CPIT-495).
+                        setScreenResult(isPhoneOrTablet() ? strings.screensharenotonmobile
+                            : strings.screensharenotsupported, false);
                         setRequirementStatus('screen', 'action');
                         screenReady = false;
                         setScreenConfirmed(false);

@@ -1042,6 +1042,7 @@ $string['screenmonitor:windowopened'] = 'A screen monitor window opened. Share t
 $string['screenmonitor:wrongmonitor'] = 'The shared screen does not show the quiz screen marker. Share the monitor containing the quiz.';
 $string['screenshareaccepted'] = 'Entire screen shared. You can continue.';
 $string['screensharedenied'] = 'Screen sharing was cancelled or blocked. Share your entire screen to continue.';
+$string['screensharenotonmobile'] = 'Screen sharing is not available on phones or tablets, in any browser. To take this exam, use a Windows or Mac computer with Chrome or Edge. If you cannot use a computer, contact student support.';
 $string['screensharenotsupported'] = 'This browser does not support screen sharing. Use a supported browser such as Chrome or Edge.';
 $string['screensharestopped'] = 'Screen sharing stopped. Share your entire screen again to continue.';
 $string['sessionsummary:ai'] = 'AI image review rated this session {$a->score} out of 100 ({$a->decision}).';
