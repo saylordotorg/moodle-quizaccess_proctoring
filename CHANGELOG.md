@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.25 — 2026-10-15
+- **The Screen check box no longer covers the corner menus (CPIT-498).** Student Affairs' actual complaint: the box sat in the very top right corner, over Moodle's search, notification and user-menu icons. It now sits just below the fixed navbar — on the exam setup page, and wherever the attempt page's marker falls back to the corner (the attempt page otherwise keeps docking it beside the quiz navigation). It must stay somewhere on screen: it is what the screen check looks for in the shared screen.
+
 # v1.12.24 — 2026-10-15
 - **The screen check tolerates colour-shifted displays, and failures diagnose themselves (CPIT-498).** Student Affairs shared the correct screen and was still told "The shared screen does not show this quiz page". The check looks for the "Screen check" marker's three colour swatches in the captured frame, and matched them against near-exact colours: Night Shift, True Tone or a colour-managed capture warms the swatches past those thresholds, failing an entirely correct share. The thresholds now allow that shift — all three hues must still land together in one small search window, so unrelated desktop content does not pass. When the precheck still rejects a share it now logs what the scan saw (frame size, brightness, how much of each swatch colour was found — never a screenshot, since no attempt exists yet), so staff can tell a wrong monitor from a black capture or a colour shift. A share coming through black gets its own message pointing at the browser's screen-recording permission instead of the misleading wrong-monitor one, and the wrong-monitor message now says to keep the Screen check box uncovered and turn off display colour filters before retrying.
 - **Two fixes from Student Affairs' reviewer-only testing (CPIT-474).**

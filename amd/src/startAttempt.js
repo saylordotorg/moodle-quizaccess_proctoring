@@ -2790,6 +2790,28 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     });
                 });
 
+                /**
+                 * Where the marker's top edge goes: just below Moodle's fixed navbar, so the box
+                 * never covers the search, notification and user-menu icons in the top right
+                 * corner (CPIT-498, Student Affairs). Without a fixed navbar the old 8px stands.
+                 */
+                const screenMarkerTop = function() {
+                    if (typeof document.querySelector !== 'function') {
+                        return 8;
+                    }
+                    const navbar = document.querySelector('nav.navbar.fixed-top, .navbar.fixed-top');
+                    if (!navbar || typeof navbar.getBoundingClientRect !== 'function') {
+                        return 8;
+                    }
+                    const bottom = navbar.getBoundingClientRect().bottom;
+                    // A hidden or unreasonably tall bar (a theme where the selector matches
+                    // something else) falls back to the corner rather than mid-page.
+                    if (!(bottom > 0) || bottom > 160) {
+                        return 8;
+                    }
+                    return Math.ceil(bottom) + 8;
+                };
+
                 const initScreenMarker = function() {
                     if (!screenRequired || !screenMarkerRequired ||
                             document.getElementById('proctoring-screen-verification-marker')) {
@@ -2799,7 +2821,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     $('body').append(
                         '<div id="proctoring-screen-verification-marker" ' +
                             'class="proctoring-screen-verification-marker" aria-hidden="true" ' +
-                            'style="position:fixed;top:8px;right:8px;z-index:10002;width:220px;padding:8px;' +
+                            `style="position:fixed;top:${screenMarkerTop()}px;right:8px;z-index:10002;width:220px;padding:8px;` +
                             'border:3px solid #fff;background:#111;color:#fff;pointer-events:none;">' +
                             `<div class="proctoring-screen-marker-label">${escapeHtml(strings.screenmarkerlabel)}</div>` +
                             '<div class="proctoring-screen-marker-colors">' +
@@ -2813,6 +2835,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             `<div class="proctoring-screen-marker-token">${markerToken}</div>` +
                         '</div>'
                     );
+
+                    // The navbar collapses to another height on narrow windows; follow it.
+                    window.addEventListener('resize', function() {
+                        const marker = document.getElementById('proctoring-screen-verification-marker');
+                        if (marker) {
+                            marker.style.top = screenMarkerTop() + 'px';
+                        }
+                    });
                 };
 
                 /**
