@@ -108,8 +108,9 @@ final class admin_settings_access_test extends advanced_testcase {
      * never included for a manager, and /admin/settings.php?section=modsettingsquizcatproctoring is
      * not in their tree to be granted. No req_capability on the page can change that, because the
      * code setting it never runs. The capability still governs every surface that checks it
-     * directly, which is what this asserts; the settings page for capability holders is a separate
-     * question against core's gating.
+     * directly, which is what this asserts. Capability holders edit the settings through the
+     * plugin's own adminsettings.php instead, which builds the same pages outside the tree
+     * ({@see \quizaccess_proctoring\local\admin_settings_pages} and its tests).
      */
     public function test_a_manager_is_granted_where_the_plugin_checks_for_itself(): void {
         global $CFG, $DB;

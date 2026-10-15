@@ -213,7 +213,23 @@ function quizaccess_proctoring_myprofile_navigation(\core_user\output\myprofile\
             new moodle_url('/mod/quiz/accessrule/proctoring/my_photo.php')
         ));
     }
-    if (!$iscurrentuser || !isloggedin() || isguestuser() || !quizaccess_proctoring_can_review_across_courses()) {
+    if (!$iscurrentuser || !isloggedin() || isguestuser()) {
+        return;
+    }
+    // The settings for capability holders without site administration: core keeps
+    // /admin/settings.php?section=modsettingsquizcatproctoring out of their admin tree, so this
+    // link - and the direct URL - is how they reach the plugin's own copy of the page.
+    if (!is_siteadmin()
+            && has_capability(QUIZACCESS_PROCTORING_CAP_ADMIN_SETTINGS, context_system::instance())) {
+        $tree->add_node(new \core_user\output\myprofile\node(
+            'reports',
+            'quizaccess_proctoring_adminsettings',
+            get_string('adminsettings:profilelink', 'quizaccess_proctoring'),
+            null,
+            new moodle_url('/mod/quiz/accessrule/proctoring/adminsettings.php')
+        ));
+    }
+    if (!quizaccess_proctoring_can_review_across_courses()) {
         return;
     }
     $tree->add_node(new \core_user\output\myprofile\node(

@@ -27,6 +27,7 @@ $string['accessdenied'] = 'Access Denied';
 $string['action_upload_image'] = 'Action';
 $string['actions'] = 'Actions';
 $string['additional_settings'] = 'General settings';
+$string['adminsettings:profilelink'] = 'Proctoring settings';
 $string['aireview:anthropicerror'] = 'Anthropic image review error: {$a}';
 $string['aireview:anthropicinvalidjson'] = 'Anthropic returned an invalid AI image review response.';
 $string['aireview:compatibleerror'] = 'Compatible AI endpoint image review error: {$a}';
