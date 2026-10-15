@@ -158,6 +158,31 @@
 </details>
 {{/hasstudentmessages}}
 
+{{#hassentnotifications}}
+<details class="proctoring-sent-notifications card card-body mt-3 mb-3">
+    <summary class="h6 mb-0">{{#str}}sentnotifications:heading, quizaccess_proctoring{{/str}}</summary>
+    <p class="small text-muted mt-2 mb-2">{{#str}}sentnotifications:intro, quizaccess_proctoring{{/str}}</p>
+    <table class="table table-sm mb-0">
+        <thead>
+            <tr>
+                <th>{{#str}}sentnotifications:sent, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}sentnotifications:message, quizaccess_proctoring{{/str}}</th>
+                <th>{{#str}}sentnotifications:read, quizaccess_proctoring{{/str}}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#sentnotifications}}
+            <tr>
+                <td class="text-nowrap">{{sent}}</td>
+                <td><strong>{{subject}}</strong><br>{{message}}</td>
+                <td>{{#read}}{{read}}{{/read}}{{^read}}{{#str}}sentnotifications:unread, quizaccess_proctoring{{/str}}{{/read}}</td>
+            </tr>
+            {{/sentnotifications}}
+        </tbody>
+    </table>
+</details>
+{{/hassentnotifications}}
+
 {{#coverage}}{{> quizaccess_proctoring/monitoring_coverage}}{{/coverage}}
 
 {{#riskscore}}

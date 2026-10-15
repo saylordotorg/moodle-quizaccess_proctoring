@@ -3079,6 +3079,15 @@ function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $deci
         $message->fullmessagehtml = text_to_html($body);
         $message->smallmessage = $subject;
         $message->notification = 1;
+        // The quiz the notification is about, so the per-student report can list what this
+        // student was sent (CPIT-481). The contexturl below carries the same quiz, but only
+        // while the course module still exists.
+        $message->customdata = [
+            'cmid' => (int)$hold->quizid,
+            'courseid' => (int)$hold->courseid,
+            'attemptid' => (int)$hold->attemptid,
+            'decision' => $decision,
+        ];
         // Students reply to hold notices too, so point Reply-To at the staffed address
         // instead of leaving replies to hit noreply.
         $contact = \quizaccess_proctoring\local\support_contact::address();
