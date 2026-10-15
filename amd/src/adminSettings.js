@@ -2,6 +2,11 @@ define([], function() {
     const controlsId = 'quizaccess-proctoring-admin-controls';
     const pluginPrefix = 's_quizaccess_proctoring_';
 
+    // Whether each provider is configured, told by the server: the capability holder's page has
+    // no credential or endpoint fields to read, so the preset logic cannot conclude anything
+    // from their absence (CPIT-499 review).
+    let serverReadiness = {};
+
     const primarySettings = {
         precheck: [
             'readinessenabled',
@@ -195,19 +200,30 @@ define([], function() {
             return {values: values, skipped: skipped};
         }
 
+        // The live field values where the page has the fields; the server's word where it does
+        // not (the capability holder's page carries no credential or endpoint field, and reading
+        // their absence as "not configured" would switch off checks that are on).
+        const configuredOrServer = function(settings, readinessKey) {
+            if (settings.some((name) => getFieldValue(name) === null)) {
+                return !!serverReadiness[readinessKey];
+            }
+            return settings.every(hasConfiguredValue);
+        };
+
         const turnstileReady = getFieldValue('captchaprovider') === 'turnstile' &&
-            hasConfiguredValue('turnstilesitekey') && hasConfiguredValue('turnstilesecretkey');
+            configuredOrServer(['turnstilesitekey', 'turnstilesecretkey'], 'turnstile');
         const faceReady = getFieldValue('fcmethod') === 'customapi' &&
-            hasConfiguredValue('custom_ai_endpoint') && hasConfiguredValue('custom_api_key');
-        const idReady = hasConfiguredValue('idverificationendpoint') &&
-            hasConfiguredValue('idverificationapikey');
+            configuredOrServer(['custom_ai_endpoint', 'custom_api_key'], 'face');
+        const idReady = configuredOrServer(['idverificationendpoint', 'idverificationapikey'], 'id');
         const aiProvider = getFieldValue('aireviewprovider');
-        const aiReady = (aiProvider === 'openai' && hasConfiguredValue('aireviewopenaiapikey') &&
+        const aiReady = aiProvider === null
+            ? !!serverReadiness.ai
+            : ((aiProvider === 'openai' && hasConfiguredValue('aireviewopenaiapikey') &&
                 hasConfiguredValue('aireviewopenaimodel')) ||
             (aiProvider === 'anthropic' && hasConfiguredValue('aireviewanthropicapikey') &&
                 hasConfiguredValue('aireviewanthropicmodel')) ||
             (aiProvider === 'compatible' && hasConfiguredValue('aireviewcompatibleendpoint') &&
-                hasConfiguredValue('aireviewcompatiblemodel'));
+                hasConfiguredValue('aireviewcompatiblemodel')));
 
         values.captchabeforeattemptenabled = turnstileReady;
         values.fcheckstartchk = faceReady;
@@ -751,7 +767,8 @@ define([], function() {
     };
 
     return {
-        init: function() {
+        init: function(readiness) {
+            serverReadiness = readiness || {};
             ready(function() {
                 const controls = document.getElementById(controlsId);
                 const fieldset = getSettingsFieldset(controls);

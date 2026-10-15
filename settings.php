@@ -106,7 +106,20 @@ if ($canmanageproctoring) {
         }));
     }
 
-    $PAGE->requires->js_call_amd('quizaccess_proctoring/adminSettings', 'init');
+    // Whether each provider is configured, as booleans only: the capability holder's page has no
+    // credential or endpoint fields for the preset logic to read, so it gets the answer from the
+    // server instead of concluding "not configured" and disabling checks that are on (CPIT-499).
+    require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+    $presetreadiness = [
+        'turnstile' => trim((string)get_config('quizaccess_proctoring', 'turnstilesitekey')) !== ''
+            && trim((string)get_config('quizaccess_proctoring', 'turnstilesecretkey')) !== '',
+        'face' => trim((string)get_config('quizaccess_proctoring', 'custom_ai_endpoint')) !== ''
+            && trim((string)get_config('quizaccess_proctoring', 'custom_api_key')) !== '',
+        'id' => trim((string)get_config('quizaccess_proctoring', 'idverificationendpoint')) !== ''
+            && trim((string)get_config('quizaccess_proctoring', 'idverificationapikey')) !== '',
+        'ai' => quizaccess_proctoring_ai_review_configured(),
+    ];
+    $PAGE->requires->js_call_amd('quizaccess_proctoring/adminSettings', 'init', [$presetreadiness]);
 
     $presetdefinitions = [
         [
