@@ -53,6 +53,16 @@ const SWATCH_COLOURS = [
     [255, 230, 0],   // #ffe600 yellow
 ];
 
+// The same swatches under a strong warm colour shift (Night Shift, True Tone, a
+// colour-managed capture): each one fails the pre-CPIT-498 thresholds
+// (magenta R>210/G<90/B>150, cyan R<90/G>180/B>150, yellow R>210/G>180/B<90)
+// and must pass the widened ones.
+const SHIFTED_COLOURS = [
+    [205, 100, 150], // Magenta, warmed and washed out.
+    [100, 175, 150], // Cyan, warmed.
+    [205, 175, 100], // Yellow, dimmed.
+];
+
 /**
  * Build a synthetic captured frame at true capture proportions.
  *
@@ -78,6 +88,7 @@ function makeFrame(layout, width, height) {
     const shapes = {
         marker: {size: [43, 18], gap: 4, at: [1000, 100]},
         specks: {size: [12, 12], gap: 4, at: [1000, 100]},
+        shifted: {size: [43, 18], gap: 4, at: [1000, 100], colours: SHIFTED_COLOURS},
     };
     const shape = shapes[layout];
     if (!shape) {
@@ -85,7 +96,7 @@ function makeFrame(layout, width, height) {
     }
 
     const [blockWidth, blockHeight] = shape.size;
-    SWATCH_COLOURS.forEach((rgb, index) => {
+    (shape.colours || SWATCH_COLOURS).forEach((rgb, index) => {
         const originX = shape.at[0] + (index * (blockWidth + shape.gap));
         for (let y = shape.at[1]; y < shape.at[1] + blockHeight && y < height; y++) {
             for (let x = originX; x < originX + blockWidth && x < width; x++) {
@@ -570,6 +581,20 @@ test('a full-size marker is found, though its colour row is wider than the old s
     });
 
     assert.strictEqual(env.gate.style.display, 'none', 'a correctly shared screen must be accepted');
+    assert.strictEqual(env.status.textContent, 'screenshareaccepted');
+    assert.strictEqual(env.markerMissingEvents().length, 0);
+});
+
+test('a colour-shifted marker is still found (CPIT-498)', async () => {
+    // Student Affairs shared the right screen and was told it did not show the quiz:
+    // Night Shift, True Tone and colour-managed captures warm the swatches past the
+    // old exact-colour thresholds. The shifted swatches must still be accepted.
+    const env = await bootWithShare({}, (e) => {
+        e.frameLayout = 'shifted';
+    });
+
+    assert.strictEqual(env.gate.style.display, 'none',
+        'a colour-shifted but correct share must be accepted');
     assert.strictEqual(env.status.textContent, 'screenshareaccepted');
     assert.strictEqual(env.markerMissingEvents().length, 0);
 });

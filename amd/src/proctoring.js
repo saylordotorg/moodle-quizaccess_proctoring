@@ -1204,11 +1204,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         const blue = data[offset + 2];
                         let color = '';
 
-                        if (red > 210 && green < 90 && blue > 150) {
+                        // Tolerances sit ~55-110 per channel off the pure swatch colours
+                        // (#ff00cc, #00ffcc, #ffe600): Night Shift, True Tone and colour-managed
+                        // captures warm or shift a legitimate share, and all three hues must
+                        // still land together in one search window, so the widening does not
+                        // let ordinary desktop content pass (CPIT-498).
+                        if (red > 200 && green < 110 && blue > 140) {
                             color = 'magenta';
-                        } else if (red < 90 && green > 180 && blue > 150) {
+                        } else if (red < 110 && green > 170 && blue > 140) {
                             color = 'cyan';
-                        } else if (red > 210 && green > 180 && blue < 90) {
+                        } else if (red > 200 && green > 170 && blue < 110) {
                             color = 'yellow';
                         }
 

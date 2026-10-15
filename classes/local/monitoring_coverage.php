@@ -42,6 +42,9 @@ final class monitoring_coverage {
         // A hold-decision notification sent to the student (CPIT-481): the plugin's own audit
         // of the send, written by the server after the attempt, never a student action.
         'notification_sent',
+        // The precheck's screen scan rejecting a share, with what it saw (CPIT-498): a record
+        // of the setup page diagnosing itself, not suspicious activity.
+        'screen_marker_not_found',
     ];
 
     /**
