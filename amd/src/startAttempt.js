@@ -2836,13 +2836,22 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         '</div>'
                     );
 
-                    // The navbar collapses to another height on narrow windows; follow it.
-                    window.addEventListener('resize', function() {
+                    // The navbar changes height without a window resize too: expanding the
+                    // collapsed Bootstrap navbar only toggles its content (PR #67 review). So
+                    // watch the navbar itself where the browser can, besides window resizes.
+                    const repositionMarker = function() {
                         const marker = document.getElementById('proctoring-screen-verification-marker');
                         if (marker) {
                             marker.style.top = screenMarkerTop() + 'px';
                         }
-                    });
+                    };
+                    window.addEventListener('resize', repositionMarker);
+                    if (typeof ResizeObserver === 'function' && typeof document.querySelector === 'function') {
+                        const navbar = document.querySelector('nav.navbar.fixed-top, .navbar.fixed-top');
+                        if (navbar) {
+                            new ResizeObserver(repositionMarker).observe(navbar);
+                        }
+                    }
                 };
 
                 /**
