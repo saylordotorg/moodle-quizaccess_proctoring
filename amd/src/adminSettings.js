@@ -204,10 +204,20 @@ define([], function() {
         // not (the capability holder's page carries no credential or endpoint field, and reading
         // their absence as "not configured" would switch off checks that are on).
         const configuredOrServer = function(settings, readinessKey) {
-            if (settings.some((name) => getFieldValue(name) === null)) {
-                return !!serverReadiness[readinessKey];
+            let sawabsent = false;
+            const visibleok = settings.every(function(name) {
+                if (getFieldValue(name) === null) {
+                    sawabsent = true;
+                    return true;
+                }
+                // A field the page carries speaks for itself, cleared or filled, even while
+                // its credential partner is absent (CPIT-499 review).
+                return hasConfiguredValue(name);
+            });
+            if (!visibleok) {
+                return false;
             }
-            return settings.every(hasConfiguredValue);
+            return sawabsent ? !!serverReadiness[readinessKey] : true;
         };
 
         const turnstileReady = getFieldValue('captchaprovider') === 'turnstile' &&
