@@ -60,23 +60,31 @@ $PAGE->set_heading($page->visiblename);
 $PAGE->requires->css('/mod/quiz/accessrule/proctoring/styles.css');
 
 // Save, the way admin/settings.php does: only settings this page defines can be written, each
-// write is validated by the setting itself, and config_write logs every change to the config log.
+// write is validated by the setting itself, and config_write logs every change to the config
+// log. A failed write is recorded in admin_get_root()->errors - that is where
+// admin_settingpage::output_html() reads the submitted value and the field's error back from,
+// so the rejected input stays on screen against its field instead of silently reverting.
+$savefailed = false;
 if ($data = data_submitted()) {
     require_sesskey();
     $data = (array)$data;
-    $errors = [];
+    $adminroot = admin_get_root();
     foreach (admin_find_write_settings($page, $data) as $fullname => $setting) {
         $original = $setting->get_setting();
         $error = $setting->write_setting($data[$fullname]);
         if ($error !== '') {
-            $errors[] = $error;
+            $savefailed = true;
+            $adminroot->errors[$fullname] = (object)[
+                'data' => $data[$fullname],
+                'id' => $setting->get_id(),
+                'error' => $error,
+            ];
         }
         $setting->post_write_settings($original);
     }
-    if (empty($errors)) {
+    if (!$savefailed) {
         redirect($pageurl, get_string('changessaved'), null, \core\output\notification::NOTIFY_SUCCESS);
     }
-    $saveerrors = implode(' ', $errors);
 }
 
 echo $OUTPUT->header();
@@ -109,8 +117,8 @@ $tabs = [
 ];
 echo $OUTPUT->tabtree($tabs, $section);
 
-if (!empty($saveerrors)) {
-    echo $OUTPUT->notification($saveerrors, \core\output\notification::NOTIFY_ERROR);
+if ($savefailed) {
+    echo $OUTPUT->notification(get_string('errorwithsettings', 'admin'), \core\output\notification::NOTIFY_ERROR);
 }
 
 echo html_writer::start_tag('form', [

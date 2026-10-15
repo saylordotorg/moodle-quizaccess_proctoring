@@ -80,12 +80,18 @@ final class admin_settings_wrapper_test extends advanced_testcase {
             }
         }
 
-        // The named credentials are not on the page under any other widget either.
+        // The named credentials are not on the page under any other widget either - and neither
+        // are the endpoints they are sent to: the server posts the stored key (and the images)
+        // to whatever URL stands there, so repointing one would hand both to the new host.
         $mainnames = array_map(
             static fn(\admin_setting $setting): string => (string)$setting->name,
             $this->settings_of($root->locate(admin_settings_pages::MAIN_SECTION))
         );
-        foreach (['turnstilesecretkey', 'custom_api_key', 'idverificationapikey'] as $secret) {
+        $adminonly = [
+            'turnstilesecretkey', 'custom_api_key', 'idverificationapikey',
+            'custom_ai_endpoint', 'idverificationendpoint',
+        ];
+        foreach ($adminonly as $secret) {
             $this->assertNotContains($secret, $mainnames, "$secret must stay site-administrator only");
         }
     }
@@ -109,7 +115,8 @@ final class admin_settings_wrapper_test extends advanced_testcase {
     }
 
     /**
-     * A user without the capability is refused by the pages themselves.
+     * A user without the capability is refused: settings.php does not even register the pages
+     * when the building user holds neither route, and a page that did exist would deny access.
      */
     public function test_pages_refuse_a_user_without_the_capability(): void {
         $this->resetAfterTest();
@@ -117,8 +124,10 @@ final class admin_settings_wrapper_test extends advanced_testcase {
 
         $page = admin_settings_pages::build(false)->locate(admin_settings_pages::MAIN_SECTION);
 
-        $this->assertInstanceOf(\admin_settingpage::class, $page);
-        $this->assertFalse($page->check_access());
+        $this->assertTrue(
+            $page === null || $page->check_access() === false,
+            'a user without the capability must not reach the settings'
+        );
     }
 
     /**
