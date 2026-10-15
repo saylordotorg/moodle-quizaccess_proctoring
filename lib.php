@@ -3079,6 +3079,15 @@ function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $deci
         $message->fullmessagehtml = text_to_html($body);
         $message->smallmessage = $subject;
         $message->notification = 1;
+        // The quiz the notification is about, so the per-student report can list what this
+        // student was sent (CPIT-481). The contexturl below carries the same quiz, but only
+        // while the course module still exists.
+        $message->customdata = [
+            'cmid' => (int)$hold->quizid,
+            'courseid' => (int)$hold->courseid,
+            'attemptid' => (int)$hold->attemptid,
+            'decision' => $decision,
+        ];
         // Students reply to hold notices too, so point Reply-To at the staffed address
         // instead of leaving replies to hit noreply.
         $contact = \quizaccess_proctoring\local\support_contact::address();
@@ -3091,7 +3100,29 @@ function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $deci
             $message->contexturlname = $a->quiz;
         }
 
-        message_send($message);
+        $messageid = message_send($message);
+
+        // The plugin's own record of the send (CPIT-481). Moodle's notifications table is not an
+        // archive - the "Delete read notifications" cleanup removes read rows after the site's
+        // retention period - so the per-student report reads this row, which keeps the words that
+        // were sent for as long as the attempt's other proctoring records (PR #64 review).
+        if ($messageid) {
+            $DB->insert_record('quizaccess_proctoring_events', (object)[
+                'courseid' => (int)$hold->courseid,
+                'quizid' => (int)$hold->quizid,
+                'userid' => (int)$hold->userid,
+                'attemptid' => (int)$hold->attemptid,
+                'reportid' => 0,
+                'eventtype' => 'notification_sent',
+                'eventdetail' => json_encode([
+                    'decision' => $decision,
+                    'subject' => $subject,
+                    'body' => $body,
+                    'notificationid' => (int)$messageid,
+                ]),
+                'timemodified' => time(),
+            ]);
+        }
     } catch (\Throwable $e) {
         debugging(
             'Unable to send Saylor Proctored Quiz hold decision notification: ' . $e->getMessage(),

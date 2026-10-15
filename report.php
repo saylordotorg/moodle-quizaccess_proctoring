@@ -1944,6 +1944,11 @@ if (
             (int)$studentid,
             (int)$riskscore['attemptid']
         );
+        // Every hold-decision notification the student was sent about this quiz (CPIT-481).
+        $sentnotifications = \quizaccess_proctoring\local\sent_notifications::for_student(
+            (int)$cmid,
+            (int)$studentid
+        );
         $templatecontext = (object)[
             'issiteadmin' => (is_siteadmin() && !$profileimageurl ? true : false),
             'redirecturl' => $redirecturl,
@@ -1967,6 +1972,8 @@ if (
             ),
             'studentmessages' => $studentmessages,
             'hasstudentmessages' => !empty($studentmessages),
+            'sentnotifications' => $sentnotifications,
+            'hassentnotifications' => !empty($sentnotifications),
             'sessionsummary' => $sessionsummary,
             'hassessionsummary' => ($sessionsummary !== ''),
             'coverage' => \quizaccess_proctoring\local\monitoring_coverage::for_attempt(
