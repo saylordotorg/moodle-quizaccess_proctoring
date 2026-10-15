@@ -58,6 +58,8 @@ if (!($page instanceof admin_settingpage) || !$page->check_access()) {
 $PAGE->set_title($page->visiblename);
 $PAGE->set_heading($page->visiblename);
 $PAGE->requires->css('/mod/quiz/accessrule/proctoring/styles.css');
+// The standard leave-without-saving warning, as admin/settings.php registers it for this form id.
+$PAGE->requires->js_call_amd('core_form/changechecker', 'watchFormById', ['adminsettings']);
 
 // Save, the way admin/settings.php does: only settings this page defines can be written, each
 // write is validated by the setting itself, and config_write logs every change to the config

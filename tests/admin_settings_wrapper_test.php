@@ -150,6 +150,7 @@ final class admin_settings_wrapper_test extends advanced_testcase {
         }
         $this->assertNotNull($target, 'the risk level setting must be on the risk factors page');
 
+        $keybefore = get_config('quizaccess_proctoring', 'custom_api_key');
         $data = [
             $target->get_full_name() => '25',
             's_quizaccess_proctoring_custom_api_key' => 'must-not-land',
@@ -162,6 +163,8 @@ final class admin_settings_wrapper_test extends advanced_testcase {
             $this->assertSame('', $setting->write_setting($data[$fullname]));
         }
         $this->assertSame('25', get_config('quizaccess_proctoring', 'risklevelmoderate'));
-        $this->assertFalse(get_config('quizaccess_proctoring', 'custom_api_key'));
+        // Install stores the setting's empty default, so "unchanged" is the claim - not "absent".
+        $this->assertSame($keybefore, get_config('quizaccess_proctoring', 'custom_api_key'));
+        $this->assertNotEquals('must-not-land', get_config('quizaccess_proctoring', 'custom_api_key'));
     }
 }

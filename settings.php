@@ -106,19 +106,18 @@ if ($canmanageproctoring) {
         }));
     }
 
-    // Whether each provider is configured, as booleans only: the capability holder's page has no
-    // credential or endpoint fields for the preset logic to read, so it gets the answer from the
-    // server instead of concluding "not configured" and disabling checks that are on (CPIT-499).
+    // Whether each credential setting is configured, as a boolean per setting and never the
+    // value: the capability holder's page has no credential or endpoint fields for the preset
+    // logic to read, so for each absent field it takes the server's word, while a field the page
+    // does carry keeps speaking for itself (CPIT-499 review). The AI review section is absent as
+    // a whole, so its readiness is one flag.
     require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
-    $presetreadiness = [
-        'turnstile' => trim((string)get_config('quizaccess_proctoring', 'turnstilesitekey')) !== ''
-            && trim((string)get_config('quizaccess_proctoring', 'turnstilesecretkey')) !== '',
-        'face' => trim((string)get_config('quizaccess_proctoring', 'custom_ai_endpoint')) !== ''
-            && trim((string)get_config('quizaccess_proctoring', 'custom_api_key')) !== '',
-        'id' => trim((string)get_config('quizaccess_proctoring', 'idverificationendpoint')) !== ''
-            && trim((string)get_config('quizaccess_proctoring', 'idverificationapikey')) !== '',
-        'ai' => quizaccess_proctoring_ai_review_configured(),
-    ];
+    $presetreadiness = ['settings' => [], 'ai' => quizaccess_proctoring_ai_review_configured()];
+    foreach (['turnstilesitekey', 'turnstilesecretkey', 'custom_ai_endpoint', 'custom_api_key',
+            'idverificationendpoint', 'idverificationapikey'] as $readinesssetting) {
+        $presetreadiness['settings'][$readinesssetting] =
+            trim((string)get_config('quizaccess_proctoring', $readinesssetting)) !== '';
+    }
     $PAGE->requires->js_call_amd('quizaccess_proctoring/adminSettings', 'init', [$presetreadiness]);
 
     $presetdefinitions = [

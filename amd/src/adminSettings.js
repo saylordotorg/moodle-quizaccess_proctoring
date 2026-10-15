@@ -200,31 +200,22 @@ define([], function() {
             return {values: values, skipped: skipped};
         }
 
-        // The live field values where the page has the fields; the server's word where it does
-        // not (the capability holder's page carries no credential or endpoint field, and reading
-        // their absence as "not configured" would switch off checks that are on).
-        const configuredOrServer = function(settings, readinessKey) {
-            let sawabsent = false;
-            const visibleok = settings.every(function(name) {
-                if (getFieldValue(name) === null) {
-                    sawabsent = true;
-                    return true;
-                }
-                // A field the page carries speaks for itself, cleared or filled, even while
-                // its credential partner is absent (CPIT-499 review).
-                return hasConfiguredValue(name);
-            });
-            if (!visibleok) {
-                return false;
+        // Each field speaks for itself where the page carries it, cleared or filled; for a field
+        // the page omits (the capability holder's page has no credential or endpoint inputs) the
+        // server said per setting whether a value is stored, so a credential configured behind
+        // the scenes counts and a visible field just edited counts as edited (CPIT-499 review).
+        const settingConfigured = function(name) {
+            if (getFieldValue(name) === null) {
+                return !!(serverReadiness.settings && serverReadiness.settings[name]);
             }
-            return sawabsent ? !!serverReadiness[readinessKey] : true;
+            return hasConfiguredValue(name);
         };
 
         const turnstileReady = getFieldValue('captchaprovider') === 'turnstile' &&
-            configuredOrServer(['turnstilesitekey', 'turnstilesecretkey'], 'turnstile');
+            ['turnstilesitekey', 'turnstilesecretkey'].every(settingConfigured);
         const faceReady = getFieldValue('fcmethod') === 'customapi' &&
-            configuredOrServer(['custom_ai_endpoint', 'custom_api_key'], 'face');
-        const idReady = configuredOrServer(['idverificationendpoint', 'idverificationapikey'], 'id');
+            ['custom_ai_endpoint', 'custom_api_key'].every(settingConfigured);
+        const idReady = ['idverificationendpoint', 'idverificationapikey'].every(settingConfigured);
         const aiProvider = getFieldValue('aireviewprovider');
         const aiReady = aiProvider === null
             ? !!serverReadiness.ai
