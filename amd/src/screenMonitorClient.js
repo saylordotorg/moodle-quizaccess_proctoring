@@ -199,6 +199,8 @@ define([], function() {
                             ready: true,
                             marker: false,
                             stopped: false,
+                            // What the helper's scan saw, for the page's diagnostics (CPIT-498).
+                            scan: message.scan || null,
                             ts: Date.now()
                         });
                     }

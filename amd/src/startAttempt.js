@@ -3107,10 +3107,18 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             setRequirementStatus('screen', 'action');
                             updatePreflightGate();
                         },
-                        onWrongScreen: function() {
+                        onWrongScreen: function(status) {
+                            // The helper's scan, logged so staff can tell a wrong monitor from a
+                            // black capture or a colour shift (CPIT-498). The client already
+                            // throttles this callback, so the event cannot spam.
+                            const scan = status && status.scan ? status.scan : null;
+                            logPreflightEvent('screen_marker_not_found', scan || {});
                             screenReady = false;
                             setScreenConfirmed(false);
-                            setScreenResult(strings.screenmarkerwrongmonitor, false);
+                            setScreenResult(
+                                scan && scan.blank ? strings.screenmarkerblankshare : strings.screenmarkerwrongmonitor,
+                                false
+                            );
                             setRequirementStatus('screen', 'action');
                             updatePreflightGate();
                         },

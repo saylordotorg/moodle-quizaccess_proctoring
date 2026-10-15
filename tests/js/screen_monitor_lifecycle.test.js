@@ -31,7 +31,7 @@ function helper(options = {}) {
         permissiondenied: 'permissiondenied', captureunavailable: 'captureunavailable',
         windowinactive: 'windowinactive', requestfailed: 'requestfailed',
         playbackfailed: 'playbackfailed', noframes: 'noframes',
-        entirescreenrequired: 'entirescreenrequired', wrongmonitor: 'wrongmonitor'
+        entirescreenrequired: 'entirescreenrequired', wrongmonitor: 'wrongmonitor', blankshare: 'blankshare'
     }};
     const window = {
         localStorage: {setItem() {}},
@@ -83,7 +83,11 @@ function helper(options = {}) {
                 return {
                     getContext: () => ({
                         drawImage() {},
-                        getImageData: () => ({width: 16, height: 16, data: new Uint8ClampedArray(16 * 16 * 4)})
+                        // An ordinary mid-grey screen with no marker on it, unless the test asks
+                        // for the black frame a capture the OS refuses to fill delivers.
+                        getImageData: () => ({width: 16, height: 16, data: options.blackframe
+                            ? new Uint8ClampedArray(16 * 16 * 4)
+                            : new Uint8ClampedArray(16 * 16 * 4).fill(128)})
                     }),
                     toDataURL: () => 'data:image/jpeg;base64,fixture'
                 };
@@ -276,6 +280,23 @@ test('a working entire-screen stream still requires the configured quiz marker',
     assert.equal(env.status.textContent, 'wrongmonitor');
     assert.equal(env.messages.at(-1).marker, false);
     assert.ok(!env.messages.some(message => message.type === 'status' && message.ready && message.marker));
+    env.events.pagehide();
+    assert.equal(track.stopped, true);
+});
+
+test('a share delivering black frames reports the blank-share message with its scan (CPIT-498)', async () => {
+    // A capture the OS will not fill (screen-recording permission) comes through black:
+    // "wrong monitor" sent students hunting for a monitor problem that does not exist.
+    const env = helper({markerrequired: true, blackframe: true});
+    const task = env.share();
+    const track = env.grant(0);
+    await task;
+    assert.equal(track.stopped, false);
+    assert.equal(env.status.textContent, 'blankshare');
+    const missing = env.messages.find(message => message.type === 'marker_missing');
+    assert.ok(missing, 'the quiz page must be told the marker is missing');
+    assert.equal(missing.scan.blank, true, 'the scan must say the frame was blank');
+    assert.ok(missing.scan.luma < 16);
     env.events.pagehide();
     assert.equal(track.stopped, true);
 });
