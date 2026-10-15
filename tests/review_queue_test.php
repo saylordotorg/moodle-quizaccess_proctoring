@@ -254,6 +254,28 @@ final class review_queue_test extends advanced_testcase {
     }
 
     /**
+     * A reviewer enrolled nowhere can still open a quiz page: require_login() on the per-student
+     * report needs the quiz uservisible, which needs mod/quiz:view - enrolled users get it from
+     * their course role, a cross-course reviewer only from this role (CPIT-474, SA testing).
+     */
+    public function test_reviewer_sees_quizzes_without_enrolment(): void {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $quiz = $generator->create_module('quiz', ['course' => $course->id]);
+        $reviewer = $generator->create_user();
+        $role = reviewer_role::ensure();
+        role_assign($role->id, $reviewer->id, \context_system::instance()->id);
+
+        $this->assertTrue(can_access_course($course, $reviewer));
+        $modinfo = get_fast_modinfo($course, $reviewer->id);
+        $this->assertTrue(
+            $modinfo->get_cm($quiz->cmid)->uservisible,
+            'the quiz must be uservisible to a reviewer, or report.php turns them away'
+        );
+    }
+
+    /**
      * Running the role setup again resets the role to exactly its list, with no site configuration.
      */
     public function test_reviewer_role_is_idempotent(): void {
