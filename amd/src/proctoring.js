@@ -792,6 +792,25 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 renderAttemptWarnings();
             };
 
+            /**
+             * The marker's top edge when it sits in the corner: just below Moodle's fixed
+             * navbar, so it never covers the notification and user-menu icons (CPIT-498).
+             */
+            const screenMarkerTop = function() {
+                if (typeof document.querySelector !== 'function') {
+                    return 8;
+                }
+                const navbar = document.querySelector('nav.navbar.fixed-top, .navbar.fixed-top');
+                if (!navbar || typeof navbar.getBoundingClientRect !== 'function') {
+                    return 8;
+                }
+                const bottom = navbar.getBoundingClientRect().bottom;
+                if (!(bottom > 0) || bottom > 160) {
+                    return 8;
+                }
+                return Math.ceil(bottom) + 8;
+            };
+
             const positionScreenMarker = function(markerElement) {
                 if (!markerElement) {
                     return;
@@ -799,7 +818,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 const fallback = function() {
                     markerElement.classList.remove('is-panel-aligned');
-                    markerElement.style.top = '8px';
+                    markerElement.style.top = screenMarkerTop() + 'px';
                     markerElement.style.right = '8px';
                     markerElement.style.left = 'auto';
                     markerElement.style.width = '220px';
