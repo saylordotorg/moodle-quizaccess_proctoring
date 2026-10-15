@@ -38,6 +38,10 @@ class reviewer_role {
         'quizaccess/proctoring:viewreport',
         'quizaccess/proctoring:reviewriskholds',
         'quizaccess/proctoring:manageoverrides',
+        // Enrolled users get this from their course role; a reviewer is enrolled nowhere, and
+        // without it every quiz counts as not uservisible, so require_login() turned the reviewer
+        // away from each per-student report (CPIT-474, Student Affairs testing).
+        'mod/quiz:view',
         'mod/quiz:viewreports',
         'moodle/course:view',
         'moodle/course:viewhiddencourses',

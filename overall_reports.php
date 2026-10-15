@@ -145,6 +145,13 @@ if ($action === 'decideexceptions') {
     }
     $approved = optional_param('approve', 0, PARAM_BOOL);
     $selected = optional_param_array('request', [], PARAM_RAW);
+    // The one-click row links carry a single token under its own name: moodle_url cannot encode
+    // an array value, so building them with 'request' => [$token] crashed the whole queue page
+    // the first time it had a row to show (CPIT-474, Student Affairs testing).
+    $single = optional_param('requesttoken', '', PARAM_RAW);
+    if ($single !== '') {
+        $selected[] = $single;
+    }
     $exceptionsurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', [
         'view' => 'idexceptions',
     ]);
@@ -385,7 +392,7 @@ if ($view === 'idexceptions') {
                 'view' => 'idexceptions',
                 'action' => 'decideexceptions',
                 'approve' => 1,
-                'request' => [$token],
+                'requesttoken' => $token,
                 'sesskey' => sesskey(),
             ]),
             get_string('idexemption:approvebutton', 'quizaccess_proctoring'),
@@ -396,7 +403,7 @@ if ($view === 'idexceptions') {
                 'view' => 'idexceptions',
                 'action' => 'decideexceptions',
                 'approve' => 0,
-                'request' => [$token],
+                'requesttoken' => $token,
                 'sesskey' => sesskey(),
             ]),
             get_string('idexemption:declinebutton', 'quizaccess_proctoring'),
