@@ -20,12 +20,14 @@ namespace quizaccess_proctoring\local;
  * The hold-decision notifications a student was sent, for the per-student report (CPIT-481).
  *
  * Student Affairs asked to see not only the in-exam warnings ({@see student_messages}) but the
- * messages Moodle sent the student about their held grade or certificate. Those go through
- * Moodle messaging, so the words that were sent are already stored in the notifications table;
- * this reads them back rather than keeping a second copy.
+ * messages Moodle sent the student about their held grade or certificate.
  *
- * A notification is matched to the quiz by the cmid the sender records in its custom data, or,
- * for notifications sent before that was recorded, by the quiz link the notification carried.
+ * The sender writes its own notification_sent row in the plugin's events table, because Moodle's
+ * notifications table is not an archive: the "Delete read notifications" cleanup removes read
+ * rows after the site's retention period, which would silently drop exactly the older decisions
+ * an appeal needs (PR #64 review). The notifications table is still read for two things it alone
+ * knows: when Moodle marked the notification read, and the sends from plugin versions that
+ * predate the audit row - those are matched to the quiz by the quiz link they carried.
  *
  * @package    quizaccess_proctoring
  * @copyright  2026 Saylor Academy
@@ -47,26 +49,77 @@ class sent_notifications {
             return [];
         }
 
-        $records = $DB->get_records(
+        // Every hold-decision notification Moodle still has for this student, keyed by id: the
+        // read state for the plugin's own audit rows, and the full row for pre-audit sends.
+        $notifications = $DB->get_records(
             'notifications',
             ['useridto' => $userid, 'component' => 'quizaccess_proctoring', 'eventtype' => 'holddecision'],
-            'timecreated ASC, id ASC',
+            '',
             'id, subject, fullmessage, contexturl, customdata, timeread, timecreated'
         );
 
-        $out = [];
-        foreach ($records as $record) {
-            if (!self::matches_quiz($record, $cmid)) {
-                continue;
+        $rows = [];
+        $audited = [];
+        $events = $DB->get_records(
+            'quizaccess_proctoring_events',
+            ['quizid' => $cmid, 'userid' => $userid, 'eventtype' => 'notification_sent'],
+            'timemodified ASC, id ASC',
+            'id, eventdetail, timemodified'
+        );
+        foreach ($events as $event) {
+            $detail = json_decode((string)$event->eventdetail, true);
+            $detail = is_array($detail) ? $detail : [];
+            $notificationid = (int)($detail['notificationid'] ?? 0);
+            if ($notificationid > 0) {
+                $audited[$notificationid] = true;
             }
-            $out[] = [
-                'sent' => display_time::staff((int)$record->timecreated),
-                'subject' => trim((string)$record->subject),
-                'message' => trim((string)$record->fullmessage),
-                'read' => display_time::staff((int)$record->timeread),
+            $rows[] = [
+                'time' => (int)$event->timemodified,
+                'subject' => trim((string)($detail['subject'] ?? '')),
+                'message' => trim((string)($detail['body'] ?? '')),
+                'read' => self::read_state($notifications[$notificationid] ?? null),
             ];
         }
-        return $out;
+
+        foreach ($notifications as $notification) {
+            if (isset($audited[(int)$notification->id]) || !self::matches_quiz($notification, $cmid)) {
+                continue;
+            }
+            $rows[] = [
+                'time' => (int)$notification->timecreated,
+                'subject' => trim((string)$notification->subject),
+                'message' => trim((string)$notification->fullmessage),
+                'read' => display_time::staff((int)$notification->timeread),
+            ];
+        }
+
+        usort($rows, static function (array $a, array $b): int {
+            return $a['time'] <=> $b['time'];
+        });
+
+        return array_map(static function (array $row): array {
+            return [
+                'sent' => display_time::staff($row['time']),
+                'subject' => $row['subject'],
+                'message' => $row['message'],
+                'read' => $row['read'],
+            ];
+        }, $rows);
+    }
+
+    /**
+     * When Moodle marked a notification read, as the report shows it.
+     *
+     * @param \stdClass|null $notification Notification row, or null when a cleanup removed it.
+     * @return string A date, '' for one still unread, or "no longer recorded" for a removed row -
+     *                Moodle's cleanups delete read notifications after one retention period and
+     *                all notifications after another, so a removed row says nothing either way.
+     */
+    private static function read_state(?\stdClass $notification): string {
+        if ($notification === null) {
+            return get_string('sentnotifications:readunknown', 'quizaccess_proctoring');
+        }
+        return display_time::staff((int)$notification->timeread);
     }
 
     /**

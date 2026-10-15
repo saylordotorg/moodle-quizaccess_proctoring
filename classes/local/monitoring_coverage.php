@@ -39,6 +39,9 @@ final class monitoring_coverage {
         // Warnings shown to the student (CPIT-481): a record of the page, not an action.
         'warning_shown',
         'warning_cleared',
+        // A hold-decision notification sent to the student (CPIT-481): the plugin's own audit
+        // of the send, written by the server after the attempt, never a student action.
+        'notification_sent',
     ];
 
     /**

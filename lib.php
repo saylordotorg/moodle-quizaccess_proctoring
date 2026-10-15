@@ -3100,7 +3100,29 @@ function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $deci
             $message->contexturlname = $a->quiz;
         }
 
-        message_send($message);
+        $messageid = message_send($message);
+
+        // The plugin's own record of the send (CPIT-481). Moodle's notifications table is not an
+        // archive - the "Delete read notifications" cleanup removes read rows after the site's
+        // retention period - so the per-student report reads this row, which keeps the words that
+        // were sent for as long as the attempt's other proctoring records (PR #64 review).
+        if ($messageid) {
+            $DB->insert_record('quizaccess_proctoring_events', (object)[
+                'courseid' => (int)$hold->courseid,
+                'quizid' => (int)$hold->quizid,
+                'userid' => (int)$hold->userid,
+                'attemptid' => (int)$hold->attemptid,
+                'reportid' => 0,
+                'eventtype' => 'notification_sent',
+                'eventdetail' => json_encode([
+                    'decision' => $decision,
+                    'subject' => $subject,
+                    'body' => $body,
+                    'notificationid' => (int)$messageid,
+                ]),
+                'timemodified' => time(),
+            ]);
+        }
     } catch (\Throwable $e) {
         debugging(
             'Unable to send Saylor Proctored Quiz hold decision notification: ' . $e->getMessage(),

@@ -227,7 +227,7 @@ When each is sent, and how:
 - **Hold decisions** (`message:released…`, `message:confirmed…`, `message:autofailed…`) are sent when a reviewer releases or confirms a grade hold, or when a high-risk attempt is automatically failed. They go to the student's Moodle notifications **and** by email; the student can turn either channel off in their own notification preferences (Preferences > Notification preferences > "Proctored quiz review decisions"), and the site can change the defaults. Two site settings control them: "Notify students of grade-hold decisions" (on by default) and "Notify students of automatically released holds" (whether a hold that expires unreviewed also notifies).
 - **Nothing is sent when a hold is created.** While a hold is active the student sees no grade and no certificate, but is not messaged about it; the first message is the decision.
 - **ID exception decisions** (`idexemptionemail:…`) are sent by email only, when staff approve or decline an ID exception request.
-- **Where staff can see what was sent:** the per-student proctoring report lists every hold-decision notification sent to that student for that quiz — when, the exact words, and when the student read it in Moodle. Moodle's site logs also record a "Notification sent" event for each one.
+- **Where staff can see what was sent:** the per-student proctoring report lists every hold-decision notification sent to that student for that quiz — when, the exact words, and when Moodle marked it read (opening it or "Mark all as read" both do that). The plugin keeps its own record of each send, so the list survives Moodle's notification cleanup. Moodle's site logs also record a "Notification sent" event for each one.
 
 | String key | Text |
 | --- | --- |

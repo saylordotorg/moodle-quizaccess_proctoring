@@ -71,6 +71,22 @@ final class sent_notifications_test extends advanced_testcase {
     }
 
     /**
+     * Insert the plugin's own audit row for a send.
+     *
+     * @param int $userid Student.
+     * @param array $detail Event detail.
+     * @param int $time Send time.
+     * @param int $cmid Quiz course-module id.
+     */
+    private function auditrow(int $userid, array $detail, int $time, int $cmid = 90): void {
+        global $DB;
+        $DB->insert_record('quizaccess_proctoring_events', (object)[
+            'courseid' => 7, 'quizid' => $cmid, 'userid' => $userid, 'attemptid' => 3, 'reportid' => 0,
+            'eventtype' => 'notification_sent', 'eventdetail' => json_encode($detail), 'timemodified' => $time,
+        ]);
+    }
+
+    /**
      * The list holds this quiz's hold-decision notifications, matched by cmid or quiz link.
      */
     public function test_lists_only_this_quizs_notifications(): void {
@@ -116,6 +132,54 @@ final class sent_notifications_test extends advanced_testcase {
     }
 
     /**
+     * The plugin's own audit row keeps a send listed after Moodle's notification cleanup, and a
+     * send recorded in both places is listed once, with the read state from the notification.
+     */
+    public function test_audit_rows_survive_notification_cleanup(): void {
+        $this->resetAfterTest();
+        $user = $this->getDataGenerator()->create_user();
+        $userid = (int)$user->id;
+        $now = time();
+
+        // Still in the notifications table, read: listed once, with the read time.
+        $keptid = $this->notification($userid, [
+            'customdata' => json_encode(['cmid' => 90]),
+            'timecreated' => $now - 500,
+            'timeread' => $now - 400,
+        ]);
+        $this->auditrow($userid, [
+            'decision' => 'released',
+            'subject' => 'Kept subject',
+            'body' => 'Kept body.',
+            'notificationid' => $keptid,
+        ], $now - 500);
+        // The cleanup removed this one; only the audit row remains.
+        $this->auditrow($userid, [
+            'decision' => 'confirmed',
+            'subject' => 'Purged subject',
+            'body' => 'Purged body.',
+            'notificationid' => $keptid + 1000,
+        ], $now - 200);
+        // Another quiz's audit row is not listed.
+        $this->auditrow($userid, [
+            'decision' => 'released', 'subject' => 'Other quiz', 'body' => 'x', 'notificationid' => 0,
+        ], $now - 100, 91);
+
+        $rows = sent_notifications::for_student(90, $userid);
+
+        $this->assertCount(2, $rows);
+        $this->assertSame('Kept subject', $rows[0]['subject']);
+        $this->assertSame('Kept body.', $rows[0]['message']);
+        $this->assertNotSame('', $rows[0]['read']);
+        $this->assertSame('Purged subject', $rows[1]['subject']);
+        $this->assertSame(
+            get_string('sentnotifications:readunknown', 'quizaccess_proctoring'),
+            $rows[1]['read'],
+            'a purged notification cannot say whether it was read'
+        );
+    }
+
+    /**
      * A hold-decision send records which quiz and attempt it was about.
      */
     public function test_notify_hold_decision_records_the_quiz(): void {
@@ -146,5 +210,25 @@ final class sent_notifications_test extends advanced_testcase {
         $this->assertSame((int)$course->id, (int)$custom['courseid']);
         $this->assertSame(12345, (int)$custom['attemptid']);
         $this->assertSame('released', $custom['decision']);
+
+        // The plugin's own audit row, so the send outlives Moodle's notification cleanup.
+        global $DB;
+        $events = $DB->get_records('quizaccess_proctoring_events',
+            ['eventtype' => 'notification_sent', 'userid' => (int)$user->id]);
+        $this->assertCount(1, $events);
+        $event = reset($events);
+        $this->assertSame((int)$quiz->cmid, (int)$event->quizid);
+        $this->assertSame(12345, (int)$event->attemptid);
+        $detail = json_decode((string)$event->eventdetail, true);
+        $this->assertSame('released', $detail['decision']);
+        $this->assertSame((int)$messages[0]->id, (int)$detail['notificationid']);
+        $this->assertNotSame('', trim((string)$detail['subject']));
+        $this->assertNotSame('', trim((string)$detail['body']));
+
+        // And the report lists the send from that row alone, as after a cleanup.
+        $DB->delete_records('notifications', ['id' => (int)$messages[0]->id]);
+        $rows = \quizaccess_proctoring\local\sent_notifications::for_student((int)$quiz->cmid, (int)$user->id);
+        $this->assertCount(1, $rows);
+        $this->assertSame($detail['subject'], $rows[0]['subject']);
     }
 }
