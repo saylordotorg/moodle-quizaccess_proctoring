@@ -2,6 +2,11 @@ define([], function() {
     const controlsId = 'quizaccess-proctoring-admin-controls';
     const pluginPrefix = 's_quizaccess_proctoring_';
 
+    // Whether each provider is configured, told by the server: the capability holder's page has
+    // no credential or endpoint fields to read, so the preset logic cannot conclude anything
+    // from their absence (CPIT-499 review).
+    let serverReadiness = {};
+
     const primarySettings = {
         precheck: [
             'readinessenabled',
@@ -195,19 +200,31 @@ define([], function() {
             return {values: values, skipped: skipped};
         }
 
+        // Each field speaks for itself where the page carries it, cleared or filled; for a field
+        // the page omits (the capability holder's page has no credential or endpoint inputs) the
+        // server said per setting whether a value is stored, so a credential configured behind
+        // the scenes counts and a visible field just edited counts as edited (CPIT-499 review).
+        const settingConfigured = function(name) {
+            if (getFieldValue(name) === null) {
+                return !!(serverReadiness.settings && serverReadiness.settings[name]);
+            }
+            return hasConfiguredValue(name);
+        };
+
         const turnstileReady = getFieldValue('captchaprovider') === 'turnstile' &&
-            hasConfiguredValue('turnstilesitekey') && hasConfiguredValue('turnstilesecretkey');
+            ['turnstilesitekey', 'turnstilesecretkey'].every(settingConfigured);
         const faceReady = getFieldValue('fcmethod') === 'customapi' &&
-            hasConfiguredValue('custom_ai_endpoint') && hasConfiguredValue('custom_api_key');
-        const idReady = hasConfiguredValue('idverificationendpoint') &&
-            hasConfiguredValue('idverificationapikey');
+            ['custom_ai_endpoint', 'custom_api_key'].every(settingConfigured);
+        const idReady = ['idverificationendpoint', 'idverificationapikey'].every(settingConfigured);
         const aiProvider = getFieldValue('aireviewprovider');
-        const aiReady = (aiProvider === 'openai' && hasConfiguredValue('aireviewopenaiapikey') &&
+        const aiReady = aiProvider === null
+            ? !!serverReadiness.ai
+            : ((aiProvider === 'openai' && hasConfiguredValue('aireviewopenaiapikey') &&
                 hasConfiguredValue('aireviewopenaimodel')) ||
             (aiProvider === 'anthropic' && hasConfiguredValue('aireviewanthropicapikey') &&
                 hasConfiguredValue('aireviewanthropicmodel')) ||
             (aiProvider === 'compatible' && hasConfiguredValue('aireviewcompatibleendpoint') &&
-                hasConfiguredValue('aireviewcompatiblemodel'));
+                hasConfiguredValue('aireviewcompatiblemodel')));
 
         values.captchabeforeattemptenabled = turnstileReady;
         values.fcheckstartchk = faceReady;
@@ -603,10 +620,20 @@ define([], function() {
 
     const matchesPreset = function(key) {
         const preset = getPresetConfiguration(key).values;
-        return Object.keys(preset).every(function(setting) {
+        let seen = 0;
+        const matched = Object.keys(preset).every(function(setting) {
             const current = getFieldValue(setting);
-            return current !== null && current === preset[setting];
+            if (current === null) {
+                // A field this page does not carry (the capability holder's page has no AI
+                // review section): applying the preset cannot change it, so it cannot count
+                // against the match either (CPIT-499 review).
+                return true;
+            }
+            seen++;
+            return current === preset[setting];
         });
+        // A preset the page carries nothing of matches nothing.
+        return matched && seen > 0;
     };
 
     const findActivePreset = function() {
@@ -751,7 +778,8 @@ define([], function() {
     };
 
     return {
-        init: function() {
+        init: function(readiness) {
+            serverReadiness = readiness || {};
             ready(function() {
                 const controls = document.getElementById(controlsId);
                 const fieldset = getSettingsFieldset(controls);

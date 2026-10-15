@@ -106,7 +106,19 @@ if ($canmanageproctoring) {
         }));
     }
 
-    $PAGE->requires->js_call_amd('quizaccess_proctoring/adminSettings', 'init');
+    // Whether each credential setting is configured, as a boolean per setting and never the
+    // value: the capability holder's page has no credential or endpoint fields for the preset
+    // logic to read, so for each absent field it takes the server's word, while a field the page
+    // does carry keeps speaking for itself (CPIT-499 review). The AI review section is absent as
+    // a whole, so its readiness is one flag.
+    require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+    $presetreadiness = ['settings' => [], 'ai' => quizaccess_proctoring_ai_review_configured()];
+    foreach (['turnstilesitekey', 'turnstilesecretkey', 'custom_ai_endpoint', 'custom_api_key',
+            'idverificationendpoint', 'idverificationapikey'] as $readinesssetting) {
+        $presetreadiness['settings'][$readinesssetting] =
+            trim((string)get_config('quizaccess_proctoring', $readinesssetting)) !== '';
+    }
+    $PAGE->requires->js_call_amd('quizaccess_proctoring/adminSettings', 'init', [$presetreadiness]);
 
     $presetdefinitions = [
         [
@@ -440,16 +452,19 @@ if ($canmanageproctoring) {
         $choices
     ));
 
-    $settings->add(new admin_setting_configtext(
-        'quizaccess_proctoring/custom_ai_endpoint',
-        get_string('setting:custom_ai_endpoint', 'quizaccess_proctoring'),
-        get_string('setting:custom_ai_endpoint_desc', 'quizaccess_proctoring'),
-        '',
-        PARAM_URL
-    ));
-
-    // Credential field: site administrators only.
+    // The endpoint is as sensitive as the key it is used with: the server sends the stored
+    // API key (and the webcam images) to whatever URL stands here, so a capability holder who
+    // could repoint it would receive both. Site administrators only, like the key (PR review).
     if ($hassiteconfig) {
+        $settings->add(new admin_setting_configtext(
+            'quizaccess_proctoring/custom_ai_endpoint',
+            get_string('setting:custom_ai_endpoint', 'quizaccess_proctoring'),
+            get_string('setting:custom_ai_endpoint_desc', 'quizaccess_proctoring'),
+            '',
+            PARAM_URL
+        ));
+
+        // Credential field: site administrators only.
         $settings->add(new admin_setting_configpasswordunmask(
             'quizaccess_proctoring/custom_api_key',
             get_string('setting:custom_api_key', 'quizaccess_proctoring'),
@@ -472,16 +487,18 @@ if ($canmanageproctoring) {
         0
     ));
 
-    $settings->add(new admin_setting_configtext(
-        'quizaccess_proctoring/idverificationendpoint',
-        get_string('setting:idverificationendpoint', 'quizaccess_proctoring'),
-        get_string('setting:idverificationendpoint_desc', 'quizaccess_proctoring'),
-        '',
-        PARAM_URL
-    ));
-
-    // Credential field: site administrators only.
+    // The endpoint travels with the key: ID images and the stored API key are sent to this URL,
+    // so repointing it would hand both to the new host. Site administrators only (PR review).
     if ($hassiteconfig) {
+        $settings->add(new admin_setting_configtext(
+            'quizaccess_proctoring/idverificationendpoint',
+            get_string('setting:idverificationendpoint', 'quizaccess_proctoring'),
+            get_string('setting:idverificationendpoint_desc', 'quizaccess_proctoring'),
+            '',
+            PARAM_URL
+        ));
+
+        // Credential field: site administrators only.
         $settings->add(new admin_setting_configpasswordunmask(
             'quizaccess_proctoring/idverificationapikey',
             get_string('setting:idverificationapikey', 'quizaccess_proctoring'),

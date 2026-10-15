@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.26 — 2026-10-15
+- **Managers can edit the proctoring settings without site administration.** The `quizaccess/proctoring:manageadminsettings` capability (1.8.0, granted to managers by default) was meant to open the settings, but Moodle only builds the module settings tree for `moodle/site:config` holders, so `/admin/settings.php?section=modsettingsquizcatproctoring` was never in a capability holder's tree (the 1.10.2 known limitation). The plugin now serves the same pages itself at `/mod/quiz/accessrule/proctoring/adminsettings.php`: the settings and the risk factor scoring pages, built from the same `settings.php`, saved with the same validation and config-change logging, with tabs to Overall reports and the users list. Credential fields (Turnstile secret, AI and ID verification API keys) and the whole AI review section are never built for a capability holder — not hidden, absent — exactly as before. A site administrator opening the page is sent to the real admin page. Capability holders get a "Proctoring settings" link on their profile, next to the review-queue link. Tests pin that both pages grant the capability holder, refuse everyone else, carry no credential field, and that saving writes only the settings the page defines.
+
 # v1.12.25 — 2026-10-15
 - **The Screen check box no longer covers the corner menus (CPIT-498).** Student Affairs' actual complaint: the box sat in the very top right corner, over Moodle's search, notification and user-menu icons. It now sits just below the fixed navbar — on the exam setup page, and wherever the attempt page's marker falls back to the corner (the attempt page otherwise keeps docking it beside the quiz navigation). It must stay somewhere on screen: it is what the screen check looks for in the shared screen.
 
