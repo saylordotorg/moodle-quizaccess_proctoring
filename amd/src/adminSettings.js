@@ -619,10 +619,20 @@ define([], function() {
 
     const matchesPreset = function(key) {
         const preset = getPresetConfiguration(key).values;
-        return Object.keys(preset).every(function(setting) {
+        let seen = 0;
+        const matched = Object.keys(preset).every(function(setting) {
             const current = getFieldValue(setting);
-            return current !== null && current === preset[setting];
+            if (current === null) {
+                // A field this page does not carry (the capability holder's page has no AI
+                // review section): applying the preset cannot change it, so it cannot count
+                // against the match either (CPIT-499 review).
+                return true;
+            }
+            seen++;
+            return current === preset[setting];
         });
+        // A preset the page carries nothing of matches nothing.
+        return matched && seen > 0;
     };
 
     const findActivePreset = function() {
