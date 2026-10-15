@@ -143,9 +143,10 @@ Generated from `lang/en/quizaccess_proctoring.php`; `{$a}` and `{$a->...}` are f
 | `referencereset:reasonrequired` | Enter a reason to reset the reference photo. |
 | `referencereset:submit` | Reset the photo |
 | `referenceunusable` | Your saved reference photo does not show a face, so it cannot be matched. Contact support and ask for your proctoring reference photo to be replaced. |
+| `screenmarkerblankshare` | Your shared screen is coming through black, so it cannot be checked. Make sure your computer allows this browser to record the screen (on a Mac: System Settings > Privacy & Security > Screen Recording), then quit and reopen the browser and share again. |
 | `screenmarkerchecking` | Checking the shared screen. Keep this quiz window in front so the screen check marker stays visible. |
 | `screenmarkerlabel` | Screen check |
-| `screenmarkerwrongmonitor` | The shared screen does not show this quiz page. Move the quiz window to the shared monitor or share the monitor containing the quiz. |
+| `screenmarkerwrongmonitor` | The shared screen does not show this quiz page. Move the quiz window to the shared monitor or share the monitor containing the quiz. If the quiz is already on the shared screen, keep the "Screen check" box visible (not covered by another window), turn off Night Shift, True Tone or other colour filters on the display, and try again. |
 | `screenshareaccepted` | Entire screen shared. You can continue. |
 | `screensharedenied` | Screen sharing was cancelled or blocked. Share your entire screen to continue. |
 | `screensharenotonmobile` | Screen sharing is not available on phones or tablets, in any browser. To take this exam, use a Windows or Mac computer with Chrome or Edge. If you cannot use a computer, contact student support. |

@@ -435,6 +435,9 @@ class quizaccess_proctoring_external extends external_api {
             // What the page told the student, and when it stopped (CPIT-481). Never scored.
             'warning_shown',
             'warning_cleared',
+            // What the precheck's screen scan saw when it rejected a share, so staff can tell a
+            // wrong monitor from a black capture or a colour shift (CPIT-498). Never scored.
+            'screen_marker_not_found',
             ];
 
             if (!in_array($eventtype, $allowedevents, true)) {

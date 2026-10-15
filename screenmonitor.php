@@ -59,6 +59,7 @@ $config = [
         'unsupported' => get_string('screenmonitor:unsupported', 'quizaccess_proctoring'),
         'notonmobile' => get_string('screensharenotonmobile', 'quizaccess_proctoring'),
         'wrongmonitor' => get_string('screenmonitor:wrongmonitor', 'quizaccess_proctoring'),
+        'blankshare' => get_string('screenmarkerblankshare', 'quizaccess_proctoring'),
         'permissiondenied' => get_string('screenmonitor:permissiondenied', 'quizaccess_proctoring'),
         'captureunavailable' => get_string('screenmonitor:captureunavailable', 'quizaccess_proctoring'),
         'windowinactive' => get_string('screenmonitor:windowinactive', 'quizaccess_proctoring'),
@@ -195,11 +196,16 @@ $js = <<<JS
                 const blue = data[offset + 2];
                 let color = '';
 
-                if (red > 210 && green < 90 && blue > 150) {
+                // Tolerances sit ~55-110 per channel off the pure swatch colours
+                // (#ff00cc, #00ffcc, #ffe600): Night Shift, True Tone and colour-managed
+                // captures warm or shift a legitimate share, and all three hues must
+                // still land together in one search window, so the widening does not
+                // let ordinary desktop content pass (CPIT-498).
+                if (red > 200 && green < 110 && blue > 140) {
                     color = 'magenta';
-                } else if (red < 90 && green > 180 && blue > 150) {
+                } else if (red < 110 && green > 170 && blue > 140) {
                     color = 'cyan';
-                } else if (red > 210 && green > 180 && blue < 90) {
+                } else if (red > 200 && green > 170 && blue < 110) {
                     color = 'yellow';
                 }
 
@@ -216,6 +222,11 @@ $js = <<<JS
         return tiles;
     };
 
+    // What the last scan saw, sent along when the marker is missing: a wrong monitor,
+    // a black capture and a colour shift each read differently in these numbers, and
+    // the precheck logs them so staff can diagnose a rejected share (CPIT-498).
+    let lastMarkerScan = null;
+
     const sharedScreenContainsMarker = function() {
         // Nothing is drawn over the quiz to look for, so an entire-screen share is all
         // that was asked for. Reporting it as present keeps the quiz page's readiness
@@ -226,6 +237,7 @@ $js = <<<JS
 
         const imageData = drawFrame(true);
         if (!imageData) {
+            lastMarkerScan = {noframe: true};
             return false;
         }
 
@@ -234,6 +246,31 @@ $js = <<<JS
         const maxTileX = Math.ceil(imageData.width / tileSize);
         const maxTileY = Math.ceil(imageData.height / tileSize);
         const search = markerSearchGeometry(imageData.width, tileSize);
+
+        const data = imageData.data;
+        let lumasum = 0;
+        let lumacount = 0;
+        for (let offset = 0; offset < data.length; offset += 32) {
+            lumasum += (data[offset] + data[offset + 1] + data[offset + 2]) / 3;
+            lumacount++;
+        }
+        const scan = {
+            width: imageData.width,
+            height: imageData.height,
+            luma: lumacount ? Math.round(lumasum / lumacount) : 0,
+            needed: search.minSamples,
+            magenta: 0,
+            cyan: 0,
+            yellow: 0,
+            bestwindow: 0,
+        };
+        Object.keys(tiles).forEach(function(key) {
+            scan.magenta += tiles[key].magenta;
+            scan.cyan += tiles[key].cyan;
+            scan.yellow += tiles[key].yellow;
+        });
+        scan.blank = scan.luma < 16;
+        lastMarkerScan = scan;
 
         for (let tileY = 0; tileY < maxTileY; tileY++) {
             for (let tileX = 0; tileX < maxTileX; tileX++) {
@@ -251,6 +288,10 @@ $js = <<<JS
                     }
                 }
 
+                scan.bestwindow = Math.max(
+                    scan.bestwindow,
+                    Math.min(totals.magenta, Math.min(totals.cyan, totals.yellow))
+                );
                 if (totals.magenta >= search.minSamples && totals.cyan >= search.minSamples &&
                         totals.yellow >= search.minSamples) {
                     return true;
@@ -266,12 +307,16 @@ $js = <<<JS
     };
 
     const buildStatus = function() {
+        const markercurrent = ready ? markerIsCurrent() : false;
         return {
             type: 'status',
             ready: ready,
-            marker: ready ? markerIsCurrent() : false,
+            marker: markercurrent,
             stopped: stopped,
             displaySurface: displaySurface,
+            // What the scan saw while the marker is missing, so the quiz page can log it
+            // and tell a black capture from a wrong monitor (CPIT-498).
+            scan: (ready && !markercurrent) ? lastMarkerScan : null,
             ts: Date.now()
         };
     };
@@ -360,11 +405,13 @@ $js = <<<JS
             lastMarkerSeen = Date.now();
             setStatus(config.strings.ready, 'success');
         } else if (!markerIsCurrent()) {
-            setStatus(config.strings.wrongmonitor, 'danger');
+            const blankshare = lastMarkerScan && lastMarkerScan.blank;
+            setStatus(blankshare ? config.strings.blankshare : config.strings.wrongmonitor, 'danger');
             if (channel && Date.now() - lastMarkerMissingMessage > markerMissingNotifyMs) {
                 lastMarkerMissingMessage = Date.now();
                 channel.postMessage({
                     type: 'marker_missing',
+                    scan: lastMarkerScan,
                     ts: Date.now()
                 });
             }

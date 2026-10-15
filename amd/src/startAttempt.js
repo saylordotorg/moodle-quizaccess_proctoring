@@ -85,6 +85,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'preflight:cancelwithdraw', component: 'quizaccess_proctoring'},
                 {key: 'preflight:cancelwithdrawtitle', component: 'quizaccess_proctoring'},
                 {key: 'screensharenotonmobile', component: 'quizaccess_proctoring'},
+                {key: 'screenmarkerblankshare', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -144,6 +145,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     preflightcancelwithdraw: strings[52],
                     preflightcancelwithdrawtitle: strings[53],
                     screensharenotonmobile: strings[54],
+                    screenmarkerblankshare: strings[55],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -2944,11 +2946,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             const blue = data[offset + 2];
                             let color = '';
 
-                            if (red > 210 && green < 90 && blue > 150) {
+                            // Tolerances sit ~55-110 per channel off the pure swatch colours
+                            // (#ff00cc, #00ffcc, #ffe600): Night Shift, True Tone and colour-managed
+                            // captures warm or shift a legitimate share, and all three hues must
+                            // still land together in one search window, so the widening does not
+                            // let ordinary desktop content pass (CPIT-498).
+                            if (red > 200 && green < 110 && blue > 140) {
                                 color = 'magenta';
-                            } else if (red < 90 && green > 180 && blue > 150) {
+                            } else if (red < 110 && green > 170 && blue > 140) {
                                 color = 'cyan';
-                            } else if (red > 210 && green > 180 && blue < 90) {
+                            } else if (red > 200 && green > 170 && blue < 110) {
                                 color = 'yellow';
                             }
 
@@ -2965,6 +2972,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return tiles;
                 };
 
+                /**
+                 * What the last marker scan actually saw, for the student's message and the
+                 * diagnostic event when the check fails: a share can be wrong (no quiz on it),
+                 * black (the browser may not record the screen), or colour-shifted, and the
+                 * rejection looked the same for all three (CPIT-498).
+                 */
+                let lastMarkerScan = null;
+
                 const sharedScreenContainsMarker = function() {
                     if (!screenMarkerRequired) {
                         return true;
@@ -2972,6 +2987,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                     const imageData = drawScreenFrame();
                     if (!imageData) {
+                        lastMarkerScan = {noframe: true};
                         return false;
                     }
 
@@ -2980,6 +2996,34 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     const maxTileX = Math.ceil(imageData.width / tileSize);
                     const maxTileY = Math.ceil(imageData.height / tileSize);
                     const search = markerSearchGeometry(imageData.width, tileSize);
+
+                    // Mean brightness of the frame, sampled sparsely: a black frame means the
+                    // screen is not really being captured, which is its own problem with its
+                    // own fix, not a wrong monitor.
+                    const data = imageData.data;
+                    let lumasum = 0;
+                    let lumacount = 0;
+                    for (let offset = 0; offset < data.length; offset += 32) {
+                        lumasum += (data[offset] + data[offset + 1] + data[offset + 2]) / 3;
+                        lumacount++;
+                    }
+                    const scan = {
+                        width: imageData.width,
+                        height: imageData.height,
+                        luma: lumacount ? Math.round(lumasum / lumacount) : 0,
+                        needed: search.minSamples,
+                        magenta: 0,
+                        cyan: 0,
+                        yellow: 0,
+                        bestwindow: 0,
+                    };
+                    Object.keys(tiles).forEach(function(key) {
+                        scan.magenta += tiles[key].magenta;
+                        scan.cyan += tiles[key].cyan;
+                        scan.yellow += tiles[key].yellow;
+                    });
+                    scan.blank = scan.luma < 16;
+                    lastMarkerScan = scan;
 
                     for (let tileY = 0; tileY < maxTileY; tileY++) {
                         for (let tileX = 0; tileX < maxTileX; tileX++) {
@@ -2997,6 +3041,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                                 }
                             }
 
+                            scan.bestwindow = Math.max(
+                                scan.bestwindow,
+                                Math.min(totals.magenta, Math.min(totals.cyan, totals.yellow))
+                            );
                             if (totals.magenta >= search.minSamples && totals.cyan >= search.minSamples &&
                                     totals.yellow >= search.minSamples) {
                                 return true;
@@ -3059,10 +3107,18 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             setRequirementStatus('screen', 'action');
                             updatePreflightGate();
                         },
-                        onWrongScreen: function() {
+                        onWrongScreen: function(status) {
+                            // The helper's scan, logged so staff can tell a wrong monitor from a
+                            // black capture or a colour shift (CPIT-498). The client already
+                            // throttles this callback, so the event cannot spam.
+                            const scan = status && status.scan ? status.scan : null;
+                            logPreflightEvent('screen_marker_not_found', scan || {});
                             screenReady = false;
                             setScreenConfirmed(false);
-                            setScreenResult(strings.screenmarkerwrongmonitor, false);
+                            setScreenResult(
+                                scan && scan.blank ? strings.screenmarkerblankshare : strings.screenmarkerwrongmonitor,
+                                false
+                            );
                             setRequirementStatus('screen', 'action');
                             updatePreflightGate();
                         },
@@ -3161,8 +3217,17 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         setScreenResult(strings.screenmarkerchecking, true);
                     }
                     if (!await waitForSharedScreenMarker()) {
+                        // What the scan saw, for staff: a black capture, a colour shift and a
+                        // genuinely wrong monitor each read differently in these numbers, and
+                        // without them a rejected share cannot be diagnosed from a ticket
+                        // (CPIT-498). Never a screenshot - no attempt exists yet.
+                        logPreflightEvent('screen_marker_not_found', lastMarkerScan || {});
                         stopScreenStream();
-                        setScreenResult(strings.screenmarkerwrongmonitor, false);
+                        const blankshare = lastMarkerScan && lastMarkerScan.blank;
+                        setScreenResult(
+                            blankshare ? strings.screenmarkerblankshare : strings.screenmarkerwrongmonitor,
+                            false
+                        );
                         setRequirementStatus('screen', 'action');
                         screenReady = false;
                         setScreenConfirmed(false);
