@@ -136,7 +136,7 @@ $js = <<<JS
     // which matters because a wider window would otherwise make coincidental matches on
     // colourful desktop content easier. Kept in step with the AMD modules' copies.
     const markerSearchGeometry = function(frameWidth, tileSize) {
-        const fallback = {tilesX: 6, tilesY: 4, minSamples: 18};
+        const fallback = {tilesX: 6, tilesY: 4, minSamples: 18, swatchwidth: 0, swatchheight: 0, spacing: 0};
         const screenWidth = window.screen ? window.screen.width : 0;
         if (!screenWidth || !frameWidth || !tileSize) {
             return fallback;
@@ -157,7 +157,12 @@ $js = <<<JS
             tilesY: Math.min(12, Math.max(4, Math.ceil(swatchHeight / tileSize) + 1)),
             minSamples: Math.max(18, Math.round(
                 Math.floor(swatchWidth / 2) * Math.floor(swatchHeight / 2) * 0.35
-            ))
+            )),
+            swatchwidth: swatchWidth,
+            swatchheight: swatchHeight,
+            // Centre-to-centre distance between neighbouring swatches: the 58px swatch plus
+            // the 6px gap, in captured pixels.
+            spacing: (58 + 6) * scale
         };
     };
 
@@ -182,6 +187,31 @@ $js = <<<JS
         return imageDataOnly ? context.getImageData(0, 0, targetWidth, targetHeight) : canvas.toDataURL('image/jpeg', 0.75);
     };
 
+    // Each colour passes by its box (~55-110 per channel off the pure
+    // swatch colours #ff00cc, #00ffcc, #ffe600) or by its hue shape
+    // (which channels dominate which): dev diagnostics on a real
+    // rejected share showed the whole frame warmed - blue halved, as
+    // Windows Night light does at scanout - so magenta and cyan, which
+    // both needed blue above 140, vanished while yellow survived. A hue
+    // judged by its internal contrasts survives uniform warming and
+    // dimming; windowLooksLikeMarker() keeps the widened hues from
+    // matching ordinary content (CPIT-498).
+    const classifyMarkerPixel = function(red, green, blue) {
+        if ((red > 200 && green < 110 && blue > 140)
+                || (red > 180 && blue > 100 && green < blue - 60 && green < red - 80)) {
+            return 'magenta';
+        }
+        if ((red < 110 && green > 170 && blue > 140)
+                || (green > 160 && blue > 100 && red < blue - 40 && red < green - 80)) {
+            return 'cyan';
+        }
+        if ((red > 200 && green > 170 && blue < 110)
+                || (red > 180 && green > 160 && blue < green - 80)) {
+            return 'yellow';
+        }
+        return '';
+    };
+
     const countMarkerTiles = function(imageData, tileSize) {
         const data = imageData.data;
         const width = imageData.width;
@@ -194,27 +224,7 @@ $js = <<<JS
                 const red = data[offset];
                 const green = data[offset + 1];
                 const blue = data[offset + 2];
-                let color = '';
-
-                // Each colour passes by its box (~55-110 per channel off the pure
-                // swatch colours #ff00cc, #00ffcc, #ffe600) or by its hue shape
-                // (which channels dominate which): dev diagnostics on a real
-                // rejected share showed the whole frame warmed - blue halved, as
-                // Windows Night light does at scanout - so magenta and cyan, which
-                // both needed blue above 140, vanished while yellow survived. A hue
-                // judged by its internal contrasts survives uniform warming and
-                // dimming; the three-hues-in-one-window and area floors still keep
-                // ordinary content from matching (CPIT-498).
-                if ((red > 200 && green < 110 && blue > 140)
-                        || (red > 180 && blue > 100 && green < blue - 60 && green < red - 80)) {
-                    color = 'magenta';
-                } else if ((red < 110 && green > 170 && blue > 140)
-                        || (green > 160 && blue > 100 && red < blue - 40 && red < green - 80)) {
-                    color = 'cyan';
-                } else if ((red > 200 && green > 170 && blue < 110)
-                        || (red > 180 && green > 160 && blue < green - 80)) {
-                    color = 'yellow';
-                }
+                const color = classifyMarkerPixel(red, green, blue);
 
                 if (!color) {
                     continue;
@@ -233,6 +243,62 @@ $js = <<<JS
     // a black capture and a colour shift each read differently in these numbers, and
     // the precheck logs them so staff can diagnose a rejected share (CPIT-498).
     let lastMarkerScan = null;
+
+    /**
+     * Whether the classified pixels in one window are arranged like the marker: three
+     * patches on one baseline, ordered magenta, cyan, yellow, at roughly the swatch row's
+     * spacing. Colour totals alone would accept any screen showing the three hues near
+     * each other - common interface colours classify under the hue-shape rules - and the
+     * arrangement is what only the marker has (PR #69 review). Without a screen width to
+     * scale against, the expected arrangement is unknown and the totals decide as they
+     * always have. Kept in step with the AMD modules' copies.
+     */
+    const windowLooksLikeMarker = function(imageData, startX, startY, windowWidth, windowHeight, search) {
+        if (!search.spacing) {
+            return true;
+        }
+        const data = imageData.data;
+        const width = imageData.width;
+        const endX = Math.min(width, startX + windowWidth);
+        const endY = Math.min(imageData.height, startY + windowHeight);
+        const stats = {
+            magenta: {count: 0, sumx: 0, sumy: 0},
+            cyan: {count: 0, sumx: 0, sumy: 0},
+            yellow: {count: 0, sumx: 0, sumy: 0}
+        };
+        for (let y = Math.max(0, startY); y < endY; y += 2) {
+            for (let x = Math.max(0, startX); x < endX; x += 2) {
+                const offset = ((y * width) + x) * 4;
+                const color = classifyMarkerPixel(data[offset], data[offset + 1], data[offset + 2]);
+                if (color) {
+                    stats[color].count++;
+                    stats[color].sumx += x;
+                    stats[color].sumy += y;
+                }
+            }
+        }
+        if (stats.magenta.count < search.minSamples || stats.cyan.count < search.minSamples
+                || stats.yellow.count < search.minSamples) {
+            return false;
+        }
+        const cx = function(s) {
+            return s.sumx / s.count;
+        };
+        const cy = function(s) {
+            return s.sumy / s.count;
+        };
+        // One baseline: the three patches sit on the same row, give or take a swatch.
+        if (Math.abs(cy(stats.magenta) - cy(stats.cyan)) > search.swatchheight
+                || Math.abs(cy(stats.cyan) - cy(stats.yellow)) > search.swatchheight) {
+            return false;
+        }
+        // In the marker's order, at roughly the marker's spacing.
+        const gapone = cx(stats.cyan) - cx(stats.magenta);
+        const gaptwo = cx(stats.yellow) - cx(stats.cyan);
+        const mingap = search.spacing * 0.4;
+        const maxgap = search.spacing * 2.2;
+        return gapone >= mingap && gapone <= maxgap && gaptwo >= mingap && gaptwo <= maxgap;
+    };
 
     const sharedScreenContainsMarker = function() {
         // Nothing is drawn over the quiz to look for, so an entire-screen share is all
@@ -301,7 +367,10 @@ $js = <<<JS
                 );
                 if (totals.magenta >= search.minSamples && totals.cyan >= search.minSamples &&
                         totals.yellow >= search.minSamples) {
-                    return true;
+                    if (windowLooksLikeMarker(imageData, tileX * tileSize, tileY * tileSize,
+                            search.tilesX * tileSize, search.tilesY * tileSize, search)) {
+                        return true;
+                    }
                 }
             }
         }
