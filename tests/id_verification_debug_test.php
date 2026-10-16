@@ -54,7 +54,7 @@ final class id_verification_debug_test extends advanced_testcase {
      * @param array $overrides Fields to change.
      * @return array
      */
-    private function result(array $overrides = []): array {
+    private function providerresult(array $overrides = []): array {
         return $overrides + [
             'status' => 'pass',
             'facescore' => 94,
@@ -85,7 +85,7 @@ final class id_verification_debug_test extends advanced_testcase {
      * A clean pass explains both gates and the extraction.
      */
     public function test_pass_shows_extraction_and_both_gates(): void {
-        $text = $this->panel($this->result());
+        $text = $this->panel($this->providerresult());
 
         $this->assertStringContainsString('LINDSAY RICE', $text);
         $this->assertStringContainsString('Lindsay Rice', $text);
@@ -99,7 +99,7 @@ final class id_verification_debug_test extends advanced_testcase {
      * A weak name read carried by a strong face says so, instead of a bare pass.
      */
     public function test_carried_name_is_called_out(): void {
-        $text = $this->panel($this->result(['facescore' => 96, 'namescore' => 52]));
+        $text = $this->panel($this->providerresult(['facescore' => 96, 'namescore' => 52]));
 
         $this->assertStringContainsString('carried by the strong face match', $text);
         $this->assertStringContainsString('floor 45, strong face 90', $text);
@@ -111,7 +111,7 @@ final class id_verification_debug_test extends advanced_testcase {
      */
     public function test_advisory_name_is_called_out(): void {
         $config = ['nameblocks' => false] + self::CONFIG;
-        $text = $this->panel($this->result(['facescore' => 85, 'namescore' => 30]), $config);
+        $text = $this->panel($this->providerresult(['facescore' => 85, 'namescore' => 30]), $config);
 
         $this->assertStringContainsString('advisory only', $text);
         $this->assertStringContainsString('Result: passed', $text);
@@ -121,7 +121,7 @@ final class id_verification_debug_test extends advanced_testcase {
      * A failed face names the gate that decided.
      */
     public function test_failed_face_names_the_gate(): void {
-        $text = $this->panel($this->result(['status' => 'failed', 'facescore' => 40, 'namescore' => 95]));
+        $text = $this->panel($this->providerresult(['status' => 'failed', 'facescore' => 40, 'namescore' => 95]));
 
         $this->assertStringContainsString('score 40 vs threshold 80 — failed', $text);
         $this->assertStringContainsString('score 95 vs threshold 80', $text);
@@ -136,7 +136,7 @@ final class id_verification_debug_test extends advanced_testcase {
      * "passed" beside a failed check - the very contradiction the panel exists to explain.
      */
     public function test_provider_override_outranks_passing_scores(): void {
-        $text = $this->panel($this->result(['status' => 'failed', 'facescore' => 96, 'namescore' => 92]));
+        $text = $this->panel($this->providerresult(['status' => 'failed', 'facescore' => 96, 'namescore' => 92]));
 
         $this->assertStringContainsString('provider refused the attempt', $text);
         $this->assertStringContainsString('Result: failed', $text);
@@ -148,7 +148,7 @@ final class id_verification_debug_test extends advanced_testcase {
      */
     public function test_disabled_face_check_reads_not_checked(): void {
         $config = ['checkface' => false] + self::CONFIG;
-        $text = $this->panel($this->result(['facescore' => 0, 'namescore' => 95]), $config);
+        $text = $this->panel($this->providerresult(['facescore' => 0, 'namescore' => 95]), $config);
 
         $this->assertStringContainsString('score 0 vs threshold 80 — not checked', $text);
         $this->assertStringContainsString('Result: passed', $text);
@@ -159,7 +159,7 @@ final class id_verification_debug_test extends advanced_testcase {
      */
     public function test_undecided_statuses_show_no_gates(): void {
         foreach (['retry', 'error'] as $status) {
-            $text = $this->panel($this->result([
+            $text = $this->panel($this->providerresult([
                 'status' => $status,
                 'facescore' => 0,
                 'namescore' => 0,
@@ -179,10 +179,10 @@ final class id_verification_debug_test extends advanced_testcase {
      * A romanized form is shown only when it adds something.
      */
     public function test_romanized_name_shown_when_different(): void {
-        $text = $this->panel($this->result(['extractedname' => 'Иван Петров', 'romanizedname' => 'Ivan Petrov']));
+        $text = $this->panel($this->providerresult(['extractedname' => 'Иван Петров', 'romanizedname' => 'Ivan Petrov']));
         $this->assertStringContainsString('Romanized as: Ivan Petrov', $text);
 
-        $text = $this->panel($this->result(['extractedname' => 'Ivan Petrov', 'romanizedname' => 'Ivan Petrov']));
+        $text = $this->panel($this->providerresult(['extractedname' => 'Ivan Petrov', 'romanizedname' => 'Ivan Petrov']));
         $this->assertStringNotContainsString('Romanized as', $text);
     }
 
@@ -194,7 +194,7 @@ final class id_verification_debug_test extends advanced_testcase {
         for ($i = 1; $i <= 12; $i++) {
             $variants[] = 'Variant ' . $i;
         }
-        $text = $this->panel($this->result(), self::CONFIG, $variants);
+        $text = $this->panel($this->providerresult(), self::CONFIG, $variants);
 
         $this->assertStringContainsString('Variant 1', $text);
         $this->assertStringNotContainsString('Variant 12', $text);
