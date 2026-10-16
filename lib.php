@@ -3303,10 +3303,10 @@ function quizaccess_proctoring_process_ai_review(stdClass $review, array $settin
  * Event reviews complete in cron, after the submission-time hold check has run, so the points
  * the confirmed verdict adds could cross the hold threshold with nothing acting on it. This
  * applies only the review-only policy - it can create a hold for a reviewer, never an automatic
- * failure, since the confirmed-review factor is excluded from the auto-fail score by design -
- * and it respects every decision already made: an attempt with any hold history (active,
- * released, confirmed or auto-failed) is left exactly as the reviewer or the earlier check
- * left it.
+ * failure, since the confirmed-review factor is excluded from the auto-fail score by design.
+ * A decided hold (released, confirmed or auto-failed) is left exactly as the reviewer or the
+ * earlier check left it; an active hold only has its stored score refreshed, since the
+ * automatic-release ceiling reads it, without resetting the review window or re-notifying.
  *
  * @param stdClass $review Completed event-level AI review row.
  */
@@ -3327,20 +3327,23 @@ function quizaccess_proctoring_reevaluate_hold_after_event_review(stdClass $revi
         if ($state !== 'finished') {
             return;
         }
-        if ($DB->record_exists('quizaccess_proctoring_risk_holds', [
+        $holds = $DB->get_records('quizaccess_proctoring_risk_holds', [
             'quizid' => (int)$review->quizid,
             'userid' => (int)$review->userid,
             'attemptid' => $attemptid,
-        ])) {
-            return;
-        }
-        $risksettings = quizaccess_proctoring_get_effective_risk_review_settings((int)$review->quizid);
-        $risklockoutenabled = quizaccess_proctoring_get_cheating_lockout_days() > 0 &&
-            (int)$risksettings['mode'] !== QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED;
-        if (empty($risksettings['enabled']) && !$risklockoutenabled) {
-            return;
+        ]);
+        $activehold = null;
+        foreach ($holds as $hold) {
+            if ((int)$hold->status !== QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
+                // A decided hold stays exactly as the reviewer or the earlier check left it.
+                return;
+            }
+            $activehold = $hold;
         }
         $reportid = (int)$review->reportid;
+        if ($reportid <= 0 && $activehold) {
+            $reportid = (int)$activehold->reportid;
+        }
         if ($reportid <= 0) {
             $reports = $DB->get_records('quizaccess_proctoring_logs', [
                 'courseid' => (int)$review->courseid,
@@ -3353,6 +3356,31 @@ function quizaccess_proctoring_reevaluate_hold_after_event_review(stdClass $revi
                 return;
             }
             $reportid = (int)reset($reports)->id;
+        }
+        if ($activehold) {
+            // The hold already exists; the late verdict only refreshes its stored score, which
+            // the automatic-release ceiling reads - an attempt held at 80 that gains confirmed
+            // AI evidence must not auto-release under a ceiling of 90 just because the review
+            // finished after submission (Codex review). The review window is not reset and no
+            // notice is re-sent.
+            $risk = quizaccess_proctoring_calculate_attempt_risk(
+                (int)$review->courseid,
+                (int)$review->quizid,
+                (int)$review->userid,
+                $reportid
+            );
+            if ((int)$risk['score'] > (int)$activehold->riskscore) {
+                $activehold->riskscore = (int)$risk['score'];
+                $activehold->timemodified = time();
+                $DB->update_record('quizaccess_proctoring_risk_holds', $activehold);
+            }
+            return;
+        }
+        $risksettings = quizaccess_proctoring_get_effective_risk_review_settings((int)$review->quizid);
+        $risklockoutenabled = quizaccess_proctoring_get_cheating_lockout_days() > 0 &&
+            (int)$risksettings['mode'] !== QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED;
+        if (empty($risksettings['enabled']) && !$risklockoutenabled) {
+            return;
         }
         $risk = quizaccess_proctoring_calculate_attempt_risk(
             (int)$review->courseid,

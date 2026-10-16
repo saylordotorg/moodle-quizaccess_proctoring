@@ -390,6 +390,62 @@ final class ai_review_confirmed_factor_test extends advanced_testcase {
     }
 
     /**
+     * A late verdict refreshes an active hold's stored score without resetting its window.
+     *
+     * The automatic-release ceiling reads the stored score: an attempt held below the ceiling
+     * that gains confirmed AI evidence must not auto-release just because the review finished
+     * after submission.
+     */
+    public function test_late_review_refreshes_an_active_holds_score(): void {
+        global $DB;
+
+        $this->activate_event_ai_review();
+        set_config('riskreviewenabled', QUIZACCESS_PROCTORING_RISK_ACTION_HOLD, 'quizaccess_proctoring');
+        set_config('riskreviewthreshold', 40, 'quizaccess_proctoring');
+        [$courseid, $cmid, $userid, $attemptid, $reportid] = $this->fixture();
+        $created = time() - 3600;
+        $holdid = (int)$DB->insert_record('quizaccess_proctoring_risk_holds', (object)[
+            'courseid' => $courseid,
+            'quizid' => $cmid,
+            'quizinstance' => 0,
+            'userid' => $userid,
+            'attemptid' => $attemptid,
+            'reportid' => $reportid,
+            'riskscore' => 45,
+            'threshold' => 40,
+            'originalgrade' => 9,
+            'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+            'reviewerid' => 0,
+            'timecreated' => $created,
+            'timemodified' => $created,
+            'timereviewed' => 0,
+        ]);
+        $scope = [$courseid, $cmid, $userid, $attemptid];
+        $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE, 'highly_suspicious');
+        $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE, 'highly_suspicious');
+        $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE, 'highly_suspicious');
+
+        quizaccess_proctoring_reevaluate_hold_after_event_review((object)[
+            'id' => 5,
+            'courseid' => $courseid,
+            'quizid' => $cmid,
+            'userid' => $userid,
+            'attemptid' => $attemptid,
+            'reportid' => $reportid,
+            'reviewtype' => 'event',
+            'decision' => 'highly_suspicious',
+        ]);
+
+        $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
+        $this->assertGreaterThan(45, (int)$hold->riskscore, 'the ceiling must see the confirmed evidence');
+        $this->assertEquals($created, (int)$hold->timecreated, 'the review window is not reset');
+        $this->assertEquals(QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE, (int)$hold->status);
+        $this->assertCount(1, $DB->get_records('quizaccess_proctoring_risk_holds', [
+            'quizid' => $cmid, 'userid' => $userid, 'attemptid' => $attemptid,
+        ]), 'refreshed, not duplicated');
+    }
+
+    /**
      * A review completing while the student is still answering holds nothing yet.
      */
     public function test_late_review_ignores_attempts_in_progress(): void {
