@@ -668,7 +668,8 @@ if (
                 WHERE
                     e.courseid = :courseid
                     AND e.quizid = :cmid
-                    AND e.status > 0
+                    AND EXISTS (SELECT 1 FROM {quiz_attempts} qa
+                        WHERE qa.id = e.status AND qa.userid = e.userid)
                 GROUP BY
                     e.userid, u.firstname, u.lastname, u.email, pfw.reportid ";
     }
@@ -691,7 +692,8 @@ if (
                         AND e.userid = pfw.userid
                         WHERE e.courseid = :courseid
                         AND e.quizid = :quizid
-                        AND e.status > 0
+                        AND EXISTS (SELECT 1 FROM {quiz_attempts} qa
+                            WHERE qa.id = e.status AND qa.userid = e.userid)
                         GROUP BY e.userid, u.firstname, u.lastname, u.email, pfw.reportid";
     }
 
@@ -711,7 +713,9 @@ if (
                         ON e.courseid = pfw.courseid
                         AND e.quizid = pfw.quizid
                         AND e.userid = pfw.userid
-                        WHERE e.status > 0 AND ((e.courseid = :courseid1 AND e.quizid = :quizid1 AND
+                        WHERE EXISTS (SELECT 1 FROM {quiz_attempts} qa
+                            WHERE qa.id = e.status AND qa.userid = e.userid)
+                        AND ((e.courseid = :courseid1 AND e.quizid = :quizid1 AND
                               " . $DB->sql_like('u.firstname', ':firstnamelike', false) . ")
                                 OR (e.courseid = :courseid2 AND e.quizid = :quizid2 AND "
                                 . $DB->sql_like('u.email', ':emaillike', false) . ")

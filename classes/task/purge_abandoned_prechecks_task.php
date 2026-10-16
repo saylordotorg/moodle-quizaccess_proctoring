@@ -53,5 +53,7 @@ class purge_abandoned_prechecks_task extends \core\task\scheduled_task {
         mtrace("Queued {$queued} abandoned precheck capture(s) for deletion.");
         $retired = precheck_evidence::retire_abandoned_references($now);
         mtrace("Removed {$retired} self-registered reference photo(s) that no proctored attempt followed.");
+        $orphaned = \quizaccess_proctoring\local\attempt_cleanup::queue_orphaned_attempt_rows();
+        mtrace("Queued {$orphaned} capture row(s) of deleted attempts for deletion.");
     }
 }
