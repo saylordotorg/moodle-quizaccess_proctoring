@@ -1206,6 +1206,7 @@ class quizaccess_proctoring_external extends external_api {
                 'matchedprofilename' => '',
                 'namematchreason' => '',
                 'message' => '',
+                'debuginfo' => '',
                 'warnings' => [],
             ];
         }
@@ -1223,6 +1224,7 @@ class quizaccess_proctoring_external extends external_api {
                 'matchedprofilename' => '',
                 'namematchreason' => '',
                 'message' => get_string('modal:idverificationdocumentbackmissing', 'quizaccess_proctoring'),
+                'debuginfo' => '',
                 'warnings' => [],
             ];
         }
@@ -1254,6 +1256,7 @@ class quizaccess_proctoring_external extends external_api {
                     $toolarge ? 'modal:idverificationimagetoolarge' : 'idverificationunreadablefile',
                     'quizaccess_proctoring'
                 ),
+                'debuginfo' => '',
                 'warnings' => [],
             ];
         }
@@ -1355,6 +1358,17 @@ class quizaccess_proctoring_external extends external_api {
             \quizaccess_proctoring\local\identity_recheck_policy::record_success($record);
         }
 
+        // Tester diagnostics (CPIT-502): finished, translated lines, built from the same decision
+        // evaluation the verdict came from, and only when the site debug toggle asks for them.
+        $debuginfo = '';
+        if (\quizaccess_proctoring\local\id_verification_debug::enabled()) {
+            $debuginfo = (string)json_encode(\quizaccess_proctoring\local\id_verification_debug::describe(
+                $providerresult,
+                $profilename,
+                self::get_profile_name_variants($identityuser)
+            ));
+        }
+
         return [
             'verificationid' => (int)$verificationid,
             'status' => $record->status,
@@ -1365,6 +1379,7 @@ class quizaccess_proctoring_external extends external_api {
             'matchedprofilename' => (string)$record->matchedprofilename,
             'namematchreason' => (string)$record->namematchreason,
             'message' => (string)$record->errormessage,
+            'debuginfo' => $debuginfo,
             'warnings' => [],
         ];
     }
@@ -1386,6 +1401,12 @@ class quizaccess_proctoring_external extends external_api {
                 'matchedprofilename' => new external_value(PARAM_TEXT, 'Moodle profile name variant used for matching'),
                 'namematchreason' => new external_value(PARAM_TEXT, 'Name match explanation'),
                 'message' => new external_value(PARAM_TEXT, 'Provider or validation message'),
+                'debuginfo' => new external_value(
+                    PARAM_RAW,
+                    'JSON tester diagnostics ({title, lines[]}); empty unless the site debug toggle is on',
+                    VALUE_DEFAULT,
+                    ''
+                ),
                 'warnings' => new external_warnings(),
             ]
         );
