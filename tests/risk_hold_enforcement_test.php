@@ -503,6 +503,74 @@ final class risk_hold_enforcement_test extends advanced_testcase {
     }
 
     /**
+     * A batch regrade of an unheld student still re-masks the other, held student.
+     *
+     * The report's overall recompute recreates quiz-level grade rows for everyone in the quiz,
+     * not only the selected attempts, and the held students' locked gradebook grades swallow
+     * the user_graded events (PR review).
+     */
+    public function test_batch_regrade_remasks_other_held_students(): void {
+        global $DB;
+
+        $regradedattempt = $this->add_attempt(9);
+
+        // A second, held student on the same quiz.
+        $held = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($held->id, $this->course->id, 'student');
+        $now = time();
+        $heldattempt = (int)$DB->insert_record('quiz_attempts', (object)[
+            'quiz' => $this->quiz->id,
+            'userid' => $held->id,
+            'attempt' => 1,
+            'uniqueid' => $this->nextuniqueid++,
+            'layout' => '1,0',
+            'currentpage' => 0,
+            'preview' => 0,
+            'state' => 'finished',
+            'timestart' => $now - 600,
+            'timefinish' => $now - 60,
+            'timemodified' => $now,
+            'timemodifiedoffline' => 0,
+            'timecheckstate' => null,
+            'sumgrades' => 9,
+        ]);
+        quizaccess_proctoring_apply_risk_hold(
+            (int)$this->course->id,
+            (int)$this->cm->id,
+            (int)$held->id,
+            $heldattempt,
+            0,
+            90,
+            80
+        );
+        $this->assertFalse($DB->record_exists(
+            'quiz_grades', ['quiz' => $this->quiz->id, 'userid' => $held->id]
+        ));
+
+        // The overall recompute recreates the held student's quiz-level row too.
+        $DB->insert_record('quiz_grades', (object)[
+            'quiz' => $this->quiz->id,
+            'userid' => $held->id,
+            'grade' => 9,
+            'timemodified' => $now,
+        ]);
+
+        // The regrade selection only contained the unheld student.
+        $event = \mod_quiz\event\attempt_regraded::create([
+            'objectid' => $regradedattempt,
+            'relateduserid' => $this->student->id,
+            'courseid' => $this->course->id,
+            'context' => \context_module::instance($this->cm->id),
+        ]);
+        \quizaccess_proctoring\local\risk_hold_enforcer::handle_attempt_regraded($event);
+        \quizaccess_proctoring\local\risk_hold_enforcer::reenforce_after_regrades();
+
+        $this->assertFalse($DB->record_exists(
+            'quiz_grades', ['quiz' => $this->quiz->id, 'userid' => $held->id]
+        ), 'every hold on the quiz must be re-masked, not only the regraded student');
+    }
+
+    /**
      * Nested aggregation: overall "all" with an "any" activity group carried by another activity.
      *
      * The overall method alone would say retract; the activity group's own "any" method keeps

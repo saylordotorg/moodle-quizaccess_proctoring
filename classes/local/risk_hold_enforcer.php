@@ -286,25 +286,33 @@ class risk_hold_enforcer {
             [$insql, $inparams] = $DB->get_in_or_equal(self::enforced_statuses(), SQL_PARAMS_NAMED);
             if (!$DB->record_exists_select(
                 'quizaccess_proctoring_risk_holds',
+                "quizinstance = :quiz AND status $insql",
+                ['quiz' => (int)$attempt->quiz] + $inparams
+            )) {
+                // Nobody on this quiz is held.
+                return;
+            }
+            // Immediate enforcement for the regraded student, when they are the held one.
+            if ($DB->record_exists_select(
+                'quizaccess_proctoring_risk_holds',
                 "quizinstance = :quiz AND userid = :userid AND status $insql",
                 ['quiz' => (int)$attempt->quiz, 'userid' => (int)$attempt->userid] + $inparams
             )) {
-                return;
+                self::enforce((int)$attempt->quiz, (int)$attempt->userid);
             }
-            self::enforce((int)$attempt->quiz, (int)$attempt->userid);
-            // The report's batch regrade recomputes every overall grade after this event, which
-            // recreates the quiz-level grade row - and the locked gradebook grade swallows the
-            // user_graded that would mask it again. Re-enforce once the whole flow is over
-            // (PR review); the immediate enforcement above still covers everything the batch
-            // recompute does not touch.
-            $key = $attempt->quiz . ':' . $attempt->userid;
-            if (!isset(self::$pendingregrades[$key])) {
+            // The report's batch regrade recomputes every student's overall grade after this
+            // event - held or not, selected or not - which recreates quiz-level grade rows,
+            // and the locked gradebook grades swallow the user_graded that would mask them
+            // again. Re-enforce every hold on the quiz once the whole flow is over (PR
+            // review).
+            $quizinstance = (int)$attempt->quiz;
+            if (!isset(self::$pendingregrades[$quizinstance])) {
                 if (!self::$pendingregrades) {
                     \core_shutdown_manager::register_function(
                         [self::class, 'reenforce_after_regrades']
                     );
                 }
-                self::$pendingregrades[$key] = [(int)$attempt->quiz, (int)$attempt->userid];
+                self::$pendingregrades[$quizinstance] = $quizinstance;
             }
         } catch (\Throwable $e) {
             quizaccess_proctoring_log_failure('re-applying a risk hold after a regrade', $e);
@@ -312,20 +320,32 @@ class risk_hold_enforcer {
     }
 
     /**
-     * Re-enforce every held quiz/user pair that was regraded this request.
+     * Re-enforce every hold on every quiz that saw a regrade this request.
      *
-     * Runs at request shutdown, after the regrade flow's overall-grade recomputation.
+     * Runs at request shutdown, after the regrade flow's overall-grade recomputation, which
+     * touches every student in the quiz - not only the attempts that were selected.
      *
      * @return void
      */
     public static function reenforce_after_regrades(): void {
+        global $DB;
+
         $pending = self::$pendingregrades;
         self::$pendingregrades = [];
-        foreach ($pending as [$quizinstance, $userid]) {
+        foreach ($pending as $quizinstance) {
             try {
-                self::enforce($quizinstance, $userid);
+                [$insql, $inparams] = $DB->get_in_or_equal(self::enforced_statuses(), SQL_PARAMS_NAMED);
+                $userids = $DB->get_fieldset_select(
+                    'quizaccess_proctoring_risk_holds',
+                    'DISTINCT userid',
+                    "quizinstance = :quiz AND status $insql",
+                    ['quiz' => $quizinstance] + $inparams
+                );
+                foreach ($userids as $userid) {
+                    self::enforce((int)$quizinstance, (int)$userid);
+                }
             } catch (\Throwable $e) {
-                quizaccess_proctoring_log_failure('re-applying a risk hold at shutdown after a regrade', $e);
+                quizaccess_proctoring_log_failure('re-applying risk holds at shutdown after a regrade', $e);
             }
         }
     }
