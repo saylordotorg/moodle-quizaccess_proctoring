@@ -125,6 +125,43 @@ final class attempt_cleanup_test extends advanced_testcase {
     }
 
     /**
+     * Deleting an attempt that was never held leaves the gradebook alone.
+     *
+     * clearfeedback bypasses the enforcer's no-holds guard, so calling it for every deleted
+     * attempt would unlock grades and erase feedback the plugin never touched (PR review).
+     */
+    public function test_attempt_deletion_without_a_hold_leaves_grades_alone(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/gradelib.php');
+
+        [$course, $quiz, $cm, $user, $attemptid] = $this->fixture();
+        // An instructor's own locked grade with feedback, nothing to do with proctoring.
+        grade_update('mod/quiz', $course->id, 'mod', 'quiz', $quiz->id, 0, [
+            'userid' => $user->id,
+            'rawgrade' => 6,
+            'feedback' => 'Instructor feedback',
+        ]);
+        $item = \grade_item::fetch(['itemtype' => 'mod', 'itemmodule' => 'quiz',
+            'iteminstance' => $quiz->id, 'courseid' => $course->id]);
+        $grade = \grade_grade::fetch(['itemid' => $item->id, 'userid' => $user->id]);
+        $grade->set_locked(1, false, false);
+
+        $DB->delete_records('quiz_attempts', ['id' => $attemptid]);
+        $event = \mod_quiz\event\attempt_deleted::create([
+            'objectid' => $attemptid,
+            'relateduserid' => $user->id,
+            'courseid' => $course->id,
+            'context' => \context_module::instance($cm->id),
+            'other' => ['quizid' => $quiz->id],
+        ]);
+        attempt_cleanup::attempt_deleted($event);
+
+        $after = \grade_grade::fetch(['itemid' => $item->id, 'userid' => $user->id]);
+        $this->assertNotEmpty($after->locked, 'an instructor lock must survive');
+        $this->assertSame('Instructor feedback', $after->feedback, 'instructor feedback must survive');
+    }
+
+    /**
      * The sweep queues rows whose attempt is gone and leaves live attempts alone.
      */
     public function test_orphan_sweep_queues_only_dead_rows(): void {

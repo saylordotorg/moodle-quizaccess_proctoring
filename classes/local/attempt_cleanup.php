@@ -60,13 +60,22 @@ class attempt_cleanup {
                 'status = :attemptid AND deletionprogress = 0',
                 ['attemptid' => $attemptid]
             );
-            $DB->delete_records('quizaccess_proctoring_risk_holds', [
+            $hadactivehold = $DB->record_exists('quizaccess_proctoring_risk_holds', [
                 'attemptid' => $attemptid,
                 'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
             ]);
-            if ($quizinstance > 0 && $userid > 0) {
-                // Restore the gradebook from whatever holds and attempts remain.
-                risk_hold_enforcer::enforce($quizinstance, $userid, true);
+            if ($hadactivehold) {
+                $DB->delete_records('quizaccess_proctoring_risk_holds', [
+                    'attemptid' => $attemptid,
+                    'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+                ]);
+                if ($quizinstance > 0 && $userid > 0) {
+                    // Restore the gradebook from whatever holds and attempts remain. Only when
+                    // a hold was actually removed: clearfeedback bypasses the no-holds guard,
+                    // and running it for every deleted attempt on the site would unlock grades
+                    // and erase feedback this plugin never touched (PR review).
+                    risk_hold_enforcer::enforce($quizinstance, $userid, true);
+                }
             }
         } catch (\Throwable $e) {
             quizaccess_proctoring_log_failure('cleaning up after a deleted attempt', $e);
