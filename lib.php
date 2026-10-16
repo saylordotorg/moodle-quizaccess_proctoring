@@ -2334,6 +2334,18 @@ function quizaccess_proctoring_release_risk_hold_locked(int $holdid, int $review
         return false;
     }
 
+    // Automatic release only: recheck the ceiling against the row just read under this lock. The
+    // auto-release task selects eligible holds before locking, and a late AI verdict can raise the
+    // stored score past the ceiling in between (CPIT-483) - a hold the ceiling retains must not be
+    // released on a stale selection. A reviewer's own release is never ceiling-gated.
+    if ($isautorelease) {
+        $ceiling = quizaccess_proctoring_get_risk_review_ceiling();
+        if ($ceiling <= \quizaccess_proctoring\local\risk_calculator::max_possible_score()
+                && (int)$hold->riskscore >= $ceiling) {
+            return false;
+        }
+    }
+
     require_once($CFG->dirroot . '/mod/quiz/lib.php');
     $cm = get_coursemodule_from_id('quiz', $hold->quizid, $hold->courseid, false, MUST_EXIST);
     $quiz = $DB->get_record('quiz', ['id' => $hold->quizinstance], '*', MUST_EXIST);

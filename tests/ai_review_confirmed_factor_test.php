@@ -462,6 +462,47 @@ final class ai_review_confirmed_factor_test extends advanced_testcase {
     }
 
     /**
+     * A score raised past the ceiling after selection blocks the automatic release.
+     *
+     * The auto-release task selects eligible holds before locking each one; a late AI verdict can
+     * raise the stored score past the ceiling in between, and the release must notice under the
+     * lock rather than releasing on the stale selection.
+     */
+    public function test_auto_release_rechecks_the_ceiling_under_the_lock(): void {
+        global $DB;
+
+        set_config('riskreviewceiling', 60, 'quizaccess_proctoring');
+        [$courseid, $cmid, $userid, $attemptid, $reportid] = $this->fixture();
+        $quizinstance = (int)$DB->get_field('course_modules', 'instance', ['id' => $cmid]);
+        $now = time();
+        $holdid = (int)$DB->insert_record('quizaccess_proctoring_risk_holds', (object)[
+            'courseid' => $courseid,
+            'quizid' => $cmid,
+            'quizinstance' => $quizinstance,
+            'userid' => $userid,
+            'attemptid' => $attemptid,
+            'reportid' => $reportid,
+            'riskscore' => 80,
+            'threshold' => 40,
+            'originalgrade' => 9,
+            'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+            'reviewerid' => 0,
+            'timecreated' => $now - 30 * DAYSECS,
+            'timemodified' => $now,
+            'timereviewed' => 0,
+        ]);
+
+        // The selection happened on an older, below-ceiling score; the row now reads 80 >= 60.
+        $this->assertFalse(quizaccess_proctoring_release_risk_hold($holdid, 0, true),
+            'an automatic release must recheck the ceiling against the row it locked');
+        $this->assertEquals(QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+            (int)$DB->get_field('quizaccess_proctoring_risk_holds', 'status', ['id' => $holdid]));
+
+        // A reviewer's own release is never ceiling-gated.
+        $this->assertTrue(quizaccess_proctoring_release_risk_hold($holdid, 7, false));
+    }
+
+    /**
      * A review completing while the student is still answering holds nothing yet.
      */
     public function test_late_review_ignores_attempts_in_progress(): void {
