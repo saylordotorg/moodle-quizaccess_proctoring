@@ -261,4 +261,26 @@ for (const built of [false, true]) {
         assert.deepEqual(sent, ['away_capture', 'away_capture', 'away_capture', 'away_capture'],
             'every capture is delivered; only the diagnostic stood aside');
     });
+
+    test(`an expired or refused diagnostic is not evidence loss either (${suffix})`, async () => {
+        const coverage = (key) => ({methodname: 'quizaccess_proctoring_log_event', args: {
+            eventtype: 'warning_shown', eventdetail: key
+        }});
+        // Expiry: queued offline past the TTL.
+        const env = fixture({ttl: 3000}, built);
+        env.offline();
+        env.queue.enqueue(coverage('a'), 991, {expendable: true});
+        await env.advance(3001);
+        assert.equal(env.queue.snapshot().pending, 0);
+        assert.equal(env.queue.snapshot().dropped, 0, 'an expired diagnostic is silent');
+        assert.equal(env.queue.snapshot().lastdropat, 0);
+        // Refused delivery: the server rejects the diagnostic itself.
+        const env2 = fixture({}, built);
+        env2.outcomes.push(() => Promise.reject({status: 400}));
+        env2.queue.enqueue(coverage('b'), 992, {expendable: true});
+        await settle();
+        assert.equal(env2.queue.snapshot().pending, 0);
+        assert.equal(env2.queue.snapshot().dropped, 0, 'a refused diagnostic is silent');
+        assert.equal(env2.queue.snapshot().problem, '');
+    });
 }

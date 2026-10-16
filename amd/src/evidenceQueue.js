@@ -94,6 +94,12 @@ define([], function() {
             const drop = function(item, reason) {
                 items = items.filter(entry => entry !== item);
                 item.request = null;
+                if (item.expendable) {
+                    // However a diagnostic leaves - evicted, expired, refused - its discard is
+                    // never evidence loss: counting it would re-raise the very banner whose
+                    // logging it was (Codex review).
+                    return;
+                }
                 dropped++;
                 lastProblem = reason;
                 lastDropAt = now();
@@ -229,12 +235,7 @@ define([], function() {
                             emit();
                             return false;
                         }
-                        if (oldest.expendable) {
-                            items = items.filter(entry => entry !== oldest);
-                            oldest.request = null;
-                        } else {
-                            drop(oldest, 'capacity');
-                        }
+                        drop(oldest, 'capacity');
                     }
                     items.push({request: payload, bytes: bytes, created: now(), next: now(), failures: 0,
                         queuedOffline: !online(), expendable: expendable});
