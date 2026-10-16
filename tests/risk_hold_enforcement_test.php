@@ -127,6 +127,8 @@ final class risk_hold_enforcement_test extends advanced_testcase {
      * A quiz regrade or recompute while held cannot put the grade back.
      */
     public function test_regrade_cannot_restore_a_held_grade(): void {
+        global $DB;
+
         $attemptid = $this->add_attempt(9);
         $this->hold($attemptid);
 
@@ -135,6 +137,22 @@ final class risk_hold_enforcement_test extends advanced_testcase {
 
         $this->assertNull($this->final_grade());
         $this->assertSame(COMPLETION_INCOMPLETE, $this->completion_state());
+
+        // The regrade recreated the quiz-level grade row, and the locked gradebook grade
+        // swallows the user_graded event - the regrade event is what re-masks it.
+        $this->assertTrue($DB->record_exists(
+            'quiz_grades', ['quiz' => $this->quiz->id, 'userid' => $this->student->id]
+        ), 'precondition: the recompute recreated the quiz-level grade');
+        $event = \mod_quiz\event\attempt_regraded::create([
+            'objectid' => $attemptid,
+            'relateduserid' => $this->student->id,
+            'courseid' => $this->course->id,
+            'context' => \context_module::instance($this->cm->id),
+        ]);
+        \quizaccess_proctoring\local\risk_hold_enforcer::handle_attempt_regraded($event);
+        $this->assertFalse($DB->record_exists(
+            'quiz_grades', ['quiz' => $this->quiz->id, 'userid' => $this->student->id]
+        ), 'the regrade event must re-mask the quiz-level grade');
     }
 
     /**

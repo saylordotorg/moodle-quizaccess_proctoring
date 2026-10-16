@@ -48,6 +48,13 @@ $observers = [
         'callback' => '\quizaccess_proctoring\local\risk_hold_enforcer::handle_user_graded',
     ],
     [
+        // A regrade recreates the quiz-level grade row, and the locked gradebook grade swallows
+        // the user_graded event that would re-apply the hold, so the regrade event itself
+        // re-enforces (CPIT-463, PR review).
+        'eventname' => '\mod_quiz\event\attempt_regraded',
+        'callback' => '\quizaccess_proctoring\local\risk_hold_enforcer::handle_attempt_regraded',
+    ],
+    [
         // Deleting an account removes the user's proctoring data too, not only a privacy request (CPIT-472).
         'eventname' => '\core\event\user_deleted',
         'callback' => '\quizaccess_proctoring\local\user_data_purge::user_deleted',

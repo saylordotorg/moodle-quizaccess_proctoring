@@ -257,6 +257,44 @@ class risk_hold_enforcer {
     }
 
     /**
+     * Re-apply holds after an attempt regrade, which the locked gradebook grade hides.
+     *
+     * A regrade recreates the quiz-level grade row and then updates the gradebook; the held
+     * gradebook grade is locked, so grade_item::update_raw_grade() returns without emitting
+     * user_graded and {@see self::handle_user_graded()} never runs. The regrade event itself
+     * brings the mask back (CPIT-463, PR review).
+     *
+     * @param \mod_quiz\event\attempt_regraded $event Regrade event.
+     * @return void
+     */
+    public static function handle_attempt_regraded(\mod_quiz\event\attempt_regraded $event): void {
+        global $CFG, $DB;
+
+        if (self::$running) {
+            return;
+        }
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+
+        try {
+            $attempt = $DB->get_record('quiz_attempts', ['id' => (int)$event->objectid], 'id, quiz, userid');
+            if (!$attempt) {
+                return;
+            }
+            [$insql, $inparams] = $DB->get_in_or_equal(self::enforced_statuses(), SQL_PARAMS_NAMED);
+            if (!$DB->record_exists_select(
+                'quizaccess_proctoring_risk_holds',
+                "quizinstance = :quiz AND userid = :userid AND status $insql",
+                ['quiz' => (int)$attempt->quiz, 'userid' => (int)$attempt->userid] + $inparams
+            )) {
+                return;
+            }
+            self::enforce((int)$attempt->quiz, (int)$attempt->userid);
+        } catch (\Throwable $e) {
+            quizaccess_proctoring_log_failure('re-applying a risk hold after a regrade', $e);
+        }
+    }
+
+    /**
      * Whether this class is currently writing grades.
      *
      * @return bool
@@ -399,11 +437,18 @@ class risk_hold_enforcer {
                 return;
             }
             [$insql, $inparams] = $DB->get_in_or_equal(array_keys($criteria), SQL_PARAMS_NAMED);
-            $DB->delete_records_select(
+            $changed = $DB->record_exists_select(
                 'course_completion_crit_compl',
                 "course = :course AND userid = :userid AND criteriaid $insql",
                 ['course' => (int)$course->id, 'userid' => $userid] + $inparams
             );
+            if ($changed) {
+                $DB->delete_records_select(
+                    'course_completion_crit_compl',
+                    "course = :course AND userid = :userid AND criteriaid $insql",
+                    ['course' => (int)$course->id, 'userid' => $userid] + $inparams
+                );
+            }
             $completed = $DB->get_record('course_completions', [
                 'course' => (int)$course->id,
                 'userid' => $userid,
@@ -414,10 +459,16 @@ class risk_hold_enforcer {
                 // so a course completed through other criteria completes again by itself.
                 $completed->reaggregate = time() - 2;
                 $DB->update_record('course_completions', $completed);
+                $changed = true;
             }
-            // The completion caches keep serving the old answer until purged.
-            \cache::make('core', 'completion')->purge();
-            \cache::make('core', 'coursecompletion')->purge();
+            if ($changed) {
+                // Only this student's entries in this course: core keys both completion caches
+                // by user and course, and a site-wide purge would make every concurrent exam
+                // rebuild unrelated students' completion data (PR review).
+                $key = $userid . '_' . $course->id;
+                \cache::make('core', 'completion')->delete($key);
+                \cache::make('core', 'coursecompletion')->delete($key);
+            }
         } catch (\Throwable $e) {
             quizaccess_proctoring_log_failure('retracting a stale course completion during a hold', $e);
         }
