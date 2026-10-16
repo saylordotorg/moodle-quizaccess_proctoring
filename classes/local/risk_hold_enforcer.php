@@ -271,15 +271,55 @@ class risk_hold_enforcer {
     private static $pendingregrades = [];
 
     public static function handle_attempt_regraded(\mod_quiz\event\attempt_regraded $event): void {
+        self::reenforce_for_attempt((int)$event->objectid);
+    }
+
+    /**
+     * Re-apply holds after a manual question grade, which recomputes the attempt's final grade.
+     *
+     * That flow recreates the quiz-level grade row and emits neither attempt_regraded nor - the
+     * gradebook grade being locked - user_graded (PR review).
+     *
+     * @param \mod_quiz\event\question_manually_graded $event Manual grading event.
+     * @return void
+     */
+    public static function handle_question_manually_graded(\mod_quiz\event\question_manually_graded $event): void {
+        self::reenforce_for_attempt((int)($event->other['attemptid'] ?? 0));
+    }
+
+    /**
+     * Re-apply holds after a new submission on a quiz with held students.
+     *
+     * A later, below-threshold attempt recomputes the quiz-level grade without creating a hold
+     * of its own, and the locked gradebook grade swallows user_graded (PR review).
+     *
+     * @param \mod_quiz\event\attempt_submitted $event Submission event.
+     * @return void
+     */
+    public static function handle_attempt_submitted(\mod_quiz\event\attempt_submitted $event): void {
+        self::reenforce_for_attempt((int)$event->objectid);
+    }
+
+    /**
+     * Re-apply holds around one attempt whose grades were just recomputed.
+     *
+     * Immediate enforcement covers the attempt's own student; the shutdown pass covers every
+     * hold on the quiz, because batch flows recompute other students' grades after their
+     * events have fired.
+     *
+     * @param int $attemptid Attempt id.
+     * @return void
+     */
+    private static function reenforce_for_attempt(int $attemptid): void {
         global $CFG, $DB;
 
-        if (self::$running) {
+        if (self::$running || $attemptid <= 0) {
             return;
         }
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
         try {
-            $attempt = $DB->get_record('quiz_attempts', ['id' => (int)$event->objectid], 'id, quiz, userid');
+            $attempt = $DB->get_record('quiz_attempts', ['id' => $attemptid], 'id, quiz, userid');
             if (!$attempt) {
                 return;
             }
@@ -292,7 +332,7 @@ class risk_hold_enforcer {
                 // Nobody on this quiz is held.
                 return;
             }
-            // Immediate enforcement for the regraded student, when they are the held one.
+            // Immediate enforcement for this attempt's student, when they are the held one.
             if ($DB->record_exists_select(
                 'quizaccess_proctoring_risk_holds',
                 "quizinstance = :quiz AND userid = :userid AND status $insql",
@@ -300,23 +340,18 @@ class risk_hold_enforcer {
             )) {
                 self::enforce((int)$attempt->quiz, (int)$attempt->userid);
             }
-            // The report's batch regrade recomputes every student's overall grade after this
-            // event - held or not, selected or not - which recreates quiz-level grade rows,
-            // and the locked gradebook grades swallow the user_graded that would mask them
-            // again. Re-enforce every hold on the quiz once the whole flow is over (PR
-            // review).
             self::queue_shutdown_reenforcement((int)$attempt->quiz);
         } catch (\Throwable $e) {
-            quizaccess_proctoring_log_failure('re-applying a risk hold after a regrade', $e);
+            quizaccess_proctoring_log_failure('re-applying a risk hold after a grade recomputation', $e);
         }
     }
 
     /**
      * Re-enforce every hold on a quiz at request shutdown.
      *
-     * For flows that recompute grades after their event fires - the report's batch regrade,
-     * an attempt deletion recomputing the student's remaining attempts - where the locked
-     * gradebook grade swallows the user_graded that would otherwise re-apply the mask.
+     * For flows that recompute grades after their event fires - the report's batch regrade, a
+     * manual question grade, a new submission beside held students - where the locked gradebook
+     * grade swallows the user_graded that would otherwise re-apply the mask.
      *
      * @param int $quizinstance Quiz instance id.
      * @return void

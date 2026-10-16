@@ -55,6 +55,16 @@ $observers = [
         'callback' => '\quizaccess_proctoring\local\risk_hold_enforcer::handle_attempt_regraded',
     ],
     [
+        // Manually grading a question recomputes the attempt's final grade the same silent way.
+        'eventname' => '\mod_quiz\event\question_manually_graded',
+        'callback' => '\quizaccess_proctoring\local\risk_hold_enforcer::handle_question_manually_graded',
+    ],
+    [
+        // A later submission recomputes the quiz-level grade beside a held attempt.
+        'eventname' => '\mod_quiz\event\attempt_submitted',
+        'callback' => '\quizaccess_proctoring\local\risk_hold_enforcer::handle_attempt_submitted',
+    ],
+    [
         // A deleted attempt takes its proctoring records with it: the captures are queued for
         // the image deletion task, and an active hold on it is dropped (CPIT-464).
         'eventname' => '\mod_quiz\event\attempt_deleted',
