@@ -364,28 +364,45 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             return () => serverMs + Math.max(0, monotonic() - started);
         };
 
+        /** How long a drop keeps its coverage banner up; afterwards healthy uploads clear it. */
+        const coverageBannerMs = 180000;
+
         /** One upload queue and an accessible, neutral coverage status for the attempt page. */
-        const createUploadController = function(strings, captureClock) {
+        const createUploadController = function(strings, captureClock, onbanner) {
             let queue;
             let banner = null;
             let inactive = false;
             let cameraMissing = false;
             let screenMissing = false;
+            let shownkind = '';
+            let shownat = 0;
             const render = function(state) {
-                let text = '';
+                // A drop keeps its banner for a while, not for the exam: the queue recovers, the
+                // student cannot act on a stale warning, and a ten-minute-old hiccup shown as a
+                // live problem reads as constant failure (CPIT-503).
+                const recent = (at) => at > 0 && captureClock() - at <= coverageBannerMs;
+                let kind = '';
                 if (state.auth) {
-                    text = strings.attemptwarningsessionlost;
+                    kind = 'sessionlost';
                 } else if (state.offline || state.retrying) {
-                    text = strings.coverageconnection;
-                } else if (state.problem === 'rejected') {
-                    text = strings.coveragerejected;
+                    kind = 'connection';
+                } else if (state.problem === 'rejected' && recent(state.lastdropat)) {
+                    kind = 'rejected';
                 } else if (cameraMissing || screenMissing) {
-                    text = strings.coveragedevice;
-                } else if (state.dropped) {
-                    text = strings.coveragelost;
-                } else if (state.recovered) {
-                    text = strings.coveragerecovered;
+                    kind = 'device';
+                } else if (state.dropped && recent(state.lastdropat)) {
+                    kind = 'lost';
+                } else if (state.recovered && recent(state.lastrecoveredat)) {
+                    kind = 'recovered';
                 }
+                const text = {
+                    sessionlost: strings.attemptwarningsessionlost,
+                    connection: strings.coverageconnection,
+                    rejected: strings.coveragerejected,
+                    device: strings.coveragedevice,
+                    lost: strings.coveragelost,
+                    recovered: strings.coveragerecovered
+                }[kind] || '';
                 if (!banner && text) {
                     banner = document.createElement('div');
                     banner.id = 'proctoring-coverage-status';
@@ -404,6 +421,23 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (banner) {
                     banner.textContent = text || '';
                     banner.style.display = text ? '' : 'none';
+                }
+                // These banners belong in the "Messages shown to the student" log like every other
+                // on-page message (CPIT-481): without it, the one message a student reports seeing
+                // is the one the report cannot show (CPIT-503).
+                if (kind !== shownkind && onbanner) {
+                    const nowms = captureClock();
+                    if (shownkind !== '') {
+                        onbanner('warning_cleared', {
+                            key: 'coverage:' + shownkind,
+                            seconds: Math.max(0, Math.round((nowms - shownat) / 1000))
+                        });
+                    }
+                    if (kind !== '') {
+                        onbanner('warning_shown', {key: 'coverage:' + kind, message: text});
+                    }
+                    shownkind = kind;
+                    shownat = nowms;
                 }
             };
             const start = function() {
@@ -2362,6 +2396,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 let pointerOutsideWindow = false;
 
+                // One logged pair per cooldown: a student working beside a second window crosses
+                // the edge constantly, and logging every crossing flooded the server's event rate
+                // limit until real uploads - including the student-message log - were refused
+                // (CPIT-503: 483 boundary events in a ten-minute attempt). The first crossing is
+                // logged; the rest are counted and reported on the next logged pair.
+                const boundaryCooldownMs = 30000;
+                let lastBoundaryLogMs = 0;
+                let suppressedCrossings = 0;
+                let pairLogged = false;
+
                 const isMousePointer = function(event) {
                     return !event.pointerType || event.pointerType === 'mouse';
                 };
@@ -2371,7 +2415,20 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         return;
                     }
                     pointerOutsideWindow = true;
-                    logEvent('mouse_left_window', getPointerEventDetail(event, reason));
+                    const nowms = captureClock();
+                    if (nowms - lastBoundaryLogMs < boundaryCooldownMs) {
+                        suppressedCrossings++;
+                        pairLogged = false;
+                        return;
+                    }
+                    lastBoundaryLogMs = nowms;
+                    pairLogged = true;
+                    const detail = getPointerEventDetail(event, reason);
+                    if (suppressedCrossings > 0) {
+                        detail.suppressedcrossings = suppressedCrossings;
+                        suppressedCrossings = 0;
+                    }
+                    logEvent('mouse_left_window', detail);
                 };
 
                 const logMouseReturned = function(event, reason) {
@@ -2379,6 +2436,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         return;
                     }
                     pointerOutsideWindow = false;
+                    // Only close a pair that was opened in the log, so durations stay meaningful.
+                    if (!pairLogged) {
+                        return;
+                    }
+                    pairLogged = false;
                     logEvent('mouse_returned_window', getPointerEventDetail(event, reason));
                 };
 
@@ -2849,7 +2911,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return false;
                 }
 
-                const uploads = createUploadController(strings, captureClock);
+                const uploads = createUploadController(strings, captureClock, function(eventtype, detail) {
+                    noteWarning(eventtype, detail);
+                });
                 let monitoring = null;
                 let pageActive = true;
                 let pageGeneration = 0;

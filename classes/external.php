@@ -678,7 +678,11 @@ class quizaccess_proctoring_external extends external_api {
         $where[] = 'timemodified >= :since';
 
         if ($DB->count_records_select($table, implode(' AND ', $where), $params) >= $limit) {
-            throw new moodle_exception('error', 'error', '', null, 'Too many proctoring requests. Please wait and try again.');
+            // The errorcode is the contract with the browser's upload queue: 'ratelimitexceeded'
+            // is retried with backoff, while the generic 'error' it used to throw was treated as
+            // a permanent rejection - every flooded upload was dropped for good, including the
+            // student-message log entries (CPIT-503).
+            throw new moodle_exception('ratelimitexceeded', 'quizaccess_proctoring');
         }
     }
 

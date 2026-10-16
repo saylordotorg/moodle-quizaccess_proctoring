@@ -66,6 +66,8 @@ define([], function() {
             let dropped = 0;
             let recovered = 0;
             let lastProblem = '';
+            let lastDropAt = 0;
+            let lastRecoveredAt = 0;
 
             const snapshot = function() {
                 return {
@@ -77,7 +79,11 @@ define([], function() {
                     disposed: disposed,
                     offline: !online(),
                     retrying: items.some(item => item.failures > 0),
-                    problem: lastProblem
+                    problem: lastProblem,
+                    // When the trouble happened, so a banner can stand down once uploads have been
+                    // healthy again instead of outliving a hiccup by a whole exam (CPIT-503).
+                    lastdropat: lastDropAt,
+                    lastrecoveredat: lastRecoveredAt
                 };
             };
             const emit = function() {
@@ -90,6 +96,13 @@ define([], function() {
                 item.request = null;
                 dropped++;
                 lastProblem = reason;
+                lastDropAt = now();
+            };
+            // Context events worth less than the capacity they occupy: under pressure these go
+            // first, so a burst of them cannot push captured evidence out of the queue (CPIT-503).
+            const lowValue = function(item) {
+                const args = item.request && item.request.args;
+                return !!args && ['mouse_left_window', 'mouse_returned_window'].includes(args.eventtype);
             };
             const expire = function() {
                 items.slice().forEach(item => {
@@ -127,6 +140,7 @@ define([], function() {
                     items = items.filter(entry => entry !== item);
                     if (item.failures > 0 || item.queuedOffline) {
                         recovered++;
+                        lastRecoveredAt = now();
                     }
                     item.request = null;
                 } else {
@@ -192,7 +206,8 @@ define([], function() {
                         return false;
                     }
                     while (items.length >= maxItems || snapshot().bytes + bytes > maxBytes) {
-                        const oldest = items.find(item => item !== active);
+                        const oldest = items.find(item => item !== active && lowValue(item))
+                            || items.find(item => item !== active);
                         if (!oldest) {
                             dropped++;
                             lastProblem = 'capacity';
