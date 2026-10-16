@@ -776,6 +776,49 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                 };
 
+                const clearIdVerificationDebug = function() {
+                    const panel = document.getElementById('id_verification_debug');
+                    if (panel) {
+                        panel.remove();
+                    }
+                };
+
+                /**
+                 * Tester diagnostics for the ID check (CPIT-502). The webservice sends finished,
+                 * translated lines, and only while the site debug toggle is on, so the panel
+                 * renders whatever arrives and knows nothing about the decision rules itself.
+                 *
+                 * @param {string} debuginfo JSON {title, lines[]} from the webservice, or ''.
+                 */
+                const renderIdVerificationDebug = function(debuginfo) {
+                    clearIdVerificationDebug();
+                    if (!debuginfo) {
+                        return;
+                    }
+                    let info = null;
+                    try {
+                        info = JSON.parse(debuginfo);
+                    } catch (error) {
+                        return;
+                    }
+                    if (!info || !Array.isArray(info.lines) || !info.lines.length) {
+                        return;
+                    }
+                    const result = document.getElementById('id_verification_result');
+                    if (!result || !result.parentNode) {
+                        return;
+                    }
+                    const panel = document.createElement('div');
+                    panel.id = 'id_verification_debug';
+                    panel.style.cssText = 'margin-top:8px;padding:8px;border:1px dashed #999;' +
+                        'font-family:monospace;font-size:12px;text-align:left;white-space:pre-wrap;';
+                    panel.textContent = [String(info.title || '')]
+                        .concat(info.lines.map(String))
+                        .filter(Boolean)
+                        .join('\n');
+                    result.parentNode.insertBefore(panel, result.nextSibling);
+                };
+
                 // The longest edge an uploaded ID photo is scaled down to. Enough to read the
                 // name and photo (the camera path captures less), and far inside the server's
                 // byte and pixel caps that stock phone photos exceed (CPIT-501).
@@ -2696,6 +2739,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                     identityReady = false;
                     setIdVerificationConfirmed(false);
+                    clearIdVerificationDebug();
                     setRequirementStatus('identity', 'pending');
                     updatePreflightGate();
 
@@ -2808,6 +2852,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         if (spinner) {
                             spinner.style.display = 'none';
                         }
+                        renderIdVerificationDebug((res && res.debuginfo) || '');
 
                         if (res.status === 'pass') {
                             identityReady = true;

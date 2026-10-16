@@ -590,6 +590,15 @@ if ($canmanageproctoring) {
         0
     ));
 
+    // Tester diagnostics, not a student feature: shows the extraction and both gate decisions
+    // after every ID check (CPIT-502). Off in production.
+    $settings->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/idverificationdebug',
+        get_string('setting:idverificationdebug', 'quizaccess_proctoring'),
+        get_string('setting:idverificationdebug_desc', 'quizaccess_proctoring'),
+        0
+    ));
+
     $settings->add(new admin_setting_configtext(
         'quizaccess_proctoring/idverificationretentiondays',
         get_string('setting:idverificationretentiondays', 'quizaccess_proctoring'),
