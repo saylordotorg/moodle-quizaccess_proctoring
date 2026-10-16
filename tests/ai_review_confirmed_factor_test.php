@@ -390,6 +390,51 @@ final class ai_review_confirmed_factor_test extends advanced_testcase {
     }
 
     /**
+     * A review completing while the student is still answering holds nothing yet.
+     */
+    public function test_late_review_ignores_attempts_in_progress(): void {
+        global $DB;
+
+        $this->activate_event_ai_review();
+        set_config('riskreviewenabled', QUIZACCESS_PROCTORING_RISK_ACTION_HOLD, 'quizaccess_proctoring');
+        set_config('riskreviewthreshold', 40, 'quizaccess_proctoring');
+        [$courseid, $cmid, $userid, $attemptid, $reportid] = $this->fixture();
+        $DB->set_field('quiz_attempts', 'state', 'inprogress', ['id' => $attemptid]);
+        $scope = [$courseid, $cmid, $userid, $attemptid];
+        $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE, 'highly_suspicious');
+        $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE, 'highly_suspicious');
+
+        quizaccess_proctoring_reevaluate_hold_after_event_review((object)[
+            'id' => 4,
+            'courseid' => $courseid,
+            'quizid' => $cmid,
+            'userid' => $userid,
+            'attemptid' => $attemptid,
+            'reportid' => $reportid,
+            'reviewtype' => 'event',
+            'decision' => 'highly_suspicious',
+        ]);
+
+        $this->assertFalse($DB->record_exists('quizaccess_proctoring_risk_holds', [
+            'quizid' => $cmid, 'userid' => $userid, 'attemptid' => $attemptid,
+        ]), 'a result-withheld hold must never predate the result');
+    }
+
+    /**
+     * Under auto-fail, the review queue reads reachable while the review-only factor is armed.
+     */
+    public function test_review_queue_reachability_counts_the_factor(): void {
+        $this->resetAfterTest();
+        set_config('riskreviewenabled', QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL, 'quizaccess_proctoring');
+
+        $this->assertSame('autofailonly', quizaccess_proctoring_risk_hold_reachability());
+
+        $this->activate_event_ai_review();
+        $this->assertSame('reachable', quizaccess_proctoring_risk_hold_reachability(),
+            'an armed review-only factor can route attempts to the review queue');
+    }
+
+    /**
      * Coverage: armed only while event AI review is configured and on.
      */
     public function test_factor_coverage_reflects_the_setting(): void {

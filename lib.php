@@ -1109,6 +1109,14 @@ function quizaccess_proctoring_risk_hold_reachability(): string {
     ) {
         return 'reachable';
     }
+    // The AI-review-confirmed factor is review-only too (CPIT-483): with event AI review
+    // running it can hold an attempt for a reviewer under auto-fail mode just the same.
+    if (
+        quizaccess_proctoring_event_ai_review_active()
+        && \quizaccess_proctoring\local\risk_calculator::factor_enabled('aireviewconfirmed')
+    ) {
+        return 'reachable';
+    }
 
     return 'autofailonly';
 }
@@ -3308,6 +3316,15 @@ function quizaccess_proctoring_reevaluate_hold_after_event_review(stdClass $revi
     try {
         $attemptid = (int)$review->attemptid;
         if ($attemptid <= 0 || !\quizaccess_proctoring\local\risk_calculator::factor_enabled('aireviewconfirmed')) {
+            return;
+        }
+        // Only a finished attempt: event reviews are queued during the attempt, so this can run
+        // while the student is still answering - and a hold empties and locks their grade and
+        // tells them their result is withheld, which must never predate the result. An attempt
+        // still in progress gets the ordinary submission-time check, which sees this verdict
+        // (Codex review).
+        $state = $DB->get_field('quiz_attempts', 'state', ['id' => $attemptid]);
+        if ($state !== 'finished') {
             return;
         }
         if ($DB->record_exists('quizaccess_proctoring_risk_holds', [
