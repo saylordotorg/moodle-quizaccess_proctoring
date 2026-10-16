@@ -429,18 +429,23 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 // a lost login session cannot deliver its own log entry.
                 const loggable = ['connection', 'rejected', 'lost', 'recovered'].includes(kind) ? kind : '';
                 if (loggable !== shownkind && onbanner) {
+                    // The transition is recorded before the callbacks run: logging goes back
+                    // through the queue, whose state change re-enters this render, and an
+                    // unrecorded transition would log itself again without end (Codex review).
                     const nowms = captureClock();
-                    if (shownkind !== '') {
+                    const previouskind = shownkind;
+                    const previousat = shownat;
+                    shownkind = loggable;
+                    shownat = nowms;
+                    if (previouskind !== '') {
                         onbanner('warning_cleared', {
-                            key: 'coverage:' + shownkind,
-                            seconds: Math.max(0, Math.round((nowms - shownat) / 1000))
+                            key: 'coverage:' + previouskind,
+                            seconds: Math.max(0, Math.round((nowms - previousat) / 1000))
                         });
                     }
                     if (loggable !== '') {
                         onbanner('warning_shown', {key: 'coverage:' + loggable, message: text});
                     }
-                    shownkind = loggable;
-                    shownat = nowms;
                 }
             };
             const start = function() {
