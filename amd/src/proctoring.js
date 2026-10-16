@@ -465,8 +465,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             window.addEventListener('online', connectionChanged);
             window.addEventListener('offline', connectionChanged);
             return {
-                submit: function(request, capturedat) {
-                    return !inactive && queue.enqueue(request, capturedat);
+                submit: function(request, capturedat, opts) {
+                    return !inactive && queue.enqueue(request, capturedat, opts);
                 },
                 device: function(device, missing) {
                     if (device === 'camera') {
@@ -2341,6 +2341,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (!monitoringActive) {
                     return;
                 }
+                // A coverage-banner log is a diagnostic about the upload queue itself: it must
+                // never evict the evidence it reports about (Codex review).
+                const expendable = !!(detail && typeof detail.key === 'string' && detail.key.indexOf('coverage:') === 0);
                 uploads.submit({
                     methodname: 'quizaccess_proctoring_log_event',
                     args: {
@@ -2354,7 +2357,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         currenturl: window.location.href,
                         screenshot: '',
                     }
-                }, Math.floor(captureClock() / 1000));
+                }, Math.floor(captureClock() / 1000), expendable ? {expendable: true} : undefined);
             };
             pendingWarningLogs.splice(0).forEach(function(entry) {
                 warningLogger(entry[0], entry[1]);

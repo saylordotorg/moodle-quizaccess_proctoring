@@ -185,10 +185,15 @@ define([], function() {
             };
             return {
                 snapshot: snapshot,
-                enqueue: function(request, capturedat) {
+                enqueue: function(request, capturedat, opts) {
                     if (disposed || auth) {
                         return false;
                     }
+                    // An expendable item is a diagnostic about the queue itself (a coverage-banner
+                    // log): it never makes room for itself by evicting evidence, and discarding one
+                    // is not evidence loss - counting it would re-raise the very banner whose
+                    // logging it was, evicting more captures each cycle (Codex review).
+                    const expendable = !!(opts && opts.expendable);
                     expire();
                     const payload = {
                         methodname: request.methodname,
@@ -200,6 +205,9 @@ define([], function() {
                     // UTF-16 string size is a conservative bound for serialized base64/JSON evidence.
                     const bytes = JSON.stringify(payload).length * 2;
                     if (bytes > maxBytes) {
+                        if (expendable) {
+                            return false;
+                        }
                         dropped++;
                         lastProblem = 'capacity';
                         lastDropAt = now();
@@ -207,7 +215,12 @@ define([], function() {
                         return false;
                     }
                     while (items.length >= maxItems || snapshot().bytes + bytes > maxBytes) {
-                        const oldest = items.find(item => item !== active && lowValue(item))
+                        const sacrificial = items.find(item => item !== active && item.expendable);
+                        if (!sacrificial && expendable) {
+                            return false;
+                        }
+                        const oldest = sacrificial
+                            || items.find(item => item !== active && lowValue(item))
                             || items.find(item => item !== active);
                         if (!oldest) {
                             dropped++;
@@ -216,10 +229,15 @@ define([], function() {
                             emit();
                             return false;
                         }
-                        drop(oldest, 'capacity');
+                        if (oldest.expendable) {
+                            items = items.filter(entry => entry !== oldest);
+                            oldest.request = null;
+                        } else {
+                            drop(oldest, 'capacity');
+                        }
                     }
                     items.push({request: payload, bytes: bytes, created: now(), next: now(), failures: 0,
-                        queuedOffline: !online()});
+                        queuedOffline: !online(), expendable: expendable});
                     pump();
                     return true;
                 },

@@ -227,4 +227,38 @@ for (const built of [false, true]) {
         assert.deepEqual(sent, ['away_capture', 'away_capture', 'away_capture'],
             'every capture is delivered and the mouse event is the one dropped');
     });
+
+    test(`a diagnostic log never evicts evidence, and its discard is not evidence loss (${suffix})`, async () => {
+        // The coverage-banner logs travel through the same queue they report on: letting one
+        // evict a capture - or counting its own discard as a drop - re-raises the banner it was
+        // logging, evicting more captures each cycle.
+        let resolveactive;
+        const env = fixture({maxItems: 3}, built);
+        env.outcomes.push(() => new Promise(resolve => { resolveactive = resolve; }));
+        const evidence = (name) => ({methodname: 'quizaccess_proctoring_log_event', args: {
+            eventtype: 'away_capture', eventdetail: name, screenshot: 'x'.repeat(20)
+        }});
+        const coverage = {methodname: 'quizaccess_proctoring_log_event', args: {
+            eventtype: 'warning_shown', eventdetail: '{"key":"coverage:lost"}'
+        }};
+        env.queue.enqueue(evidence('first'), 991); // Becomes the active upload.
+        env.queue.enqueue(evidence('second'), 992);
+        env.queue.enqueue(evidence('third'), 993);
+        // Full queue: the diagnostic is refused outright, silently.
+        assert.equal(env.queue.enqueue(coverage, 994, {expendable: true}), false);
+        assert.equal(env.queue.snapshot().pending, 3, 'no capture was evicted for the diagnostic');
+        assert.equal(env.queue.snapshot().dropped, 0, 'its discard is not counted as evidence loss');
+        // With room, a queued diagnostic gives its place back to arriving evidence, silently.
+        resolveactive({warnings: []});
+        await settle();
+        assert.equal(env.queue.enqueue(coverage, 995, {expendable: true}), true);
+        env.queue.enqueue(evidence('fourth'), 996);
+        assert.equal(env.queue.snapshot().dropped, 0, 'the diagnostic made way without counting as a drop');
+        await env.advance(1000);
+        await env.advance(1000);
+        await env.advance(1000);
+        const sent = env.requests.map(sentrequest => sentrequest.args.eventtype);
+        assert.deepEqual(sent, ['away_capture', 'away_capture', 'away_capture', 'away_capture'],
+            'every capture is delivered; only the diagnostic stood aside');
+    });
 }
