@@ -226,6 +226,41 @@ final class attempt_cleanup_test extends advanced_testcase {
     }
 
     /**
+     * The sweep retires active holds whose attempt was bulk-deleted and restores the grade.
+     *
+     * Course resets delete quiz_attempts rows without firing attempt_deleted, and an active
+     * hold left behind would mask the student's next attempt on a reused quiz indefinitely
+     * (PR review).
+     */
+    public function test_orphan_sweep_retires_holds_of_bulk_deleted_attempts(): void {
+        global $DB;
+
+        [$course, $quiz, $cm, $user, $attemptid] = $this->fixture();
+        $holdid = quizaccess_proctoring_apply_risk_hold(
+            (int)$course->id,
+            (int)$cm->id,
+            (int)$user->id,
+            $attemptid,
+            0,
+            90,
+            80
+        );
+        // A course reset deletes the rows directly; no event fires.
+        $DB->delete_records('quiz_attempts', ['id' => $attemptid]);
+
+        $retired = attempt_cleanup::retire_orphaned_holds();
+
+        $this->assertSame(1, $retired);
+        $this->assertFalse($DB->record_exists('quizaccess_proctoring_risk_holds', ['id' => $holdid]));
+        $item = \grade_item::fetch(['itemtype' => 'mod', 'itemmodule' => 'quiz',
+            'iteminstance' => $quiz->id, 'courseid' => $course->id]);
+        $grade = \grade_grade::fetch(['itemid' => $item->id, 'userid' => $user->id]);
+        if ($grade) {
+            $this->assertEmpty($grade->locked, 'the orphaned hold must not keep the gradebook locked');
+        }
+    }
+
+    /**
      * The sweep queues rows whose attempt is gone and leaves live attempts alone.
      */
     public function test_orphan_sweep_queues_only_dead_rows(): void {

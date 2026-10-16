@@ -125,4 +125,46 @@ class attempt_cleanup {
         $DB->set_field_select('quizaccess_proctoring_logs', 'deletionprogress', 1, "id $insql", $params);
         return count($orphans);
     }
+
+    /**
+     * Retire active holds whose attempt no longer exists, and reconcile those grades.
+     *
+     * Course resets and other bulk paths delete quiz_attempts rows directly, without firing
+     * attempt_deleted for each one (PR review). An active hold left behind would mask the
+     * student's next attempt on a reused quiz indefinitely - there is nothing left to review,
+     * so there is nothing to hold. Decided holds are left as the audit trail they are.
+     *
+     * @return int Number of holds retired.
+     */
+    public static function retire_orphaned_holds(): int {
+        global $CFG, $DB;
+
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+
+        $orphans = $DB->get_records_sql(
+            "SELECT h.id, h.quizinstance, h.userid
+               FROM {quizaccess_proctoring_risk_holds} h
+          LEFT JOIN {quiz_attempts} qa ON qa.id = h.attemptid
+              WHERE h.status = :active AND qa.id IS NULL
+           ORDER BY h.id",
+            ['active' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE],
+            0,
+            self::BATCH
+        );
+        if (!$orphans) {
+            return 0;
+        }
+        $DB->delete_records_list('quizaccess_proctoring_risk_holds', 'id', array_keys($orphans));
+
+        $pairs = [];
+        foreach ($orphans as $hold) {
+            $pairs[$hold->quizinstance . ':' . $hold->userid] = [(int)$hold->quizinstance, (int)$hold->userid];
+        }
+        foreach ($pairs as [$quizinstance, $userid]) {
+            // A hold was removed for this student, so this mirrors a release: the gradebook is
+            // rebuilt from whatever holds and attempts remain, and the hold feedback cleared.
+            risk_hold_enforcer::enforce($quizinstance, $userid, true);
+        }
+        return count($orphans);
+    }
 }
