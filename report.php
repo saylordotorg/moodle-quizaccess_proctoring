@@ -167,7 +167,7 @@ function quizaccess_proctoring_not_monitored_item(string $factorkey, string $rea
  */
 function quizaccess_proctoring_finding_description(string $factorkey, bool $hasimage): string {
     $desc = get_string('riskfactordesc:' . $factorkey, 'quizaccess_proctoring');
-    if (in_array($factorkey, ['aitoolscreenshot', 'phonedetected', 'multiplefaces'], true)) {
+    if (in_array($factorkey, ['aitoolscreenshot', 'aireviewconfirmed', 'phonedetected', 'multiplefaces'], true)) {
         $desc .= ' ' . get_string($hasimage ? 'riskfactorimage:attached' : 'riskfactorimage:none', 'quizaccess_proctoring');
     }
     return $desc;
@@ -240,6 +240,7 @@ function quizaccess_proctoring_factor_color_class(string $key): string {
     $map = [
         'aitool' => 'red',
         'aitoolscreenshot' => 'red',
+        'aireviewconfirmed' => 'red',
         'tabactivity' => 'orange',
         'clipboard' => 'purple',
         'f12' => 'purple',
@@ -1238,7 +1239,30 @@ if (
             // Screenshot-backed AI-tool evidence is stored as ordinary possible_ai_tool events.
             $eventsource = $factorkey === 'aitoolscreenshot' ? 'aitool' : $factorkey;
             $sourcetypes = array_keys(quizaccess_proctoring_event_factor_map(), $eventsource, true);
-            if ($sourcetypes) {
+            if ($factorkey === 'aireviewconfirmed') {
+                // The evidence is the specific captures whose AI review confirmed them (CPIT-483),
+                // found through the verdicts rather than any event type.
+                $captureevents = $DB->get_records_sql(
+                    "SELECT e.id, e.eventtype, e.screenshoturl, e.timemodified
+                       FROM {quizaccess_proctoring_events} e
+                       JOIN {quizaccess_proctoring_ai_reviews} r ON r.eventid = e.id
+                      WHERE e.courseid = :aircourseid AND e.quizid = :aircmid AND e.userid = :airstudentid
+                        AND r.reviewtype = :airtype AND r.status = :airstatus AND r.decision = :airdecision
+                        AND COALESCE(e.screenshoturl, '') <> ''"
+                        . ((int)$riskscore['attemptid'] > 0 ? ' AND e.attemptid = :airattemptid' : '') . "
+                   ORDER BY e.timemodified ASC, e.id ASC",
+                    [
+                        'aircourseid' => (int)$courseid,
+                        'aircmid' => (int)$cmid,
+                        'airstudentid' => (int)$studentid,
+                        'airtype' => 'event',
+                        'airstatus' => QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE,
+                        'airdecision' => 'highly_suspicious',
+                    ] + ((int)$riskscore['attemptid'] > 0 ? ['airattemptid' => (int)$riskscore['attemptid']] : []),
+                    0,
+                    4
+                );
+            } else if ($sourcetypes) {
                 // Asked for directly rather than taken from the activity feed, which keeps only the
                 // newest 200 events: an older screenshot must not read as "no image was captured".
                 [$typesql, $typeparams] = $DB->get_in_or_equal($sourcetypes, SQL_PARAMS_NAMED, 'capturetype');

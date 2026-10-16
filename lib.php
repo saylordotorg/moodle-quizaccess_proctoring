@@ -1327,6 +1327,22 @@ function quizaccess_proctoring_ai_review_configured(?array $settings = null): bo
 }
 
 /**
+ * Whether event-level AI reviews of desktop captures can run at all (CPIT-483).
+ *
+ * The AI-review-confirmed risk factor reads these reviews' verdicts, so reports need to know
+ * whether the monitor behind it is armed: AI review configured and the desktop-event mode on.
+ *
+ * @param array|null $settings Optional normalized settings.
+ * @return bool
+ */
+function quizaccess_proctoring_event_ai_review_active(?array $settings = null): bool {
+    $settings = $settings ?? quizaccess_proctoring_get_ai_review_settings();
+
+    return quizaccess_proctoring_ai_review_configured($settings)
+        && (string)($settings['desktopmode'] ?? 'off') !== 'off';
+}
+
+/**
  * Determine whether a specific AI review provider has enough configuration to run.
  *
  * @param string $provider Provider key.

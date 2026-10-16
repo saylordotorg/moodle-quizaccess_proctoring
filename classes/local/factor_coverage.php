@@ -178,6 +178,7 @@ final class factor_coverage {
         }
 
         $reasons = [];
+        $aireviewactive = \quizaccess_proctoring_event_ai_review_active();
         foreach (array_keys(risk_calculator::FACTOR_DEFAULTS) as $factorkey) {
             $reason = self::reason(
                 $factorkey,
@@ -186,7 +187,8 @@ final class factor_coverage {
                 $monitorunsupported,
                 $comparedcount,
                 $facecheckcount,
-                $detectorsstarted
+                $detectorsstarted,
+                $aireviewactive
             );
             if ($reason !== null) {
                 $reasons[$factorkey] = $reason;
@@ -206,6 +208,7 @@ final class factor_coverage {
      * @param int $comparedcount Webcam captures compared with the reference photo, or -1 when unknown.
      * @param int $facecheckcount Webcam captures checked for a face, or -1 when unknown.
      * @param array $detectorsstarted Factor key => whether the browser reported that its detector started.
+     * @param bool $aireviewactive Whether event-level AI review of desktop captures is configured and on.
      * @return string|null One of the REASON_* constants, or null when the check ran.
      */
     public static function reason(
@@ -215,10 +218,16 @@ final class factor_coverage {
         bool $monitorunsupported,
         int $comparedcount,
         int $facecheckcount,
-        array $detectorsstarted = []
+        array $detectorsstarted = [],
+        bool $aireviewactive = false
     ): ?string {
         if (in_array($factorkey, self::FACTORS_WITHOUT_DETECTOR, true)) {
             return self::REASON_NOT_BUILT;
+        }
+        if ($factorkey === 'aireviewconfirmed') {
+            // Checked server-side from stored desktop captures, not by an in-browser monitor:
+            // armed whenever event AI review is configured and on (CPIT-483).
+            return $aireviewactive ? null : self::REASON_SETTING_OFF;
         }
         if ($factorkey === 'facemismatch') {
             return $comparedcount < 0 ? self::REASON_NOT_RECORDED
