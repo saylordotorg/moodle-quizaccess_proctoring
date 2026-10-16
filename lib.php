@@ -2039,6 +2039,10 @@ function quizaccess_proctoring_get_active_cheating_lockout(
  * @param int $reportid Proctoring report id.
  * @param int $riskscore Risk score.
  * @param int $threshold Configured threshold.
+ * @param bool $notify Whether a newly created hold tells the student it is under review. The
+ *                     automatic-failure path passes false: its hold is final within the same
+ *                     request, so a "wait for the review" notice would be wrong, and the
+ *                     auto-fail decision notice follows anyway (PR review).
  * @return int Hold id.
  */
 function quizaccess_proctoring_apply_risk_hold(
@@ -2048,7 +2052,8 @@ function quizaccess_proctoring_apply_risk_hold(
     int $attemptid,
     int $reportid,
     int $riskscore,
-    int $threshold
+    int $threshold,
+    bool $notify = true
 ): int {
     global $CFG, $DB;
 
@@ -2101,7 +2106,7 @@ function quizaccess_proctoring_apply_risk_hold(
     // withheld (CPIT-463, Student Affairs): without this the first thing they heard was the
     // decision - or a premature "course completed" message sent during submission processing,
     // before this code could run, which the notice tells them to disregard.
-    if ($creatednew && quizaccess_proctoring_should_notify_hold_created()) {
+    if ($notify && $creatednew && quizaccess_proctoring_should_notify_hold_created()) {
         quizaccess_proctoring_notify_hold_decision($hold, 'held');
     }
 
@@ -2195,6 +2200,8 @@ function quizaccess_proctoring_fail_high_risk_attempt(
         $hold = quizaccess_proctoring_get_risk_hold($courseid, $cmid, $userid, $attemptid, $reportid);
     }
     if (!$hold) {
+        // No held notice here: this hold turns into an automatic failure within this request,
+        // and "wait for the review" would be wrong. The auto-fail notice follows below.
         $holdid = quizaccess_proctoring_apply_risk_hold(
             $courseid,
             $cmid,
@@ -2202,7 +2209,8 @@ function quizaccess_proctoring_fail_high_risk_attempt(
             $attemptid,
             $reportid,
             $riskscore,
-            $threshold
+            $threshold,
+            false
         );
         $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $holdid], '*', MUST_EXIST);
     } else {
