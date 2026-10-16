@@ -22,6 +22,7 @@ Generated from `lang/en/quizaccess_proctoring.php`; `{$a}` and `{$a->...}` are f
 | `identityrecheck:newattempt` | This quiz requires a fresh photo ID check for each new attempt. Verify your photo ID and start within ten minutes. |
 | `identityrecheck:policychanged` | The identity requirements have changed or your earlier check has no saved policy record. Verify your photo ID again before starting. |
 | `idrecheckrequired` | Your photo ID verification is no longer current. Return to the preflight check and verify your photo ID again. |
+| `idverificationunreadablefile` | That image file could not be read. Photos saved as HEIC (how iPhones often save them) cannot be used directly: use the "Start ID camera" button to photograph your ID instead, or choose a JPG or PNG copy of it. |
 | `invalidapi` | Face match API key is invalid. Please contact the admin. |
 | `modal:checkmonitors` | Check monitor setup |
 | `modal:faceregistration` | Face registration: |

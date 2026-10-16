@@ -1467,6 +1467,7 @@ $string['identityrecheck:newattempt'] = 'This quiz requires a fresh photo ID che
 $string['identityrecheck:namechanged'] = 'Your profile name has changed or your earlier check has no saved name record. Verify your photo ID again before starting.';
 $string['identityrecheck:policychanged'] = 'The identity requirements have changed or your earlier check has no saved policy record. Verify your photo ID again before starting.';
 $string['idrecheckrequired'] = 'Your photo ID verification is no longer current. Return to the preflight check and verify your photo ID again.';
+$string['idverificationunreadablefile'] = 'That image file could not be read. Photos saved as HEIC (how iPhones often save them) cannot be used directly: use the "Start ID camera" button to photograph your ID instead, or choose a JPG or PNG copy of it.';
 $string['coverage:connection'] = 'Monitoring uploads are delayed. Keep this quiz tab open: a few recent captures are held in memory and retried for up to two minutes. Leaving the page clears them. A connection gap is not evidence of misconduct; Moodle saves quiz answers separately.';
 $string['coverage:lost'] = 'Some monitoring captures could not be delivered before the short recovery buffer filled or expired. Staff will see a coverage gap, not an automatic misconduct finding.';
 $string['coverage:recovered'] = 'Monitoring uploads have recovered. Buffered captures were delivered with their original capture times. A connection interruption is not evidence of misconduct.';

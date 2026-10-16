@@ -86,6 +86,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'preflight:cancelwithdrawtitle', component: 'quizaccess_proctoring'},
                 {key: 'screensharenotonmobile', component: 'quizaccess_proctoring'},
                 {key: 'screenmarkerblankshare', component: 'quizaccess_proctoring'},
+                {key: 'idverificationunreadablefile', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -146,6 +147,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     preflightcancelwithdrawtitle: strings[53],
                     screensharenotonmobile: strings[54],
                     screenmarkerblankshare: strings[55],
+                    idverificationunreadablefile: strings[56],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -770,14 +772,54 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                 };
 
-                const readFileAsDataUrl = function(file) {
+                // The longest edge an uploaded ID photo is scaled down to. Enough to read the
+                // name and photo (the camera path captures less), and far inside the server's
+                // byte and pixel caps that stock phone photos exceed (CPIT-501).
+                const idUploadMaxEdge = 1600;
+
+                /**
+                 * An uploaded ID photo, decoded and re-encoded the way the camera path's capture
+                 * is. Sending the file's own bytes failed for everyday files - a stock iPhone
+                 * photo sits just over the server's 12-megapixel cap, high-resolution modes pass
+                 * 8MB, and an iPhone export is often HEIC bytes in a file named .jpg (CPIT-501).
+                 * Re-encoding removes the size, pixel and type questions in one move; a file the
+                 * browser cannot decode at all (HEIC outside Safari) rejects, and the caller
+                 * tells the student to use the camera button or a JPG/PNG instead.
+                 *
+                 * @param {File} file The chosen file.
+                 * @return {Promise<string>} A JPEG data URL.
+                 */
+                const readIdDocumentFile = function(file) {
                     return new Promise(function(resolve, reject) {
-                        const reader = new FileReader();
-                        reader.onload = function() {
-                            resolve(reader.result);
+                        const url = URL.createObjectURL(file);
+                        const image = new Image();
+                        const cleanup = function() {
+                            URL.revokeObjectURL(url);
                         };
-                        reader.onerror = reject;
-                        reader.readAsDataURL(file);
+                        image.onload = function() {
+                            try {
+                                const sourceWidth = image.naturalWidth || image.width;
+                                const sourceHeight = image.naturalHeight || image.height;
+                                if (!sourceWidth || !sourceHeight) {
+                                    throw new Error('empty image');
+                                }
+                                const scale = Math.min(1, idUploadMaxEdge / Math.max(sourceWidth, sourceHeight));
+                                const canvas = document.createElement('canvas');
+                                canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+                                canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+                                canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+                                resolve(canvas.toDataURL('image/jpeg', 0.92));
+                            } catch (error) {
+                                reject(error);
+                            } finally {
+                                cleanup();
+                            }
+                        };
+                        image.onerror = function(error) {
+                            cleanup();
+                            reject(error);
+                        };
+                        image.src = url;
                     });
                 };
 
@@ -2720,9 +2762,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     let idImage = capturedIdImages.front;
                     if (!idImage) {
                         try {
-                            idImage = await readFileAsDataUrl(idInput.files[0]);
+                            idImage = await readIdDocumentFile(idInput.files[0]);
                         } catch (error) {
-                            failIdentity(strings.idverificationdocumentmissing);
+                            // The file is there; the browser cannot decode it (HEIC, usually).
+                            failIdentity(strings.idverificationunreadablefile);
                             return;
                         }
                     }
@@ -2730,9 +2773,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     let idBackImage = capturedIdImages.back;
                     if (idBackRequired && !idBackImage) {
                         try {
-                            idBackImage = await readFileAsDataUrl(idBackInput.files[0]);
+                            idBackImage = await readIdDocumentFile(idBackInput.files[0]);
                         } catch (error) {
-                            failIdentity(getIdDocumentMissingMessage('back'));
+                            failIdentity(strings.idverificationunreadablefile);
                             return;
                         }
                     }
