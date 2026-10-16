@@ -146,6 +146,7 @@ Generated from `lang/en/quizaccess_proctoring.php`; `{$a}` and `{$a->...}` are f
 | `referenceunusable` | Your saved reference photo does not show a face, so it cannot be matched. Contact support and ask for your proctoring reference photo to be replaced. |
 | `screenmarkerblankshare` | Your shared screen is coming through black, so it cannot be checked. Make sure your computer allows this browser to record the screen (on a Mac: System Settings > Privacy & Security > Screen Recording), then quit and reopen the browser and share again. |
 | `screenmarkerchecking` | Checking the shared screen. Keep this quiz window in front so the screen check marker stays visible. |
+| `screenmarkerdraghint` | Drag this box to move it out of the way. It must stay visible somewhere on your shared screen. |
 | `screenmarkerlabel` | Screen check |
 | `screenmarkerwrongmonitor` | The shared screen does not show this quiz page. Move the quiz window to the shared monitor or share the monitor containing the quiz. If the quiz is already on the shared screen, keep the "Screen check" box visible (not covered by another window), turn off Night Shift, True Tone or other colour filters on the display, and try again. |
 | `screenshareaccepted` | Entire screen shared. You can continue. |

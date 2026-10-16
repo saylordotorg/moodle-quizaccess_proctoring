@@ -87,6 +87,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'screensharenotonmobile', component: 'quizaccess_proctoring'},
                 {key: 'screenmarkerblankshare', component: 'quizaccess_proctoring'},
                 {key: 'idverificationunreadablefile', component: 'quizaccess_proctoring'},
+                {key: 'screenmarkerdraghint', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -148,6 +149,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     screensharenotonmobile: strings[54],
                     screenmarkerblankshare: strings[55],
                     idverificationunreadablefile: strings[56],
+                    screenmarkerdraghint: strings[57],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -2855,6 +2857,96 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return Math.ceil(bottom) + 8;
                 };
 
+                // Where the student dragged the Screen check box, kept for the rest of the exam
+                // session: the box has to stay somewhere on the shared screen, but where is the
+                // student's choice - every default placement covered something for someone (the
+                // navbar icons, then the avatar menu; CPIT-498). The attempt page reads the same
+                // key, so the chosen spot follows the student into the exam.
+                const markerPositionKey = 'quizaccess_proctoring_marker_position';
+
+                const storedMarkerPosition = function() {
+                    try {
+                        const raw = window.sessionStorage.getItem(markerPositionKey);
+                        const pos = raw ? JSON.parse(raw) : null;
+                        if (!pos || typeof pos.left !== 'number' || typeof pos.top !== 'number') {
+                            return null;
+                        }
+                        return pos;
+                    } catch (error) {
+                        return null;
+                    }
+                };
+
+                const saveMarkerPosition = function(left, top) {
+                    try {
+                        window.sessionStorage.setItem(markerPositionKey, JSON.stringify({left: left, top: top}));
+                    } catch (error) {
+                        // Without storage the box simply returns to its default on the next page.
+                    }
+                };
+
+                const applyMarkerPosition = function(markerElement, pos) {
+                    const width = markerElement.offsetWidth || 220;
+                    const height = markerElement.offsetHeight || 96;
+                    // On screen, whatever the window size is now: a box dragged off screen would
+                    // fail the screen check it exists for.
+                    const left = Math.min(Math.max(8, pos.left), Math.max(8, window.innerWidth - width - 8));
+                    const top = Math.min(Math.max(8, pos.top), Math.max(8, window.innerHeight - height - 8));
+                    markerElement.style.left = left + 'px';
+                    markerElement.style.top = top + 'px';
+                    markerElement.style.right = 'auto';
+                };
+
+                const bindMarkerDrag = function(markerElement) {
+                    if (!markerElement || typeof markerElement.addEventListener !== 'function'
+                            || (markerElement.dataset && markerElement.dataset.proctoringDragBound === '1')) {
+                        return;
+                    }
+                    if (markerElement.dataset) {
+                        markerElement.dataset.proctoringDragBound = '1';
+                    }
+                    let startx = 0;
+                    let starty = 0;
+                    let startleft = 0;
+                    let starttop = 0;
+                    let dragging = false;
+                    markerElement.addEventListener('pointerdown', function(event) {
+                        const rect = markerElement.getBoundingClientRect();
+                        dragging = true;
+                        startx = event.clientX;
+                        starty = event.clientY;
+                        startleft = rect.left;
+                        starttop = rect.top;
+                        markerElement.classList.add('is-dragging');
+                        try {
+                            markerElement.setPointerCapture(event.pointerId);
+                        } catch (error) {
+                            // Pointer capture is a convenience; the drag works without it.
+                        }
+                        event.preventDefault();
+                    });
+                    markerElement.addEventListener('pointermove', function(event) {
+                        if (!dragging) {
+                            return;
+                        }
+                        applyMarkerPosition(markerElement, {
+                            left: startleft + (event.clientX - startx),
+                            top: starttop + (event.clientY - starty),
+                        });
+                    });
+                    const finishdrag = function() {
+                        if (!dragging) {
+                            return;
+                        }
+                        dragging = false;
+                        markerElement.classList.remove('is-dragging');
+                        const rect = markerElement.getBoundingClientRect();
+                        saveMarkerPosition(rect.left, rect.top);
+                    };
+                    markerElement.addEventListener('pointerup', finishdrag);
+                    markerElement.addEventListener('pointercancel', finishdrag);
+                };
+
                 const initScreenMarker = function() {
                     if (!screenRequired || !screenMarkerRequired ||
                             document.getElementById('proctoring-screen-verification-marker')) {
@@ -2864,8 +2956,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     $('body').append(
                         '<div id="proctoring-screen-verification-marker" ' +
                             'class="proctoring-screen-verification-marker" aria-hidden="true" ' +
+                            `title="${escapeHtml(strings.screenmarkerdraghint || '')}" ` +
                             `style="position:fixed;top:${screenMarkerTop()}px;right:8px;z-index:10002;width:220px;padding:8px;` +
-                            'border:3px solid #fff;background:#111;color:#fff;pointer-events:none;">' +
+                            'border:3px solid #fff;background:#111;color:#fff;cursor:grab;touch-action:none;' +
+                            'user-select:none;">' +
                             `<div class="proctoring-screen-marker-label">${escapeHtml(strings.screenmarkerlabel)}</div>` +
                             '<div class="proctoring-screen-marker-colors">' +
                                 '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-magenta" ' +
@@ -2879,14 +2973,28 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         '</div>'
                     );
 
+                    const marker = document.getElementById('proctoring-screen-verification-marker');
+                    const dragged = storedMarkerPosition();
+                    if (marker && dragged) {
+                        applyMarkerPosition(marker, dragged);
+                    }
+                    bindMarkerDrag(marker);
+
                     // The navbar changes height without a window resize too: expanding the
                     // collapsed Bootstrap navbar only toggles its content (PR #67 review). So
                     // watch the navbar itself where the browser can, besides window resizes.
+                    // A position the student chose is only re-clamped onto the screen.
                     const repositionMarker = function() {
-                        const marker = document.getElementById('proctoring-screen-verification-marker');
-                        if (marker) {
-                            marker.style.top = screenMarkerTop() + 'px';
+                        const markerelement = document.getElementById('proctoring-screen-verification-marker');
+                        if (!markerelement || markerelement.classList.contains('is-dragging')) {
+                            return;
                         }
+                        const chosen = storedMarkerPosition();
+                        if (chosen) {
+                            applyMarkerPosition(markerelement, chosen);
+                            return;
+                        }
+                        markerelement.style.top = screenMarkerTop() + 'px';
                     };
                     window.addEventListener('resize', repositionMarker);
                     if (typeof ResizeObserver === 'function' && typeof document.querySelector === 'function') {
