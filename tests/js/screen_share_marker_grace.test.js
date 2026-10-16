@@ -63,6 +63,16 @@ const SHIFTED_COLOURS = [
     [205, 175, 100], // Yellow, dimmed.
 ];
 
+// The swatches with the blue channel halved: what the dev diagnostics recorded on a real
+// rejected share (CPIT-498 — Windows Night light scales blue down at scanout, so magenta
+// and cyan fell out of the colour boxes while yellow survived). Must pass the hue-shape
+// rules, and fails both the original and the box-widened thresholds.
+const NIGHTLIGHT_COLOURS = [
+    [240, 15, 105],  // Magenta, blue halved.
+    [20, 230, 105],  // Cyan, blue halved.
+    [245, 215, 10],  // Yellow, barely affected.
+];
+
 /**
  * Build a synthetic captured frame at true capture proportions.
  *
@@ -89,6 +99,7 @@ function makeFrame(layout, width, height) {
         marker: {size: [43, 18], gap: 4, at: [1000, 100]},
         specks: {size: [12, 12], gap: 4, at: [1000, 100]},
         shifted: {size: [43, 18], gap: 4, at: [1000, 100], colours: SHIFTED_COLOURS},
+        nightlight: {size: [43, 18], gap: 4, at: [1000, 100], colours: NIGHTLIGHT_COLOURS},
     };
     const shape = shapes[layout];
     if (!shape) {
@@ -595,6 +606,20 @@ test('a colour-shifted marker is still found (CPIT-498)', async () => {
 
     assert.strictEqual(env.gate.style.display, 'none',
         'a colour-shifted but correct share must be accepted');
+    assert.strictEqual(env.status.textContent, 'screenshareaccepted');
+    assert.strictEqual(env.markerMissingEvents().length, 0);
+});
+
+test('a marker with its blue channel halved is still found (CPIT-498, Night light)', async () => {
+    // The real rejected share on dev: the capture came through with blue scaled down, so
+    // magenta and cyan fell out of the colour boxes while yellow survived — one missing
+    // hue failed the whole check. The hue-shape rules must accept this frame.
+    const env = await bootWithShare({}, (e) => {
+        e.frameLayout = 'nightlight';
+    });
+
+    assert.strictEqual(env.gate.style.display, 'none',
+        'a warm-shifted but correct share must be accepted');
     assert.strictEqual(env.status.textContent, 'screenshareaccepted');
     assert.strictEqual(env.markerMissingEvents().length, 0);
 });

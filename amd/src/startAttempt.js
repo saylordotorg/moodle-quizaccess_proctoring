@@ -2985,16 +2985,23 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             const blue = data[offset + 2];
                             let color = '';
 
-                            // Tolerances sit ~55-110 per channel off the pure swatch colours
-                            // (#ff00cc, #00ffcc, #ffe600): Night Shift, True Tone and colour-managed
-                            // captures warm or shift a legitimate share, and all three hues must
-                            // still land together in one search window, so the widening does not
-                            // let ordinary desktop content pass (CPIT-498).
-                            if (red > 200 && green < 110 && blue > 140) {
+                            // Each colour passes by its box (~55-110 per channel off the pure
+                            // swatch colours #ff00cc, #00ffcc, #ffe600) or by its hue shape
+                            // (which channels dominate which): dev diagnostics on a real
+                            // rejected share showed the whole frame warmed - blue halved, as
+                            // Windows Night light does at scanout - so magenta and cyan, which
+                            // both needed blue above 140, vanished while yellow survived. A hue
+                            // judged by its internal contrasts survives uniform warming and
+                            // dimming; the three-hues-in-one-window and area floors still keep
+                            // ordinary content from matching (CPIT-498).
+                            if ((red > 200 && green < 110 && blue > 140)
+                                    || (red > 180 && blue > 100 && green < blue - 60 && green < red - 80)) {
                                 color = 'magenta';
-                            } else if (red < 110 && green > 170 && blue > 140) {
+                            } else if ((red < 110 && green > 170 && blue > 140)
+                                    || (green > 160 && blue > 100 && red < blue - 40 && red < green - 80)) {
                                 color = 'cyan';
-                            } else if (red > 200 && green > 170 && blue < 110) {
+                            } else if ((red > 200 && green > 170 && blue < 110)
+                                    || (red > 180 && green > 160 && blue < green - 80)) {
                                 color = 'yellow';
                             }
 
