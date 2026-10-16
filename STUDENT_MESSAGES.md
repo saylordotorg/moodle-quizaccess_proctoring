@@ -10,6 +10,7 @@ Generated from `lang/en/quizaccess_proctoring.php`; `{$a}` and `{$a->...}` are f
 | --- | --- |
 | `cameradark` | Your camera is on, but it is sending a completely black picture. Check that nothing is covering the camera (a privacy shutter or slider), that a camera-off key on your keyboard is not switched on, that your computer's camera privacy settings allow this browser to use the camera, and that no other app (such as Zoom or Teams) is using it. Then try again. |
 | `devicenotice:handheld` | This looks like a phone or tablet. A proctored exam needs a laptop or desktop computer with a webcam: setup asks you to share your whole screen, which phones and tablets cannot do. Switch devices before you start — the exam timer has not begun. |
+| `devicenotice:handheldallowed` | This looks like a phone or tablet. This exam can run here — phones cannot share a screen, so that check is skipped — but a laptop or desktop computer with a webcam is recommended: a bigger screen, fuller monitoring, and fewer camera interruptions. The exam timer has not begun. |
 | `devicenotice:nocamera` | This browser cannot reach a camera, so identity setup will not be able to run. A proctored exam needs a laptop or desktop computer with a working webcam. If you have one, check that no other application is using it and that the browser is allowed to use the camera, then reload this page. The exam timer has not begun. |
 | `facematched` | Face matched. |
 | `facenotfoundoncam` | Face not found. Try changing your camera to a better lighting. Thanks. |

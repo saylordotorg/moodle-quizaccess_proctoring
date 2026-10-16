@@ -88,6 +88,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'screenmarkerblankshare', component: 'quizaccess_proctoring'},
                 {key: 'idverificationunreadablefile', component: 'quizaccess_proctoring'},
                 {key: 'screenmarkerdraghint', component: 'quizaccess_proctoring'},
+                {key: 'devicenotice:handheldallowed', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -150,6 +151,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     screenmarkerblankshare: strings[55],
                     idverificationunreadablefile: strings[56],
                     screenmarkerdraghint: strings[57],
+                    devicenoticehandheldallowed: strings[58],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -2057,9 +2059,18 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     notice.id = 'proctoring-device-notice';
                     notice.className = 'alert alert-warning proctoring-device-notice';
                     notice.setAttribute('role', 'alert');
-                    notice.textContent = hasCamera
-                        ? strings.devicenoticehandheld
-                        : strings.devicenoticenocamera;
+                    // "Switch devices before you start" is only true while this quiz demands a
+                    // screen share, which a phone cannot do. When the site lets phones through
+                    // (screen sharing skipped), that wording stood beside "Setup complete - ready
+                    // to start", telling the student two opposite things at once (CPIT-487). A
+                    // handheld that is allowed to proceed gets advice, not an instruction.
+                    if (!hasCamera) {
+                        notice.textContent = strings.devicenoticenocamera;
+                    } else if (screenRequired) {
+                        notice.textContent = strings.devicenoticehandheld;
+                    } else {
+                        notice.textContent = strings.devicenoticehandheldallowed;
+                    }
                     panel.parentNode.insertBefore(notice, panel);
                 })();
 
