@@ -819,6 +819,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             // navbar icons, then the avatar menu; CPIT-498).
             const markerPositionKey = 'quizaccess_proctoring_marker_position';
 
+            // The position the student chose, held in memory first: session storage only carries
+            // it across pages, and a browser that blocks storage must not snap the box back on
+            // the next repositioning tick (PR review).
+            let draggedMarkerPosition = null;
+
             const storedMarkerPosition = function() {
                 try {
                     const raw = window.sessionStorage.getItem(markerPositionKey);
@@ -832,7 +837,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }
             };
 
+            const currentMarkerPosition = function() {
+                if (!draggedMarkerPosition) {
+                    draggedMarkerPosition = storedMarkerPosition();
+                }
+                return draggedMarkerPosition;
+            };
+
             const saveMarkerPosition = function(left, top) {
+                draggedMarkerPosition = {left: left, top: top};
                 try {
                     window.sessionStorage.setItem(markerPositionKey, JSON.stringify({left: left, top: top}));
                 } catch (error) {
@@ -913,7 +926,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         && markerElement.classList.contains('is-dragging')) {
                     return;
                 }
-                const dragged = storedMarkerPosition();
+                const dragged = currentMarkerPosition();
                 if (dragged) {
                     // The student put the box where it suits them; keep it there, on screen,
                     // and stop reserving panel space for it.

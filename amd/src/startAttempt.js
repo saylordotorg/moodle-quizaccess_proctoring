@@ -2864,6 +2864,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 // key, so the chosen spot follows the student into the exam.
                 const markerPositionKey = 'quizaccess_proctoring_marker_position';
 
+                // The position the student chose, held in memory first: session storage only carries
+                // it across pages, and a browser that blocks storage must not snap the box back on
+                // the next repositioning tick (PR review).
+                let draggedMarkerPosition = null;
+
                 const storedMarkerPosition = function() {
                     try {
                         const raw = window.sessionStorage.getItem(markerPositionKey);
@@ -2877,7 +2882,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                 };
 
+                const currentMarkerPosition = function() {
+                    if (!draggedMarkerPosition) {
+                        draggedMarkerPosition = storedMarkerPosition();
+                    }
+                    return draggedMarkerPosition;
+                };
+
                 const saveMarkerPosition = function(left, top) {
+                    draggedMarkerPosition = {left: left, top: top};
                     try {
                         window.sessionStorage.setItem(markerPositionKey, JSON.stringify({left: left, top: top}));
                     } catch (error) {
@@ -2974,7 +2987,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     );
 
                     const marker = document.getElementById('proctoring-screen-verification-marker');
-                    const dragged = storedMarkerPosition();
+                    const dragged = currentMarkerPosition();
                     if (marker && dragged) {
                         applyMarkerPosition(marker, dragged);
                     }
@@ -2989,7 +3002,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         if (!markerelement || markerelement.classList.contains('is-dragging')) {
                             return;
                         }
-                        const chosen = storedMarkerPosition();
+                        const chosen = currentMarkerPosition();
                         if (chosen) {
                             applyMarkerPosition(markerelement, chosen);
                             return;
