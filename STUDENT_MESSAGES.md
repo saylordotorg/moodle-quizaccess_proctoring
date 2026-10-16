@@ -38,6 +38,7 @@ Generated from `lang/en/quizaccess_proctoring.php`; `{$a}` and `{$a->...}` are f
 | `idvdebug:verdictnotchecked` | not checked |
 | `idvdebug:verdictcarried` | below threshold, carried by the strong face match |
 | `idvdebug:verdictadvisory` | below threshold, advisory only (does not block on this site) |
+| `idvdebug:provideroverride` | The verification provider refused the attempt (for example, it required manual review), so the passing scores did not produce a pass. |
 | `idvdebug:result` | Result: {verdict} |
 | `idvdebug:nodecision` | No pass/fail decision was made: the check ended with status "{status}". |
 | `invalidapi` | Face match API key is invalid. Please contact the admin. |

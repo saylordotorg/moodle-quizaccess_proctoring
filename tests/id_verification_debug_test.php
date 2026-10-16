@@ -129,6 +129,21 @@ final class id_verification_debug_test extends advanced_testcase {
     }
 
     /**
+     * A provider refusal (manual review) outranks passing scores, and the panel says so.
+     *
+     * call_id_verification_endpoint() normalizes a manual-review response to failed while the
+     * passing preliminary scores stay attached; recomputing the result from the scores would show
+     * "passed" beside a failed check - the very contradiction the panel exists to explain.
+     */
+    public function test_provider_override_outranks_passing_scores(): void {
+        $text = $this->panel($this->result(['status' => 'failed', 'facescore' => 96, 'namescore' => 92]));
+
+        $this->assertStringContainsString('provider refused the attempt', $text);
+        $this->assertStringContainsString('Result: failed', $text);
+        $this->assertStringNotContainsString('Result: passed', $text);
+    }
+
+    /**
      * A check that is switched off is reported as not checked, not as a zero that failed.
      */
     public function test_disabled_face_check_reads_not_checked(): void {

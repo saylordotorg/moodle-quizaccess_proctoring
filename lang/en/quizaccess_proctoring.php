@@ -1269,6 +1269,7 @@ $string['idvdebug:verdictfailed'] = 'failed';
 $string['idvdebug:verdictnotchecked'] = 'not checked';
 $string['idvdebug:verdictcarried'] = 'below threshold, carried by the strong face match';
 $string['idvdebug:verdictadvisory'] = 'below threshold, advisory only (does not block on this site)';
+$string['idvdebug:provideroverride'] = 'The verification provider refused the attempt (for example, it required manual review), so the passing scores did not produce a pass.';
 $string['idvdebug:result'] = 'Result: {$a}';
 $string['idvdebug:nodecision'] = 'No pass/fail decision was made: the check ended with status "{$a}".';
 $string['setting:idverificationheading'] = 'ID verification';

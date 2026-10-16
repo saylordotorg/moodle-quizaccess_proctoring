@@ -137,8 +137,16 @@ final class id_verification_debug {
                 'verdict' => $nameverdict,
             ]);
 
+            // The recorded status is the verdict, not the score evaluation: a provider that
+            // demands manual review is normalized to failed with passing scores still attached,
+            // and a panel recomputing from the scores would show "passed" beside a failed check -
+            // the very contradiction this panel exists to explain (Codex review).
+            $passed = ($status === 'pass');
+            if (!$passed && $decision['passed']) {
+                $lines[] = get_string('idvdebug:provideroverride', 'quizaccess_proctoring');
+            }
             $lines[] = get_string('idvdebug:result', 'quizaccess_proctoring', get_string(
-                $decision['passed'] ? 'idvdebug:verdictpassed' : 'idvdebug:verdictfailed',
+                $passed ? 'idvdebug:verdictpassed' : 'idvdebug:verdictfailed',
                 'quizaccess_proctoring'
             ));
         } else {
