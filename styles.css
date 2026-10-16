@@ -2216,7 +2216,14 @@ body.proctoring-multimonitor-blur-active .proctoring-screen-share-gate {
     background: #111111;
     color: #ffffff;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-    pointer-events: none;
+    /* The student drags the box wherever it is least in the way (CPIT-498). */
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+.proctoring-screen-verification-marker.is-dragging {
+    cursor: grabbing;
 }
 
 .proctoring-screen-verification-marker.is-docked {

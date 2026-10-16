@@ -1025,6 +1025,7 @@ $string['riskscore:timetakenshort'] = 'Time taken: {$a}';
 $string['riskscore:webcammissing'] = 'No webcam capture for attempt';
 $string['screenmarkerblankshare'] = 'Your shared screen is coming through black, so it cannot be checked. Make sure your computer allows this browser to record the screen (on a Mac: System Settings > Privacy & Security > Screen Recording), then quit and reopen the browser and share again.';
 $string['screenmarkerchecking'] = 'Checking the shared screen. Keep this quiz window in front so the screen check marker stays visible.';
+$string['screenmarkerdraghint'] = 'Drag this box to move it out of the way. It must stay visible somewhere on your shared screen.';
 $string['screenmarkerlabel'] = 'Screen check';
 $string['screenmarkerwrongmonitor'] = 'The shared screen does not show this quiz page. Move the quiz window to the shared monitor or share the monitor containing the quiz. If the quiz is already on the shared screen, keep the "Screen check" box visible (not covered by another window), turn off Night Shift, True Tone or other colour filters on the display, and try again.';
 $string['screenmonitor:captureunavailable'] = 'Your browser could not read the shared screen. Check screen-recording permissions on your computer, then try sharing again.';

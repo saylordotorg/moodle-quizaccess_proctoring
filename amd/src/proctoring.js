@@ -62,6 +62,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'coverage:device', component: 'quizaccess_proctoring'},
                 {key: 'coverage:rejected', component: 'quizaccess_proctoring'},
                 {key: 'screensharenotonmobile', component: 'quizaccess_proctoring'},
+                {key: 'screenmarkerdraghint', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -100,6 +101,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     coveragedevice: strings[31],
                     coveragerejected: strings[32],
                     screensharenotonmobile: strings[33],
+                    screenmarkerdraghint: strings[34],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -811,8 +813,131 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 return Math.ceil(bottom) + 8;
             };
 
+            // Where the student dragged the Screen check box, kept for the rest of the exam
+            // session: the box has to stay somewhere on the shared screen, but where is the
+            // student's choice - every default placement covered something for someone (the
+            // navbar icons, then the avatar menu; CPIT-498).
+            const markerPositionKey = 'quizaccess_proctoring_marker_position';
+
+            // The position the student chose, held in memory first: session storage only carries
+            // it across pages, and a browser that blocks storage must not snap the box back on
+            // the next repositioning tick (PR review).
+            let draggedMarkerPosition = null;
+
+            const storedMarkerPosition = function() {
+                try {
+                    const raw = window.sessionStorage.getItem(markerPositionKey);
+                    const pos = raw ? JSON.parse(raw) : null;
+                    if (!pos || typeof pos.left !== 'number' || typeof pos.top !== 'number') {
+                        return null;
+                    }
+                    return pos;
+                } catch (error) {
+                    return null;
+                }
+            };
+
+            const currentMarkerPosition = function() {
+                if (!draggedMarkerPosition) {
+                    draggedMarkerPosition = storedMarkerPosition();
+                }
+                return draggedMarkerPosition;
+            };
+
+            const saveMarkerPosition = function(left, top) {
+                draggedMarkerPosition = {left: left, top: top};
+                try {
+                    window.sessionStorage.setItem(markerPositionKey, JSON.stringify({left: left, top: top}));
+                } catch (error) {
+                    // Without storage the box simply returns to its default on the next page.
+                }
+            };
+
+            const applyMarkerPosition = function(markerElement, pos) {
+                const width = markerElement.offsetWidth || 220;
+                const height = markerElement.offsetHeight || 96;
+                // On screen, whatever the window size is now: a box dragged off screen would
+                // fail the screen check it exists for.
+                const left = Math.min(Math.max(8, pos.left), Math.max(8, window.innerWidth - width - 8));
+                const top = Math.min(Math.max(8, pos.top), Math.max(8, window.innerHeight - height - 8));
+                markerElement.style.left = left + 'px';
+                markerElement.style.top = top + 'px';
+                markerElement.style.right = 'auto';
+                markerElement.style.width = '220px';
+            };
+
+            const bindMarkerDrag = function(markerElement) {
+                if (!markerElement || typeof markerElement.addEventListener !== 'function'
+                        || (markerElement.dataset && markerElement.dataset.proctoringDragBound === '1')) {
+                    return;
+                }
+                if (markerElement.dataset) {
+                    markerElement.dataset.proctoringDragBound = '1';
+                }
+                let startx = 0;
+                let starty = 0;
+                let startleft = 0;
+                let starttop = 0;
+                let dragging = false;
+                markerElement.addEventListener('pointerdown', function(event) {
+                    const rect = markerElement.getBoundingClientRect();
+                    dragging = true;
+                    startx = event.clientX;
+                    starty = event.clientY;
+                    startleft = rect.left;
+                    starttop = rect.top;
+                    markerElement.classList.add('is-dragging');
+                    markerElement.classList.remove('is-panel-aligned');
+                    try {
+                        markerElement.setPointerCapture(event.pointerId);
+                    } catch (error) {
+                        // Pointer capture is a convenience; the drag works without it.
+                    }
+                    event.preventDefault();
+                });
+                markerElement.addEventListener('pointermove', function(event) {
+                    if (!dragging) {
+                        return;
+                    }
+                    applyMarkerPosition(markerElement, {
+                        left: startleft + (event.clientX - startx),
+                        top: starttop + (event.clientY - starty),
+                    });
+                });
+                const finishdrag = function() {
+                    if (!dragging) {
+                        return;
+                    }
+                    dragging = false;
+                    markerElement.classList.remove('is-dragging');
+                    const rect = markerElement.getBoundingClientRect();
+                    saveMarkerPosition(rect.left, rect.top);
+                };
+                markerElement.addEventListener('pointerup', finishdrag);
+                markerElement.addEventListener('pointercancel', finishdrag);
+            };
+
             const positionScreenMarker = function(markerElement) {
                 if (!markerElement) {
+                    return;
+                }
+
+                if (markerElement.classList && typeof markerElement.classList.contains === 'function'
+                        && markerElement.classList.contains('is-dragging')) {
+                    return;
+                }
+                const dragged = currentMarkerPosition();
+                if (dragged) {
+                    // The student put the box where it suits them; keep it there, on screen,
+                    // and stop reserving panel space for it.
+                    markerElement.classList.remove('is-panel-aligned');
+                    applyMarkerPosition(markerElement, dragged);
+                    const draggedslot = getDesktopPanelSlot('screen');
+                    const draggedspacer = draggedslot
+                        && draggedslot.querySelector('.proctoring-screen-marker-spacer');
+                    if (draggedspacer) {
+                        draggedspacer.style.height = '0px';
+                    }
                     return;
                 }
 
@@ -895,6 +1020,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 markerElement.dataset.proctoringPositionBound = '1';
                 positionScreenMarker(markerElement);
+                bindMarkerDrag(markerElement);
 
                 window.addEventListener('resize', function() {
                     positionScreenMarker(markerElement);
@@ -915,7 +1041,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 const marker = $(
                     '<div id="proctoring-screen-verification-marker" ' +
-                        'class="proctoring-screen-verification-marker" aria-hidden="true">' +
+                        'class="proctoring-screen-verification-marker" aria-hidden="true" ' +
+                        `title="${strings.screenmarkerdraghint || ''}">` +
                         `<div class="proctoring-screen-marker-label">${strings.screenmarkerlabel}</div>` +
                         '<div class="proctoring-screen-marker-colors">' +
                             '<span class="proctoring-screen-marker-swatch proctoring-screen-marker-magenta"></span>' +
