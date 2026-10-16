@@ -364,28 +364,45 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             return () => serverMs + Math.max(0, monotonic() - started);
         };
 
+        /** How long a drop keeps its coverage banner up; afterwards healthy uploads clear it. */
+        const coverageBannerMs = 180000;
+
         /** One upload queue and an accessible, neutral coverage status for the attempt page. */
-        const createUploadController = function(strings, captureClock) {
+        const createUploadController = function(strings, captureClock, onbanner) {
             let queue;
             let banner = null;
             let inactive = false;
             let cameraMissing = false;
             let screenMissing = false;
+            let shownkind = '';
+            let shownat = 0;
             const render = function(state) {
-                let text = '';
+                // A drop keeps its banner for a while, not for the exam: the queue recovers, the
+                // student cannot act on a stale warning, and a ten-minute-old hiccup shown as a
+                // live problem reads as constant failure (CPIT-503).
+                const recent = (at) => at > 0 && captureClock() - at <= coverageBannerMs;
+                let kind = '';
                 if (state.auth) {
-                    text = strings.attemptwarningsessionlost;
+                    kind = 'sessionlost';
                 } else if (state.offline || state.retrying) {
-                    text = strings.coverageconnection;
-                } else if (state.problem === 'rejected') {
-                    text = strings.coveragerejected;
+                    kind = 'connection';
+                } else if (state.problem === 'rejected' && recent(state.lastdropat)) {
+                    kind = 'rejected';
                 } else if (cameraMissing || screenMissing) {
-                    text = strings.coveragedevice;
-                } else if (state.dropped) {
-                    text = strings.coveragelost;
-                } else if (state.recovered) {
-                    text = strings.coveragerecovered;
+                    kind = 'device';
+                } else if (state.dropped && recent(state.lastdropat)) {
+                    kind = 'lost';
+                } else if (state.recovered && recent(state.lastrecoveredat)) {
+                    kind = 'recovered';
                 }
+                const text = {
+                    sessionlost: strings.attemptwarningsessionlost,
+                    connection: strings.coverageconnection,
+                    rejected: strings.coveragerejected,
+                    device: strings.coveragedevice,
+                    lost: strings.coveragelost,
+                    recovered: strings.coveragerecovered
+                }[kind] || '';
                 if (!banner && text) {
                     banner = document.createElement('div');
                     banner.id = 'proctoring-coverage-status';
@@ -404,6 +421,31 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (banner) {
                     banner.textContent = text || '';
                     banner.style.display = text ? '' : 'none';
+                }
+                // The upload-health banners belong in the "Messages shown to the student" log like
+                // every other on-page message (CPIT-481): without it, the one message a student
+                // reports seeing is the one the report cannot show (CPIT-503). The device banner is
+                // not logged here - the camera and screen warnings it accompanies already are - and
+                // a lost login session cannot deliver its own log entry.
+                const loggable = ['connection', 'rejected', 'lost', 'recovered'].includes(kind) ? kind : '';
+                if (loggable !== shownkind && onbanner) {
+                    // The transition is recorded before the callbacks run: logging goes back
+                    // through the queue, whose state change re-enters this render, and an
+                    // unrecorded transition would log itself again without end (Codex review).
+                    const nowms = captureClock();
+                    const previouskind = shownkind;
+                    const previousat = shownat;
+                    shownkind = loggable;
+                    shownat = nowms;
+                    if (previouskind !== '') {
+                        onbanner('warning_cleared', {
+                            key: 'coverage:' + previouskind,
+                            seconds: Math.max(0, Math.round((nowms - previousat) / 1000))
+                        });
+                    }
+                    if (loggable !== '') {
+                        onbanner('warning_shown', {key: 'coverage:' + loggable, message: text});
+                    }
                 }
             };
             const start = function() {
@@ -428,8 +470,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             window.addEventListener('online', connectionChanged);
             window.addEventListener('offline', connectionChanged);
             return {
-                submit: function(request, capturedat) {
-                    return !inactive && queue.enqueue(request, capturedat);
+                submit: function(request, capturedat, opts) {
+                    return !inactive && queue.enqueue(request, capturedat, opts);
                 },
                 device: function(device, missing) {
                     if (device === 'camera') {
@@ -2304,6 +2346,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (!monitoringActive) {
                     return;
                 }
+                // A coverage-banner log is a diagnostic about the upload queue itself: it must
+                // never evict the evidence it reports about (Codex review).
+                const expendable = !!(detail && typeof detail.key === 'string' && detail.key.indexOf('coverage:') === 0);
                 uploads.submit({
                     methodname: 'quizaccess_proctoring_log_event',
                     args: {
@@ -2317,7 +2362,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         currenturl: window.location.href,
                         screenshot: '',
                     }
-                }, Math.floor(captureClock() / 1000));
+                }, Math.floor(captureClock() / 1000), expendable ? {expendable: true} : undefined);
             };
             pendingWarningLogs.splice(0).forEach(function(entry) {
                 warningLogger(entry[0], entry[1]);
@@ -2362,6 +2407,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                 let pointerOutsideWindow = false;
 
+                // One logged pair per cooldown: a student working beside a second window crosses
+                // the edge constantly, and logging every crossing flooded the server's event rate
+                // limit until real uploads - including the student-message log - were refused
+                // (CPIT-503: 483 boundary events in a ten-minute attempt). The first crossing is
+                // logged; the rest are counted and reported on the next logged pair.
+                const boundaryCooldownMs = 30000;
+                let lastBoundaryLogMs = 0;
+                let suppressedCrossings = 0;
+                let pairLogged = false;
+
                 const isMousePointer = function(event) {
                     return !event.pointerType || event.pointerType === 'mouse';
                 };
@@ -2371,7 +2426,20 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         return;
                     }
                     pointerOutsideWindow = true;
-                    logEvent('mouse_left_window', getPointerEventDetail(event, reason));
+                    const nowms = captureClock();
+                    if (nowms - lastBoundaryLogMs < boundaryCooldownMs) {
+                        suppressedCrossings++;
+                        pairLogged = false;
+                        return;
+                    }
+                    lastBoundaryLogMs = nowms;
+                    pairLogged = true;
+                    const detail = getPointerEventDetail(event, reason);
+                    if (suppressedCrossings > 0) {
+                        detail.suppressedcrossings = suppressedCrossings;
+                        suppressedCrossings = 0;
+                    }
+                    logEvent('mouse_left_window', detail);
                 };
 
                 const logMouseReturned = function(event, reason) {
@@ -2379,6 +2447,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         return;
                     }
                     pointerOutsideWindow = false;
+                    // Only close a pair that was opened in the log, so durations stay meaningful.
+                    if (!pairLogged) {
+                        return;
+                    }
+                    pairLogged = false;
                     logEvent('mouse_returned_window', getPointerEventDetail(event, reason));
                 };
 
@@ -2849,8 +2922,19 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return false;
                 }
 
-                const uploads = createUploadController(strings, captureClock);
+                // Coverage banner changes are logged through the activity monitor's own warning
+                // logger (CPIT-481). The monitor starts later - and some attempts never start it -
+                // so banner changes from before then wait here; without a monitor there is no event
+                // logger to write to, and they stay unlogged like every other warning would.
                 let monitoring = null;
+                const pendingCoverageWarnings = [];
+                const uploads = createUploadController(strings, captureClock, function(eventtype, detail) {
+                    if (monitoring && monitoring.noteWarning) {
+                        monitoring.noteWarning(eventtype, detail);
+                    } else {
+                        pendingCoverageWarnings.push([eventtype, detail]);
+                    }
+                });
                 let pageActive = true;
                 let pageGeneration = 0;
                 let captureBusy = false;
@@ -2867,6 +2951,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         ['log', 'warn', 'block'].includes(props.multimonitormode)) {
                     props.facemodelready = faceModelReady ? 1 : 0;
                     monitoring = initSuspiciousActivityMonitoring(props, strings, uploads, captureClock);
+                    pendingCoverageWarnings.splice(0).forEach(function(entry) {
+                        monitoring.noteWarning(entry[0], entry[1]);
+                    });
                 }
 
                 const width = Math.max(240, parseInt(props.image_width, 10) || 480);

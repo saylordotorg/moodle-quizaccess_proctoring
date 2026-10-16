@@ -1588,6 +1588,7 @@ $string['privacynotice:item_periodicscreen'] = 'Periodic whole-screen screenshot
 $string['cameradark'] = 'Your camera is on, but it is sending a completely black picture. Check that nothing is covering the camera (a privacy shutter or slider), that a camera-off key on your keyboard is not switched on, that your computer\'s camera privacy settings allow this browser to use the camera, and that no other app (such as Zoom or Teams) is using it. Then try again.';
 $string['readiness:cameradark'] = 'The camera is on but the picture is completely black. Check for a privacy shutter or camera-off key, allow this browser in your computer\'s camera privacy settings, and close other apps using the camera.';
 $string['referencereset'] = 'Your saved reference photo did not show your face clearly enough to be used, so it has been cleared. Center your face in the camera and select the button again to save a new reference photo.';
+$string['ratelimitexceeded'] = 'Too many proctoring requests. Please wait and try again.';
 $string['referenceunusable'] = 'Your saved reference photo does not show a face, so it cannot be matched. Contact support and ask for your proctoring reference photo to be replaced.';
 $string['facematchstatus:referenceunusable'] = 'Reference photo unusable';
 $string['reportcaptures:badgereferenceunusable'] = 'Reference photo unusable';

@@ -164,4 +164,150 @@ for (const built of [false, true]) {
             assert.equal(env.requests.length, 2);
         }
     });
+
+    test(`the server's rate limit is retried, not dropped as rejected (${suffix})`, async () => {
+        // The flood-protection contract (CPIT-503): 'ratelimitexceeded' means slow down and try
+        // again. Treating it as a permanent rejection dropped every flooded upload for good,
+        // including the student-message log entries.
+        const env = fixture({}, built);
+        env.outcomes.push(() => Promise.reject({errorcode: 'ratelimitexceeded'}));
+        env.queue.enqueue(request());
+        await settle();
+        assert.equal(env.queue.snapshot().retrying, true);
+        assert.equal(env.queue.snapshot().dropped, 0);
+        await env.advance(2000);
+        assert.equal(env.requests.length, 2);
+        assert.equal(env.queue.snapshot().pending, 0);
+        assert.equal(env.queue.snapshot().recovered, 1);
+    });
+
+    test(`drops and recoveries carry their time, so banners can stand down (${suffix})`, async () => {
+        const env = fixture({}, built);
+        assert.equal(env.queue.snapshot().lastdropat, 0);
+        env.outcomes.push(() => Promise.reject({status: 400}));
+        env.queue.enqueue(request());
+        await settle();
+        const afterdrop = env.queue.snapshot();
+        assert.equal(afterdrop.problem, 'rejected');
+        assert.equal(afterdrop.lastdropat, 1000000, 'the drop is stamped with the queue clock');
+        env.outcomes.push(() => Promise.reject({status: 503}));
+        env.queue.enqueue(request());
+        await settle();
+        await env.advance(2000);
+        const afterrecovery = env.queue.snapshot();
+        assert.equal(afterrecovery.recovered, 1);
+        assert.ok(afterrecovery.lastrecoveredat >= afterrecovery.lastdropat,
+            'the recovery is stamped after the drop');
+    });
+
+    test(`capacity pressure drops mouse boundary context before captured evidence (${suffix})`, async () => {
+        let resolveactive;
+        const env = fixture({maxItems: 3}, built);
+        env.outcomes.push(() => new Promise(resolve => { resolveactive = resolve; }));
+        const mouse = {methodname: 'quizaccess_proctoring_log_event', args: {
+            eventtype: 'mouse_left_window', eventdetail: '{}'
+        }};
+        const evidence = (name) => ({methodname: 'quizaccess_proctoring_log_event', args: {
+            eventtype: 'away_capture', eventdetail: name, screenshot: 'x'.repeat(20)
+        }});
+        env.queue.enqueue(evidence('first'), 991); // Becomes the active upload.
+        env.queue.enqueue(mouse, 992);
+        env.queue.enqueue(evidence('second'), 993);
+        env.queue.enqueue(evidence('third'), 994); // Over capacity: the mouse event goes, not 'second'.
+        assert.equal(env.queue.snapshot().pending, 3);
+        assert.equal(env.queue.snapshot().dropped, 1);
+        assert.equal(env.queue.snapshot().problem, 'capacity');
+        resolveactive({warnings: []});
+        await settle();
+        // Each advance only fires the timers that existed when it began; the queue sends one
+        // upload at a time, so each remaining item needs its own tick.
+        await env.advance(1000);
+        await env.advance(1000);
+        const sent = env.requests.map(sentrequest => sentrequest.args.eventtype);
+        assert.deepEqual(sent, ['away_capture', 'away_capture', 'away_capture'],
+            'every capture is delivered and the mouse event is the one dropped');
+    });
+
+    test(`a diagnostic log never evicts evidence, and its discard is not evidence loss (${suffix})`, async () => {
+        // The coverage-banner logs travel through the same queue they report on: letting one
+        // evict a capture - or counting its own discard as a drop - re-raises the banner it was
+        // logging, evicting more captures each cycle.
+        let resolveactive;
+        const env = fixture({maxItems: 3}, built);
+        env.outcomes.push(() => new Promise(resolve => { resolveactive = resolve; }));
+        const evidence = (name) => ({methodname: 'quizaccess_proctoring_log_event', args: {
+            eventtype: 'away_capture', eventdetail: name, screenshot: 'x'.repeat(20)
+        }});
+        const coverage = {methodname: 'quizaccess_proctoring_log_event', args: {
+            eventtype: 'warning_shown', eventdetail: '{"key":"coverage:lost"}'
+        }};
+        env.queue.enqueue(evidence('first'), 991); // Becomes the active upload.
+        env.queue.enqueue(evidence('second'), 992);
+        env.queue.enqueue(evidence('third'), 993);
+        // Full queue: the diagnostic is refused outright, silently.
+        assert.equal(env.queue.enqueue(coverage, 994, {expendable: true}), false);
+        assert.equal(env.queue.snapshot().pending, 3, 'no capture was evicted for the diagnostic');
+        assert.equal(env.queue.snapshot().dropped, 0, 'its discard is not counted as evidence loss');
+        // With room, a queued diagnostic gives its place back to arriving evidence, silently.
+        resolveactive({warnings: []});
+        await settle();
+        assert.equal(env.queue.enqueue(coverage, 995, {expendable: true}), true);
+        env.queue.enqueue(evidence('fourth'), 996);
+        assert.equal(env.queue.snapshot().dropped, 0, 'the diagnostic made way without counting as a drop');
+        await env.advance(1000);
+        await env.advance(1000);
+        await env.advance(1000);
+        const sent = env.requests.map(sentrequest => sentrequest.args.eventtype);
+        assert.deepEqual(sent, ['away_capture', 'away_capture', 'away_capture', 'away_capture'],
+            'every capture is delivered; only the diagnostic stood aside');
+    });
+
+    test(`arriving mouse context never evicts queued evidence (${suffix})`, async () => {
+        // The reverse of the eviction preference: when the queue holds only captures, an
+        // incoming boundary event is refused rather than admitted at a capture's expense.
+        let resolveactive;
+        const env = fixture({maxItems: 3}, built);
+        env.outcomes.push(() => new Promise(resolve => { resolveactive = resolve; }));
+        const evidence = (name) => ({methodname: 'quizaccess_proctoring_log_event', args: {
+            eventtype: 'away_capture', eventdetail: name, screenshot: 'x'.repeat(20)
+        }});
+        const mouse = {methodname: 'quizaccess_proctoring_log_event', args: {
+            eventtype: 'mouse_left_window', eventdetail: '{}'
+        }};
+        env.queue.enqueue(evidence('first'), 991); // Becomes the active upload.
+        env.queue.enqueue(evidence('second'), 992);
+        env.queue.enqueue(evidence('third'), 993);
+        assert.equal(env.queue.enqueue(mouse, 994), false, 'the incoming mouse event is the one refused');
+        assert.equal(env.queue.snapshot().pending, 3, 'every capture is still queued');
+        assert.equal(env.queue.snapshot().dropped, 1, 'the refused context is a counted drop');
+        resolveactive({warnings: []});
+        await settle();
+        await env.advance(1000);
+        await env.advance(1000);
+        const sent = env.requests.map(sentrequest => sentrequest.args.eventtype);
+        assert.deepEqual(sent, ['away_capture', 'away_capture', 'away_capture'],
+            'every capture is delivered');
+    });
+
+    test(`an expired or refused diagnostic is not evidence loss either (${suffix})`, async () => {
+        const coverage = (key) => ({methodname: 'quizaccess_proctoring_log_event', args: {
+            eventtype: 'warning_shown', eventdetail: key
+        }});
+        // Expiry: queued offline past the TTL.
+        const env = fixture({ttl: 3000}, built);
+        env.offline();
+        env.queue.enqueue(coverage('a'), 991, {expendable: true});
+        await env.advance(3001);
+        assert.equal(env.queue.snapshot().pending, 0);
+        assert.equal(env.queue.snapshot().dropped, 0, 'an expired diagnostic is silent');
+        assert.equal(env.queue.snapshot().lastdropat, 0);
+        // Refused delivery: the server rejects the diagnostic itself.
+        const env2 = fixture({}, built);
+        env2.outcomes.push(() => Promise.reject({status: 400}));
+        env2.queue.enqueue(coverage('b'), 992, {expendable: true});
+        await settle();
+        assert.equal(env2.queue.snapshot().pending, 0);
+        assert.equal(env2.queue.snapshot().dropped, 0, 'a refused diagnostic is silent');
+        assert.equal(env2.queue.snapshot().problem, '');
+    });
 }
