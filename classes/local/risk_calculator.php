@@ -55,6 +55,7 @@ namespace quizaccess_proctoring\local;
  * | Multiple monitors          |           25 |  25 | events: multiple_monitors_detected                                |
  * | Possible AI tool           |           20 |  30 | events: possible_ai_tool                                          |
  * | AI tool w/ screenshot      |           15 |  30 | events: possible_ai_tool having a desktop screenshot              |
+ * | AI review confirmed        |           20 |  40 | completed event-level AI reviews of desktop captures whose decision is highly_suspicious (review-only; webcam-frame reviews never count; factor shown only when event AI review is active or evidence exists) |
  * | Clipboard/context menu     |            8 |  24 | events: clipboard_copy, clipboard_cut, clipboard_paste, contextmenu |
  * | Tab/focus activity         |            5 |  20 | events: focus_lost, tab_hidden, page_exit                         |
  * | F12                        |           15 |  15 | shortcut events whose detail resolves to F12                      |
@@ -85,10 +86,15 @@ namespace quizaccess_proctoring\local;
  * the two factors count disjoint event types just as `overall_report` treats them as separate
  * violations.
  *
- * AI review is NEVER a scoring input. The scoring factors above are functions of
- * student-attributable proctoring events only. The outcome of AI_Image_Review (including a
- * "nothing found" or a tool-failure result) is reported alongside the score but is never summed
- * into it, so an AI result cannot inflate the score (Requirement 16.2).
+ * Attempt-level AI review is never a scoring input: its outcome (including a "nothing found" or
+ * a tool-failure result) is reported alongside the score but never summed into it, so a model
+ * failure cannot inflate a score (Requirement 16.2). The one deliberate exception (CPIT-483) is
+ * the **AI review confirmed** factor: a completed event-level review of a desktop capture that
+ * concluded `highly_suspicious` scores points, because that capture is the direct visual
+ * evidence Student Affairs asked the score to reflect - a Gemini window on the shared screen
+ * scored nothing while the analysis beside the capture described it. The guardrails stand:
+ * the factor is review-only (it can hold an attempt, never fail one automatically), a failed,
+ * queued or inconclusive review scores nothing, and a reviewer sees the capture itself.
  */
 final class risk_calculator {
     /**
@@ -115,6 +121,7 @@ final class risk_calculator {
         'multimonitor' => ['points' => 25, 'cap' => 25],
         'aitool' => ['points' => 20, 'cap' => 30],
         'aitoolscreenshot' => ['points' => 15, 'cap' => 30],
+        'aireviewconfirmed' => ['points' => 20, 'cap' => 40],
         'clipboard' => ['points' => 8, 'cap' => 24],
         'tabactivity' => ['points' => 5, 'cap' => 20],
         'f12' => ['points' => 15, 'cap' => 15],
@@ -127,9 +134,10 @@ final class risk_calculator {
      * Factors that may put an attempt on hold for review but never fail it automatically.
      *
      * A second face is often a family member walking past or sitting nearby; only a person can
-     * judge it from the webcam frame (CPIT-468).
+     * judge it from the webcam frame (CPIT-468). And a model's reading of a desktop capture is
+     * a reason for a person to look at that capture, never a verdict by itself (CPIT-483).
      */
-    public const REVIEW_ONLY_FACTORS = ['multiplefaces'];
+    public const REVIEW_ONLY_FACTORS = ['multiplefaces', 'aireviewconfirmed'];
 
     /**
      * The attempt's score without the points of review-only factors, capped like the score.
@@ -733,6 +741,67 @@ final class risk_calculator {
     }
 
     /**
+     * Events whose attached frame is a webcam image, not a desktop capture.
+     *
+     * Event AI review in 'all' mode reviews these too; the desktop-confirmation factor must not
+     * score them, or webcam verdicts would present as desktop evidence (PR review).
+     */
+    public const WEBCAM_FRAME_EVENTS = [
+        'phone_detected',
+        'multiple_faces_detected',
+        'face_missing_start',
+        'face_missing_end',
+    ];
+
+    /**
+     * Count the completed event-level AI reviews that concluded the capture shows cheating.
+     *
+     * Only the terminal, affirmative verdict scores (CPIT-483): a queued, failed, inconclusive
+     * or no-visual-evidence review is exactly the "AI result that must not inflate the score"
+     * the scoring model promises to ignore - and only reviews of desktop captures, since webcam
+     * frames are reviewed too in 'all' mode and have their own factors.
+     *
+     * @param int $courseid Course id.
+     * @param int $cmid Quiz course-module id.
+     * @param int $studentid Student id.
+     * @param int $attemptid Quiz attempt id, or 0 when the report is the only scope available.
+     * @return int
+     */
+    private static function count_confirmed_ai_event_reviews(
+        int $courseid,
+        int $cmid,
+        int $studentid,
+        int $attemptid
+    ): int {
+        global $DB;
+
+        [$webcamsql, $webcamparams] = $DB->get_in_or_equal(self::WEBCAM_FRAME_EVENTS, SQL_PARAMS_NAMED, 'airwebcam', false);
+        $where = 'r.courseid = :aircourseid AND r.quizid = :aircmid AND r.userid = :airstudentid
+            AND r.reviewtype = :airtype AND r.status = :airstatus AND r.decision = :airdecision
+            AND e.eventtype ' . $webcamsql;
+        $params = [
+            'aircourseid' => $courseid,
+            'aircmid' => $cmid,
+            'airstudentid' => $studentid,
+            'airtype' => 'event',
+            'airstatus' => QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE,
+            'airdecision' => 'highly_suspicious',
+        ] + $webcamparams;
+        if ($attemptid > 0) {
+            $where .= ' AND r.attemptid = :airattemptid';
+            $params['airattemptid'] = $attemptid;
+        }
+
+        return (int)$DB->count_records_sql(
+            "SELECT COUNT(1)
+               FROM {quizaccess_proctoring_ai_reviews} r
+               JOIN {quizaccess_proctoring_events} e ON e.id = r.eventid
+              WHERE {$where}",
+            $params
+        );
+    }
+
+    /**
      * Count the evidence for one attempt, one query per enabled factor.
      *
      * Split out from {@see self::calculate_attempt()} so the scoring in
@@ -866,6 +935,8 @@ final class risk_calculator {
             ['possible_ai_tool'],
             true
         ) : 0;
+        $aireviewconfirmedcount = self::factor_enabled('aireviewconfirmed')
+            ? self::count_confirmed_ai_event_reviews($courseid, $cmid, $studentid, $attemptid) : 0;
         // The F12 count also feeds the other-shortcuts subtraction below, so it is needed whenever
         // either shortcut factor is enabled. Disabling the F12 factor does not move F12 presses
         // into the other-shortcuts factor: each factor scores its own evidence or nothing.
@@ -927,6 +998,7 @@ final class risk_calculator {
                 'multimonitor' => $multimonitorcount,
                 'aitool' => $aitoolcount,
                 'aitoolscreenshot' => $aitoolscreenshotcount,
+                'aireviewconfirmed' => $aireviewconfirmedcount,
                 'f12' => $f12count,
                 'othershortcut' => $othershortcutcount,
                 'multiplefaces' => $multiplefacescount,
@@ -978,6 +1050,7 @@ final class risk_calculator {
             'multimonitor' => (int)$counts['multimonitor'],
             'aitool' => (int)$counts['aitool'],
             'aitoolscreenshot' => (int)$counts['aitoolscreenshot'],
+            'aireviewconfirmed' => (int)$counts['aireviewconfirmed'],
             'clipboard' => (int)$counts['clipboard'],
             'tabactivity' => (int)$counts['tabactivity'],
             'f12' => (int)$counts['f12'],
@@ -991,6 +1064,14 @@ final class risk_calculator {
         // switched off.
         if ((int)get_config('quizaccess_proctoring', 'detectphone') !== 1 && $phonedetectedcount === 0) {
             unset($factorcounts['phonedetected']);
+        }
+
+        // Same opt-in treatment for the AI-review-confirmed factor (CPIT-483): with event AI
+        // review not running and no stored verdicts, the factor is omitted so reports list it as
+        // "not monitored" rather than "passed". Existing verdicts keep scoring after the feature
+        // is switched off.
+        if (!quizaccess_proctoring_event_ai_review_active() && (int)$factorcounts['aireviewconfirmed'] === 0) {
+            unset($factorcounts['aireviewconfirmed']);
         }
 
         $factors = [];
@@ -1181,8 +1262,8 @@ final class risk_calculator {
         $zero = [
             'webcam' => 0, 'facemismatch' => 0, 'nofaceruns' => 0, 'nofaceevent' => 0,
             'tabactivity' => 0, 'clipboard' => 0, 'screenissue' => 0, 'multimonitor' => 0, 'aitool' => 0,
-            'aitoolscreenshot' => 0, 'f12' => 0, 'othershortcut' => 0, 'multiplefaces' => 0,
-            'phonedetected' => 0,
+            'aitoolscreenshot' => 0, 'aireviewconfirmed' => 0, 'f12' => 0, 'othershortcut' => 0,
+            'multiplefaces' => 0, 'phonedetected' => 0,
         ];
         $counts = [];
         $durations = [];
@@ -1287,6 +1368,38 @@ final class risk_calculator {
                         $counts[$tuple]['othershortcut'] = max(0, $total - $counts[$tuple]['f12'] - ($navigation[$tuple] ?? 0));
                     }
                 }
+            }
+
+            // 2b. Completed event-level AI reviews that confirmed the capture (CPIT-483), the
+            //     same terminal, affirmative verdict the single-attempt path counts.
+            if (self::factor_enabled('aireviewconfirmed')) {
+                [$webcamsql, $webcamparams] = $DB->get_in_or_equal(
+                    self::WEBCAM_FRAME_EVENTS,
+                    SQL_PARAMS_NAMED,
+                    'airwebcam',
+                    false
+                );
+                $airows = $DB->get_recordset_sql(
+                    "SELECT r.courseid, r.quizid, r.userid, r.attemptid, COUNT(1) AS cnt
+                       FROM {quizaccess_proctoring_ai_reviews} r
+                       JOIN {quizaccess_proctoring_events} e ON e.id = r.eventid
+                      WHERE r.reviewtype = :airtype AND r.status = :airstatus AND r.decision = :airdecision
+                        AND e.eventtype {$webcamsql}
+                        AND r.attemptid {$insql}
+                   GROUP BY r.courseid, r.quizid, r.userid, r.attemptid",
+                    $params + $webcamparams + [
+                        'airtype' => 'event',
+                        'airstatus' => QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE,
+                        'airdecision' => 'highly_suspicious',
+                    ]
+                );
+                foreach ($airows as $row) {
+                    $tuple = $row->courseid . ':' . $row->quizid . ':' . $row->userid . ':' . $row->attemptid;
+                    if (isset($counts[$tuple])) {
+                        $counts[$tuple]['aireviewconfirmed'] = (int)$row->cnt;
+                    }
+                }
+                $airows->close();
             }
 
             // 3. Capture rows: webcam evidence, face mismatches and failed face checks.

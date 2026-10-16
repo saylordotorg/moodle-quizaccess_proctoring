@@ -1109,6 +1109,14 @@ function quizaccess_proctoring_risk_hold_reachability(): string {
     ) {
         return 'reachable';
     }
+    // The AI-review-confirmed factor is review-only too (CPIT-483): with event AI review
+    // running it can hold an attempt for a reviewer under auto-fail mode just the same.
+    if (
+        quizaccess_proctoring_event_ai_review_active()
+        && \quizaccess_proctoring\local\risk_calculator::factor_enabled('aireviewconfirmed')
+    ) {
+        return 'reachable';
+    }
 
     return 'autofailonly';
 }
@@ -1324,6 +1332,22 @@ function quizaccess_proctoring_ai_review_configured(?array $settings = null): bo
     }
 
     return quizaccess_proctoring_ai_review_provider_configured((string)$settings['provider'], $settings);
+}
+
+/**
+ * Whether event-level AI reviews of desktop captures can run at all (CPIT-483).
+ *
+ * The AI-review-confirmed risk factor reads these reviews' verdicts, so reports need to know
+ * whether the monitor behind it is armed: AI review configured and the desktop-event mode on.
+ *
+ * @param array|null $settings Optional normalized settings.
+ * @return bool
+ */
+function quizaccess_proctoring_event_ai_review_active(?array $settings = null): bool {
+    $settings = $settings ?? quizaccess_proctoring_get_ai_review_settings();
+
+    return quizaccess_proctoring_ai_review_configured($settings)
+        && (string)($settings['desktopmode'] ?? 'off') !== 'off';
 }
 
 /**
@@ -2064,53 +2088,68 @@ function quizaccess_proctoring_apply_risk_hold(
     $quiz->cmidnumber = $cm->idnumber;
     $quiz->visible = $cm->visible;
 
-    quiz_update_grades($quiz, $userid, false);
-    $quizgrade = $DB->get_record('quiz_grades', ['quiz' => $quiz->id, 'userid' => $userid]);
-    $now = time();
+    // The get-or-create runs under the student's hold lock: the submission-time check and the
+    // late AI-review re-evaluation (CPIT-483) can race here, and an unlocked lookup-then-insert
+    // would give the student two active holds and two notices, with a release of one leaving the
+    // grade locked by the other (Codex review). The lock is reentrant in-process, so the nested
+    // enforce() takes it harmlessly.
+    return (int)\quizaccess_proctoring\local\risk_hold_enforcer::with_lock(
+        (int)$quiz->id,
+        $userid,
+        function() use ($DB, $quiz, $courseid, $cmid, $userid, $attemptid, $reportid, $riskscore, $threshold, $notify) {
+            quiz_update_grades($quiz, $userid, false);
+            $quizgrade = $DB->get_record('quiz_grades', ['quiz' => $quiz->id, 'userid' => $userid]);
+            $now = time();
 
-    $creatednew = false;
-    $hold = quizaccess_proctoring_get_risk_hold($courseid, $cmid, $userid, $attemptid, $reportid, true);
-    if ($hold) {
-        $hold->riskscore = $riskscore;
-        $hold->threshold = $threshold;
-        $hold->timemodified = $now;
-        $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
-        $holdid = (int)$hold->id;
-    } else {
-        $hold = (object)[
-            'courseid' => $courseid,
-            'quizid' => $cmid,
-            'quizinstance' => $quiz->id,
-            'userid' => $userid,
-            'attemptid' => $attemptid,
-            'reportid' => $reportid,
-            'riskscore' => $riskscore,
-            'threshold' => $threshold,
-            'originalgrade' => $quizgrade ? $quizgrade->grade : null,
-            'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
-            'reviewerid' => 0,
-            'timecreated' => $now,
-            'timemodified' => $now,
-            'timereviewed' => 0,
-        ];
-        $holdid = $DB->insert_record('quizaccess_proctoring_risk_holds', $hold, true);
-        $hold->id = $holdid;
-        $creatednew = true;
-    }
+            $creatednew = false;
+            $hold = quizaccess_proctoring_get_risk_hold($courseid, $cmid, $userid, $attemptid, $reportid, true);
+            if ($hold) {
+                // Never backward: when the submission check and the late AI re-evaluation overlap,
+                // the slower caller arrives with the staler score, and lowering the stored score
+                // could let the automatic-release ceiling release confirmed evidence (Codex review).
+                $hold->riskscore = max((int)$hold->riskscore, $riskscore);
+                $hold->threshold = $threshold;
+                $hold->timemodified = $now;
+                $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
+                $holdid = (int)$hold->id;
+            } else {
+                $hold = (object)[
+                    'courseid' => $courseid,
+                    'quizid' => $cmid,
+                    'quizinstance' => $quiz->id,
+                    'userid' => $userid,
+                    'attemptid' => $attemptid,
+                    'reportid' => $reportid,
+                    'riskscore' => $riskscore,
+                    'threshold' => $threshold,
+                    'originalgrade' => $quizgrade ? $quizgrade->grade : null,
+                    'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+                    'reviewerid' => 0,
+                    'timecreated' => $now,
+                    'timemodified' => $now,
+                    'timereviewed' => 0,
+                ];
+                $holdid = $DB->insert_record('quizaccess_proctoring_risk_holds', $hold, true);
+                $hold->id = $holdid;
+                $creatednew = true;
+            }
 
-    // Empty and lock the gradebook grade so neither a passing grade nor a zero can complete the
-    // quiz or satisfy a certificate restriction while the hold is active.
-    \quizaccess_proctoring\local\risk_hold_enforcer::enforce((int)$quiz->id, $userid);
+            // Empty and lock the gradebook grade so neither a passing grade nor a zero can
+            // complete the quiz or satisfy a certificate restriction while the hold is active.
+            \quizaccess_proctoring\local\risk_hold_enforcer::enforce((int)$quiz->id, $userid);
 
-    // Tell the student their result is under review, once per hold, after the grade is already
-    // withheld (CPIT-463, Student Affairs): without this the first thing they heard was the
-    // decision - or a premature "course completed" message sent during submission processing,
-    // before this code could run, which the notice tells them to disregard.
-    if ($notify && $creatednew && quizaccess_proctoring_should_notify_hold_created()) {
-        quizaccess_proctoring_notify_hold_decision($hold, 'held');
-    }
+            // Tell the student their result is under review, once per hold, after the grade is
+            // already withheld (CPIT-463, Student Affairs): without this the first thing they
+            // heard was the decision - or a premature "course completed" message sent during
+            // submission processing, before this code could run, which the notice tells them to
+            // disregard.
+            if ($notify && $creatednew && quizaccess_proctoring_should_notify_hold_created()) {
+                quizaccess_proctoring_notify_hold_decision($hold, 'held');
+            }
 
-    return $holdid;
+            return $holdid;
+        }
+    );
 }
 
 /**
@@ -2308,6 +2347,18 @@ function quizaccess_proctoring_release_risk_hold_locked(int $holdid, int $review
     ];
     if ($DB->record_exists('quizaccess_proctoring_risk_holds', $autofailconditions)) {
         return false;
+    }
+
+    // Automatic release only: recheck the ceiling against the row just read under this lock. The
+    // auto-release task selects eligible holds before locking, and a late AI verdict can raise the
+    // stored score past the ceiling in between (CPIT-483) - a hold the ceiling retains must not be
+    // released on a stale selection. A reviewer's own release is never ceiling-gated.
+    if ($isautorelease) {
+        $ceiling = quizaccess_proctoring_get_risk_review_ceiling();
+        if ($ceiling <= \quizaccess_proctoring\local\risk_calculator::max_possible_score()
+                && (int)$hold->riskscore >= $ceiling) {
+            return false;
+        }
     }
 
     require_once($CFG->dirroot . '/mod/quiz/lib.php');
@@ -3255,12 +3306,165 @@ function quizaccess_proctoring_process_ai_review(stdClass $review, array $settin
         $DB->update_record('quizaccess_proctoring_ai_reviews', $review);
 
         mtrace('Completed AI image review id ' . $review->id . ' with score ' . $review->reviewscore . '.');
+
+        // The verdict was saved; a confirmed event review now also scores (CPIT-483), and this
+        // review ran after the submission-time hold check, so re-evaluate - otherwise two
+        // identical attempts get different grade-release treatment depending on whether cron
+        // processed the review before or after submission (Codex review). Its own failures are
+        // logged, never allowed to mark a completed review as failed.
+        if ((string)$review->reviewtype === 'event' && (string)$review->decision === 'highly_suspicious') {
+            quizaccess_proctoring_reevaluate_hold_after_event_review($review);
+        }
     } catch (Throwable $e) {
         $review->status = QUIZACCESS_PROCTORING_AI_REVIEW_FAILED;
         $review->errormessage = substr($e->getMessage(), 0, 2000);
         $review->timemodified = time();
         $DB->update_record('quizaccess_proctoring_ai_reviews', $review);
         mtrace('AI image review failed for id ' . $review->id . ': ' . $e->getMessage());
+    }
+}
+
+/**
+ * Re-evaluate an attempt's hold after an event AI review confirmed a capture (CPIT-483).
+ *
+ * Event reviews complete in cron, after the submission-time hold check has run, so the points
+ * the confirmed verdict adds could cross the hold threshold with nothing acting on it. This
+ * applies only the review-only policy - it can create a hold for a reviewer, never an automatic
+ * failure, since the confirmed-review factor is excluded from the auto-fail score by design.
+ * A decided hold (released, confirmed or auto-failed) is left exactly as the reviewer or the
+ * earlier check left it; an active hold only has its stored score refreshed, since the
+ * automatic-release ceiling reads it, without resetting the review window or re-notifying.
+ *
+ * @param stdClass $review Completed event-level AI review row.
+ */
+function quizaccess_proctoring_reevaluate_hold_after_event_review(stdClass $review): void {
+    global $DB;
+
+    try {
+        $attemptid = (int)$review->attemptid;
+        if ($attemptid <= 0 || !\quizaccess_proctoring\local\risk_calculator::factor_enabled('aireviewconfirmed')) {
+            return;
+        }
+        // Only a finished attempt: event reviews are queued during the attempt, so this can run
+        // while the student is still answering - and a hold empties and locks their grade and
+        // tells them their result is withheld, which must never predate the result. An attempt
+        // still in progress gets the ordinary submission-time check, which sees this verdict
+        // (Codex review).
+        $state = $DB->get_field('quiz_attempts', 'state', ['id' => $attemptid]);
+        if ($state !== 'finished') {
+            return;
+        }
+        $holds = $DB->get_records('quizaccess_proctoring_risk_holds', [
+            'quizid' => (int)$review->quizid,
+            'userid' => (int)$review->userid,
+            'attemptid' => $attemptid,
+        ]);
+        $activehold = null;
+        foreach ($holds as $hold) {
+            if ((int)$hold->status !== QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
+                // A decided hold stays exactly as the reviewer or the earlier check left it.
+                return;
+            }
+            $activehold = $hold;
+        }
+        $reportid = (int)$review->reportid;
+        if ($reportid <= 0 && $activehold) {
+            $reportid = (int)$activehold->reportid;
+        }
+        if ($reportid <= 0) {
+            $reports = $DB->get_records('quizaccess_proctoring_logs', [
+                'courseid' => (int)$review->courseid,
+                'quizid' => (int)$review->quizid,
+                'userid' => (int)$review->userid,
+                'status' => $attemptid,
+                'deletionprogress' => 0,
+            ], 'id ASC', 'id', 0, 1);
+            if (!$reports) {
+                return;
+            }
+            $reportid = (int)reset($reports)->id;
+        }
+        if ($activehold) {
+            // The hold already exists; the late verdict only refreshes its stored score, which
+            // the automatic-release ceiling reads - an attempt held at 80 that gains confirmed
+            // AI evidence must not auto-release under a ceiling of 90 just because the review
+            // finished after submission (Codex review). The review window is not reset and no
+            // notice is re-sent. The write runs under the hold's own lock and re-reads the row
+            // there: a reviewer deciding the hold mid-calculation must win, and only the score
+            // fields are written so a decision can never be overwritten back to active.
+            $risk = quizaccess_proctoring_calculate_attempt_risk(
+                (int)$review->courseid,
+                (int)$review->quizid,
+                (int)$review->userid,
+                $reportid
+            );
+            quizaccess_proctoring_with_risk_hold_lock((int)$activehold->id, function() use ($DB, $activehold, $risk) {
+                $current = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $activehold->id]);
+                if (!$current || (int)$current->status !== QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE
+                        || (int)$risk['score'] <= (int)$current->riskscore) {
+                    return true;
+                }
+                $DB->update_record('quizaccess_proctoring_risk_holds', (object)[
+                    'id' => (int)$current->id,
+                    'riskscore' => (int)$risk['score'],
+                    'timemodified' => time(),
+                ]);
+                return true;
+            });
+            return;
+        }
+        $risksettings = quizaccess_proctoring_get_effective_risk_review_settings((int)$review->quizid);
+        $risklockoutenabled = quizaccess_proctoring_get_cheating_lockout_days() > 0 &&
+            (int)$risksettings['mode'] !== QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED;
+        if (empty($risksettings['enabled']) && !$risklockoutenabled) {
+            return;
+        }
+        $risk = quizaccess_proctoring_calculate_attempt_risk(
+            (int)$review->courseid,
+            (int)$review->quizid,
+            (int)$review->userid,
+            $reportid
+        );
+        if ((int)$risk['score'] < (int)$risksettings['threshold']) {
+            return;
+        }
+        // Create under the same student lock the submission path holds, and recheck every hold
+        // status inside it: a submission processed during this calculation can have decided the
+        // attempt already - auto-failed it, even - and a second active hold beside a terminal
+        // decision would re-withhold a decided grade (Codex review). The lock is reentrant, so
+        // apply_risk_hold taking it again is harmless.
+        $quizinstance = (int)$DB->get_field('course_modules', 'instance', ['id' => (int)$review->quizid]);
+        \quizaccess_proctoring\local\risk_hold_enforcer::with_lock(
+            $quizinstance,
+            (int)$review->userid,
+            function() use ($DB, $review, $attemptid, $reportid, $risk, $risksettings) {
+                $holds = $DB->get_records('quizaccess_proctoring_risk_holds', [
+                    'quizid' => (int)$review->quizid,
+                    'userid' => (int)$review->userid,
+                    'attemptid' => $attemptid,
+                ]);
+                foreach ($holds as $hold) {
+                    if ((int)$hold->status !== QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
+                        return true;
+                    }
+                }
+                // No hold, or an active one that apply_risk_hold refreshes (never lowering it).
+                quizaccess_proctoring_apply_risk_hold(
+                    (int)$review->courseid,
+                    (int)$review->quizid,
+                    (int)$review->userid,
+                    $attemptid,
+                    $reportid,
+                    (int)$risk['score'],
+                    (int)$risksettings['threshold']
+                );
+                mtrace('AI review ' . $review->id . ' pushed attempt ' . $attemptid
+                    . ' over the hold threshold; held for review.');
+                return true;
+            }
+        );
+    } catch (Throwable $e) {
+        quizaccess_proctoring_log_failure('re-evaluating the hold after AI review ' . (int)$review->id, $e);
     }
 }
 
