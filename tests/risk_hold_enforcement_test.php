@@ -77,6 +77,9 @@ final class risk_hold_enforcement_test extends advanced_testcase {
         $this->resetAfterTest();
         set_config('enablecompletion', 1);
         set_config('holddecisionnotify', 0, 'quizaccess_proctoring');
+        // The hold-created notification (CPIT-463) is exercised by its own tests through a
+        // message sink; everywhere else it would send real mail, which a test run must not.
+        set_config('holdcreatednotify', 0, 'quizaccess_proctoring');
 
         $generator = $this->getDataGenerator();
         $this->course = $generator->create_course(['enablecompletion' => 1]);
@@ -331,6 +334,139 @@ final class risk_hold_enforcement_test extends advanced_testcase {
         $this->assertEmpty($grade->overridden);
         $this->assertNotEmpty($grade->locked);
         $this->assertSame(COMPLETION_INCOMPLETE, $this->completion_state());
+    }
+
+    /**
+     * A hold removes the quiz-level grade the quiz view page shows; release restores it.
+     *
+     * The gradebook hold left quiz_grades alone, so a held student saw "-" in the gradebook and
+     * their real grade on the quiz page (CPIT-463, Student Affairs testing).
+     */
+    public function test_hold_masks_the_quiz_level_grade(): void {
+        global $DB;
+
+        $attemptid = $this->add_attempt(9);
+        $this->assertEquals(9.0, (float)$DB->get_field(
+            'quiz_grades', 'grade', ['quiz' => $this->quiz->id, 'userid' => $this->student->id]
+        ));
+
+        $holdid = $this->hold($attemptid);
+        $this->assertFalse($DB->record_exists(
+            'quiz_grades', ['quiz' => $this->quiz->id, 'userid' => $this->student->id]
+        ), 'the quiz page must not show a grade while the attempt is held');
+
+        $this->assertTrue(quizaccess_proctoring_release_risk_hold($holdid, 2));
+        $this->assertEquals(9.0, (float)$DB->get_field(
+            'quiz_grades', 'grade', ['quiz' => $this->quiz->id, 'userid' => $this->student->id]
+        ), 'release must rebuild the quiz-level grade');
+    }
+
+    /**
+     * A hold retracts the course completion the attempt produced before the grade was emptied.
+     *
+     * Submission processing completes the course and sends core's notification before any
+     * observer of this plugin runs, and core never un-completes a course (CPIT-463).
+     */
+    public function test_hold_retracts_a_stale_course_completion(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/completion/criteria/completion_criteria.php');
+
+        $attemptid = $this->add_attempt(9);
+        $now = time();
+        // The state submission processing leaves behind: the activity criterion satisfied and
+        // the course aggregated as completed, both before the hold emptied the grade.
+        $criteriaid = (int)$DB->insert_record('course_completion_criteria', (object)[
+            'course' => $this->course->id,
+            'criteriatype' => COMPLETION_CRITERIA_TYPE_ACTIVITY,
+            'module' => 'quiz',
+            'moduleinstance' => $this->cm->id,
+        ]);
+        $DB->insert_record('course_completion_crit_compl', (object)[
+            'userid' => $this->student->id,
+            'course' => $this->course->id,
+            'criteriaid' => $criteriaid,
+            'timecompleted' => $now,
+        ]);
+        $DB->insert_record('course_completions', (object)[
+            'userid' => $this->student->id,
+            'course' => $this->course->id,
+            'timeenrolled' => $now - 100,
+            'timestarted' => $now - 100,
+            'timecompleted' => $now,
+            'reaggregate' => 0,
+        ]);
+
+        $this->hold($attemptid);
+
+        $this->assertFalse($DB->record_exists('course_completion_crit_compl', [
+            'userid' => $this->student->id,
+            'course' => $this->course->id,
+            'criteriaid' => $criteriaid,
+        ]), 'the stale activity criterion must be cleared');
+        $completion = $DB->get_record('course_completions', [
+            'userid' => $this->student->id,
+            'course' => $this->course->id,
+        ], '*', MUST_EXIST);
+        $this->assertNull($completion->timecompleted, 'the course must no longer read as completed');
+        $this->assertGreaterThan(0, (int)$completion->reaggregate, 'core must be asked to re-aggregate');
+    }
+
+    /**
+     * Placing a hold notifies the student once, through the holdcreated provider, when enabled.
+     */
+    public function test_hold_created_notification(): void {
+        global $DB;
+
+        set_config('holdcreatednotify', 1, 'quizaccess_proctoring');
+        $attemptid = $this->add_attempt(9);
+
+        $sink = $this->redirectMessages();
+        $holdid = $this->hold($attemptid);
+        // Re-applying the same hold must not notify again.
+        quizaccess_proctoring_apply_risk_hold(
+            (int)$this->course->id,
+            (int)$this->cm->id,
+            (int)$this->student->id,
+            $attemptid,
+            0,
+            85,
+            60
+        );
+        $messages = $sink->get_messages();
+        $sink->close();
+
+        $this->assertCount(1, $messages, 'one hold gets one held notice');
+        $this->assertSame('holdcreated', $messages[0]->eventtype);
+        $this->assertSame(
+            get_string('message:heldsubject', 'quizaccess_proctoring'),
+            $messages[0]->subject
+        );
+        $this->assertStringContainsString('withheld until the review completes', $messages[0]->fullmessage);
+        $custom = json_decode((string)$messages[0]->customdata, true);
+        $this->assertSame('held', $custom['decision']);
+        $this->assertSame((int)$this->cm->id, (int)$custom['cmid']);
+        $this->assertGreaterThan(0, $holdid);
+        // And the plugin's own audit row recorded the send.
+        $this->assertTrue($DB->record_exists('quizaccess_proctoring_events', [
+            'eventtype' => 'notification_sent',
+            'userid' => (int)$this->student->id,
+            'quizid' => (int)$this->cm->id,
+        ]));
+    }
+
+    /**
+     * The held notice respects its setting.
+     */
+    public function test_hold_created_notification_can_be_turned_off(): void {
+        set_config('holdcreatednotify', 0, 'quizaccess_proctoring');
+        $attemptid = $this->add_attempt(9);
+
+        $sink = $this->redirectMessages();
+        $this->hold($attemptid);
+        $messages = $sink->get_messages();
+        $sink->close();
+
+        $this->assertCount(0, $messages);
     }
 
     /**

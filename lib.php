@@ -2063,6 +2063,7 @@ function quizaccess_proctoring_apply_risk_hold(
     $quizgrade = $DB->get_record('quiz_grades', ['quiz' => $quiz->id, 'userid' => $userid]);
     $now = time();
 
+    $creatednew = false;
     $hold = quizaccess_proctoring_get_risk_hold($courseid, $cmid, $userid, $attemptid, $reportid, true);
     if ($hold) {
         $hold->riskscore = $riskscore;
@@ -2088,13 +2089,33 @@ function quizaccess_proctoring_apply_risk_hold(
             'timereviewed' => 0,
         ];
         $holdid = $DB->insert_record('quizaccess_proctoring_risk_holds', $hold, true);
+        $hold->id = $holdid;
+        $creatednew = true;
     }
 
     // Empty and lock the gradebook grade so neither a passing grade nor a zero can complete the
     // quiz or satisfy a certificate restriction while the hold is active.
     \quizaccess_proctoring\local\risk_hold_enforcer::enforce((int)$quiz->id, $userid);
 
+    // Tell the student their result is under review, once per hold, after the grade is already
+    // withheld (CPIT-463, Student Affairs): without this the first thing they heard was the
+    // decision - or a premature "course completed" message sent during submission processing,
+    // before this code could run, which the notice tells them to disregard.
+    if ($creatednew && quizaccess_proctoring_should_notify_hold_created()) {
+        quizaccess_proctoring_notify_hold_decision($hold, 'held');
+    }
+
     return $holdid;
+}
+
+/**
+ * Determine whether students should be notified when a hold is placed.
+ *
+ * @return bool True when a hold-created notification should be sent.
+ */
+function quizaccess_proctoring_should_notify_hold_created(): bool {
+    $enabled = get_config('quizaccess_proctoring', 'holdcreatednotify');
+    return $enabled === false ? true : (int)$enabled === 1;
 }
 
 /**
@@ -3053,7 +3074,7 @@ function quizaccess_proctoring_should_notify_hold_decision(bool $isautorelease):
 function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $decision): void {
     global $DB;
 
-    if (!in_array($decision, ['released', 'confirmed', 'autofailed'], true)) {
+    if (!in_array($decision, ['held', 'released', 'confirmed', 'autofailed'], true)) {
         return;
     }
 
@@ -3079,13 +3100,20 @@ function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $deci
             'quiz' => $cm ? format_string($cm->name, true, $stringoptions) : '',
             'course' => format_string($coursename, true, $stringoptions),
         ];
+        if ($decision === 'held') {
+            // The held notice says how long the review normally takes, when a window is set.
+            $days = quizaccess_proctoring_get_risk_review_auto_release_days();
+            $a->window = $days > 0
+                ? get_string('message:heldwindow', 'quizaccess_proctoring', $days)
+                : '';
+        }
 
         $subject = get_string('message:' . $decision . 'subject', 'quizaccess_proctoring', $a);
         $body = get_string('message:' . $decision . 'body', 'quizaccess_proctoring', $a);
 
         $message = new \core\message\message();
         $message->component = 'quizaccess_proctoring';
-        $message->name = 'holddecision';
+        $message->name = $decision === 'held' ? 'holdcreated' : 'holddecision';
         $message->courseid = (int)$hold->courseid;
         $message->userfrom = \core_user::get_noreply_user();
         $message->userto = $user;

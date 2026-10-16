@@ -49,11 +49,14 @@ class sent_notifications {
             return [];
         }
 
-        // Every hold-decision notification Moodle still has for this student, keyed by id: the
-        // read state for the plugin's own audit rows, and the full row for pre-audit sends.
-        $notifications = $DB->get_records(
+        // Every hold notification Moodle still has for this student - the held notice and the
+        // decisions - keyed by id: the read state for the plugin's own audit rows, and the full
+        // row for pre-audit sends.
+        [$typesql, $typeparams] = $DB->get_in_or_equal(['holddecision', 'holdcreated'], SQL_PARAMS_NAMED);
+        $notifications = $DB->get_records_select(
             'notifications',
-            ['useridto' => $userid, 'component' => 'quizaccess_proctoring', 'eventtype' => 'holddecision'],
+            "useridto = :useridto AND component = 'quizaccess_proctoring' AND eventtype $typesql",
+            ['useridto' => $userid] + $typeparams,
             '',
             'id, subject, fullmessage, contexturl, customdata, timeread, timecreated'
         );

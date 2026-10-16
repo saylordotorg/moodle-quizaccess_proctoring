@@ -229,7 +229,7 @@ Generated from `lang/en/quizaccess_proctoring.php`; `{$a}` and `{$a->...}` are f
 When each is sent, and how:
 
 - **Hold decisions** (`message:released…`, `message:confirmed…`, `message:autofailed…`) are sent when a reviewer releases or confirms a grade hold, or when a high-risk attempt is automatically failed. They go to the student's Moodle notifications **and** by email; the student can turn either channel off in their own notification preferences (Preferences > Notification preferences > "Proctored quiz review decisions"), and the site can change the defaults. Two site settings control them: "Notify students of grade-hold decisions" (on by default) and "Notify students of automatically released holds" (whether a hold that expires unreviewed also notifies).
-- **Nothing is sent when a hold is created.** While a hold is active the student sees no grade and no certificate, but is not messaged about it; the first message is the decision.
+- **A hold now announces itself** (`message:held…`, since 1.12.31, at Student Affairs' request): the moment an attempt is placed under review, the student is told their grade and any certificate are withheld until the review completes, and to disregard any course-completion message that slipped out during submission. Its own site setting ("Notify students when a hold is placed", on by default) and notification preference ("Proctored quiz held for review") control it.
 - **ID exception decisions** (`idexemptionemail:…`) are sent by email only, when staff approve or decline an ID exception request.
 - **Where staff can see what was sent:** the per-student proctoring report lists every hold-decision notification sent to that student for that quiz — when, the exact words, and when Moodle marked it read (opening it or "Mark all as read" both do that). The plugin keeps its own record of each send, so the list survives Moodle's notification cleanup. Moodle's site logs also record a "Notification sent" event for each one.
 
@@ -255,6 +255,9 @@ When each is sent, and how:
 | `message:autofailedsubject` | Proctored quiz attempt automatically failed |
 | `message:confirmedbody` | Your attempt for "{$a->quiz}" in {$a->course} has been reviewed. A proctoring violation was confirmed, and your grade for this attempt has been set to zero. If you have questions, please contact your instructor. |
 | `message:confirmedsubject` | Proctored quiz review complete: violation confirmed |
+| `message:heldbody` | Your attempt for "{$a->quiz}" in {$a->course} has been selected for a proctoring review. Your grade — and any certificate that depends on it — is withheld until the review completes{$a->window}. If you have just received a message saying you completed the course, please disregard it until the review completes. You will be notified of the outcome, and you do not need to do anything in the meantime. |
+| `message:heldsubject` | Proctored quiz attempt held for review |
+| `message:heldwindow` | , normally within {$a} days |
 | `message:releasedbody` | Your attempt for "{$a->quiz}" in {$a->course} has been reviewed. The hold on your grade has been released, so your grade for this attempt is now available. |
 | `message:releasedsubject` | Proctored quiz review complete: hold released |
 

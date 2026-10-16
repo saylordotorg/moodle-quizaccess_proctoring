@@ -186,7 +186,12 @@ class risk_hold_enforcer {
             }
 
             if ($active) {
-                return self::hold_grade($quiz, $userid, $active);
+                $held = self::hold_grade($quiz, $userid, $active);
+                if ($held) {
+                    self::mask_quiz_grade($quiz, $userid);
+                    self::retract_stale_completion($quiz, $cm, $userid);
+                }
+                return $held;
             }
 
             self::unlock_grade($quiz, $userid);
@@ -322,6 +327,100 @@ class risk_hold_enforcer {
             return false;
         }
         return true;
+    }
+
+    /**
+     * Remove the student's quiz-level grade row while a hold is active.
+     *
+     * The gradebook hold left the quiz's own grade table alone, and the quiz view page reads
+     * that table - so a held student saw "-" in the gradebook and their real grade on the quiz
+     * page (CPIT-463, Student Affairs testing). Release and confirm both rebuild the row from
+     * the attempts through {@see self::recompute_grade()}, and a regrade that recreates it
+     * lands back here through {@see self::handle_user_graded()}.
+     *
+     * @param stdClass $quiz Quiz record.
+     * @param int $userid Student id.
+     * @return void
+     */
+    private static function mask_quiz_grade(stdClass $quiz, int $userid): void {
+        global $DB;
+
+        $DB->delete_records('quiz_grades', ['quiz' => $quiz->id, 'userid' => $userid]);
+    }
+
+    /**
+     * Retract a course completion the attempt produced before the hold could empty the grade.
+     *
+     * Submission processing computes the quiz's pass completion, aggregates the course criteria
+     * and sends core's "Course completed" notification, all before any observer of this plugin
+     * runs - and core never un-completes a course, so a held student stayed "completed" and the
+     * premature notification stood alone (CPIT-463, Student Affairs testing). When this quiz's
+     * completion no longer holds up against the now-empty grade, the stale activity criterion
+     * and course aggregation are cleared, core's own reaggregation is requested, and course
+     * completion - with its notification - happens when the hold is released instead.
+     *
+     * @param stdClass $quiz Quiz record.
+     * @param stdClass $cm Course module record for the quiz.
+     * @param int $userid Student id.
+     * @return void
+     */
+    private static function retract_stale_completion(stdClass $quiz, stdClass $cm, int $userid): void {
+        global $CFG, $DB;
+
+        try {
+            require_once($CFG->libdir . '/completionlib.php');
+            require_once($CFG->dirroot . '/completion/criteria/completion_criteria.php');
+
+            $course = get_course($quiz->course);
+            $completion = new \completion_info($course);
+            if (!$completion->is_enabled()) {
+                return;
+            }
+
+            // Recompute this activity's completion from the held (empty) grade.
+            $cminfo = get_fast_modinfo($course, $userid)->get_cm((int)$cm->id);
+            $completion->update_state($cminfo, COMPLETION_UNKNOWN, $userid);
+            $state = (int)$DB->get_field(
+                'course_modules_completion',
+                'completionstate',
+                ['coursemoduleid' => (int)$cm->id, 'userid' => $userid]
+            );
+            if (in_array($state, [COMPLETION_COMPLETE, COMPLETION_COMPLETE_PASS], true)) {
+                // Still complete without the grade: nothing about the completion is stale.
+                return;
+            }
+
+            $criteria = $DB->get_records('course_completion_criteria', [
+                'course' => (int)$course->id,
+                'criteriatype' => COMPLETION_CRITERIA_TYPE_ACTIVITY,
+                'moduleinstance' => (int)$cm->id,
+            ]);
+            if (!$criteria) {
+                return;
+            }
+            [$insql, $inparams] = $DB->get_in_or_equal(array_keys($criteria), SQL_PARAMS_NAMED);
+            $DB->delete_records_select(
+                'course_completion_crit_compl',
+                "course = :course AND userid = :userid AND criteriaid $insql",
+                ['course' => (int)$course->id, 'userid' => $userid] + $inparams
+            );
+            $completed = $DB->get_record('course_completions', [
+                'course' => (int)$course->id,
+                'userid' => $userid,
+            ]);
+            if ($completed && $completed->timecompleted !== null) {
+                $completed->timecompleted = null;
+                // Core's completion cron re-aggregates rows whose reaggregate time has passed,
+                // so a course completed through other criteria completes again by itself.
+                $completed->reaggregate = time() - 2;
+                $DB->update_record('course_completions', $completed);
+            }
+            // The completion caches keep serving the old answer until purged.
+            \cache::make('core', 'completion')->purge();
+            \cache::make('core', 'coursecompletion')->purge();
+        } catch (\Throwable $e) {
+            quizaccess_proctoring_log_failure('retracting a stale course completion during a hold', $e);
+        }
     }
 
     /**
