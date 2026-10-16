@@ -2088,53 +2088,65 @@ function quizaccess_proctoring_apply_risk_hold(
     $quiz->cmidnumber = $cm->idnumber;
     $quiz->visible = $cm->visible;
 
-    quiz_update_grades($quiz, $userid, false);
-    $quizgrade = $DB->get_record('quiz_grades', ['quiz' => $quiz->id, 'userid' => $userid]);
-    $now = time();
+    // The get-or-create runs under the student's hold lock: the submission-time check and the
+    // late AI-review re-evaluation (CPIT-483) can race here, and an unlocked lookup-then-insert
+    // would give the student two active holds and two notices, with a release of one leaving the
+    // grade locked by the other (Codex review). The lock is reentrant in-process, so the nested
+    // enforce() takes it harmlessly.
+    return (int)\quizaccess_proctoring\local\risk_hold_enforcer::with_lock(
+        (int)$quiz->id,
+        $userid,
+        function() use ($DB, $quiz, $courseid, $cmid, $userid, $attemptid, $reportid, $riskscore, $threshold, $notify) {
+            quiz_update_grades($quiz, $userid, false);
+            $quizgrade = $DB->get_record('quiz_grades', ['quiz' => $quiz->id, 'userid' => $userid]);
+            $now = time();
 
-    $creatednew = false;
-    $hold = quizaccess_proctoring_get_risk_hold($courseid, $cmid, $userid, $attemptid, $reportid, true);
-    if ($hold) {
-        $hold->riskscore = $riskscore;
-        $hold->threshold = $threshold;
-        $hold->timemodified = $now;
-        $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
-        $holdid = (int)$hold->id;
-    } else {
-        $hold = (object)[
-            'courseid' => $courseid,
-            'quizid' => $cmid,
-            'quizinstance' => $quiz->id,
-            'userid' => $userid,
-            'attemptid' => $attemptid,
-            'reportid' => $reportid,
-            'riskscore' => $riskscore,
-            'threshold' => $threshold,
-            'originalgrade' => $quizgrade ? $quizgrade->grade : null,
-            'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
-            'reviewerid' => 0,
-            'timecreated' => $now,
-            'timemodified' => $now,
-            'timereviewed' => 0,
-        ];
-        $holdid = $DB->insert_record('quizaccess_proctoring_risk_holds', $hold, true);
-        $hold->id = $holdid;
-        $creatednew = true;
-    }
+            $creatednew = false;
+            $hold = quizaccess_proctoring_get_risk_hold($courseid, $cmid, $userid, $attemptid, $reportid, true);
+            if ($hold) {
+                $hold->riskscore = $riskscore;
+                $hold->threshold = $threshold;
+                $hold->timemodified = $now;
+                $DB->update_record('quizaccess_proctoring_risk_holds', $hold);
+                $holdid = (int)$hold->id;
+            } else {
+                $hold = (object)[
+                    'courseid' => $courseid,
+                    'quizid' => $cmid,
+                    'quizinstance' => $quiz->id,
+                    'userid' => $userid,
+                    'attemptid' => $attemptid,
+                    'reportid' => $reportid,
+                    'riskscore' => $riskscore,
+                    'threshold' => $threshold,
+                    'originalgrade' => $quizgrade ? $quizgrade->grade : null,
+                    'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+                    'reviewerid' => 0,
+                    'timecreated' => $now,
+                    'timemodified' => $now,
+                    'timereviewed' => 0,
+                ];
+                $holdid = $DB->insert_record('quizaccess_proctoring_risk_holds', $hold, true);
+                $hold->id = $holdid;
+                $creatednew = true;
+            }
 
-    // Empty and lock the gradebook grade so neither a passing grade nor a zero can complete the
-    // quiz or satisfy a certificate restriction while the hold is active.
-    \quizaccess_proctoring\local\risk_hold_enforcer::enforce((int)$quiz->id, $userid);
+            // Empty and lock the gradebook grade so neither a passing grade nor a zero can
+            // complete the quiz or satisfy a certificate restriction while the hold is active.
+            \quizaccess_proctoring\local\risk_hold_enforcer::enforce((int)$quiz->id, $userid);
 
-    // Tell the student their result is under review, once per hold, after the grade is already
-    // withheld (CPIT-463, Student Affairs): without this the first thing they heard was the
-    // decision - or a premature "course completed" message sent during submission processing,
-    // before this code could run, which the notice tells them to disregard.
-    if ($notify && $creatednew && quizaccess_proctoring_should_notify_hold_created()) {
-        quizaccess_proctoring_notify_hold_decision($hold, 'held');
-    }
+            // Tell the student their result is under review, once per hold, after the grade is
+            // already withheld (CPIT-463, Student Affairs): without this the first thing they
+            // heard was the decision - or a premature "course completed" message sent during
+            // submission processing, before this code could run, which the notice tells them to
+            // disregard.
+            if ($notify && $creatednew && quizaccess_proctoring_should_notify_hold_created()) {
+                quizaccess_proctoring_notify_hold_decision($hold, 'held');
+            }
 
-    return $holdid;
+            return $holdid;
+        }
+    );
 }
 
 /**
