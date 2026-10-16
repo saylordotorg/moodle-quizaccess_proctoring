@@ -267,6 +267,9 @@ class risk_hold_enforcer {
      * @param \mod_quiz\event\attempt_regraded $event Regrade event.
      * @return void
      */
+    /** @var int[][] Held quiz/user pairs regraded this request, re-enforced at shutdown. */
+    private static $pendingregrades = [];
+
     public static function handle_attempt_regraded(\mod_quiz\event\attempt_regraded $event): void {
         global $CFG, $DB;
 
@@ -289,8 +292,41 @@ class risk_hold_enforcer {
                 return;
             }
             self::enforce((int)$attempt->quiz, (int)$attempt->userid);
+            // The report's batch regrade recomputes every overall grade after this event, which
+            // recreates the quiz-level grade row - and the locked gradebook grade swallows the
+            // user_graded that would mask it again. Re-enforce once the whole flow is over
+            // (PR review); the immediate enforcement above still covers everything the batch
+            // recompute does not touch.
+            $key = $attempt->quiz . ':' . $attempt->userid;
+            if (!isset(self::$pendingregrades[$key])) {
+                if (!self::$pendingregrades) {
+                    \core_shutdown_manager::register_function(
+                        [self::class, 'reenforce_after_regrades']
+                    );
+                }
+                self::$pendingregrades[$key] = [(int)$attempt->quiz, (int)$attempt->userid];
+            }
         } catch (\Throwable $e) {
             quizaccess_proctoring_log_failure('re-applying a risk hold after a regrade', $e);
+        }
+    }
+
+    /**
+     * Re-enforce every held quiz/user pair that was regraded this request.
+     *
+     * Runs at request shutdown, after the regrade flow's overall-grade recomputation.
+     *
+     * @return void
+     */
+    public static function reenforce_after_regrades(): void {
+        $pending = self::$pendingregrades;
+        self::$pendingregrades = [];
+        foreach ($pending as [$quizinstance, $userid]) {
+            try {
+                self::enforce($quizinstance, $userid);
+            } catch (\Throwable $e) {
+                quizaccess_proctoring_log_failure('re-applying a risk hold at shutdown after a regrade', $e);
+            }
         }
     }
 
@@ -449,11 +485,26 @@ class risk_hold_enforcer {
                     ['course' => (int)$course->id, 'userid' => $userid] + $inparams
                 );
             }
+            // With "any" aggregation, another completed criterion can carry the course on its
+            // own: retracting then would have core re-complete it and send a second "Course
+            // completed" notification while the hold stands (PR review). The quiz's own stale
+            // criterion is still cleared above either way.
+            $method = (int)$DB->get_field('course_completion_aggr_methd', 'method', [
+                'course' => (int)$course->id,
+                'criteriatype' => null,
+            ]);
+            $otherscomplete = $DB->record_exists_select(
+                'course_completion_crit_compl',
+                'course = :course AND userid = :userid AND timecompleted IS NOT NULL AND timecompleted > 0',
+                ['course' => (int)$course->id, 'userid' => $userid]
+            );
+            $stillcomplete = $method === COMPLETION_AGGREGATION_ANY && $otherscomplete;
+
             $completed = $DB->get_record('course_completions', [
                 'course' => (int)$course->id,
                 'userid' => $userid,
             ]);
-            if ($completed && $completed->timecompleted !== null) {
+            if (!$stillcomplete && $completed && $completed->timecompleted !== null) {
                 $completed->timecompleted = null;
                 // Core's completion cron re-aggregates rows whose reaggregate time has passed,
                 // so a course completed through other criteria completes again by itself.

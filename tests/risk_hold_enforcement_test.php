@@ -139,10 +139,13 @@ final class risk_hold_enforcement_test extends advanced_testcase {
         $this->assertSame(COMPLETION_INCOMPLETE, $this->completion_state());
 
         // The regrade recreated the quiz-level grade row, and the locked gradebook grade
-        // swallows the user_graded event - the regrade event is what re-masks it.
+        // swallows the user_graded event - the regrade handling is what re-masks it.
         $this->assertTrue($DB->record_exists(
             'quiz_grades', ['quiz' => $this->quiz->id, 'userid' => $this->student->id]
         ), 'precondition: the recompute recreated the quiz-level grade');
+
+        // Moodle's order in the report regrade: the per-attempt event fires first, the
+        // overall grades are recomputed after it, and the shutdown re-enforcement runs last.
         $event = \mod_quiz\event\attempt_regraded::create([
             'objectid' => $attemptid,
             'relateduserid' => $this->student->id,
@@ -150,9 +153,14 @@ final class risk_hold_enforcement_test extends advanced_testcase {
             'context' => \context_module::instance($this->cm->id),
         ]);
         \quizaccess_proctoring\local\risk_hold_enforcer::handle_attempt_regraded($event);
+        $this->recompute();
+        $this->assertTrue($DB->record_exists(
+            'quiz_grades', ['quiz' => $this->quiz->id, 'userid' => $this->student->id]
+        ), 'precondition: the post-event recompute recreated the quiz-level grade again');
+        \quizaccess_proctoring\local\risk_hold_enforcer::reenforce_after_regrades();
         $this->assertFalse($DB->record_exists(
             'quiz_grades', ['quiz' => $this->quiz->id, 'userid' => $this->student->id]
-        ), 'the regrade event must re-mask the quiz-level grade');
+        ), 'the shutdown re-enforcement must re-mask the quiz-level grade');
     }
 
     /**
@@ -427,6 +435,71 @@ final class risk_hold_enforcement_test extends advanced_testcase {
         ], '*', MUST_EXIST);
         $this->assertNull($completion->timecompleted, 'the course must no longer read as completed');
         $this->assertGreaterThan(0, (int)$completion->reaggregate, 'core must be asked to re-aggregate');
+    }
+
+    /**
+     * With "any" aggregation and another criterion complete, the course completion stands.
+     *
+     * Retracting it would have core re-complete the course and send a second "Course completed"
+     * notification while the hold is active; the quiz's own stale criterion is still cleared.
+     */
+    public function test_hold_keeps_a_course_completed_by_another_criterion(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/completion/criteria/completion_criteria.php');
+
+        $attemptid = $this->add_attempt(9);
+        $now = time();
+        $quizcriteria = (int)$DB->insert_record('course_completion_criteria', (object)[
+            'course' => $this->course->id,
+            'criteriatype' => COMPLETION_CRITERIA_TYPE_ACTIVITY,
+            'module' => 'quiz',
+            'moduleinstance' => $this->cm->id,
+        ]);
+        $othercriteria = (int)$DB->insert_record('course_completion_criteria', (object)[
+            'course' => $this->course->id,
+            'criteriatype' => COMPLETION_CRITERIA_TYPE_SELF,
+        ]);
+        foreach ([$quizcriteria, $othercriteria] as $criteriaid) {
+            $DB->insert_record('course_completion_crit_compl', (object)[
+                'userid' => $this->student->id,
+                'course' => $this->course->id,
+                'criteriaid' => $criteriaid,
+                'timecompleted' => $now,
+            ]);
+        }
+        $DB->insert_record('course_completion_aggr_methd', (object)[
+            'course' => $this->course->id,
+            'criteriatype' => null,
+            'method' => COMPLETION_AGGREGATION_ANY,
+            'value' => null,
+        ]);
+        $DB->insert_record('course_completions', (object)[
+            'userid' => $this->student->id,
+            'course' => $this->course->id,
+            'timeenrolled' => $now - 100,
+            'timestarted' => $now - 100,
+            'timecompleted' => $now,
+            'reaggregate' => 0,
+        ]);
+
+        $this->hold($attemptid);
+
+        $this->assertFalse($DB->record_exists('course_completion_crit_compl', [
+            'userid' => $this->student->id,
+            'criteriaid' => $quizcriteria,
+        ]), 'the quiz criterion is stale either way');
+        $this->assertTrue($DB->record_exists('course_completion_crit_compl', [
+            'userid' => $this->student->id,
+            'criteriaid' => $othercriteria,
+        ]));
+        $completion = $DB->get_record('course_completions', [
+            'userid' => $this->student->id,
+            'course' => $this->course->id,
+        ], '*', MUST_EXIST);
+        $this->assertNotNull(
+            $completion->timecompleted,
+            'a course carried by another criterion stays completed'
+        );
     }
 
     /**
