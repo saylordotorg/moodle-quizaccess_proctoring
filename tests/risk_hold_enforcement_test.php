@@ -151,6 +151,7 @@ final class risk_hold_enforcement_test extends advanced_testcase {
             'relateduserid' => $this->student->id,
             'courseid' => $this->course->id,
             'context' => \context_module::instance($this->cm->id),
+            'other' => ['quizid' => $this->quiz->id],
         ]);
         \quizaccess_proctoring\local\risk_hold_enforcer::handle_attempt_regraded($event);
         $this->recompute();
@@ -171,6 +172,9 @@ final class risk_hold_enforcement_test extends advanced_testcase {
         $this->hold($attemptid);
 
         $this->grade()->set_locked(0, false, false);
+        // The mask removed the quiz-level grade, so a bare gradebook push has nothing to send:
+        // rebuild it from the attempts the way a quiz regrade does, which fires user_graded.
+        $this->recompute();
         quiz_update_grades($this->quiz, $this->student->id);
 
         $grade = $this->grade();
@@ -561,6 +565,7 @@ final class risk_hold_enforcement_test extends advanced_testcase {
             'relateduserid' => $this->student->id,
             'courseid' => $this->course->id,
             'context' => \context_module::instance($this->cm->id),
+            'other' => ['quizid' => $this->quiz->id],
         ]);
         \quizaccess_proctoring\local\risk_hold_enforcer::handle_attempt_regraded($event);
         \quizaccess_proctoring\local\risk_hold_enforcer::reenforce_after_regrades();
