@@ -1227,9 +1227,35 @@ class quizaccess_proctoring_external extends external_api {
             ];
         }
 
-        self::validate_image_payload((string)$idimage, self::MAX_ID_DOCUMENT_IMAGE_BYTES);
-        if ($hasbackimage) {
-            self::validate_image_payload((string)$idbackimage, self::MAX_ID_DOCUMENT_IMAGE_BYTES);
+        try {
+            self::validate_image_payload((string)$idimage, self::MAX_ID_DOCUMENT_IMAGE_BYTES);
+            if ($hasbackimage) {
+                self::validate_image_payload((string)$idbackimage, self::MAX_ID_DOCUMENT_IMAGE_BYTES);
+            }
+        } catch (invalid_parameter_exception $e) {
+            // A rejected ID upload is the student's everyday reality, not a coding error: a stock
+            // phone photo sits over the pixel or byte caps, and an iPhone export is often HEIC
+            // bytes in a file named .jpg. Thrown onward, all of them surfaced as Moodle's
+            // "Invalid parameter value detected" dialog, which tells the student nothing. Say
+            // what is wrong and what to do instead (CPIT-501). The live image stays outside this
+            // catch: it is page-captured, so its failure really is a coding error.
+            $detail = (string)($e->debuginfo ?? '');
+            $toolarge = strpos($detail, 'too large') !== false;
+            return [
+                'verificationid' => 0,
+                'status' => 'retry',
+                'facescore' => 0,
+                'namescore' => 0,
+                'extractedname' => '',
+                'romanizedname' => '',
+                'matchedprofilename' => '',
+                'namematchreason' => '',
+                'message' => get_string(
+                    $toolarge ? 'modal:idverificationimagetoolarge' : 'idverificationunreadablefile',
+                    'quizaccess_proctoring'
+                ),
+                'warnings' => [],
+            ];
         }
         self::validate_image_payload((string)$liveimage, self::MAX_WEBCAM_IMAGE_BYTES);
         self::enforce_recent_record_limit('quizaccess_proctoring_idv', [
