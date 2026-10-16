@@ -66,6 +66,8 @@ define([], function() {
             let dropped = 0;
             let recovered = 0;
             let lastProblem = '';
+            let lastDropAt = 0;
+            let lastRecoveredAt = 0;
 
             const snapshot = function() {
                 return {
@@ -77,7 +79,11 @@ define([], function() {
                     disposed: disposed,
                     offline: !online(),
                     retrying: items.some(item => item.failures > 0),
-                    problem: lastProblem
+                    problem: lastProblem,
+                    // When the trouble happened, so a banner can stand down once uploads have been
+                    // healthy again instead of outliving a hiccup by a whole exam (CPIT-503).
+                    lastdropat: lastDropAt,
+                    lastrecoveredat: lastRecoveredAt
                 };
             };
             const emit = function() {
@@ -88,8 +94,21 @@ define([], function() {
             const drop = function(item, reason) {
                 items = items.filter(entry => entry !== item);
                 item.request = null;
+                if (item.expendable) {
+                    // However a diagnostic leaves - evicted, expired, refused - its discard is
+                    // never evidence loss: counting it would re-raise the very banner whose
+                    // logging it was (Codex review).
+                    return;
+                }
                 dropped++;
                 lastProblem = reason;
+                lastDropAt = now();
+            };
+            // Context events worth less than the capacity they occupy: under pressure these go
+            // first, so a burst of them cannot push captured evidence out of the queue (CPIT-503).
+            const lowValue = function(item) {
+                const args = item.request && item.request.args;
+                return !!args && ['mouse_left_window', 'mouse_returned_window'].includes(args.eventtype);
             };
             const expire = function() {
                 items.slice().forEach(item => {
@@ -127,6 +146,7 @@ define([], function() {
                     items = items.filter(entry => entry !== item);
                     if (item.failures > 0 || item.queuedOffline) {
                         recovered++;
+                        lastRecoveredAt = now();
                     }
                     item.request = null;
                 } else {
@@ -171,10 +191,15 @@ define([], function() {
             };
             return {
                 snapshot: snapshot,
-                enqueue: function(request, capturedat) {
+                enqueue: function(request, capturedat, opts) {
                     if (disposed || auth) {
                         return false;
                     }
+                    // An expendable item is a diagnostic about the queue itself (a coverage-banner
+                    // log): it never makes room for itself by evicting evidence, and discarding one
+                    // is not evidence loss - counting it would re-raise the very banner whose
+                    // logging it was, evicting more captures each cycle (Codex review).
+                    const expendable = !!(opts && opts.expendable);
                     expire();
                     const payload = {
                         methodname: request.methodname,
@@ -186,23 +211,43 @@ define([], function() {
                     // UTF-16 string size is a conservative bound for serialized base64/JSON evidence.
                     const bytes = JSON.stringify(payload).length * 2;
                     if (bytes > maxBytes) {
+                        if (expendable) {
+                            return false;
+                        }
                         dropped++;
                         lastProblem = 'capacity';
+                        lastDropAt = now();
                         emit();
                         return false;
                     }
                     while (items.length >= maxItems || snapshot().bytes + bytes > maxBytes) {
-                        const oldest = items.find(item => item !== active);
+                        const sacrificial = items.find(item => item !== active && item.expendable)
+                            || items.find(item => item !== active && lowValue(item));
+                        if (!sacrificial && expendable) {
+                            return false;
+                        }
+                        if (!sacrificial && lowValue({request: payload})) {
+                            // Arriving mouse context never makes room for itself by evicting
+                            // captured evidence either: on a slow connection that would invert
+                            // the priority this queue exists to keep (PR review).
+                            dropped++;
+                            lastProblem = 'capacity';
+                            lastDropAt = now();
+                            emit();
+                            return false;
+                        }
+                        const oldest = sacrificial || items.find(item => item !== active);
                         if (!oldest) {
                             dropped++;
                             lastProblem = 'capacity';
+                            lastDropAt = now();
                             emit();
                             return false;
                         }
                         drop(oldest, 'capacity');
                     }
                     items.push({request: payload, bytes: bytes, created: now(), next: now(), failures: 0,
-                        queuedOffline: !online()});
+                        queuedOffline: !online(), expendable: expendable});
                     pump();
                     return true;
                 },
