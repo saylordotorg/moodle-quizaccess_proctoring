@@ -221,13 +221,22 @@ define([], function() {
                         return false;
                     }
                     while (items.length >= maxItems || snapshot().bytes + bytes > maxBytes) {
-                        const sacrificial = items.find(item => item !== active && item.expendable);
+                        const sacrificial = items.find(item => item !== active && item.expendable)
+                            || items.find(item => item !== active && lowValue(item));
                         if (!sacrificial && expendable) {
                             return false;
                         }
-                        const oldest = sacrificial
-                            || items.find(item => item !== active && lowValue(item))
-                            || items.find(item => item !== active);
+                        if (!sacrificial && lowValue({request: payload})) {
+                            // Arriving mouse context never makes room for itself by evicting
+                            // captured evidence either: on a slow connection that would invert
+                            // the priority this queue exists to keep (PR review).
+                            dropped++;
+                            lastProblem = 'capacity';
+                            lastDropAt = now();
+                            emit();
+                            return false;
+                        }
+                        const oldest = sacrificial || items.find(item => item !== active);
                         if (!oldest) {
                             dropped++;
                             lastProblem = 'capacity';

@@ -262,6 +262,33 @@ for (const built of [false, true]) {
             'every capture is delivered; only the diagnostic stood aside');
     });
 
+    test(`arriving mouse context never evicts queued evidence (${suffix})`, async () => {
+        // The reverse of the eviction preference: when the queue holds only captures, an
+        // incoming boundary event is refused rather than admitted at a capture's expense.
+        let resolveactive;
+        const env = fixture({maxItems: 3}, built);
+        env.outcomes.push(() => new Promise(resolve => { resolveactive = resolve; }));
+        const evidence = (name) => ({methodname: 'quizaccess_proctoring_log_event', args: {
+            eventtype: 'away_capture', eventdetail: name, screenshot: 'x'.repeat(20)
+        }});
+        const mouse = {methodname: 'quizaccess_proctoring_log_event', args: {
+            eventtype: 'mouse_left_window', eventdetail: '{}'
+        }};
+        env.queue.enqueue(evidence('first'), 991); // Becomes the active upload.
+        env.queue.enqueue(evidence('second'), 992);
+        env.queue.enqueue(evidence('third'), 993);
+        assert.equal(env.queue.enqueue(mouse, 994), false, 'the incoming mouse event is the one refused');
+        assert.equal(env.queue.snapshot().pending, 3, 'every capture is still queued');
+        assert.equal(env.queue.snapshot().dropped, 1, 'the refused context is a counted drop');
+        resolveactive({warnings: []});
+        await settle();
+        await env.advance(1000);
+        await env.advance(1000);
+        const sent = env.requests.map(sentrequest => sentrequest.args.eventtype);
+        assert.deepEqual(sent, ['away_capture', 'away_capture', 'away_capture'],
+            'every capture is delivered');
+    });
+
     test(`an expired or refused diagnostic is not evidence loss either (${suffix})`, async () => {
         const coverage = (key) => ({methodname: 'quizaccess_proctoring_log_event', args: {
             eventtype: 'warning_shown', eventdetail: key
