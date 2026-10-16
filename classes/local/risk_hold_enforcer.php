@@ -305,18 +305,32 @@ class risk_hold_enforcer {
             // and the locked gradebook grades swallow the user_graded that would mask them
             // again. Re-enforce every hold on the quiz once the whole flow is over (PR
             // review).
-            $quizinstance = (int)$attempt->quiz;
-            if (!isset(self::$pendingregrades[$quizinstance])) {
-                if (!self::$pendingregrades) {
-                    \core_shutdown_manager::register_function(
-                        [self::class, 'reenforce_after_regrades']
-                    );
-                }
-                self::$pendingregrades[$quizinstance] = $quizinstance;
-            }
+            self::queue_shutdown_reenforcement((int)$attempt->quiz);
         } catch (\Throwable $e) {
             quizaccess_proctoring_log_failure('re-applying a risk hold after a regrade', $e);
         }
+    }
+
+    /**
+     * Re-enforce every hold on a quiz at request shutdown.
+     *
+     * For flows that recompute grades after their event fires - the report's batch regrade,
+     * an attempt deletion recomputing the student's remaining attempts - where the locked
+     * gradebook grade swallows the user_graded that would otherwise re-apply the mask.
+     *
+     * @param int $quizinstance Quiz instance id.
+     * @return void
+     */
+    public static function queue_shutdown_reenforcement(int $quizinstance): void {
+        if ($quizinstance <= 0 || isset(self::$pendingregrades[$quizinstance])) {
+            return;
+        }
+        if (!self::$pendingregrades) {
+            \core_shutdown_manager::register_function(
+                [self::class, 'reenforce_after_regrades']
+            );
+        }
+        self::$pendingregrades[$quizinstance] = $quizinstance;
     }
 
     /**

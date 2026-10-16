@@ -77,6 +77,23 @@ class attempt_cleanup {
                     risk_hold_enforcer::enforce($quizinstance, $userid, true);
                 }
             }
+            // Core recomputes the student's remaining attempts after this event, which
+            // recreates the quiz-level grade row while the locked gradebook grade swallows
+            // user_graded - so a remaining hold is re-enforced at shutdown, the way the
+            // regrade handler does it (PR review).
+            if ($quizinstance > 0 && $userid > 0) {
+                [$insql, $inparams] = $DB->get_in_or_equal(
+                    risk_hold_enforcer::enforced_statuses(),
+                    SQL_PARAMS_NAMED
+                );
+                if ($DB->record_exists_select(
+                    'quizaccess_proctoring_risk_holds',
+                    "quizinstance = :quiz AND userid = :userid AND status $insql",
+                    ['quiz' => $quizinstance, 'userid' => $userid] + $inparams
+                )) {
+                    risk_hold_enforcer::queue_shutdown_reenforcement($quizinstance);
+                }
+            }
         } catch (\Throwable $e) {
             quizaccess_proctoring_log_failure('cleaning up after a deleted attempt', $e);
         }

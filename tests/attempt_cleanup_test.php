@@ -125,6 +125,70 @@ final class attempt_cleanup_test extends advanced_testcase {
     }
 
     /**
+     * Deleting one of two held attempts re-masks the remaining hold at shutdown.
+     *
+     * Core recomputes the student's remaining attempts after the deletion event, recreating
+     * the quiz-level grade row while the locked gradebook grade swallows user_graded (PR
+     * review).
+     */
+    public function test_deleting_one_held_attempt_remasks_the_other(): void {
+        global $DB;
+
+        [$course, $quiz, $cm, $user, $firstattempt] = $this->fixture();
+        $now = time();
+        $secondattempt = (int)$DB->insert_record('quiz_attempts', (object)[
+            'quiz' => $quiz->id,
+            'userid' => $user->id,
+            'attempt' => 2,
+            'uniqueid' => 990002,
+            'layout' => '1,0',
+            'currentpage' => 0,
+            'preview' => 0,
+            'state' => 'finished',
+            'timestart' => $now - 500,
+            'timefinish' => $now - 30,
+            'timemodified' => $now,
+            'timemodifiedoffline' => 0,
+            'timecheckstate' => null,
+            'sumgrades' => 8,
+        ]);
+        foreach ([$firstattempt, $secondattempt] as $attemptid) {
+            quizaccess_proctoring_apply_risk_hold(
+                (int)$course->id,
+                (int)$cm->id,
+                (int)$user->id,
+                $attemptid,
+                0,
+                90,
+                80
+            );
+        }
+
+        $DB->delete_records('quiz_attempts', ['id' => $firstattempt]);
+        $event = \mod_quiz\event\attempt_deleted::create([
+            'objectid' => $firstattempt,
+            'relateduserid' => $user->id,
+            'courseid' => $course->id,
+            'context' => \context_module::instance($cm->id),
+            'other' => ['quizid' => $quiz->id],
+        ]);
+        attempt_cleanup::attempt_deleted($event);
+
+        // Core's post-event recompute of the remaining attempts recreates the row.
+        $DB->insert_record('quiz_grades', (object)[
+            'quiz' => $quiz->id,
+            'userid' => $user->id,
+            'grade' => 8,
+            'timemodified' => time(),
+        ]);
+        \quizaccess_proctoring\local\risk_hold_enforcer::reenforce_after_regrades();
+
+        $this->assertFalse($DB->record_exists(
+            'quiz_grades', ['quiz' => $quiz->id, 'userid' => $user->id]
+        ), 'the remaining hold must re-mask the quiz-level grade after the recompute');
+    }
+
+    /**
      * Deleting an attempt that was never held leaves the gradebook alone.
      *
      * clearfeedback bypasses the enforcer's no-holds guard, so calling it for every deleted
