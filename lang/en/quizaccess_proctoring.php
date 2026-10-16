@@ -188,6 +188,7 @@ $string['desktopcaptureprompt'] = 'Share the entire screen that shows this quiz 
 $string['desktopcapturepromptnomarker'] = 'Share the entire screen that shows this quiz page.';
 $string['desktopcapturetitle'] = 'Desktop capture required';
 $string['devicenotice:handheld'] = 'This looks like a phone or tablet. A proctored exam needs a laptop or desktop computer with a webcam: setup asks you to share your whole screen, which phones and tablets cannot do. Switch devices before you start — the exam timer has not begun.';
+$string['devicenotice:handheldallowed'] = 'This looks like a phone or tablet. This exam can run here — phones cannot share a screen, so that check is skipped — but a laptop or desktop computer with a webcam is recommended: a bigger screen, fuller monitoring, and fewer camera interruptions. The exam timer has not begun.';
 $string['devicenotice:nocamera'] = 'This browser cannot reach a camera, so identity setup will not be able to run. A proctored exam needs a laptop or desktop computer with a working webcam. If you have one, check that no other application is using it and that the browser is allowed to use the camera, then reload this page. The exam timer has not begun.';
 $string['email']  = 'Email address';
 $string['enable_web_camera_before_submitting'] = 'You need to enable web camera before submitting this quiz!';
