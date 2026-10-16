@@ -202,6 +202,7 @@ define([], function() {
                     if (bytes > maxBytes) {
                         dropped++;
                         lastProblem = 'capacity';
+                        lastDropAt = now();
                         emit();
                         return false;
                     }
@@ -211,6 +212,7 @@ define([], function() {
                         if (!oldest) {
                             dropped++;
                             lastProblem = 'capacity';
+                            lastDropAt = now();
                             emit();
                             return false;
                         }

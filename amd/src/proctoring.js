@@ -2911,10 +2911,19 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     return false;
                 }
 
-                const uploads = createUploadController(strings, captureClock, function(eventtype, detail) {
-                    noteWarning(eventtype, detail);
-                });
+                // Coverage banner changes are logged through the activity monitor's own warning
+                // logger (CPIT-481). The monitor starts later - and some attempts never start it -
+                // so banner changes from before then wait here; without a monitor there is no event
+                // logger to write to, and they stay unlogged like every other warning would.
                 let monitoring = null;
+                const pendingCoverageWarnings = [];
+                const uploads = createUploadController(strings, captureClock, function(eventtype, detail) {
+                    if (monitoring && monitoring.noteWarning) {
+                        monitoring.noteWarning(eventtype, detail);
+                    } else {
+                        pendingCoverageWarnings.push([eventtype, detail]);
+                    }
+                });
                 let pageActive = true;
                 let pageGeneration = 0;
                 let captureBusy = false;
@@ -2931,6 +2940,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         ['log', 'warn', 'block'].includes(props.multimonitormode)) {
                     props.facemodelready = faceModelReady ? 1 : 0;
                     monitoring = initSuspiciousActivityMonitoring(props, strings, uploads, captureClock);
+                    pendingCoverageWarnings.splice(0).forEach(function(entry) {
+                        monitoring.noteWarning(entry[0], entry[1]);
+                    });
                 }
 
                 const width = Math.max(240, parseInt(props.image_width, 10) || 480);
