@@ -503,6 +503,67 @@ final class risk_hold_enforcement_test extends advanced_testcase {
     }
 
     /**
+     * Nested aggregation: overall "all" with an "any" activity group carried by another activity.
+     *
+     * The overall method alone would say retract; the activity group's own "any" method keeps
+     * the course genuinely completed (PR review).
+     */
+    public function test_hold_respects_per_type_aggregation(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/completion/criteria/completion_criteria.php');
+
+        $attemptid = $this->add_attempt(9);
+        $now = time();
+        $otherquiz = $this->getDataGenerator()->create_module('quiz', ['course' => $this->course->id]);
+        $quizcriteria = (int)$DB->insert_record('course_completion_criteria', (object)[
+            'course' => $this->course->id,
+            'criteriatype' => COMPLETION_CRITERIA_TYPE_ACTIVITY,
+            'module' => 'quiz',
+            'moduleinstance' => $this->cm->id,
+        ]);
+        $othercriteria = (int)$DB->insert_record('course_completion_criteria', (object)[
+            'course' => $this->course->id,
+            'criteriatype' => COMPLETION_CRITERIA_TYPE_ACTIVITY,
+            'module' => 'quiz',
+            'moduleinstance' => $otherquiz->cmid,
+        ]);
+        foreach ([$quizcriteria, $othercriteria] as $criteriaid) {
+            $DB->insert_record('course_completion_crit_compl', (object)[
+                'userid' => $this->student->id,
+                'course' => $this->course->id,
+                'criteriaid' => $criteriaid,
+                'timecompleted' => $now,
+            ]);
+        }
+        // Overall "all" (the default, no row), activities grouped as "any".
+        $DB->insert_record('course_completion_aggr_methd', (object)[
+            'course' => $this->course->id,
+            'criteriatype' => COMPLETION_CRITERIA_TYPE_ACTIVITY,
+            'method' => COMPLETION_AGGREGATION_ANY,
+            'value' => null,
+        ]);
+        $DB->insert_record('course_completions', (object)[
+            'userid' => $this->student->id,
+            'course' => $this->course->id,
+            'timeenrolled' => $now - 100,
+            'timestarted' => $now - 100,
+            'timecompleted' => $now,
+            'reaggregate' => 0,
+        ]);
+
+        $this->hold($attemptid);
+
+        $completion = $DB->get_record('course_completions', [
+            'userid' => $this->student->id,
+            'course' => $this->course->id,
+        ], '*', MUST_EXIST);
+        $this->assertNotNull(
+            $completion->timecompleted,
+            'an "any" activity group carried by another activity keeps the course completed'
+        );
+    }
+
+    /**
      * Placing a hold notifies the student once, through the holdcreated provider, when enabled.
      */
     public function test_hold_created_notification(): void {

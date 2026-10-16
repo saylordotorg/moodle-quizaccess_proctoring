@@ -485,20 +485,11 @@ class risk_hold_enforcer {
                     ['course' => (int)$course->id, 'userid' => $userid] + $inparams
                 );
             }
-            // With "any" aggregation, another completed criterion can carry the course on its
-            // own: retracting then would have core re-complete it and send a second "Course
-            // completed" notification while the hold stands (PR review). The quiz's own stale
-            // criterion is still cleared above either way.
-            $method = (int)$DB->get_field('course_completion_aggr_methd', 'method', [
-                'course' => (int)$course->id,
-                'criteriatype' => null,
-            ]);
-            $otherscomplete = $DB->record_exists_select(
-                'course_completion_crit_compl',
-                'course = :course AND userid = :userid AND timecompleted IS NOT NULL AND timecompleted > 0',
-                ['course' => (int)$course->id, 'userid' => $userid]
-            );
-            $stillcomplete = $method === COMPLETION_AGGREGATION_ANY && $otherscomplete;
+            // Other criteria can carry the course on their own, under core's two-level
+            // aggregation: retracting then would have core re-complete it and send a second
+            // "Course completed" notification while the hold stands (PR review). The quiz's
+            // own stale criterion is cleared above either way.
+            $stillcomplete = self::completion_still_satisfied((int)$course->id, $userid);
 
             $completed = $DB->get_record('course_completions', [
                 'course' => (int)$course->id,
@@ -523,6 +514,56 @@ class risk_hold_enforcer {
         } catch (\Throwable $e) {
             quizaccess_proctoring_log_failure('retracting a stale course completion during a hold', $e);
         }
+    }
+
+    /**
+     * Whether the student's remaining criteria completions still satisfy the course.
+     *
+     * Core aggregates on two levels: criteria of one type combine by that type's method, and
+     * the type results combine by the overall method - each defaulting to "all". An overall
+     * "any" does not make one completed activity enough when the activity group itself wants
+     * all of them, and an overall "all" can still be satisfied when the activity group wants
+     * any (PR review). This mirrors that structure over the stored completion rows.
+     *
+     * @param int $courseid Course id.
+     * @param int $userid Student id.
+     * @return bool
+     */
+    private static function completion_still_satisfied(int $courseid, int $userid): bool {
+        global $DB;
+
+        $criteria = $DB->get_records('course_completion_criteria', ['course' => $courseid]);
+        if (!$criteria) {
+            return false;
+        }
+        $completions = $DB->get_records_menu(
+            'course_completion_crit_compl',
+            ['course' => $courseid, 'userid' => $userid],
+            '',
+            'criteriaid, timecompleted'
+        );
+        $methods = [];
+        foreach ($DB->get_records('course_completion_aggr_methd', ['course' => $courseid]) as $row) {
+            $methods[$row->criteriatype === null ? 'overall' : (int)$row->criteriatype] = (int)$row->method;
+        }
+
+        $bytype = [];
+        foreach ($criteria as $criterion) {
+            $done = !empty($completions[(int)$criterion->id]);
+            $bytype[(int)$criterion->criteriatype][] = $done;
+        }
+
+        $typeresults = [];
+        foreach ($bytype as $type => $results) {
+            $method = $methods[$type] ?? COMPLETION_AGGREGATION_ALL;
+            $typeresults[] = $method === COMPLETION_AGGREGATION_ANY
+                ? in_array(true, $results, true)
+                : !in_array(false, $results, true);
+        }
+        $overall = $methods['overall'] ?? COMPLETION_AGGREGATION_ALL;
+        return $overall === COMPLETION_AGGREGATION_ANY
+            ? in_array(true, $typeresults, true)
+            : !in_array(false, $typeresults, true);
     }
 
     /**
