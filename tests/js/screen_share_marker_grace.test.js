@@ -63,6 +63,26 @@ const SHIFTED_COLOURS = [
     [205, 175, 100], // Yellow, dimmed.
 ];
 
+// The swatches with the blue channel halved: what the dev diagnostics recorded on a real
+// rejected share (CPIT-498 — Windows Night light scales blue down at scanout, so magenta
+// and cyan fell out of the colour boxes while yellow survived). Must pass the hue-shape
+// rules, and fails both the original and the box-widened thresholds.
+const NIGHTLIGHT_COLOURS = [
+    [240, 15, 105],  // Magenta, blue halved.
+    [20, 230, 105],  // Cyan, blue halved.
+    [245, 215, 10],  // Yellow, barely affected.
+];
+
+// Common interface colours that classify under the hue-shape rules (Bootstrap's pink,
+// teal and amber), drawn swatch-sized but in the wrong left-to-right order: the colour
+// totals pass, and only the arrangement check knows this is not the marker (PR #69
+// review scenario — a dashboard showing all three hues must not open the gate).
+const UI_COLOURS_WRONG_ORDER = [
+    [255, 193, 7],   // Amber (reads as yellow) — where magenta should be.
+    [23, 162, 184],  // Teal (reads as cyan).
+    [232, 62, 140],  // Pink (reads as magenta) — where yellow should be.
+];
+
 /**
  * Build a synthetic captured frame at true capture proportions.
  *
@@ -89,6 +109,8 @@ function makeFrame(layout, width, height) {
         marker: {size: [43, 18], gap: 4, at: [1000, 100]},
         specks: {size: [12, 12], gap: 4, at: [1000, 100]},
         shifted: {size: [43, 18], gap: 4, at: [1000, 100], colours: SHIFTED_COLOURS},
+        nightlight: {size: [43, 18], gap: 4, at: [1000, 100], colours: NIGHTLIGHT_COLOURS},
+        uiblocks: {size: [43, 18], gap: 4, at: [1000, 100], colours: UI_COLOURS_WRONG_ORDER},
     };
     const shape = shapes[layout];
     if (!shape) {
@@ -597,6 +619,33 @@ test('a colour-shifted marker is still found (CPIT-498)', async () => {
         'a colour-shifted but correct share must be accepted');
     assert.strictEqual(env.status.textContent, 'screenshareaccepted');
     assert.strictEqual(env.markerMissingEvents().length, 0);
+});
+
+test('a marker with its blue channel halved is still found (CPIT-498, Night light)', async () => {
+    // The real rejected share on dev: the capture came through with blue scaled down, so
+    // magenta and cyan fell out of the colour boxes while yellow survived — one missing
+    // hue failed the whole check. The hue-shape rules must accept this frame.
+    const env = await bootWithShare({}, (e) => {
+        e.frameLayout = 'nightlight';
+    });
+
+    assert.strictEqual(env.gate.style.display, 'none',
+        'a warm-shifted but correct share must be accepted');
+    assert.strictEqual(env.status.textContent, 'screenshareaccepted');
+    assert.strictEqual(env.markerMissingEvents().length, 0);
+});
+
+test('interface colours in the wrong arrangement are not mistaken for the marker', async () => {
+    // Bootstrap pink, teal and amber classify under the hue-shape rules and these blocks
+    // are swatch-sized, so the colour totals pass; the arrangement check must reject the
+    // window because the hues are not in the marker's order (PR #69 review).
+    const env = await bootWithShare({}, (e) => {
+        e.frameLayout = 'uiblocks';
+    });
+
+    assert.notStrictEqual(env.gate.style.display, 'none',
+        'interface colours must not pass the screen check');
+    assert.strictEqual(env.status.textContent, 'screenmarkerchecking');
 });
 
 test('colour blocks too small to be swatches are not mistaken for the marker', async () => {
