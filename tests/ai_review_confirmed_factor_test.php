@@ -275,6 +275,121 @@ final class ai_review_confirmed_factor_test extends advanced_testcase {
     }
 
     /**
+     * A review completing after submission creates the hold the submission check could not see.
+     */
+    public function test_late_review_completion_creates_the_missed_hold(): void {
+        global $DB;
+
+        $this->activate_event_ai_review();
+        set_config('riskreviewenabled', QUIZACCESS_PROCTORING_RISK_ACTION_HOLD, 'quizaccess_proctoring');
+        set_config('riskreviewthreshold', 40, 'quizaccess_proctoring');
+        [$courseid, $cmid, $userid, $attemptid, $reportid] = $this->fixture();
+        $scope = [$courseid, $cmid, $userid, $attemptid];
+        $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE, 'highly_suspicious');
+        $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE, 'highly_suspicious');
+
+        quizaccess_proctoring_reevaluate_hold_after_event_review((object)[
+            'id' => 1,
+            'courseid' => $courseid,
+            'quizid' => $cmid,
+            'userid' => $userid,
+            'attemptid' => $attemptid,
+            'reportid' => 0,
+            'reviewtype' => 'event',
+            'decision' => 'highly_suspicious',
+        ]);
+
+        $hold = $DB->get_record('quizaccess_proctoring_risk_holds', [
+            'quizid' => $cmid, 'userid' => $userid, 'attemptid' => $attemptid,
+        ]);
+        $this->assertNotEmpty($hold, 'the late verdict must hold the attempt for a reviewer');
+        $this->assertEquals(QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE, (int)$hold->status);
+        $this->assertSame($reportid, (int)$hold->reportid, 'the report row is resolved when the review carries none');
+    }
+
+    /**
+     * An attempt a reviewer already decided is left exactly as they left it.
+     */
+    public function test_late_review_respects_decided_holds(): void {
+        global $DB;
+
+        $this->activate_event_ai_review();
+        set_config('riskreviewenabled', QUIZACCESS_PROCTORING_RISK_ACTION_HOLD, 'quizaccess_proctoring');
+        set_config('riskreviewthreshold', 40, 'quizaccess_proctoring');
+        [$courseid, $cmid, $userid, $attemptid, $reportid] = $this->fixture();
+        $scope = [$courseid, $cmid, $userid, $attemptid];
+        $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE, 'highly_suspicious');
+        $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE, 'highly_suspicious');
+        $now = time();
+        $DB->insert_record('quizaccess_proctoring_risk_holds', (object)[
+            'courseid' => $courseid,
+            'quizid' => $cmid,
+            'quizinstance' => 0,
+            'userid' => $userid,
+            'attemptid' => $attemptid,
+            'reportid' => $reportid,
+            'riskscore' => 50,
+            'threshold' => 40,
+            'originalgrade' => 9,
+            'status' => QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED,
+            'reviewerid' => 7,
+            'timecreated' => $now,
+            'timemodified' => $now,
+            'timereviewed' => $now,
+        ]);
+
+        quizaccess_proctoring_reevaluate_hold_after_event_review((object)[
+            'id' => 2,
+            'courseid' => $courseid,
+            'quizid' => $cmid,
+            'userid' => $userid,
+            'attemptid' => $attemptid,
+            'reportid' => $reportid,
+            'reviewtype' => 'event',
+            'decision' => 'highly_suspicious',
+        ]);
+
+        $holds = $DB->get_records('quizaccess_proctoring_risk_holds', [
+            'quizid' => $cmid, 'userid' => $userid, 'attemptid' => $attemptid,
+        ]);
+        $this->assertCount(1, $holds, 'a decided hold must not be joined by a new one');
+        $this->assertEquals(QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED, (int)reset($holds)->status);
+    }
+
+    /**
+     * Below the threshold, a late verdict holds nothing.
+     */
+    public function test_late_review_below_threshold_holds_nothing(): void {
+        global $DB;
+
+        $this->activate_event_ai_review();
+        set_config('riskreviewenabled', QUIZACCESS_PROCTORING_RISK_ACTION_HOLD, 'quizaccess_proctoring');
+        set_config('riskreviewthreshold', 90, 'quizaccess_proctoring');
+        [$courseid, $cmid, $userid, $attemptid, $reportid] = $this->fixture();
+        $this->add_review(
+            [$courseid, $cmid, $userid, $attemptid],
+            'event',
+            QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE,
+            'highly_suspicious'
+        );
+
+        quizaccess_proctoring_reevaluate_hold_after_event_review((object)[
+            'id' => 3,
+            'courseid' => $courseid,
+            'quizid' => $cmid,
+            'userid' => $userid,
+            'attemptid' => $attemptid,
+            'reportid' => $reportid,
+            'reviewtype' => 'event',
+            'decision' => 'highly_suspicious',
+        ]);
+
+        $this->assertFalse($DB->record_exists('quizaccess_proctoring_risk_holds', [
+            'quizid' => $cmid, 'userid' => $userid, 'attemptid' => $attemptid,
+        ]));
+    }
+
+    /**
      * Coverage: armed only while event AI review is configured and on.
      */
     public function test_factor_coverage_reflects_the_setting(): void {

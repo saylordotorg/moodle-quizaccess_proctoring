@@ -3271,12 +3271,93 @@ function quizaccess_proctoring_process_ai_review(stdClass $review, array $settin
         $DB->update_record('quizaccess_proctoring_ai_reviews', $review);
 
         mtrace('Completed AI image review id ' . $review->id . ' with score ' . $review->reviewscore . '.');
+
+        // The verdict was saved; a confirmed event review now also scores (CPIT-483), and this
+        // review ran after the submission-time hold check, so re-evaluate - otherwise two
+        // identical attempts get different grade-release treatment depending on whether cron
+        // processed the review before or after submission (Codex review). Its own failures are
+        // logged, never allowed to mark a completed review as failed.
+        if ((string)$review->reviewtype === 'event' && (string)$review->decision === 'highly_suspicious') {
+            quizaccess_proctoring_reevaluate_hold_after_event_review($review);
+        }
     } catch (Throwable $e) {
         $review->status = QUIZACCESS_PROCTORING_AI_REVIEW_FAILED;
         $review->errormessage = substr($e->getMessage(), 0, 2000);
         $review->timemodified = time();
         $DB->update_record('quizaccess_proctoring_ai_reviews', $review);
         mtrace('AI image review failed for id ' . $review->id . ': ' . $e->getMessage());
+    }
+}
+
+/**
+ * Re-evaluate an attempt's hold after an event AI review confirmed a capture (CPIT-483).
+ *
+ * Event reviews complete in cron, after the submission-time hold check has run, so the points
+ * the confirmed verdict adds could cross the hold threshold with nothing acting on it. This
+ * applies only the review-only policy - it can create a hold for a reviewer, never an automatic
+ * failure, since the confirmed-review factor is excluded from the auto-fail score by design -
+ * and it respects every decision already made: an attempt with any hold history (active,
+ * released, confirmed or auto-failed) is left exactly as the reviewer or the earlier check
+ * left it.
+ *
+ * @param stdClass $review Completed event-level AI review row.
+ */
+function quizaccess_proctoring_reevaluate_hold_after_event_review(stdClass $review): void {
+    global $DB;
+
+    try {
+        $attemptid = (int)$review->attemptid;
+        if ($attemptid <= 0 || !\quizaccess_proctoring\local\risk_calculator::factor_enabled('aireviewconfirmed')) {
+            return;
+        }
+        if ($DB->record_exists('quizaccess_proctoring_risk_holds', [
+            'quizid' => (int)$review->quizid,
+            'userid' => (int)$review->userid,
+            'attemptid' => $attemptid,
+        ])) {
+            return;
+        }
+        $risksettings = quizaccess_proctoring_get_effective_risk_review_settings((int)$review->quizid);
+        $risklockoutenabled = quizaccess_proctoring_get_cheating_lockout_days() > 0 &&
+            (int)$risksettings['mode'] !== QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED;
+        if (empty($risksettings['enabled']) && !$risklockoutenabled) {
+            return;
+        }
+        $reportid = (int)$review->reportid;
+        if ($reportid <= 0) {
+            $reports = $DB->get_records('quizaccess_proctoring_logs', [
+                'courseid' => (int)$review->courseid,
+                'quizid' => (int)$review->quizid,
+                'userid' => (int)$review->userid,
+                'status' => $attemptid,
+                'deletionprogress' => 0,
+            ], 'id ASC', 'id', 0, 1);
+            if (!$reports) {
+                return;
+            }
+            $reportid = (int)reset($reports)->id;
+        }
+        $risk = quizaccess_proctoring_calculate_attempt_risk(
+            (int)$review->courseid,
+            (int)$review->quizid,
+            (int)$review->userid,
+            $reportid
+        );
+        if ((int)$risk['score'] < (int)$risksettings['threshold']) {
+            return;
+        }
+        quizaccess_proctoring_apply_risk_hold(
+            (int)$review->courseid,
+            (int)$review->quizid,
+            (int)$review->userid,
+            $attemptid,
+            $reportid,
+            (int)$risk['score'],
+            (int)$risksettings['threshold']
+        );
+        mtrace('AI review ' . $review->id . ' pushed attempt ' . $attemptid . ' over the hold threshold; held for review.');
+    } catch (Throwable $e) {
+        quizaccess_proctoring_log_failure('re-evaluating the hold after AI review ' . (int)$review->id, $e);
     }
 }
 
