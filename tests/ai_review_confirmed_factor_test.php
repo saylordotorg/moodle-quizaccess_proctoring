@@ -304,6 +304,9 @@ final class ai_review_confirmed_factor_test extends advanced_testcase {
         $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE, 'highly_suspicious');
         $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE, 'highly_suspicious');
 
+        // The cron-side helper narrates the hold through mtrace; assert it so the output is
+        // intentional rather than risky.
+        $this->expectOutputRegex('/held for review/');
         quizaccess_proctoring_reevaluate_hold_after_event_review((object)[
             'id' => 1,
             'courseid' => $courseid,
