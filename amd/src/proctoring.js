@@ -422,10 +422,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     banner.textContent = text || '';
                     banner.style.display = text ? '' : 'none';
                 }
-                // These banners belong in the "Messages shown to the student" log like every other
-                // on-page message (CPIT-481): without it, the one message a student reports seeing
-                // is the one the report cannot show (CPIT-503).
-                if (kind !== shownkind && onbanner) {
+                // The upload-health banners belong in the "Messages shown to the student" log like
+                // every other on-page message (CPIT-481): without it, the one message a student
+                // reports seeing is the one the report cannot show (CPIT-503). The device banner is
+                // not logged here - the camera and screen warnings it accompanies already are - and
+                // a lost login session cannot deliver its own log entry.
+                const loggable = ['connection', 'rejected', 'lost', 'recovered'].includes(kind) ? kind : '';
+                if (loggable !== shownkind && onbanner) {
                     const nowms = captureClock();
                     if (shownkind !== '') {
                         onbanner('warning_cleared', {
@@ -433,10 +436,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             seconds: Math.max(0, Math.round((nowms - shownat) / 1000))
                         });
                     }
-                    if (kind !== '') {
-                        onbanner('warning_shown', {key: 'coverage:' + kind, message: text});
+                    if (loggable !== '') {
+                        onbanner('warning_shown', {key: 'coverage:' + loggable, message: text});
                     }
-                    shownkind = kind;
+                    shownkind = loggable;
                     shownat = nowms;
                 }
             };
