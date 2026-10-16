@@ -65,6 +65,12 @@ $observers = [
         'callback' => '\quizaccess_proctoring\local\risk_hold_enforcer::handle_attempt_submitted',
     ],
     [
+        // A deleted attempt takes its proctoring records with it: the captures are queued for
+        // the image deletion task, and an active hold on it is dropped (CPIT-464).
+        'eventname' => '\mod_quiz\event\attempt_deleted',
+        'callback' => '\quizaccess_proctoring\local\attempt_cleanup::attempt_deleted',
+    ],
+    [
         // Deleting an account removes the user's proctoring data too, not only a privacy request (CPIT-472).
         'eventname' => '\core\event\user_deleted',
         'callback' => '\quizaccess_proctoring\local\user_data_purge::user_deleted',
