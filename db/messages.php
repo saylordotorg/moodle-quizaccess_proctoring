@@ -32,6 +32,15 @@ $messageproviders = [
             'email' => MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
         ],
     ],
+    // Tells a student their attempt was placed under review, at the moment the hold is created:
+    // without it the first thing they heard was the decision - or, worse, a premature course
+    // completion message sent before the hold could empty the grade (CPIT-463, Student Affairs).
+    'holdcreated' => [
+        'defaults' => [
+            'popup' => MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
+            'email' => MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
+        ],
+    ],
     // Tells proctoring reviewers that a student asked for a new reference photo (CPIT-476).
     'referenceresetrequest' => [
         'capability' => 'quizaccess/proctoring:reviewacrosscourses',

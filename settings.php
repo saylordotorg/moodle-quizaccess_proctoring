@@ -948,6 +948,13 @@ if ($canmanageproctoring) {
         1
     ));
 
+    $settings->add(new admin_setting_configcheckbox(
+        'quizaccess_proctoring/holdcreatednotify',
+        get_string('setting:holdcreatednotify', 'quizaccess_proctoring'),
+        get_string('setting:holdcreatednotify_desc', 'quizaccess_proctoring'),
+        1
+    ));
+
     // The AI review section holds the provider API keys and controls paid external calls, so
     // it stays site-administrator only. Capability holders see every other section.
     if ($hassiteconfig) {

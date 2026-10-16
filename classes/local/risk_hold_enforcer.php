@@ -186,7 +186,12 @@ class risk_hold_enforcer {
             }
 
             if ($active) {
-                return self::hold_grade($quiz, $userid, $active);
+                $held = self::hold_grade($quiz, $userid, $active);
+                if ($held) {
+                    self::mask_quiz_grade($quiz, $userid);
+                    self::retract_stale_completion($quiz, $cm, $userid);
+                }
+                return $held;
             }
 
             self::unlock_grade($quiz, $userid);
@@ -248,6 +253,149 @@ class risk_hold_enforcer {
             self::enforce((int)$item->iteminstance, $userid);
         } catch (\Throwable $e) {
             quizaccess_proctoring_log_failure('re-applying a risk hold after a grade change', $e);
+        }
+    }
+
+    /**
+     * Re-apply holds after an attempt regrade, which the locked gradebook grade hides.
+     *
+     * A regrade recreates the quiz-level grade row and then updates the gradebook; the held
+     * gradebook grade is locked, so grade_item::update_raw_grade() returns without emitting
+     * user_graded and {@see self::handle_user_graded()} never runs. The regrade event itself
+     * brings the mask back (CPIT-463, PR review).
+     *
+     * @param \mod_quiz\event\attempt_regraded $event Regrade event.
+     * @return void
+     */
+    /** @var int[][] Held quiz/user pairs regraded this request, re-enforced at shutdown. */
+    private static $pendingregrades = [];
+
+    public static function handle_attempt_regraded(\mod_quiz\event\attempt_regraded $event): void {
+        self::reenforce_for_attempt((int)$event->objectid);
+    }
+
+    /**
+     * Re-apply holds after a manual question grade, which recomputes the attempt's final grade.
+     *
+     * That flow recreates the quiz-level grade row and emits neither attempt_regraded nor - the
+     * gradebook grade being locked - user_graded (PR review).
+     *
+     * @param \mod_quiz\event\question_manually_graded $event Manual grading event.
+     * @return void
+     */
+    public static function handle_question_manually_graded(\mod_quiz\event\question_manually_graded $event): void {
+        self::reenforce_for_attempt((int)($event->other['attemptid'] ?? 0));
+    }
+
+    /**
+     * Re-apply holds after a new submission on a quiz with held students.
+     *
+     * A later, below-threshold attempt recomputes the quiz-level grade without creating a hold
+     * of its own, and the locked gradebook grade swallows user_graded (PR review).
+     *
+     * @param \mod_quiz\event\attempt_submitted $event Submission event.
+     * @return void
+     */
+    public static function handle_attempt_submitted(\mod_quiz\event\attempt_submitted $event): void {
+        self::reenforce_for_attempt((int)$event->objectid);
+    }
+
+    /**
+     * Re-apply holds around one attempt whose grades were just recomputed.
+     *
+     * Immediate enforcement covers the attempt's own student; the shutdown pass covers every
+     * hold on the quiz, because batch flows recompute other students' grades after their
+     * events have fired.
+     *
+     * @param int $attemptid Attempt id.
+     * @return void
+     */
+    private static function reenforce_for_attempt(int $attemptid): void {
+        global $CFG, $DB;
+
+        if (self::$running || $attemptid <= 0) {
+            return;
+        }
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+
+        try {
+            $attempt = $DB->get_record('quiz_attempts', ['id' => $attemptid], 'id, quiz, userid');
+            if (!$attempt) {
+                return;
+            }
+            [$insql, $inparams] = $DB->get_in_or_equal(self::enforced_statuses(), SQL_PARAMS_NAMED);
+            if (!$DB->record_exists_select(
+                'quizaccess_proctoring_risk_holds',
+                "quizinstance = :quiz AND status $insql",
+                ['quiz' => (int)$attempt->quiz] + $inparams
+            )) {
+                // Nobody on this quiz is held.
+                return;
+            }
+            // Immediate enforcement for this attempt's student, when they are the held one.
+            if ($DB->record_exists_select(
+                'quizaccess_proctoring_risk_holds',
+                "quizinstance = :quiz AND userid = :userid AND status $insql",
+                ['quiz' => (int)$attempt->quiz, 'userid' => (int)$attempt->userid] + $inparams
+            )) {
+                self::enforce((int)$attempt->quiz, (int)$attempt->userid);
+            }
+            self::queue_shutdown_reenforcement((int)$attempt->quiz);
+        } catch (\Throwable $e) {
+            quizaccess_proctoring_log_failure('re-applying a risk hold after a grade recomputation', $e);
+        }
+    }
+
+    /**
+     * Re-enforce every hold on a quiz at request shutdown.
+     *
+     * For flows that recompute grades after their event fires - the report's batch regrade, a
+     * manual question grade, a new submission beside held students - where the locked gradebook
+     * grade swallows the user_graded that would otherwise re-apply the mask.
+     *
+     * @param int $quizinstance Quiz instance id.
+     * @return void
+     */
+    public static function queue_shutdown_reenforcement(int $quizinstance): void {
+        if ($quizinstance <= 0 || isset(self::$pendingregrades[$quizinstance])) {
+            return;
+        }
+        if (!self::$pendingregrades) {
+            \core_shutdown_manager::register_function(
+                [self::class, 'reenforce_after_regrades']
+            );
+        }
+        self::$pendingregrades[$quizinstance] = $quizinstance;
+    }
+
+    /**
+     * Re-enforce every hold on every quiz that saw a regrade this request.
+     *
+     * Runs at request shutdown, after the regrade flow's overall-grade recomputation, which
+     * touches every student in the quiz - not only the attempts that were selected.
+     *
+     * @return void
+     */
+    public static function reenforce_after_regrades(): void {
+        global $DB;
+
+        $pending = self::$pendingregrades;
+        self::$pendingregrades = [];
+        foreach ($pending as $quizinstance) {
+            try {
+                [$insql, $inparams] = $DB->get_in_or_equal(self::enforced_statuses(), SQL_PARAMS_NAMED);
+                $userids = $DB->get_fieldset_select(
+                    'quizaccess_proctoring_risk_holds',
+                    'DISTINCT userid',
+                    "quizinstance = :quiz AND status $insql",
+                    ['quiz' => $quizinstance] + $inparams
+                );
+                foreach ($userids as $userid) {
+                    self::enforce((int)$quizinstance, (int)$userid);
+                }
+            } catch (\Throwable $e) {
+                quizaccess_proctoring_log_failure('re-applying risk holds at shutdown after a regrade', $e);
+            }
         }
     }
 
@@ -322,6 +470,169 @@ class risk_hold_enforcer {
             return false;
         }
         return true;
+    }
+
+    /**
+     * Remove the student's quiz-level grade row while a hold is active.
+     *
+     * The gradebook hold left the quiz's own grade table alone, and the quiz view page reads
+     * that table - so a held student saw "-" in the gradebook and their real grade on the quiz
+     * page (CPIT-463, Student Affairs testing). Release and confirm both rebuild the row from
+     * the attempts through {@see self::recompute_grade()}, and a regrade that recreates it
+     * lands back here through {@see self::handle_user_graded()}.
+     *
+     * @param stdClass $quiz Quiz record.
+     * @param int $userid Student id.
+     * @return void
+     */
+    private static function mask_quiz_grade(stdClass $quiz, int $userid): void {
+        global $DB;
+
+        $DB->delete_records('quiz_grades', ['quiz' => $quiz->id, 'userid' => $userid]);
+    }
+
+    /**
+     * Retract a course completion the attempt produced before the hold could empty the grade.
+     *
+     * Submission processing computes the quiz's pass completion, aggregates the course criteria
+     * and sends core's "Course completed" notification, all before any observer of this plugin
+     * runs - and core never un-completes a course, so a held student stayed "completed" and the
+     * premature notification stood alone (CPIT-463, Student Affairs testing). When this quiz's
+     * completion no longer holds up against the now-empty grade, the stale activity criterion
+     * and course aggregation are cleared, core's own reaggregation is requested, and course
+     * completion - with its notification - happens when the hold is released instead.
+     *
+     * @param stdClass $quiz Quiz record.
+     * @param stdClass $cm Course module record for the quiz.
+     * @param int $userid Student id.
+     * @return void
+     */
+    private static function retract_stale_completion(stdClass $quiz, stdClass $cm, int $userid): void {
+        global $CFG, $DB;
+
+        try {
+            require_once($CFG->libdir . '/completionlib.php');
+            require_once($CFG->dirroot . '/completion/criteria/completion_criteria.php');
+
+            $course = get_course($quiz->course);
+            $completion = new \completion_info($course);
+            if (!$completion->is_enabled()) {
+                return;
+            }
+
+            // Recompute this activity's completion from the held (empty) grade.
+            $cminfo = get_fast_modinfo($course, $userid)->get_cm((int)$cm->id);
+            $completion->update_state($cminfo, COMPLETION_UNKNOWN, $userid);
+            $state = (int)$DB->get_field(
+                'course_modules_completion',
+                'completionstate',
+                ['coursemoduleid' => (int)$cm->id, 'userid' => $userid]
+            );
+            if (in_array($state, [COMPLETION_COMPLETE, COMPLETION_COMPLETE_PASS], true)) {
+                // Still complete without the grade: nothing about the completion is stale.
+                return;
+            }
+
+            $criteria = $DB->get_records('course_completion_criteria', [
+                'course' => (int)$course->id,
+                'criteriatype' => COMPLETION_CRITERIA_TYPE_ACTIVITY,
+                'moduleinstance' => (int)$cm->id,
+            ]);
+            if (!$criteria) {
+                return;
+            }
+            [$insql, $inparams] = $DB->get_in_or_equal(array_keys($criteria), SQL_PARAMS_NAMED);
+            $changed = $DB->record_exists_select(
+                'course_completion_crit_compl',
+                "course = :course AND userid = :userid AND criteriaid $insql",
+                ['course' => (int)$course->id, 'userid' => $userid] + $inparams
+            );
+            if ($changed) {
+                $DB->delete_records_select(
+                    'course_completion_crit_compl',
+                    "course = :course AND userid = :userid AND criteriaid $insql",
+                    ['course' => (int)$course->id, 'userid' => $userid] + $inparams
+                );
+            }
+            // Other criteria can carry the course on their own, under core's two-level
+            // aggregation: retracting then would have core re-complete it and send a second
+            // "Course completed" notification while the hold stands (PR review). The quiz's
+            // own stale criterion is cleared above either way.
+            $stillcomplete = self::completion_still_satisfied((int)$course->id, $userid);
+
+            $completed = $DB->get_record('course_completions', [
+                'course' => (int)$course->id,
+                'userid' => $userid,
+            ]);
+            if (!$stillcomplete && $completed && $completed->timecompleted !== null) {
+                $completed->timecompleted = null;
+                // Core's completion cron re-aggregates rows whose reaggregate time has passed,
+                // so a course completed through other criteria completes again by itself.
+                $completed->reaggregate = time() - 2;
+                $DB->update_record('course_completions', $completed);
+                $changed = true;
+            }
+            if ($changed) {
+                // Only this student's entries in this course: core keys both completion caches
+                // by user and course, and a site-wide purge would make every concurrent exam
+                // rebuild unrelated students' completion data (PR review).
+                $key = $userid . '_' . $course->id;
+                \cache::make('core', 'completion')->delete($key);
+                \cache::make('core', 'coursecompletion')->delete($key);
+            }
+        } catch (\Throwable $e) {
+            quizaccess_proctoring_log_failure('retracting a stale course completion during a hold', $e);
+        }
+    }
+
+    /**
+     * Whether the student's remaining criteria completions still satisfy the course.
+     *
+     * Core aggregates on two levels: criteria of one type combine by that type's method, and
+     * the type results combine by the overall method - each defaulting to "all". An overall
+     * "any" does not make one completed activity enough when the activity group itself wants
+     * all of them, and an overall "all" can still be satisfied when the activity group wants
+     * any (PR review). This mirrors that structure over the stored completion rows.
+     *
+     * @param int $courseid Course id.
+     * @param int $userid Student id.
+     * @return bool
+     */
+    private static function completion_still_satisfied(int $courseid, int $userid): bool {
+        global $DB;
+
+        $criteria = $DB->get_records('course_completion_criteria', ['course' => $courseid]);
+        if (!$criteria) {
+            return false;
+        }
+        $completions = $DB->get_records_menu(
+            'course_completion_crit_compl',
+            ['course' => $courseid, 'userid' => $userid],
+            '',
+            'criteriaid, timecompleted'
+        );
+        $methods = [];
+        foreach ($DB->get_records('course_completion_aggr_methd', ['course' => $courseid]) as $row) {
+            $methods[$row->criteriatype === null ? 'overall' : (int)$row->criteriatype] = (int)$row->method;
+        }
+
+        $bytype = [];
+        foreach ($criteria as $criterion) {
+            $done = !empty($completions[(int)$criterion->id]);
+            $bytype[(int)$criterion->criteriatype][] = $done;
+        }
+
+        $typeresults = [];
+        foreach ($bytype as $type => $results) {
+            $method = $methods[$type] ?? COMPLETION_AGGREGATION_ALL;
+            $typeresults[] = $method === COMPLETION_AGGREGATION_ANY
+                ? in_array(true, $results, true)
+                : !in_array(false, $results, true);
+        }
+        $overall = $methods['overall'] ?? COMPLETION_AGGREGATION_ALL;
+        return $overall === COMPLETION_AGGREGATION_ANY
+            ? in_array(true, $typeresults, true)
+            : !in_array(false, $typeresults, true);
     }
 
     /**
