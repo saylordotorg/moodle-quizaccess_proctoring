@@ -1242,12 +1242,19 @@ if (
             if ($factorkey === 'aireviewconfirmed') {
                 // The evidence is the specific captures whose AI review confirmed them (CPIT-483),
                 // found through the verdicts rather than any event type.
+                [$webcamsql, $webcamparams] = $DB->get_in_or_equal(
+                    \quizaccess_proctoring\local\risk_calculator::WEBCAM_FRAME_EVENTS,
+                    SQL_PARAMS_NAMED,
+                    'airwebcam',
+                    false
+                );
                 $captureevents = $DB->get_records_sql(
                     "SELECT e.id, e.eventtype, e.screenshoturl, e.timemodified
                        FROM {quizaccess_proctoring_events} e
                        JOIN {quizaccess_proctoring_ai_reviews} r ON r.eventid = e.id
                       WHERE e.courseid = :aircourseid AND e.quizid = :aircmid AND e.userid = :airstudentid
                         AND r.reviewtype = :airtype AND r.status = :airstatus AND r.decision = :airdecision
+                        AND e.eventtype {$webcamsql}
                         AND COALESCE(e.screenshoturl, '') <> ''"
                         . ((int)$riskscore['attemptid'] > 0 ? ' AND e.attemptid = :airattemptid' : '') . "
                    ORDER BY e.timemodified ASC, e.id ASC",
@@ -1258,7 +1265,8 @@ if (
                         'airtype' => 'event',
                         'airstatus' => QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE,
                         'airdecision' => 'highly_suspicious',
-                    ] + ((int)$riskscore['attemptid'] > 0 ? ['airattemptid' => (int)$riskscore['attemptid']] : []),
+                    ] + $webcamparams
+                        + ((int)$riskscore['attemptid'] > 0 ? ['airattemptid' => (int)$riskscore['attemptid']] : []),
                     0,
                     4
                 );

@@ -3362,18 +3362,28 @@ function quizaccess_proctoring_reevaluate_hold_after_event_review(stdClass $revi
             // the automatic-release ceiling reads - an attempt held at 80 that gains confirmed
             // AI evidence must not auto-release under a ceiling of 90 just because the review
             // finished after submission (Codex review). The review window is not reset and no
-            // notice is re-sent.
+            // notice is re-sent. The write runs under the hold's own lock and re-reads the row
+            // there: a reviewer deciding the hold mid-calculation must win, and only the score
+            // fields are written so a decision can never be overwritten back to active.
             $risk = quizaccess_proctoring_calculate_attempt_risk(
                 (int)$review->courseid,
                 (int)$review->quizid,
                 (int)$review->userid,
                 $reportid
             );
-            if ((int)$risk['score'] > (int)$activehold->riskscore) {
-                $activehold->riskscore = (int)$risk['score'];
-                $activehold->timemodified = time();
-                $DB->update_record('quizaccess_proctoring_risk_holds', $activehold);
-            }
+            quizaccess_proctoring_with_risk_hold_lock((int)$activehold->id, function() use ($DB, $activehold, $risk) {
+                $current = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $activehold->id]);
+                if (!$current || (int)$current->status !== QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE
+                        || (int)$risk['score'] <= (int)$current->riskscore) {
+                    return true;
+                }
+                $DB->update_record('quizaccess_proctoring_risk_holds', (object)[
+                    'id' => (int)$current->id,
+                    'riskscore' => (int)$risk['score'],
+                    'timemodified' => time(),
+                ]);
+                return true;
+            });
             return;
         }
         $risksettings = quizaccess_proctoring_get_effective_risk_review_settings((int)$review->quizid);

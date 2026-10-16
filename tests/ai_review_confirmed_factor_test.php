@@ -110,9 +110,16 @@ final class ai_review_confirmed_factor_test extends advanced_testcase {
      * @param string $reviewtype 'event' or 'attempt'.
      * @param int $status AI review status constant.
      * @param string $decision Review decision.
+     * @param string $eventtype Reviewed event's type; a desktop-capture event by default.
      * @return int Event id.
      */
-    private function add_review(array $scope, string $reviewtype, int $status, string $decision): int {
+    private function add_review(
+        array $scope,
+        string $reviewtype,
+        int $status,
+        string $decision,
+        string $eventtype = 'focus_lost'
+    ): int {
         global $DB;
 
         [$courseid, $cmid, $userid, $attemptid] = $scope;
@@ -123,7 +130,7 @@ final class ai_review_confirmed_factor_test extends advanced_testcase {
             'userid' => $userid,
             'attemptid' => $attemptid,
             'reportid' => 0,
-            'eventtype' => 'focus_lost',
+            'eventtype' => $eventtype,
             'eventdetail' => '',
             'pagevisibility' => 'hidden',
             'currenturl' => '',
@@ -205,6 +212,15 @@ final class ai_review_confirmed_factor_test extends advanced_testcase {
         $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_QUEUED, 'highly_suspicious');
         $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_FAILED, 'highly_suspicious');
         $this->add_review($scope, 'attempt', QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE, 'highly_suspicious');
+        // Webcam-frame reviews (mode 'all') have their own factors; they are not desktop evidence.
+        $this->add_review($scope, 'event', QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE, 'highly_suspicious', 'phone_detected');
+        $this->add_review(
+            $scope,
+            'event',
+            QUIZACCESS_PROCTORING_AI_REVIEW_COMPLETE,
+            'highly_suspicious',
+            'multiple_faces_detected'
+        );
 
         $risk = risk_calculator::calculate_attempt($courseid, $cmid, $userid, $reportid);
         $factor = $this->factor($risk);

@@ -107,8 +107,13 @@ final class scoring_model_documentation_test extends advanced_testcase {
         $this->assertStringContainsString('clamped to a maximum of 100', $source,
             'The doc block must state the total is clamped to a maximum of 100');
 
-        // AI review outcome is never a scoring input.
-        $this->assertStringContainsString('AI review is NEVER a scoring input', $source,
-            'The doc block must state that AI review is never a scoring input');
+        // Attempt-level AI review is never a scoring input; the one documented exception is the
+        // review-only, event-level confirmed-capture factor (CPIT-483).
+        $this->assertStringContainsString('Attempt-level AI review is never a scoring input', $source,
+            'The doc block must state that attempt-level AI review is never a scoring input');
+        $this->assertStringContainsString('AI review confirmed', $source,
+            'The doc block must document the one deliberate event-review exception');
+        $this->assertStringContainsString('review-only', $source,
+            'The doc block must state the exception can hold but never auto-fail');
     }
 }
