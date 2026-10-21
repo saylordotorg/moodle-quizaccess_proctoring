@@ -2941,6 +2941,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 let cameraStream = null;
                 let captureTimer = null;
                 let firstCaptureTimer = null;
+                // The helper window may hold a screen share for this attempt even when no monitor
+                // client runs here (desktop capture off, or no activity monitoring at all): claim
+                // it for this attempt regardless, so the post-submission shutdown reaches it and a
+                // stale preflight page cannot hold it as attempt 0 (CPIT-508, Codex review). The
+                // interval dies with the page; the full client takes over the claiming when
+                // desktop capture is on.
+                if (props.screenmonitorkey && parseInt(props.captureviolationdesktop, 10) !== 1) {
+                    ScreenMonitorClient.claim(props);
+                }
                 if (parseInt(props.monitorbrowseractivity, 10) === 1 ||
                         parseInt(props.blockclipboard, 10) === 1 ||
                         parseInt(props.monitormouseactivity || 0, 10) === 1 ||

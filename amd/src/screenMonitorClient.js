@@ -1,4 +1,8 @@
 define([], function() {
+    // When this page began: a preflight page sends it with its claims, so the helper can tell a
+    // preflight opened for the next attempt from one left open since before the finished attempt
+    // started (CPIT-508).
+    const pageLoadedAt = Date.now();
     const statusStaleMs = 20000;
     // On page load the stored status may be whatever the throttled helper last wrote, possibly
     // close to a minute ago. Trust it only when it is this recent; otherwise wait for a live reply.
@@ -48,6 +52,69 @@ define([], function() {
     };
 
     return {
+        /**
+         * Tell the helper window the exam is over, so it stops sharing and closes itself.
+         *
+         * Called on a finished attempt's pages (summary, review), where monitoring never starts:
+         * without it the helper keeps the student's screen shared until they find the browser's
+         * own stop control (CPIT-508). Fire-and-forget: with no helper listening, nobody hears it.
+         *
+         * @param {String} key The monitor key the attempt pages used (cm<cmid>user<userid>).
+         * @param {Number} attemptid The finished attempt. A claim from a newer attempt outranks
+         *        the shutdown.
+         * @param {Number} attemptagems Milliseconds since that attempt started (a duration, so
+         *        server-client clock skew cancels out): the helper defers the shutdown to a
+         *        preflight page loaded after the attempt started - one preparing the next
+         *        attempt - but not to one left open since before it.
+         */
+        shutdown: function(key, attemptid, attemptagems) {
+            if (!key || !window.BroadcastChannel) {
+                return;
+            }
+            try {
+                const channel = new BroadcastChannel('quizaccess_proctoring_screen_' + key);
+                channel.postMessage({
+                    type: 'shutdown',
+                    attemptid: Number(attemptid) || 0,
+                    attemptagems: Number(attemptagems) || 0,
+                    ts: Date.now()
+                });
+                // Leave the channel open briefly: closing in the same tick can drop the message.
+                window.setTimeout(function() {
+                    channel.close();
+                }, 1000);
+            } catch (error) {
+                // The helper is optional; a shutdown failure must not interrupt the review page.
+            }
+        },
+        /**
+         * Claim the helper for this attempt without monitoring it.
+         *
+         * Used when desktop capture is off, so no full client runs on the attempt pages, but the
+         * preflight may still have opened the helper for the share requirement: without a claim,
+         * a stale preflight page left open behind a quiz popup holds the helper as attempt 0
+         * forever and blocks the finished attempt's shutdown (CPIT-508, Codex review).
+         *
+         * @param {Object} props Setup properties (screenmonitorkey and the attempt id).
+         * @return {Number|null} The interval id keeping the claim fresh, or null when not started.
+         */
+        claim: function(props) {
+            const monitorKey = (props && props.screenmonitorkey) || '';
+            const attemptid = Number(props && (props.screenmonitorattempt || props.status || props.attemptid)) || 0;
+            if (!monitorKey || !attemptid || !window.BroadcastChannel) {
+                return null;
+            }
+            try {
+                const channel = new BroadcastChannel('quizaccess_proctoring_screen_' + monitorKey);
+                const send = function() {
+                    channel.postMessage({type: 'status_request', attemptid: attemptid, ts: Date.now()});
+                };
+                send();
+                return window.setInterval(send, 10000);
+            } catch (error) {
+                return null;
+            }
+        },
         create: function(props, callbacks) {
             callbacks = callbacks || {};
 
@@ -81,9 +148,17 @@ define([], function() {
                 }
             };
 
+            // Every status poll claims the helper for this page's attempt (a preflight with no
+            // attempt row yet claims 0; one resuming an existing attempt, such as an overdue
+            // attempt in its grace period, claims that attempt), so a finished attempt's shutdown
+            // can tell whether the helper still serves it or the next attempt (CPIT-508).
+            const claimattempt = Number(props.screenmonitorattempt || props.status || props.attemptid) || 0;
+
             const requestStatus = function() {
                 postMessage({
                     type: 'status_request',
+                    attemptid: claimattempt,
+                    pageloadts: pageLoadedAt,
                     ts: Date.now()
                 });
             };
