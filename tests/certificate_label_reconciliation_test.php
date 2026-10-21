@@ -186,8 +186,9 @@ final class certificate_label_reconciliation_test extends advanced_testcase {
         $this->assertSame(get_string('certificatestate:nocertatstake', 'quizaccess_proctoring'), $resolved['label'],
             'a held failing attempt must say no certificate is at stake');
 
-        // A passing attempt (9/10) keeps the certificate-held label.
+        // A lone passing attempt (9/10) keeps the certificate-held label.
         $DB->delete_records('quizaccess_proctoring_risk_holds');
+        $DB->delete_records('quiz_attempts', ['id' => $failing]);
         $passing = $makeattempt(2, 990002, 9);
         $makehold($passing);
         $resolved = quizaccess_proctoring_resolve_certificate_label(
@@ -196,11 +197,22 @@ final class certificate_label_reconciliation_test extends advanced_testcase {
         $this->assertTrue($resolved['atstake']);
         $this->assertSame(quizaccess_proctoring_certificate_state_label('held'), $resolved['label']);
 
+        // With another finished attempt on record, the aggregate - not this attempt - decides the
+        // certificate, so even a failing held attempt keeps the plain label (Codex review).
+        $DB->delete_records('quizaccess_proctoring_risk_holds');
+        $failing = $makeattempt(3, 990003, 6);
+        $makehold($failing);
+        $resolved = quizaccess_proctoring_resolve_certificate_label(
+            (int)$course->id, (int)$cm->id, (int)$student->id, $failing, 0);
+        $this->assertTrue($resolved['atstake']);
+        $this->assertSame(quizaccess_proctoring_certificate_state_label('held'), $resolved['label']);
+
         // No pass grade configured: unknown beats wrong, so the plain label stands.
         $DB->set_field('grade_items', 'gradepass', 0, [
             'itemmodule' => 'quiz', 'iteminstance' => $quiz->id, 'courseid' => $course->id,
         ]);
         $DB->delete_records('quizaccess_proctoring_risk_holds');
+        $DB->delete_records('quiz_attempts', ['id' => (int)$passing]);
         $makehold($failing);
         $resolved = quizaccess_proctoring_resolve_certificate_label(
             (int)$course->id, (int)$cm->id, (int)$student->id, $failing, 0);

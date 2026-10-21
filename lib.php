@@ -2575,6 +2575,18 @@ function quizaccess_proctoring_certificate_at_stake(int $courseid, int $userid, 
         if (!$attempt || (int)$attempt->userid !== $userid || $attempt->sumgrades === null) {
             return null;
         }
+        // With other finished attempts, the quiz's aggregate grade - not this attempt's - decides
+        // the certificate, and under averaging the hold's outcome can swing it across the pass
+        // grade. Only when this is the student's sole finished attempt does every grading method
+        // agree with the attempt itself; otherwise the plain label stands (Codex review).
+        $others = $DB->count_records_select(
+            'quiz_attempts',
+            "quiz = :quiz AND userid = :userid AND preview = 0 AND state = 'finished' AND id <> :id",
+            ['quiz' => (int)$attempt->quiz, 'userid' => $userid, 'id' => $attemptid]
+        );
+        if ($others > 0) {
+            return null;
+        }
         $quiz = $DB->get_record('quiz', ['id' => (int)$attempt->quiz], 'id, course, grade, sumgrades, decimalpoints');
         if (!$quiz) {
             return null;
@@ -2589,7 +2601,12 @@ function quizaccess_proctoring_certificate_at_stake(int $courseid, int $userid, 
             return null;
         }
         $grade = quiz_rescale_grade($attempt->sumgrades, $quiz, false);
-        return $grade !== null && (float)$grade >= $gradepass;
+        if ($grade === null) {
+            return null;
+        }
+        // Compare at Moodle's stored grade precision (five decimals): a boundary mark such as 2/3
+        // of 100 rounds up to the stored 66.66667 and passes, and must keep the plain label.
+        return round((float)$grade, 5) >= round($gradepass, 5);
     } catch (\Throwable $e) {
         // Unknown beats wrong: any lookup failure keeps the plain label.
         return null;
