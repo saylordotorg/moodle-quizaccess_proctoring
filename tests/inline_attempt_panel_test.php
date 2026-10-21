@@ -412,9 +412,15 @@ final class inline_attempt_panel_test extends advanced_testcase {
 
         $summary = \quizaccess_proctoring\local\attempt_summary::for_attempt($attemptid, $quiz);
         $this->assertSame(1, $summary['attemptnumber']);
-        $this->assertSame(get_string('statefinished', 'quiz'), $summary['state']);
-        $this->assertSame(format_time(100), $summary['timetaken']);
         $this->assertStringContainsString('attempt=' . $attemptid, $summary['reviewurl']);
+        // The box is core's own render, so its labels are core's: "Completed" and "Duration",
+        // never the hand-rolled "Finished" and "Time taken" that drifted from the results report
+        // (CPIT-475).
+        $html = $summary['summaryhtml'];
+        $this->assertStringContainsString(get_string('statefinished', 'quiz'), $html);
+        $this->assertStringContainsString(get_string('completedon', 'quiz'), $html);
+        $this->assertStringContainsString(get_string('attemptduration', 'quiz'), $html);
+        $this->assertStringContainsString(format_time(100), $html);
         $this->assertNull(\quizaccess_proctoring\local\attempt_summary::for_attempt(0, $quiz));
 
         // An attempt of another quiz is not summarised under this one.

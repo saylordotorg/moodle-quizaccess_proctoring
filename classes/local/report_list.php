@@ -46,7 +46,8 @@ class report_list {
         'lastname' => 'sortlastname',
         'firstname' => 'sortfirstname',
         'email' => 'sortemail',
-        'timemodified' => 'sorttimemodified',
+        // The date column shows the attempt's start (CPIT-475), so it sorts by it too.
+        'timemodified' => 'sortstarted',
         'riskscore' => 'sortriskscore',
         'findingcount' => 'sortfindingcount',
         'eventcount' => 'sorteventcount',
@@ -136,6 +137,8 @@ class report_list {
         $row['reportid'] = (int)$info->reportid;
         $row['userlink'] = $CFG->wwwroot . '/user/view.php?id=' . $info->studentid . '&course=' . $courseid;
         $row['fullname'] = $info->firstname . ' ' . $info->lastname;
+        $row['firstname'] = $info->firstname;
+        $row['lastname'] = $info->lastname;
         $row['email'] = $info->email;
         // Use Moodle's locale/timezone-aware date formatting so the proctoring report matches
         // the quiz results report (Requirement 18.1).
@@ -223,7 +226,7 @@ class report_list {
         $userids = array_values(array_unique(array_column($rows, 'studentid')));
         $attempts = [];
         foreach (array_chunk($attemptids, self::CHUNK) as $chunk) {
-            $attempts += $DB->get_records_list('quiz_attempts', 'id', $chunk, '', 'id, sumgrades');
+            $attempts += $DB->get_records_list('quiz_attempts', 'id', $chunk, '', 'id, sumgrades, timestart');
         }
         $users = [];
         foreach (array_chunk($userids, self::CHUNK) as $chunk) {
@@ -234,13 +237,19 @@ class report_list {
             $attempt = $attempts[(int)($row['attemptid'] ?? 0)] ?? null;
             $rows[$index]['scorelabel'] = '';
             $rows[$index]['sortscore'] = -1.0;
+            // The column shows when the attempt started, formatted exactly as the quiz results
+            // report formats it, so the two reports read as one (CPIT-475). A row whose attempt
+            // is unknown falls back to the capture's own time, so it still has a date to show.
+            $started = $attempt && (int)$attempt->timestart > 0
+                ? (int)$attempt->timestart : (int)($row['sorttimemodified'] ?? 0);
+            $rows[$index]['started'] = $started > 0 ? userdate($started) : '';
+            $rows[$index]['sortstarted'] = $started;
             if ($attempt) {
+                // The bare grade, with the "out of" in the column header: an exported column of
+                // "9.00 / 10.00" needs cleanup before Student Affairs can use it (CPIT-475).
                 $rows[$index]['scorelabel'] = $attempt->sumgrades === null
                     ? get_string('overallreport:notgraded', 'quizaccess_proctoring')
-                    : get_string('overallreport:scoreoutof', 'quizaccess_proctoring', (object)[
-                        'score' => quiz_rescale_grade($attempt->sumgrades, $quiz, true),
-                        'max' => format_float($quiz->grade, $quiz->decimalpoints),
-                    ]);
+                    : quiz_rescale_grade($attempt->sumgrades, $quiz, true);
                 if ($attempt->sumgrades !== null) {
                     $rows[$index]['sortscore'] = (float)$attempt->sumgrades;
                 }
@@ -395,9 +404,10 @@ class report_list {
                     $OUTPUT->pix_icon('t/delete', '') . ' ' . get_string('delete'),
                     [
                         'type' => 'submit',
-                        // De-emphasized (Requirement 18.3): a muted link, not a prominent/danger button.
+                        // Unmistakably the destructive one: danger-outlined, and rendered last in
+                        // the cell so it never sits between the two review actions (CPIT-475).
                         // The destructive confirm() guard is retained.
-                        'class' => 'btn btn-link btn-sm text-muted p-0',
+                        'class' => 'btn btn-outline-danger btn-sm',
                         'onclick' => 'return confirm(' . json_encode(get_string(
                             'areyousure_delete_record',
                             'quizaccess_proctoring'
@@ -407,8 +417,10 @@ class report_list {
                 $deleteform .= html_writer::end_tag('form');
             }
 
-            // View report primary/emphasized first, Delete de-emphasized after it (Requirement 18.3).
-            $rows[$index]['actionmenu'] = $viewbutton . $deleteform;
+            // View report primary/emphasized first (Requirement 18.3); the template renders the
+            // attempt-review link next and the delete form last (CPIT-475).
+            $rows[$index]['actionmenu'] = $viewbutton;
+            $rows[$index]['deleteaction'] = $deleteform;
         }
     }
 

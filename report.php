@@ -600,6 +600,82 @@ if (($reviewaction === 'signoff' || $reviewaction === 'undosignoff') && $student
     );
 }
 
+// CSV export of the course report (CPIT-475), before any page output. The same query and the
+// same row pipeline as the list below, unpaged, so the file always matches the screen.
+$download = optional_param('download', '', PARAM_ALPHA);
+if ($download === 'csv' && $studentid === null) {
+    require_once($CFG->libdir . '/csvlib.class.php');
+
+    $exportsql = "SELECT DISTINCT e.userid AS studentid,
+                         u.firstname AS firstname,
+                         u.lastname AS lastname,
+                         u.email AS email,
+                         pfw.reportid AS warningid,
+                         MAX(e.webcampicture) AS webcampicture,
+                         MAX(e.id) AS reportid,
+                         MAX(e.status) AS status,
+                         MAX(e.timemodified) AS timemodified
+                    FROM {quizaccess_proctoring_logs} e
+              INNER JOIN {user} u ON u.id = e.userid
+               LEFT JOIN {quizaccess_proctoring_fm_warnings} pfw ON e.courseid = pfw.courseid
+                     AND e.quizid = pfw.quizid AND e.userid = pfw.userid
+                   WHERE e.courseid = :courseid AND e.quizid = :cmid
+                     AND EXISTS (SELECT 1 FROM {quiz_attempts} qa
+                          WHERE qa.id = e.status AND qa.userid = e.userid)
+                GROUP BY e.userid, u.firstname, u.lastname, u.email, pfw.reportid
+                ORDER BY timemodified DESC";
+    $exportlist = \quizaccess_proctoring\local\report_list::build(
+        $DB->get_records_sql($exportsql, ['courseid' => $courseid, 'cmid' => $cmid]),
+        [
+            'courseid' => $courseid,
+            'cmid' => $cmid,
+            'quiz' => $quiz,
+            'context' => $context,
+            'baseurl' => $PAGE->url,
+            'islistview' => true,
+            'firstnameinitial' => $firstnameinitial,
+            'lastnameinitial' => $lastnameinitial,
+            'sort' => (string)$sort,
+            'dir' => (string)$dir,
+            'offset' => 0,
+            'perpage' => PHP_INT_MAX,
+        ]
+    );
+
+    $export = new csv_export_writer();
+    $export->set_filename(clean_filename('proctoring-report-' . $quiz->name . '-' . date('Ymd-Hi')));
+    $export->add_data([
+        get_string('report_filter_lastname', 'quizaccess_proctoring'),
+        get_string('report_filter_firstname', 'quizaccess_proctoring'),
+        get_string('email', 'quizaccess_proctoring'),
+        get_string('report:col_started', 'quizaccess_proctoring'),
+        get_string('identity_mismatch_label', 'quizaccess_proctoring'),
+        get_string('report:col_findings', 'quizaccess_proctoring'),
+        get_string('riskscore', 'quizaccess_proctoring'),
+        get_string(
+            'report:col_grade',
+            'quizaccess_proctoring',
+            format_float($quiz->grade, $quiz->decimalpoints)
+        ),
+        get_string('report:col_accountage', 'quizaccess_proctoring'),
+    ]);
+    foreach ($exportlist['rows'] as $exportrow) {
+        $export->add_data([
+            (string)($exportrow['lastname'] ?? ''),
+            (string)($exportrow['firstname'] ?? ''),
+            (string)($exportrow['email'] ?? ''),
+            (string)($exportrow['started'] ?? ''),
+            (string)($exportrow['identitymismatch'] ?? ''),
+            (string)($exportrow['findinglabel'] ?? ''),
+            (string)($exportrow['riskscore'] ?? ''),
+            (string)($exportrow['scorelabel'] ?? ''),
+            (string)($exportrow['accountage'] ?? ''),
+        ]);
+    }
+    $export->download_file();
+    die;
+}
+
 echo $OUTPUT->header();
 
 $backbutton = new moodle_url('/mod/quiz/view.php', ['id' => $cmid]);
@@ -795,13 +871,13 @@ if (
         $preserve['lastnameinitial'] = $lastnameinitial;
     }
 
-    $makesortheader = function (string $key, string $labelkey) use ($url, $preserve, $sortkey, $currentdir) {
+    $makesortheader = function (string $key, string $labelkey, $a = null) use ($url, $preserve, $sortkey, $currentdir) {
         $isactive = ($sortkey === $key);
         // Toggle direction when re-clicking the active column, otherwise start ascending.
         $nextdir = ($isactive && $currentdir === 'asc') ? 'desc' : 'asc';
         $sorturl = new moodle_url($url, $preserve + ['sort' => $key, 'dir' => $nextdir, 'page' => 0]);
         return [
-            'label' => get_string($labelkey, 'quizaccess_proctoring'),
+            'label' => get_string($labelkey, 'quizaccess_proctoring', $a),
             'url' => $sorturl->out(false),
             'active' => $isactive,
             'asc' => $isactive && $currentdir === 'asc',
@@ -815,10 +891,15 @@ if (
         'lastname' => $makesortheader('lastname', 'report:col_lastname'),
         'firstname' => $makesortheader('firstname', 'report:col_firstname'),
         'email' => $makesortheader('email', 'email'),
-        'date' => $makesortheader('date', 'dateverified'),
+        // The attempt's start, named and formatted as the quiz results report names it (CPIT-475).
+        'date' => $makesortheader('date', 'report:col_started'),
         'violations' => $makesortheader('violations', 'report:col_findings'),
         'risk' => $makesortheader('risk', 'riskscore'),
-        'score' => $makesortheader('score', 'report:col_score'),
+        'score' => $makesortheader(
+            'score',
+            'report:col_grade',
+            format_float($quiz->grade, $quiz->decimalpoints)
+        ),
         'accountage' => $makesortheader('accountage', 'report:col_accountage'),
     ];
 
@@ -885,6 +966,14 @@ if (
         'firstinitiallabel' => get_string('report_filter_firstname', 'quizaccess_proctoring'),
         'lastinitiallabel' => get_string('report_filter_lastname', 'quizaccess_proctoring'),
         'backbutton' => preg_replace('/&amp;/', '&', $backbutton),
+        'grademax' => format_float($quiz->grade, $quiz->decimalpoints),
+        'exporturl' => $islistview ? (new moodle_url($url, [
+            'courseid' => $courseid,
+            'cmid' => $cmid,
+            'download' => 'csv',
+            'sort' => $sortkey,
+            'dir' => $currentdir,
+        ]))->out(false) : '',
     ];
     echo $OUTPUT->render_from_template('quizaccess_proctoring/report', $templatecontext);
 
