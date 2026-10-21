@@ -33,12 +33,17 @@ class attempt_summary {
     /**
      * Template data for one attempt, or null when there is no such attempt of this quiz.
      *
+     * The box itself is core's own attempt summary, rendered by mod_quiz: the plugin's hand-built
+     * copy drifted from the results report in labels ("Finished" for "Completed", "Time taken" for
+     * "Duration"), in timezone, in date format, and in missing rows (Marks, the grade's
+     * percentage). Reusing core's builder makes drift impossible (CPIT-475, Student Affairs).
+     *
      * @param int $attemptid Quiz attempt id.
      * @param stdClass $quiz The quiz record the report is for.
-     * @return array|null started, finished, timetaken, grade, state, reviewurl
+     * @return array|null attemptnumber, summaryhtml, reviewurl
      */
     public static function for_attempt(int $attemptid, stdClass $quiz): ?array {
-        global $CFG, $DB;
+        global $CFG, $DB, $PAGE;
         require_once($CFG->dirroot . '/mod/quiz/locallib.php');
 
         if ($attemptid <= 0) {
@@ -47,30 +52,26 @@ class attempt_summary {
         $attempt = $DB->get_record(
             'quiz_attempts',
             ['id' => $attemptid, 'quiz' => $quiz->id],
-            'id, attempt, state, timestart, timefinish, sumgrades'
+            'id, attempt'
         );
         if (!$attempt) {
             return null;
         }
 
-        $finished = (int)$attempt->timefinish > 0;
-        $grade = '';
-        if ($attempt->sumgrades !== null && $finished) {
-            $grade = get_string('overallreport:scoreoutof', 'quizaccess_proctoring', (object)[
-                'score' => quiz_rescale_grade($attempt->sumgrades, $quiz, true),
-                'max' => format_float($quiz->grade, $quiz->decimalpoints),
-            ]);
-        } else if ($finished) {
-            $grade = get_string('overallreport:notgraded', 'quizaccess_proctoring');
-        }
+        $attemptobj = \mod_quiz\quiz_attempt::create($attemptid);
+        $options = $attemptobj->get_display_options(true);
+        // The reader is a reviewer deciding a hold: the marks must show whatever the quiz's own
+        // review options would hide from the student right now.
+        $options->marks = \question_display_options::MARK_AND_MAX;
+        $summary = \mod_quiz\output\attempt_summary_information::create_for_attempt($attemptobj, $options);
+        // The student's name and photo head the report already, and overall feedback is the
+        // student's reading matter, not the reviewer's evidence.
+        $summary->remove_item('user');
+        $summary->remove_item('feedback');
 
         return [
             'attemptnumber' => (int)$attempt->attempt,
-            'state' => get_string('state' . $attempt->state, 'quiz'),
-            'started' => display_time::staff((int)$attempt->timestart),
-            'finished' => $finished ? display_time::staff((int)$attempt->timefinish) : '',
-            'timetaken' => $finished ? format_time(max(0, (int)$attempt->timefinish - (int)$attempt->timestart)) : '',
-            'grade' => $grade,
+            'summaryhtml' => $PAGE->get_renderer('mod_quiz')->render($summary),
             'reviewurl' => (new moodle_url('/mod/quiz/review.php', ['attempt' => $attemptid]))->out(false),
         ];
     }
