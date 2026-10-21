@@ -606,6 +606,20 @@ $download = optional_param('download', '', PARAM_ALPHA);
 if ($download === 'csv' && $studentid === null) {
     require_once($CFG->libdir . '/csvlib.class.php');
 
+    // The same search predicate the displayed list applies, so the file matches the screen's
+    // filters rather than silently widening to the whole quiz (Codex review).
+    $exportsearch = '';
+    $exportparams = ['courseid' => $courseid, 'cmid' => $cmid];
+    if ($searchkey !== null && $searchkey !== '' && $submittype === 'Search') {
+        $exportsearch = ' AND (' . $DB->sql_like('u.firstname', ':firstnamelike', false)
+            . ' OR ' . $DB->sql_like('u.lastname', ':lastnamelike', false)
+            . ' OR ' . $DB->sql_like('u.email', ':emaillike', false) . ')';
+        $exportparams += [
+            'firstnamelike' => "%$searchkey%",
+            'lastnamelike' => "%$searchkey%",
+            'emaillike' => "%$searchkey%",
+        ];
+    }
     $exportsql = "SELECT DISTINCT e.userid AS studentid,
                          u.firstname AS firstname,
                          u.lastname AS lastname,
@@ -619,13 +633,13 @@ if ($download === 'csv' && $studentid === null) {
               INNER JOIN {user} u ON u.id = e.userid
                LEFT JOIN {quizaccess_proctoring_fm_warnings} pfw ON e.courseid = pfw.courseid
                      AND e.quizid = pfw.quizid AND e.userid = pfw.userid
-                   WHERE e.courseid = :courseid AND e.quizid = :cmid
+                   WHERE e.courseid = :courseid AND e.quizid = :cmid{$exportsearch}
                      AND EXISTS (SELECT 1 FROM {quiz_attempts} qa
                           WHERE qa.id = e.status AND qa.userid = e.userid)
                 GROUP BY e.userid, u.firstname, u.lastname, u.email, pfw.reportid
                 ORDER BY timemodified DESC";
     $exportlist = \quizaccess_proctoring\local\report_list::build(
-        $DB->get_records_sql($exportsql, ['courseid' => $courseid, 'cmid' => $cmid]),
+        $DB->get_records_sql($exportsql, $exportparams),
         [
             'courseid' => $courseid,
             'cmid' => $cmid,
@@ -967,9 +981,9 @@ if (
         'lastinitiallabel' => get_string('report_filter_lastname', 'quizaccess_proctoring'),
         'backbutton' => preg_replace('/&amp;/', '&', $backbutton),
         'grademax' => format_float($quiz->grade, $quiz->decimalpoints),
-        'exporturl' => $islistview ? (new moodle_url($url, [
-            'courseid' => $courseid,
-            'cmid' => $cmid,
+        // Carries every active filter ($preserve: the search, the name initials) plus the sort,
+        // so the file matches the screen (Codex review).
+        'exporturl' => $islistview ? (new moodle_url($url, $preserve + [
             'download' => 'csv',
             'sort' => $sortkey,
             'dir' => $currentdir,

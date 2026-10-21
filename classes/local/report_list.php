@@ -244,12 +244,17 @@ class report_list {
                 ? (int)$attempt->timestart : (int)($row['sorttimemodified'] ?? 0);
             $rows[$index]['started'] = $started > 0 ? userdate($started) : '';
             $rows[$index]['sortstarted'] = $started;
+            // A separate presence flag, because a zero grade on a zero-decimals quiz renders as
+            // "0", which Mustache treats as false: gated on the label alone, a real zero showed
+            // as the no-grade dash (Codex review).
+            $rows[$index]['hasscore'] = false;
             if ($attempt) {
                 // The bare grade, with the "out of" in the column header: an exported column of
                 // "9.00 / 10.00" needs cleanup before Student Affairs can use it (CPIT-475).
                 $rows[$index]['scorelabel'] = $attempt->sumgrades === null
                     ? get_string('overallreport:notgraded', 'quizaccess_proctoring')
                     : quiz_rescale_grade($attempt->sumgrades, $quiz, true);
+                $rows[$index]['hasscore'] = true;
                 if ($attempt->sumgrades !== null) {
                     $rows[$index]['sortscore'] = (float)$attempt->sumgrades;
                 }

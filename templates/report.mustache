@@ -208,7 +208,7 @@
                 <div class="proctoring-risk-hold-status {{#riskholdactive}}proctoring-risk-hold-active{{/riskholdactive}}">{{riskholdstatus}}</div>
             {{/riskholdstatus}}
         </td>
-        <td>{{#scorelabel}}{{scorelabel}}{{/scorelabel}}{{^scorelabel}}<span class="text-muted">&mdash;</span>{{/scorelabel}}</td>
+        <td>{{#hasscore}}{{scorelabel}}{{/hasscore}}{{^hasscore}}<span class="text-muted">&mdash;</span>{{/hasscore}}</td>
         <td>
             {{#timetaken}}{{timetaken}}{{/timetaken}}{{^timetaken}}<span class="text-muted">&mdash;</span>{{/timetaken}}
         </td>
