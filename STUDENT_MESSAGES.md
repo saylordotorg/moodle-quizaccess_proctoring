@@ -156,6 +156,12 @@ Generated from `lang/en/quizaccess_proctoring.php`; `{$a}` and `{$a->...}` are f
 | `referencecountdown` | Taking your photo in |
 | `referencereset` | Your saved reference photo did not show your face clearly enough to be used, so it has been cleared. Center your face in the camera and select the button again to save a new reference photo. |
 | `referencereset:busy` | The reference photo is being changed right now. Try again in a moment. |
+| `referencereset:declinedbody` | *Notification (popup + email) when Student Affairs declines a photo reset request:* Student Affairs reviewed your request for a new proctoring reference photo and the photo on file will stay in use. If you believe it cannot be matched to you, contact {email}. |
+| `referencereset:declinedsubject` | Your proctoring photo request was reviewed |
+| `referencereset:donebody` | *Notification (popup + email) when the photo is reset, requested or not:* Your proctoring reference photo has been reset. You will take a new photo at the start of your next proctored exam. Questions? Contact {email}. |
+| `referencereset:donesubject` | Your proctoring photo has been reset |
+| `referencereset:replacedbody` | *Notification (popup + email) when a staff upload replaces the photo while a reset request is open:* Student Affairs uploaded a new proctoring reference photo for you, which closes your reset request. It will be used at your next proctored exam. Questions? Contact {email}. |
+| `referencereset:replacedsubject` | Your proctoring photo has been updated |
 | `referencereset:button` | Reset reference photo |
 | `referencereset:done` | The reference photo was reset. The student takes a new one at their next proctored exam. |
 | `referencereset:reason` | Reason (recorded in the logs) |
@@ -288,6 +294,9 @@ When each is sent, and how:
 | `myphoto:requestbutton` | Ask for a new photo |
 | `myphoto:requestheading` | Need a new photo? |
 | `myphoto:requestintro` | If this photo is unclear or is not of you, ask Student Affairs to reset it. You then take a new one at your next proctored exam. |
-| `myphoto:requestpending` | Your request has been sent to Student Affairs. You can send another one tomorrow. |
+| `myphoto:requestcontact` | Questions? Contact {email}. |
+| `myphoto:requestpendingsince` | Your request was sent to Student Affairs on {date} and is waiting for review. |
 | `myphoto:requestsent` | Your request has been sent to Student Affairs. |
+| `myphoto:requestturnaround` | Requests are usually handled within 1-2 business days. |
+| `myphoto:takenon` | Photo taken on {date}. |
 | `myphoto:title` | My proctoring photo |
