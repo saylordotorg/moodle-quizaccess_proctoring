@@ -2230,7 +2230,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @throws coding_exception
      */
     public function description() {
-        global $PAGE;
+        global $DB, $PAGE, $USER;
 
         // The Moodle app fetches these messages through mod_quiz_get_quiz_access_information,
         // which declares them PARAM_TEXT and rejects any value that cleaning would change, so
@@ -2255,6 +2255,27 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
         // Initialize JS for proctoring with the required data.
         $PAGE->requires->js_call_amd('quizaccess_proctoring/proctoring', 'init', [$record]);
+
+        // A submission whose review is not shown redirects straight back to this view page, so
+        // the review-page shutdown never runs there. Tell the helper window here instead - but
+        // only when the student's latest attempt just finished and none is still running, so
+        // revisiting this page later, reviewing an old attempt, or preparing the next attempt
+        // cannot end a live share (CPIT-508, Codex review).
+        if (self::should_use_persistent_screen_monitor() && !$this->user_has_open_attempt()) {
+            $lastfinished = (int)$DB->get_field_sql(
+                "SELECT MAX(timefinish)
+                   FROM {quiz_attempts}
+                  WHERE quiz = :quiz AND userid = :userid AND preview = 0 AND state = 'finished'",
+                ['quiz' => (int)$this->quiz->id, 'userid' => (int)$USER->id]
+            );
+            if ($lastfinished && time() - $lastfinished < 600) {
+                $PAGE->requires->js_call_amd(
+                    'quizaccess_proctoring/screenMonitorClient',
+                    'shutdown',
+                    ['cm' . (int)$this->quiz->cmid . 'user' . (int)$USER->id]
+                );
+            }
+        }
 
         // Messages for the quiz view page.
         $messages = [
@@ -2314,8 +2335,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         if ($cmid && $attempt && $this->maybe_show_finished_attempt_risk_hold_notice((int)$cmid, (int)$attempt)) {
             // The attempt is finished, so live monitoring never starts here - and the persistent
             // helper window must stop sharing the screen too, rather than leaving the student to
-            // find the browser's own stop control after submitting (CPIT-508).
-            if (self::should_use_persistent_screen_monitor()) {
+            // find the browser's own stop control after submitting (CPIT-508). The helper channel
+            // is shared by every attempt of this quiz, so reviewing an old attempt while another
+            // is still running must not end the live share (Codex review).
+            if (self::should_use_persistent_screen_monitor() && !$this->user_has_open_attempt()) {
                 $page->requires->js_call_amd(
                     'quizaccess_proctoring/screenMonitorClient',
                     'shutdown',
@@ -2510,6 +2533,24 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             unset($browserconfig->userid, $browserconfig->timemodified, $browserconfig->quizurl, $browserconfig->webcampicture);
             $page->requires->js_call_amd('quizaccess_proctoring/proctoring', 'setup', [$browserconfig, $modelurl]);
         }
+    }
+
+    /**
+     * Whether the current user still has an attempt running on this quiz.
+     *
+     * The screen-share helper window serves every attempt of the quiz, so a shutdown may only be
+     * sent while nothing is running (CPIT-508, Codex review).
+     *
+     * @return bool True when an in-progress or overdue attempt exists.
+     */
+    private function user_has_open_attempt(): bool {
+        global $DB, $USER;
+
+        return $DB->record_exists_select(
+            'quiz_attempts',
+            "quiz = :quiz AND userid = :userid AND preview = 0 AND state IN ('inprogress', 'overdue')",
+            ['quiz' => (int)$this->quiz->id, 'userid' => (int)$USER->id]
+        );
     }
 
     /**
