@@ -65,7 +65,7 @@ final class screen_share_shutdown_test extends advanced_testcase {
             'the shutdown must ride the finished-attempt early return');
 
         $client = $this->source('amd/src/screenMonitorClient.js');
-        $this->assertStringContainsString("shutdown: function(key, attemptid)", $client,
+        $this->assertStringContainsString("shutdown: function(key, attemptid, attemptagems)", $client,
             'the client module must export the shutdown call');
         $this->assertStringContainsString("type: 'shutdown'", $client,
             'the shutdown must be broadcast to the helper window');

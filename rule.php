@@ -2267,7 +2267,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 "quiz = :quiz AND userid = :userid AND preview = 0 AND state = 'finished'",
                 ['quiz' => (int)$this->quiz->id, 'userid' => (int)$USER->id],
                 'timefinish DESC',
-                'id, timefinish',
+                'id, timestart, timefinish',
                 0,
                 1
             );
@@ -2276,7 +2276,11 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 $PAGE->requires->js_call_amd(
                     'quizaccess_proctoring/screenMonitorClient',
                     'shutdown',
-                    ['cm' . (int)$this->quiz->cmid . 'user' . (int)$USER->id, (int)$latest->id]
+                    [
+                        'cm' . (int)$this->quiz->cmid . 'user' . (int)$USER->id,
+                        (int)$latest->id,
+                        max(0, (time() - (int)$latest->timestart)) * 1000,
+                    ]
                 );
             }
         }
@@ -2343,10 +2347,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             // is shared by every attempt of this quiz, so reviewing an old attempt while another
             // is still running must not end the live share (Codex review).
             if (self::should_use_persistent_screen_monitor() && !$this->user_has_open_attempt()) {
+                $timestart = (int)$DB->get_field('quiz_attempts', 'timestart', ['id' => (int)$attempt]);
                 $page->requires->js_call_amd(
                     'quizaccess_proctoring/screenMonitorClient',
                     'shutdown',
-                    ['cm' . (int)$cmid . 'user' . (int)$USER->id, (int)$attempt]
+                    [
+                        'cm' . (int)$cmid . 'user' . (int)$USER->id,
+                        (int)$attempt,
+                        $timestart ? max(0, (time() - $timestart)) * 1000 : 0,
+                    ]
                 );
             }
             return;

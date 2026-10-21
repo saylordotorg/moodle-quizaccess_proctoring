@@ -1,4 +1,8 @@
 define([], function() {
+    // When this page began: a preflight page sends it with its claims, so the helper can tell a
+    // preflight opened for the next attempt from one left open since before the finished attempt
+    // started (CPIT-508).
+    const pageLoadedAt = Date.now();
     const statusStaleMs = 20000;
     // On page load the stored status may be whatever the throttled helper last wrote, possibly
     // close to a minute ago. Trust it only when it is this recent; otherwise wait for a live reply.
@@ -56,11 +60,14 @@ define([], function() {
          * own stop control (CPIT-508). Fire-and-forget: with no helper listening, nobody hears it.
          *
          * @param {String} key The monitor key the attempt pages used (cm<cmid>user<userid>).
-         * @param {Number} attemptid The finished attempt. The helper only honours the shutdown
-         *        while it still serves this attempt: a preflight for the next attempt claims the
-         *        helper first (as attempt 0), so an old review page cannot end the new share.
+         * @param {Number} attemptid The finished attempt. A claim from a newer attempt outranks
+         *        the shutdown.
+         * @param {Number} attemptagems Milliseconds since that attempt started (a duration, so
+         *        server-client clock skew cancels out): the helper defers the shutdown to a
+         *        preflight page loaded after the attempt started - one preparing the next
+         *        attempt - but not to one left open since before it.
          */
-        shutdown: function(key, attemptid) {
+        shutdown: function(key, attemptid, attemptagems) {
             if (!key || !window.BroadcastChannel) {
                 return;
             }
@@ -69,6 +76,7 @@ define([], function() {
                 channel.postMessage({
                     type: 'shutdown',
                     attemptid: Number(attemptid) || 0,
+                    attemptagems: Number(attemptagems) || 0,
                     ts: Date.now()
                 });
                 // Leave the channel open briefly: closing in the same tick can drop the message.
@@ -150,6 +158,7 @@ define([], function() {
                 postMessage({
                     type: 'status_request',
                     attemptid: claimattempt,
+                    pageloadts: pageLoadedAt,
                     ts: Date.now()
                 });
             };

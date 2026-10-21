@@ -104,11 +104,9 @@ $js = <<<JS
     let canvas = null;
     let ready = false;
     let stopped = true;
-    let claimedattempt = null;
-    let maxrealattempt = 0;
-    let lastrealclaimts = 0;
+    let claimedattempt = 0;
     let lastzeroclaimts = 0;
-    let shareStartedAt = 0;
+    let lastzeropageload = 0;
     let markerVisible = false;
     let lastMarkerSeen = 0;
     let lastMarkerMissingMessage = 0;
@@ -636,7 +634,6 @@ $js = <<<JS
 
         ready = true;
         stopped = false;
-        shareStartedAt = Date.now();
         checkMarker();
 
         videoTrack.addEventListener('ended', function() {
@@ -668,9 +665,14 @@ $js = <<<JS
                 if (claimedattempt > 0 && target && claimedattempt > target) {
                     return;
                 }
-                // A fresh preflight claim protects the helper even before its share is ready: the
-                // screen picker may still be open when an old attempt's review page loads.
-                if (claimedattempt === 0 && lastzeroclaimts && (Date.now() - lastzeroclaimts) < 15000) {
+                // A preflight that is polling right now and whose page loaded after the finished
+                // attempt started is preparing the next attempt: it keeps the helper, even before
+                // its share is ready (the screen picker may still be open). One left open since
+                // before the attempt started is stale and does not. The attempt's start is
+                // reconstructed from its age, a duration, so clock skew cancels out.
+                const attemptstarted = Date.now() - (Number(message.attemptagems) || 0);
+                if (lastzeroclaimts && (Date.now() - lastzeroclaimts) < 15000
+                        && lastzeropageload && lastzeropageload > attemptstarted) {
                     return;
                 }
                 pageActive = false;
@@ -684,31 +686,17 @@ $js = <<<JS
                 return;
             }
             if (message.type === 'status_request') {
-                // The poll claims the helper for the polling page's attempt (CPIT-508). A real
-                // attempt's claim always holds. A preflight claims attempt 0, and takes the
-                // helper over only when no attempt holds it or the current share started after
-                // the holding attempt's last poll (a fresh share for the next attempt): a stale
-                // preflight page left open behind a quiz popup keeps polling 0 against the old
-                // share, and must not wrestle ownership from the attempt actually running.
+                // The poll claims the helper for the polling page's attempt (CPIT-508). Attempt
+                // ids only grow, so the newest attempt heard of holds the helper; a preflight
+                // (attempt 0) does not take ownership, it just records that it is here and when
+                // its page loaded, which is what the shutdown weighs it by.
                 if (typeof message.attemptid !== 'undefined') {
                     const claim = Number(message.attemptid) || 0;
-                    if (claim > 0 && claim >= (claimedattempt || 0)
-                            && !(claimedattempt === 0 && claim <= maxrealattempt)) {
-                        // Attempt ids only grow, so a tab left open on an older submitted attempt
-                        // keeps polling but can never take the helper back from the attempt that
-                        // superseded it - nor, once a preflight holds the helper, from that
-                        // preflight: only an attempt newer than any seen before supersedes it.
-                        claimedattempt = claim;
-                        maxrealattempt = Math.max(maxrealattempt, claim);
-                        lastrealclaimts = Date.now();
-                    } else if (claim === 0 && (!claimedattempt || !stream
-                            || (shareStartedAt && shareStartedAt > lastrealclaimts))) {
-                        // A preflight may take the helper over when no attempt holds it, when no
-                        // share is active (nothing of the old attempt's left to protect, even
-                        // mid-acquisition), or when the current share started after the holding
-                        // attempt's last poll - a fresh share for the next attempt.
-                        claimedattempt = 0;
+                    if (claim > 0) {
+                        claimedattempt = Math.max(claimedattempt, claim);
+                    } else {
                         lastzeroclaimts = Date.now();
+                        lastzeropageload = Number(message.pageloadts) || 0;
                     }
                 }
                 // Run a fresh marker check instead of replying from cache: browsers
