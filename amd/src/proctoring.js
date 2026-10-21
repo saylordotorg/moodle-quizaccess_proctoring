@@ -121,13 +121,45 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             });
         });
 
+        /** @var {jQuery|null} The submit controls hideButtons() detached, for restoreButtons(). */
+        let hiddensubmitcontrols = null;
+
+        /** @var {Boolean} Whether the camera check itself disabled the navigation button. */
+        let navdisabledbycamera = false;
+
         /**
          * Function hideButtons
          */
         async function hideButtons() {
             const strings = await loadStrings();
-            $('.mod_quiz-next-nav').prop("disabled", true);
-            $('.submitbtns').html(`<p class="text text-red red">${strings.enablewebcamerabeforesubmitting}</p>`);
+            const nav = $('.mod_quiz-next-nav');
+            // Claim only what this check itself disables: an upload in progress may have disabled
+            // the button already, and that must survive a later restore (Codex review).
+            if (nav.length && !nav.prop('disabled')) {
+                navdisabledbycamera = true;
+            }
+            nav.prop("disabled", true);
+            const submitbtns = $('.submitbtns');
+            if (hiddensubmitcontrols === null && submitbtns.length) {
+                // Detach the real nodes rather than serializing them: core_form/submit holds
+                // references to these buttons for double-submit protection (Codex review).
+                hiddensubmitcontrols = submitbtns.children().detach();
+            }
+            submitbtns.html(`<p class="text text-red red">${strings.enablewebcamerabeforesubmitting}</p>`);
+        }
+
+        /**
+         * Put back exactly what hideButtons() took away, once the camera works again (CPIT-507).
+         */
+        function restoreButtons() {
+            if (hiddensubmitcontrols !== null) {
+                $('.submitbtns').empty().append(hiddensubmitcontrols);
+                hiddensubmitcontrols = null;
+            }
+            if (navdisabledbycamera) {
+                $('.mod_quiz-next-nav').prop("disabled", false);
+                navdisabledbycamera = false;
+            }
         }
 
         const showNotification = (message, type) => {
@@ -3157,6 +3189,17 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             return;
                         }
 
+                        // A dead or muted camera renders black frames: that is a camera problem
+                        // (reported separately), not a student hiding their face, so it must not
+                        // blur the quiz (CPIT-507, Safari kills the camera when the screen share
+                        // re-prompts). Pausing the counters also keeps an earlier blur from being
+                        // wrongly lifted or deepened on frames the camera never produced.
+                        const cameratracks = cameraStream ? cameraStream.getVideoTracks() : [];
+                        if (!cameratracks.length
+                                || cameratracks.every(track => track.readyState === 'ended' || track.muted)) {
+                            return;
+                        }
+
                         const graceActive = Date.now() < graceEndsAt;
                         if (!video.videoWidth || !video.videoHeight) {
                             if (!graceActive) {
@@ -3369,6 +3412,38 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     }
                 };
 
+                // Re-acquire a camera whose track ended or stayed muted: Safari stops the camera
+                // when another capture starts (the screen share re-prompt at exam start kills it),
+                // leaving a black feed that the face check then reads as a hidden face (CPIT-507).
+                // Capped and backed off, so two captures that genuinely cannot coexist do not loop.
+                let cameraRecoverTimer = null;
+                let cameraRecoverAttempts = 0;
+                const scheduleCameraRecovery = function() {
+                    if (!pageActive || cameraRecoverTimer || cameraRecoverAttempts >= 5) {
+                        return;
+                    }
+                    const delay = 4000 * Math.pow(2, cameraRecoverAttempts);
+                    cameraRecoverTimer = window.setTimeout(function() {
+                        cameraRecoverTimer = null;
+                        if (!pageActive) {
+                            return;
+                        }
+                        const tracks = cameraStream ? cameraStream.getVideoTracks() : [];
+                        const dead = !tracks.length
+                            || tracks.every(track => track.readyState === 'ended' || track.muted);
+                        if (!dead) {
+                            // It unmuted by itself; nothing to recover.
+                            return;
+                        }
+                        cameraRecoverAttempts++;
+                        if (cameraStream) {
+                            cameraStream.getTracks().forEach(track => track.stop());
+                            cameraStream = null;
+                        }
+                        startCamera();
+                    }, delay);
+                };
+
                 const startCamera = function() {
                     const generation = pageGeneration;
                     requestUserCamera()
@@ -3385,6 +3460,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             return;
                         }
                         isCameraAllowed = true;
+                        // A recovery that worked gives back the controls a failed acquisition
+                        // took away (CPIT-507, Codex review).
+                        restoreButtons();
                         initFaceVisibilityBlur();
                         const reportCamera = missing => {
                             if (pageActive && generation === pageGeneration) {
@@ -3392,8 +3470,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             }
                         };
                         stream.getVideoTracks().forEach(track => {
-                            track.addEventListener('ended', () => reportCamera(true));
-                            track.addEventListener('mute', () => reportCamera(true));
+                            track.addEventListener('ended', () => {
+                                reportCamera(true);
+                                scheduleCameraRecovery();
+                            });
+                            track.addEventListener('mute', () => {
+                                reportCamera(true);
+                                scheduleCameraRecovery();
+                            });
                             track.addEventListener('unmute', () => reportCamera(false));
                         });
                     })
@@ -3407,6 +3491,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         }
                         uploads.device('camera', true);
                         hideButtons();
+                        // A device still unplugged when a recovery fired would otherwise end the
+                        // retries here, with no track left to trigger another (Codex review). The
+                        // scheduler's cap and backoff still apply.
+                        scheduleCameraRecovery();
                     });
                 };
                 startCamera();
@@ -3459,6 +3547,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     if (faceBlurTimer) {
                         window.clearInterval(faceBlurTimer);
                         faceBlurTimer = null;
+                    }
+                    // A recovery timer surviving into the back-forward cache would race the
+                    // pageshow restart and leave an untracked second capture (Codex review).
+                    if (cameraRecoverTimer) {
+                        window.clearTimeout(cameraRecoverTimer);
+                        cameraRecoverTimer = null;
                     }
                     if (cameraStream) {
                         cameraStream.getTracks().forEach(track => track.stop());

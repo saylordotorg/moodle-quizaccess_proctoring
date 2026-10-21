@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.40 — 2026-10-21
+- **A killed camera recovers instead of blurring the exam (CPIT-507).** Safari stops the webcam when another capture starts: the screen-share re-prompt at exam start left the camera black, and the face-visibility check read those black frames as a hidden face and blurred the quiz. The attempt page now re-acquires the camera when its track ends or stays muted (capped with backoff, so two captures that truly cannot coexist do not fight), and the face check skips frames from a dead or muted camera — that is a camera problem, reported as such, not a student hiding their face. Helps every browser; Safari still needs an in-person retest.
+
 # v1.12.39 — 2026-10-21
 - **A held failing attempt says what is actually at stake (CPIT-463).** An attempt scoring below the quiz's pass grade earns no certificate whatever the review decides, yet its hold read "Review required — grade/certificate held" like every other — Student Affairs flagged the mislabel while testing. Such attempts now read "Grade withheld — no certificate at stake" on the per-quiz report, the attempt panel and the Held certificates dashboard, and the dashboard groups them after the holds a certificate actually hangs on. The review machinery itself is unchanged: they are held, reviewed and released exactly as before.
 
