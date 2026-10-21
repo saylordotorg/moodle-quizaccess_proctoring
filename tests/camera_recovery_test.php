@@ -75,9 +75,13 @@ final class camera_recovery_test extends advanced_testcase {
      */
     public function test_face_check_skips_dead_camera_frames(): void {
         $js = $this->source('amd/src/proctoring.js');
-        $gate = strpos($js, "cameratracks.every(track => track.readyState === 'ended' || track.muted)");
-        $detect = strpos($js, 'faceapi.detectAllFaces');
+        // Scope the search to the face-visibility check: detectface() higher up also calls
+        // faceapi.detectAllFaces, and must not satisfy (or break) the ordering assertion.
+        $check = strpos($js, 'const checkFaceVisibility');
+        $this->assertNotFalse($check, 'the face-visibility check must exist');
+        $gate = strpos($js, "cameratracks.every(track => track.readyState === 'ended' || track.muted)", $check);
         $this->assertNotFalse($gate, 'the face check must look at the camera tracks first');
+        $detect = strpos($js, 'faceapi.detectAllFaces', $check);
         $this->assertNotFalse($detect);
         $this->assertLessThan($detect, $gate,
             'the dead-camera gate must run before face detection, so black frames never count as a hidden face');

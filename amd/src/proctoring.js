@@ -121,13 +121,31 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             });
         });
 
+        /** @var {String|null} The submit controls hideButtons() replaced, for restoreButtons(). */
+        let savedsubmitbuttons = null;
+
         /**
          * Function hideButtons
          */
         async function hideButtons() {
             const strings = await loadStrings();
             $('.mod_quiz-next-nav').prop("disabled", true);
-            $('.submitbtns').html(`<p class="text text-red red">${strings.enablewebcamerabeforesubmitting}</p>`);
+            const submitbtns = $('.submitbtns');
+            if (savedsubmitbuttons === null && submitbtns.length) {
+                savedsubmitbuttons = submitbtns.html();
+            }
+            submitbtns.html(`<p class="text text-red red">${strings.enablewebcamerabeforesubmitting}</p>`);
+        }
+
+        /**
+         * Put back what hideButtons() took away, once the camera is working again (CPIT-507).
+         */
+        function restoreButtons() {
+            if (savedsubmitbuttons !== null) {
+                $('.submitbtns').html(savedsubmitbuttons);
+                savedsubmitbuttons = null;
+            }
+            $('.mod_quiz-next-nav').prop("disabled", false);
         }
 
         const showNotification = (message, type) => {
@@ -3419,6 +3437,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             return;
                         }
                         isCameraAllowed = true;
+                        // A recovery that worked gives back the controls a failed acquisition
+                        // took away (CPIT-507, Codex review).
+                        restoreButtons();
                         initFaceVisibilityBlur();
                         const reportCamera = missing => {
                             if (pageActive && generation === pageGeneration) {
@@ -3447,6 +3468,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         }
                         uploads.device('camera', true);
                         hideButtons();
+                        // A device still unplugged when a recovery fired would otherwise end the
+                        // retries here, with no track left to trigger another (Codex review). The
+                        // scheduler's cap and backoff still apply.
+                        scheduleCameraRecovery();
                     });
                 };
                 startCamera();
