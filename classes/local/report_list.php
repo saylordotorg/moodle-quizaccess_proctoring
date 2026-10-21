@@ -61,7 +61,9 @@ class report_list {
      * @param iterable $records The report query's rows (studentid, firstname, lastname, email, warningid,
      *                          reportid, timemodified), one per student.
      * @param array $options courseid, cmid, quiz (quiz record), context, baseurl (moodle_url of the
-     *                       report), islistview, firstnameinitial, lastnameinitial, sort, dir, offset, perpage.
+     *                       report), islistview, firstnameinitial, lastnameinitial, sort, dir, offset,
+     *                       perpage, and skipdetails to leave out the per-row hold/AI lookups and row
+     *                       actions (for the CSV export, which reads none of them).
      * @return array ['rows' => the page's template rows, 'total' => rows across every page]
      */
     public static function build(iterable $records, array $options): array {
@@ -117,7 +119,12 @@ class report_list {
             self::add_risk($rows, $courseid, $cmid);
         }
 
-        self::add_page_details($rows, $courseid, $cmid, $options['context'], $options['baseurl']);
+        // The CSV export reads none of the hold/AI columns or row actions, and those cost two
+        // queries per row: an unpaged export of a large quiz must not run thousands of them
+        // (PR #78 review).
+        if (empty($options['skipdetails'])) {
+            self::add_page_details($rows, $courseid, $cmid, $options['context'], $options['baseurl']);
+        }
 
         return ['rows' => $rows, 'total' => $total];
     }
@@ -409,10 +416,10 @@ class report_list {
                     $OUTPUT->pix_icon('t/delete', '') . ' ' . get_string('delete'),
                     [
                         'type' => 'submit',
-                        // Unmistakably the destructive one: danger-outlined, and rendered last in
+                        // De-emphasized as a muted link (Requirement 18.3), and rendered last in
                         // the cell so it never sits between the two review actions (CPIT-475).
                         // The destructive confirm() guard is retained.
-                        'class' => 'btn btn-outline-danger btn-sm',
+                        'class' => 'btn btn-link btn-sm text-muted',
                         'onclick' => 'return confirm(' . json_encode(get_string(
                             'areyousure_delete_record',
                             'quizaccess_proctoring'

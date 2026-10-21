@@ -653,6 +653,9 @@ if ($download === 'csv' && $studentid === null) {
             'dir' => (string)$dir,
             'offset' => 0,
             'perpage' => PHP_INT_MAX,
+            // No hold/AI lookups or row actions: the export reads none of them, and unpaged they
+            // would cost two queries per student (PR #78 review).
+            'skipdetails' => true,
         ]
     );
 
