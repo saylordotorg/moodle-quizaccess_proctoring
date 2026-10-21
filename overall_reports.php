@@ -102,9 +102,13 @@ $canviewexceptions = $exceptionscope === null || !empty($exceptionscope);
 // Photo reset requests are a site-wide queue over every student, so it needs the review
 // capability held site-wide - the same audience the request notifications go to. A reviewer
 // whose capability is scoped to one category must not read or decide requests outside it
-// (CPIT-476, Codex review).
+// (CPIT-476, Codex review). Deciding deletes a photo, so it further needs a site-wide write
+// capability: reviewacrosscourses alone is read-only, and the per-quiz reset on report.php
+// requires reviewriskholds the same way.
 $canviewresets = quizaccess_proctoring_can_manage_admin_settings()
     || has_capability('quizaccess/proctoring:reviewacrosscourses', context_system::instance());
+$candecideresets = quizaccess_proctoring_can_manage_admin_settings()
+    || has_capability('quizaccess/proctoring:reviewriskholds', context_system::instance());
 // The review queue - holds waiting for a decision, oldest first - is what opens by default.
 if ($view === '') {
     $view = $canviewheld ? 'held' : 'attempts';
@@ -368,10 +372,10 @@ if ($canviewheld || $canviewexceptions || $canviewresets) {
 // who decided it and the student is notified, so the queue never shows handled work (CPIT-476).
 if ($action === 'decidephotoreset') {
     require_sesskey();
-    if (!$canviewresets) {
+    if (!$canviewresets || !$candecideresets) {
         throw new required_capability_exception(
             context_system::instance(),
-            'quizaccess/proctoring:reviewacrosscourses',
+            $canviewresets ? 'quizaccess/proctoring:reviewriskholds' : 'quizaccess/proctoring:reviewacrosscourses',
             'nopermissions',
             ''
         );
@@ -468,7 +472,9 @@ if ($view === 'photoresets') {
             $student,
             format_text((string)$request->reason, FORMAT_PLAIN),
             \quizaccess_proctoring\local\display_time::staff((int)$request->timecreated),
-            html_writer::div($decide(true) . $decide(false), 'd-flex flex-wrap'),
+            // Deciding deletes a photo, so viewers without the site-wide write capability see the
+            // queue without its buttons (Codex review).
+            $candecideresets ? html_writer::div($decide(true) . $decide(false), 'd-flex flex-wrap') : '-',
         ];
     }
     echo html_writer::table($table);

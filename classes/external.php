@@ -2603,10 +2603,17 @@ class quizaccess_proctoring_external extends external_api {
             return false;
         }
         try {
-            return self::retire_checked_reference($userid, $checkedurl);
+            $retired = self::retire_checked_reference($userid, $checkedurl);
         } finally {
             $lock->release();
         }
+        if ($retired) {
+            // The photo the student's open reset request asked about is gone: close the request
+            // after the reference lock is released, so a stale queue approval cannot delete the
+            // replacement photo they register next (CPIT-476, Codex review).
+            \quizaccess_proctoring\local\reference_photo::note_photo_deleted($userid);
+        }
+        return $retired;
     }
 
     /**

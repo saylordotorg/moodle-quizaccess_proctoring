@@ -307,6 +307,7 @@ class precheck_evidence {
             if (!$lock) {
                 continue;
             }
+            $wasretired = false;
             try {
                 // Re-check under the lock: the student may have registered again, or started an
                 // attempt, since the query ran.
@@ -327,10 +328,17 @@ class precheck_evidence {
                 }
                 $url = quizaccess_proctoring_get_image_url($userid);
                 if ($url && quizaccess_proctoring_retire_self_registered_reference($userid, (string)$url, true)) {
+                    $wasretired = true;
                     $retired++;
                 }
             } finally {
                 $lock->release();
+            }
+            if ($wasretired) {
+                // Close any open reset request now that its photo is gone, after releasing the
+                // reference lock, so a stale queue approval cannot delete the replacement photo
+                // the student registers next (CPIT-476, Codex review).
+                reference_photo::note_photo_deleted($userid);
             }
         }
         return $retired;
