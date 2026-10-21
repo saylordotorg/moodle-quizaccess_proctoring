@@ -772,10 +772,14 @@ $string['privacy:metadata:saylorsis:userid'] = 'The Moodle user id of the studen
 $string['privacy:metadata:screenshoturl'] = 'A desktop screenshot captured for an activity event or optional periodic monitoring coverage.';
 $string['privacy:metadata:status'] = 'The status of the proctoring.';
 $string['privacy:metadata:timecreated'] = 'The time when the record was created.';
+$string['privacy:metadata:quizaccess_proctoring_ref_requests'] = 'Student requests for a new proctoring reference photo and their decisions.';
+$string['privacy:metadata:refrequestreason'] = 'What the student said is wrong with their reference photo.';
+$string['privacy:metadata:refrequeststatus'] = 'Whether the request is open, answered by a reset, or declined.';
 $string['privacy:metadata:timemodified'] = 'The time when the record was last changed.';
 $string['privacy:metadata:timelastused'] = 'The time a proctored quiz attempt last went ahead with this reference image; the image is deleted after the retention period without further use.';
 $string['privacy:metadata:timeused'] = 'The time a proctored quiz attempt first went ahead with this reference image, which keeps it from being deleted as unused.';
 $string['privacy:metadata:timereviewed'] = 'The time when the risk review hold was released.';
+$string['privacy:metadata:refrequesttimedecided'] = 'The time when a reviewer answered the reset request.';
 $string['privacy:metadata:userid'] = 'The ID of the user who took the quiz.';
 $string['privacy:metadata:webcampicture'] = 'The name of the picture that has been taken by the proctoring.';
 $string['privacynotice:agreementdefault'] = 'I understand what proctoring data may be collected for this quiz.';
@@ -1594,6 +1598,7 @@ $string['setting:replaceunusablereference'] = 'Let students replace an unusable 
 $string['setting:replaceunusablereference_desc'] = 'When the face-match service finds no face at all in a student\'s self-registered reference photo, clear it during the precheck so the student\'s next capture saves a new one under the same checks as a first registration. A reference photo with no face cannot identify anyone, so nothing is lost. Photos uploaded by staff are never cleared. Untick to keep the photo and tell the student to contact support instead.';
 $string['event:referencephotoreset'] = 'Proctoring reference photo reset';
 $string['event:referenceresetrequested'] = 'New proctoring reference photo requested';
+$string['messageprovider:referencereset'] = 'Decisions about your proctoring reference photo';
 $string['messageprovider:referenceresetrequest'] = 'Requests from students for a new proctoring reference photo';
 $string['myphoto:intro'] = 'This is the reference photo your proctored exams compare your webcam with, to confirm it is you.';
 $string['myphoto:none'] = 'You have no reference photo on file. You take one at the start of your first proctored exam.';
@@ -1601,8 +1606,11 @@ $string['myphoto:reason'] = 'What is wrong with the photo? (optional)';
 $string['myphoto:requestbutton'] = 'Ask for a new photo';
 $string['myphoto:requestheading'] = 'Need a new photo?';
 $string['myphoto:requestintro'] = 'If this photo is unclear or is not of you, ask Student Affairs to reset it. You then take a new one at your next proctored exam.';
-$string['myphoto:requestpending'] = 'Your request has been sent to Student Affairs. You can send another one tomorrow.';
+$string['myphoto:requestcontact'] = 'Questions? Contact {$a}.';
+$string['myphoto:requestpendingsince'] = 'Your request was sent to Student Affairs on {$a} and is waiting for review.';
 $string['myphoto:requestsent'] = 'Your request has been sent to Student Affairs.';
+$string['myphoto:requestturnaround'] = 'Requests are usually handled within 1–2 business days.';
+$string['myphoto:takenon'] = 'Photo taken on {$a}.';
 $string['myphoto:title'] = 'My proctoring photo';
 $string['privacy:metadata:preference:referenceresetrequested'] = 'When you last asked for a new proctoring reference photo.';
 $string['referenceconfirm:imagealt'] = 'Your new reference photo';
@@ -1615,10 +1623,42 @@ $string['referencerequest:body'] = '{$a->student} ({$a->email}) asked for a new 
 
 What is wrong with it: {$a->reason}
 
-To reset it, open the student\'s proctoring report for one of their proctored quizzes and choose "Reset reference photo". The student then takes a new photo at their next exam.
+Work the request from the photo reset queue, where decisions are marked so the team can see what is already handled:
+{$a->queueurl}
+
+Resetting the photo deletes the one on file; the student takes a new photo at their next proctored exam and is notified either way.
 
 Profile: {$a->profileurl}';
+$string['referencequeue:alreadyhandled'] = 'That request was already handled by someone else.';
+$string['referencequeue:colactions'] = 'Actions';
+$string['referencequeue:coldecided'] = 'Decided';
+$string['referencequeue:coldecidedby'] = 'Decided by';
+$string['referencequeue:coloutcome'] = 'Outcome';
+$string['referencequeue:colreason'] = 'Student reason';
+$string['referencequeue:colrequested'] = 'Requested';
+$string['referencequeue:colstudent'] = 'Student';
+$string['referencequeue:decidedbysystem'] = 'Automatic';
+$string['referencequeue:decidedheading'] = 'Recently handled';
+$string['referencequeue:declinebutton'] = 'Decline';
+$string['referencequeue:declinednotice'] = 'Request declined. The student has been notified and their photo stands.';
+$string['referencequeue:heading'] = 'Photo reset requests';
+$string['referencequeue:intro'] = 'Students asking for a new proctoring reference photo. Resetting deletes the photo on file; the student takes a new one at their next proctored exam and is notified either way.';
+$string['referencequeue:nonepending'] = 'No photo reset requests are waiting.';
+$string['referencequeue:outcomedeclined'] = 'Declined';
+$string['referencequeue:outcomereset'] = 'Photo reset';
+$string['referencequeue:resetbutton'] = 'Reset photo';
+$string['referencequeue:resetnotice'] = 'Photo reset. The student has been notified and takes a new photo at their next proctored exam.';
+$string['referencequeue:resetreason'] = 'Student request approved from the photo reset queue by {$a}.';
+$string['userslist:resetreason'] = 'Photo deleted from the proctoring users list by {$a}.';
+$string['referencequeue:viewtoggle'] = 'Photo reset requests';
+$string['referencerequest:queuename'] = 'Photo reset requests';
 $string['referencerequest:subject'] = 'New reference photo requested: {$a->student}';
+$string['referencereset:declinedbody'] = 'Student Affairs reviewed your request for a new proctoring reference photo and the photo on file will stay in use. If you believe it cannot be matched to you, contact {$a->contact}.';
+$string['referencereset:declinedsubject'] = 'Your proctoring photo request was reviewed';
+$string['referencereset:donebody'] = 'Your proctoring reference photo has been reset. You will take a new photo at the start of your next proctored exam. Questions? Contact {$a->contact}.';
+$string['referencereset:donesubject'] = 'Your proctoring photo has been reset';
+$string['referencereset:replacedbody'] = 'Student Affairs uploaded a new proctoring reference photo for you, which closes your reset request. It will be used at your next proctored exam. Questions? Contact {$a->contact}.';
+$string['referencereset:replacedsubject'] = 'Your proctoring photo has been updated';
 $string['referencereset:busy'] = 'The reference photo is being changed right now. Try again in a moment.';
 $string['referencereset:button'] = 'Reset reference photo';
 $string['referencereset:done'] = 'The reference photo was reset. The student takes a new one at their next proctored exam.';

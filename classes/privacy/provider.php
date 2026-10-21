@@ -223,6 +223,19 @@ class provider implements
             'privacy:metadata:quizaccess_proctoring_idv'
         );
 
+        $collection->add_database_table(
+            'quizaccess_proctoring_ref_requests',
+            [
+                'userid' => 'privacy:metadata:userid',
+                'reason' => 'privacy:metadata:refrequestreason',
+                'status' => 'privacy:metadata:refrequeststatus',
+                'decidedby' => 'privacy:metadata:reviewerid',
+                'timecreated' => 'privacy:metadata:timecreated',
+                'timedecided' => 'privacy:metadata:refrequesttimedecided',
+            ],
+            'privacy:metadata:quizaccess_proctoring_ref_requests'
+        );
+
         $quizaccessproctoringuserimages = [
             'user_id' => 'privacy:metadata:userid',
             'photo_draft_id' => 'privacy:metadata:photo_draft_id',
@@ -430,6 +443,15 @@ class provider implements
                  WHERE c.contextlevel = :systemcontext";
         $contextlist->add_from_sql($sql, $systemparams);
 
+        // A reset request can outlive the photo it asked about, so it finds the system context on
+        // its own - for the student who asked and for the reviewer who decided it (CPIT-476).
+        $sql = "SELECT DISTINCT c.id
+                  FROM {context} c
+                  JOIN {quizaccess_proctoring_ref_requests} qrr
+                       ON qrr.userid = :userid OR qrr.decidedby = :decider
+                 WHERE c.contextlevel = :systemcontext";
+        $contextlist->add_from_sql($sql, $systemparams + ['decider' => $userid]);
+
         $fileparams = ['component' => 'quizaccess_proctoring', 'userid' => $userid];
 
         $sqlfile = "SELECT DISTINCT contextid as id
@@ -466,6 +488,15 @@ class provider implements
         if ($context->contextlevel === CONTEXT_SYSTEM) {
             $sql = "SELECT DISTINCT qui.user_id AS userid
                       FROM {quizaccess_proctoring_user_images} qui";
+            $userlist->add_from_sql('userid', $sql, []);
+
+            $sql = "SELECT DISTINCT qrr.userid AS userid
+                      FROM {quizaccess_proctoring_ref_requests} qrr";
+            $userlist->add_from_sql('userid', $sql, []);
+
+            $sql = "SELECT DISTINCT qrr.decidedby AS userid
+                      FROM {quizaccess_proctoring_ref_requests} qrr
+                     WHERE qrr.decidedby <> 0";
             $userlist->add_from_sql('userid', $sql, []);
 
             $sql = "SELECT DISTINCT f.itemid AS userid
@@ -995,6 +1026,35 @@ class provider implements
                         writer::with_context($context)->export_data($subcontext, $data);
                     }
                 }
+
+                // Reset requests outlive the photo they asked about, so they export whether or
+                // not a reference image remains - the student's own requests, and the ones this
+                // user decided as a reviewer (CPIT-476).
+                $refrequests = $DB->get_records_select(
+                    'quizaccess_proctoring_ref_requests',
+                    'userid = :requester OR decidedby = :decider',
+                    ['requester' => $userid, 'decider' => $userid],
+                    'id ASC'
+                );
+                $index = 0;
+                foreach ($refrequests as $refrequest) {
+                    $index++;
+                    $subcontext = [
+                        get_string('quizaccess_proctoring', 'quizaccess_proctoring'),
+                        'proctoring_reference_reset_requests',
+                        $index,
+                    ];
+                    $data = (object)[
+                        'id' => $refrequest->id,
+                        'userid' => $refrequest->userid,
+                        'reason' => $refrequest->reason,
+                        'status' => $refrequest->status,
+                        'decidedby' => $refrequest->decidedby,
+                        'timecreated' => transform::datetime($refrequest->timecreated),
+                        'timedecided' => $refrequest->timedecided ? transform::datetime($refrequest->timedecided) : null,
+                    ];
+                    writer::with_context($context)->export_data($subcontext, $data);
+                }
             }
         }
     }
@@ -1039,6 +1099,7 @@ class provider implements
         } else if ($context->contextlevel === CONTEXT_SYSTEM) {
             $DB->delete_records('quizaccess_proctoring_face_images', ['parent_type' => 'admin_image']);
             $DB->delete_records('quizaccess_proctoring_user_images');
+            $DB->delete_records('quizaccess_proctoring_ref_requests');
 
             $fs = get_file_storage();
             $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'user_photo');
@@ -1059,6 +1120,7 @@ class provider implements
 
         if ($context->contextlevel === CONTEXT_SYSTEM) {
             self::delete_reference_image_data_for_userids($userids);
+            self::delete_reference_requests_for_userids($userids);
             return;
         }
 
@@ -1067,6 +1129,28 @@ class provider implements
         }
 
         self::delete_module_data_for_userids($context, $userids);
+    }
+
+    /**
+     * Deletes the users' reference-photo reset requests (CPIT-476).
+     *
+     * Separate from the reference-image helper on purpose: that helper also runs for an ordinary
+     * staff photo reset, which must keep the request history it just answered.
+     *
+     * @param array $userids User IDs.
+     */
+    private static function delete_reference_requests_for_userids(array $userids): void {
+        global $DB;
+
+        $userids = array_values(array_filter(array_map('intval', $userids)));
+        if (!$userids) {
+            return;
+        }
+        [$insql, $params] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'refrequser');
+        $DB->delete_records_select('quizaccess_proctoring_ref_requests', "userid {$insql}", $params);
+        // Keep other students' request history while removing the erased reviewer's attribution,
+        // as risk holds and finding reviews do for reviewerid (Codex review).
+        $DB->set_field_select('quizaccess_proctoring_ref_requests', 'decidedby', 0, "decidedby {$insql}", $params);
     }
 
     /**
@@ -1088,6 +1172,7 @@ class provider implements
                 self::delete_module_data_for_userids($context, [$userid]);
             } else if ($context->contextlevel === CONTEXT_SYSTEM) {
                 self::delete_reference_image_data_for_userids([$userid]);
+                self::delete_reference_requests_for_userids([$userid]);
             }
         }
     }
@@ -1115,8 +1200,10 @@ class provider implements
         // through, so whatever remains of the user's records is removed directly. Their files went
         // with the deleted context.
         self::delete_remaining_user_records($userid);
-        // The reference photo lives in the system context whether or not it was listed above.
+        // The reference photo lives in the system context whether or not it was listed above, and
+        // the reset-request history goes with the account too (CPIT-476, Codex review).
         self::delete_reference_image_data_for_userids([$userid]);
+        self::delete_reference_requests_for_userids([$userid]);
     }
 
     /**

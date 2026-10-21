@@ -303,11 +303,11 @@ class precheck_evidence {
         $retired = 0;
         foreach ($candidates as $candidate) {
             $userid = (int)$candidate->user_id;
-            $lock = quizaccess_proctoring_get_reference_lock($userid);
-            if (!$lock) {
-                continue;
-            }
-            try {
+            // retire_photo() holds the decision lock across the retirement and the closing of any
+            // open reset request, so a stale queue approval cannot delete the replacement photo
+            // the student registers next (CPIT-476, Codex review).
+            $wasretired = reference_photo::retire_photo($userid, function () use ($candidate, $userid): bool {
+                global $DB;
                 // Re-check under the lock: the student may have registered again, or started an
                 // attempt, since the query ran.
                 $current = $DB->get_record_sql(
@@ -320,17 +320,16 @@ class precheck_evidence {
                     IGNORE_MULTIPLE
                 );
                 if (!$current || (int)$current->timemodified !== (int)$candidate->registered) {
-                    continue;
+                    return false;
                 }
                 if (self::attempt_started_since($userid, (int)$candidate->registered)) {
-                    continue;
+                    return false;
                 }
                 $url = quizaccess_proctoring_get_image_url($userid);
-                if ($url && quizaccess_proctoring_retire_self_registered_reference($userid, (string)$url, true)) {
-                    $retired++;
-                }
-            } finally {
-                $lock->release();
+                return $url && quizaccess_proctoring_retire_self_registered_reference($userid, (string)$url, true);
+            });
+            if ($wasretired) {
+                $retired++;
             }
         }
         return $retired;
