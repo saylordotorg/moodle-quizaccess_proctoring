@@ -103,15 +103,7 @@ class reference_photo {
             // Every reset closes the student's open request, so the queue cannot show work that
             // is already done, and tells the student: without the notice, Student Affairs had to
             // reach out by hand to close the loop (CPIT-476, Stephanie).
-            $open = self::open_request($userid);
-            if ($open) {
-                $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
-                    'id' => (int)$open->id,
-                    'status' => self::REQUEST_RESET,
-                    'decidedby' => (int)$USER->id,
-                    'timedecided' => time(),
-                ]);
-            }
+            self::close_open_request_locked($userid, (int)$USER->id);
         } finally {
             $decisionlock->release();
         }
@@ -131,21 +123,6 @@ class reference_photo {
     }
 
     /**
-     * The photo is gone outside a queue decision: close any open request and tell the student.
-     *
-     * Automatic retirement deletes photos without a reviewer; leaving the request open would
-     * keep it on the queue, and approving it later could delete a replacement photo the student
-     * registered in the meantime (Codex review). Call it after releasing the photo lock.
-     *
-     * @param int $userid Student whose photo was deleted.
-     */
-    public static function note_photo_deleted(int $userid): void {
-        if (self::close_open_request($userid, 0)) {
-            self::notify_student($userid, 'done');
-        }
-    }
-
-    /**
      * Run a staff photo replacement under both locks, then close the open request (Codex review).
      *
      * The decision lock is taken before the reference lock, the order every queue decision uses:
@@ -159,51 +136,67 @@ class reference_photo {
      * @return bool False when a lock could not be taken, so nothing ran.
      */
     public static function replace_photo(int $userid, int $decidedby, callable $replace): bool {
+        return self::change_photo($userid, $decidedby, 'replaced', function () use ($replace): bool {
+            $replace();
+            return true;
+        }) !== null;
+    }
+
+    /**
+     * Run an automatic photo retirement under both locks, then close the open request.
+     *
+     * Same serialization as replace_photo(): a queue approval cannot slip between the photo
+     * going away and its request being closed, so it can never delete a replacement registered
+     * in that window (Codex review).
+     *
+     * @param int $userid Student whose photo may be retired.
+     * @param callable $retire Runs while both locks are held; returns true when it removed the
+     *        photo, false when it left it alone.
+     * @return bool True when the photo was retired; false when it was kept or a lock timed out.
+     */
+    public static function retire_photo(int $userid, callable $retire): bool {
+        return (bool)self::change_photo($userid, 0, 'done', $retire);
+    }
+
+    /**
+     * The shared engine: decision lock, then reference lock, the change, then the request close.
+     *
+     * @param int $userid Student.
+     * @param int $decidedby Who answers the open request; 0 for automatic retirement.
+     * @param string $outcome Message the student gets when a request was closed.
+     * @param callable $change Runs while both locks are held; returns whether the photo changed.
+     * @return bool|null Null when a lock could not be taken (nothing ran); otherwise the
+     *         callable's result.
+     */
+    private static function change_photo(int $userid, int $decidedby, string $outcome, callable $change): ?bool {
         global $CFG;
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
         $decisionlock = self::decision_lock($userid);
         if (!$decisionlock) {
-            return false;
+            return null;
         }
         $closed = false;
         try {
             $referencelock = quizaccess_proctoring_get_reference_lock($userid);
             if (!$referencelock) {
-                return false;
+                return null;
             }
             try {
-                $replace();
+                $changed = (bool)$change();
             } finally {
                 $referencelock->release();
             }
-            $closed = self::close_open_request_locked($userid, $decidedby);
+            if ($changed) {
+                $closed = self::close_open_request_locked($userid, $decidedby);
+            }
         } finally {
             $decisionlock->release();
         }
         if ($closed) {
-            self::notify_student($userid, 'replaced');
+            self::notify_student($userid, $outcome);
         }
-        return true;
-    }
-
-    /**
-     * Close the student's open request as answered, under the decision lock.
-     *
-     * @param int $userid Student.
-     * @param int $decidedby Who answered it; 0 for automatic retirement.
-     * @return bool True when an open request was closed.
-     */
-    private static function close_open_request(int $userid, int $decidedby): bool {
-        $lock = self::decision_lock($userid);
-        if (!$lock) {
-            return false;
-        }
-        try {
-            return self::close_open_request_locked($userid, $decidedby);
-        } finally {
-            $lock->release();
-        }
+        return $changed;
     }
 
     /**

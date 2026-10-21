@@ -2598,22 +2598,13 @@ class quizaccess_proctoring_external extends external_api {
         if (!get_config('quizaccess_proctoring', 'replaceunusablereference')) {
             return false;
         }
-        $lock = quizaccess_proctoring_get_reference_lock($userid);
-        if (!$lock) {
-            return false;
-        }
-        try {
-            $retired = self::retire_checked_reference($userid, $checkedurl);
-        } finally {
-            $lock->release();
-        }
-        if ($retired) {
-            // The photo the student's open reset request asked about is gone: close the request
-            // after the reference lock is released, so a stale queue approval cannot delete the
-            // replacement photo they register next (CPIT-476, Codex review).
-            \quizaccess_proctoring\local\reference_photo::note_photo_deleted($userid);
-        }
-        return $retired;
+        // retire_photo() holds the decision lock across the retirement and the closing of the
+        // student's open reset request, so a stale queue approval cannot delete the replacement
+        // photo they register next (CPIT-476, Codex review).
+        return \quizaccess_proctoring\local\reference_photo::retire_photo(
+            $userid,
+            fn(): bool => self::retire_checked_reference($userid, $checkedurl)
+        );
     }
 
     /**

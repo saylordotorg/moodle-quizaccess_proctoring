@@ -259,30 +259,27 @@ class delete_images_task extends scheduled_task {
         $deleted = 0;
         foreach ($userids as $userid) {
             $userid = (int)$userid;
-            // The same lock a precheck holds while it registers or replaces a reference photo, and
-            // a re-check under it: a photo replaced since the query ran is not deleted (CPIT-472).
-            $lock = quizaccess_proctoring_get_reference_lock($userid);
-            if (!$lock) {
-                continue;
-            }
-            $wasdeleted = false;
-            try {
-                $stillexpired = $DB->record_exists_sql(
-                    self::expired_reference_sql() . ' AND ui.user_id = :onlyuser',
-                    self::expired_reference_params($cutoff) + ['onlyuser' => $userid]
-                );
-                if ($stillexpired) {
+            // retire_photo() takes the decision lock, then the same reference lock a precheck
+            // holds while it registers or replaces a photo, and closes any open reset request
+            // before releasing either: a photo replaced since the query ran is not deleted
+            // (CPIT-472), and a stale queue approval cannot delete a replacement (CPIT-476).
+            $wasdeleted = \quizaccess_proctoring\local\reference_photo::retire_photo(
+                $userid,
+                function () use ($cutoff, $userid): bool {
+                    global $DB;
+                    $stillexpired = $DB->record_exists_sql(
+                        self::expired_reference_sql() . ' AND ui.user_id = :onlyuser',
+                        self::expired_reference_params($cutoff) + ['onlyuser' => $userid]
+                    );
+                    if (!$stillexpired) {
+                        return false;
+                    }
                     \quizaccess_proctoring\privacy\provider::delete_reference_photos([$userid]);
-                    $wasdeleted = true;
-                    $deleted++;
+                    return true;
                 }
-            } finally {
-                $lock->release();
-            }
+            );
             if ($wasdeleted) {
-                // Close any open reset request now that the photo it asked about is gone, so a
-                // later queue approval cannot delete a replacement photo instead (CPIT-476).
-                \quizaccess_proctoring\local\reference_photo::note_photo_deleted($userid);
+                $deleted++;
             }
         }
         if ($deleted) {
