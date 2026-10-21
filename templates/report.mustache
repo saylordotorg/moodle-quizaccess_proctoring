@@ -17,6 +17,8 @@
         "quizname": "Sample Quiz",
         "url": "https://example.com/search",
         "backbutton": "https://example.com/course/view.php?id=1",
+        "exporturl": "https://example.com/report.php?download=csv",
+        "grademax": "10.00",
         "courseid": "123",
         "cmid": "456",
         "searchkey": "example@example.com",
@@ -33,13 +35,13 @@
                 "userlink": "https://example.com/user/1",
                 "fullname": "John Doe",
                 "email": "john.doe@example.com",
-                "timemodified": "1 January 2026  10:00 AM EST",
+                "started": "Monday, 16 June 2025, 7:59 PM",
                 "identitymismatch": "No",
                 "eventwarning": true,
                 "findinglabel": "4",
                 "eventcountlabel": "from 187 suspicious events",
                 "findingtitle": "4 scored findings, from 187 suspicious events recorded during the attempt.",
-                "scorelabel": "17.00 / 20.00",
+                "scorelabel": "17.00",
                 "timetaken": "42 mins 6 secs",
                 "accountage": "2 years 145 days",
                 "accountcreated": "14 March 2024  9:02 AM EDT",
@@ -49,7 +51,8 @@
                 "risklevel": "Medium",
                 "riskholdstatus": "",
                 "aireview": false,
-                "actionmenu": "<a href=\"https://example.com/view\">View</a>"
+                "actionmenu": "<a href=\"https://example.com/view\">View</a>",
+                "deleteaction": ""
             }
         ]
     }
@@ -63,6 +66,9 @@
    <br>
    <div class="mb-3">
     <a href="{{backbutton}}" class="btn btn-secondary">{{#str}}back,quizaccess_proctoring{{/str}}</a>
+    {{#exporturl}}
+    <a href="{{exporturl}}" class="btn btn-outline-secondary ml-2">{{#str}}report:exportcsv,quizaccess_proctoring{{/str}}</a>
+    {{/exporturl}}
 </div>
 
        <div class="container-fluid mb-3 p-1 m-1">
@@ -160,11 +166,11 @@
             {{^showfilters}}
             <th>{{#str}}user,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}email,quizaccess_proctoring{{/str}}</th>
-            <th>{{#str}}dateverified,quizaccess_proctoring{{/str}}</th>
+            <th>{{#str}}report:col_started,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}identity_mismatch_label,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}report:col_findings,quizaccess_proctoring{{/str}}</th>
             <th>{{#str}}riskscore,quizaccess_proctoring{{/str}}</th>
-            <th>{{#str}}report:col_score,quizaccess_proctoring{{/str}}</th>
+            <th>{{#str}}report:col_grade,quizaccess_proctoring,{{grademax}}{{/str}}</th>
             {{/showfilters}}
             <th>{{#str}}riskscore:timetaken,quizaccess_proctoring{{/str}}</th>
             {{#showfilters}}
@@ -186,7 +192,7 @@
     <tr>
         <td><a href="{{userlink}}" target="_blank">{{fullname}}</a></td>
         <td>{{email}}</td>
-        <td>{{timemodified}}</td>
+        <td>{{started}}</td>
         <td>
             {{identitymismatch}}
         </td>
@@ -202,7 +208,7 @@
                 <div class="proctoring-risk-hold-status {{#riskholdactive}}proctoring-risk-hold-active{{/riskholdactive}}">{{riskholdstatus}}</div>
             {{/riskholdstatus}}
         </td>
-        <td>{{#scorelabel}}{{scorelabel}}{{/scorelabel}}{{^scorelabel}}<span class="text-muted">&mdash;</span>{{/scorelabel}}</td>
+        <td>{{#hasscore}}{{scorelabel}}{{/hasscore}}{{^hasscore}}<span class="text-muted">&mdash;</span>{{/hasscore}}</td>
         <td>
             {{#timetaken}}{{timetaken}}{{/timetaken}}{{^timetaken}}<span class="text-muted">&mdash;</span>{{/timetaken}}
         </td>
@@ -226,8 +232,9 @@
         <td>
             {{{actionmenu}}}
             {{#attempturl}}
-            <a class="btn btn-link btn-sm p-0 d-block" href="{{attempturl}}">{{#str}}report:col_attemptlink,quizaccess_proctoring{{/str}}</a>
+            <a class="btn btn-outline-secondary btn-sm d-block mt-1" href="{{attempturl}}">{{#str}}report:col_attemptlink,quizaccess_proctoring{{/str}}</a>
             {{/attempturl}}
+            <div class="mt-1">{{{deleteaction}}}</div>
         </td>
     </tr>
 {{/rows}}
