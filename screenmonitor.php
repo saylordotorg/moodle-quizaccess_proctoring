@@ -104,7 +104,7 @@ $js = <<<JS
     let canvas = null;
     let ready = false;
     let stopped = true;
-    let shareStartedAt = 0;
+    let claimedattempt = null;
     let markerVisible = false;
     let lastMarkerSeen = 0;
     let lastMarkerMissingMessage = 0;
@@ -632,7 +632,6 @@ $js = <<<JS
 
         ready = true;
         stopped = false;
-        shareStartedAt = Date.now();
         checkMarker();
 
         videoTrack.addEventListener('ended', function() {
@@ -653,13 +652,12 @@ $js = <<<JS
             const message = event.data || {};
             if (message.type === 'shutdown') {
                 // The exam was submitted: end the share and close this window, instead of leaving
-                // the student to find the browser's own "stop sharing" control (CPIT-508). The
-                // message stays visible in case the browser refuses the scripted close.
-                // A share younger than the finished attempt cannot be that attempt's share - it is
-                // the next attempt's preflight, opened before Moodle records the attempt row - so
-                // it is left alone. Both sides of the comparison are this machine's clock.
-                const minshareagems = Number(message.minshareagems) || 0;
-                if (stream && shareStartedAt && (Date.now() - shareStartedAt) < minshareagems) {
+                // the student to find the browser's own "stop sharing" control (CPIT-508). Only
+                // while this helper still serves that attempt: the next attempt's pages claim the
+                // helper on every status poll (its preflight as attempt 0), so an old attempt's
+                // review page cannot end a share that has moved on.
+                const target = Number(message.attemptid) || 0;
+                if (claimedattempt !== null && target && claimedattempt !== target) {
                     return;
                 }
                 pageActive = false;
@@ -673,6 +671,10 @@ $js = <<<JS
                 return;
             }
             if (message.type === 'status_request') {
+                // The poll claims the helper for the polling page's attempt (CPIT-508).
+                if (typeof message.attemptid !== 'undefined') {
+                    claimedattempt = Number(message.attemptid) || 0;
+                }
                 // Run a fresh marker check instead of replying from cache: browsers
                 // throttle this hidden window's timers (to as little as once a
                 // minute), so the interval-driven marker state can be long stale by

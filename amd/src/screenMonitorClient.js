@@ -56,11 +56,11 @@ define([], function() {
          * own stop control (CPIT-508). Fire-and-forget: with no helper listening, nobody hears it.
          *
          * @param {String} key The monitor key the attempt pages used (cm<cmid>user<userid>).
-         * @param {Number} minshareagems The finished attempt's duration in milliseconds: a share
-         *        younger than this cannot be that attempt's share (it is the next attempt's
-         *        preflight), so the helper leaves it running.
+         * @param {Number} attemptid The finished attempt. The helper only honours the shutdown
+         *        while it still serves this attempt: a preflight for the next attempt claims the
+         *        helper first (as attempt 0), so an old review page cannot end the new share.
          */
-        shutdown: function(key, minshareagems) {
+        shutdown: function(key, attemptid) {
             if (!key || !window.BroadcastChannel) {
                 return;
             }
@@ -68,7 +68,7 @@ define([], function() {
                 const channel = new BroadcastChannel('quizaccess_proctoring_screen_' + key);
                 channel.postMessage({
                     type: 'shutdown',
-                    minshareagems: Number(minshareagems) || 0,
+                    attemptid: Number(attemptid) || 0,
                     ts: Date.now()
                 });
                 // Leave the channel open briefly: closing in the same tick can drop the message.
@@ -112,9 +112,15 @@ define([], function() {
                 }
             };
 
+            // Every status poll claims the helper for this page's attempt (the preflight has no
+            // attempt row yet and claims 0), so a finished attempt's shutdown can tell whether
+            // the helper still serves it or already serves the next attempt (CPIT-508).
+            const claimattempt = Number(props.screenmonitorattempt || props.status) || 0;
+
             const requestStatus = function() {
                 postMessage({
                     type: 'status_request',
+                    attemptid: claimattempt,
                     ts: Date.now()
                 });
             };
