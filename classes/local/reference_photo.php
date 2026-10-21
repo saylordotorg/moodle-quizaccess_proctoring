@@ -131,6 +131,41 @@ class reference_photo {
     }
 
     /**
+     * The photo is gone outside a queue decision: close any open request and tell the student.
+     *
+     * Automatic retirement deletes photos without a reviewer; leaving the request open would
+     * keep it on the queue, and approving it later could delete a replacement photo the student
+     * registered in the meantime (Codex review). Call it after releasing the photo lock.
+     *
+     * @param int $userid Student whose photo was deleted.
+     */
+    public static function note_photo_deleted(int $userid): void {
+        global $DB;
+        $lock = self::decision_lock($userid);
+        if (!$lock) {
+            return;
+        }
+        $closed = false;
+        try {
+            $open = self::open_request($userid);
+            if ($open) {
+                $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
+                    'id' => (int)$open->id,
+                    'status' => self::REQUEST_RESET,
+                    'decidedby' => 0,
+                    'timedecided' => time(),
+                ]);
+                $closed = true;
+            }
+        } finally {
+            $lock->release();
+        }
+        if ($closed) {
+            self::notify_student($userid, true);
+        }
+    }
+
+    /**
      * The student's open reset request, if any.
      *
      * @param int $userid Student.

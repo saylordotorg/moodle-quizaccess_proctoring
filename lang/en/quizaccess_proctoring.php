@@ -1643,6 +1643,7 @@ $string['referencequeue:nonepending'] = 'No photo reset requests are waiting.';
 $string['referencequeue:resetbutton'] = 'Reset photo';
 $string['referencequeue:resetnotice'] = 'Photo reset. The student has been notified and takes a new photo at their next proctored exam.';
 $string['referencequeue:resetreason'] = 'Student request approved from the photo reset queue by {$a}.';
+$string['userslist:resetreason'] = 'Photo deleted from the proctoring users list by {$a}.';
 $string['referencequeue:viewtoggle'] = 'Photo reset requests';
 $string['referencerequest:queuename'] = 'Photo reset requests';
 $string['referencerequest:subject'] = 'New reference photo requested: {$a->student}';

@@ -319,7 +319,7 @@ if (($action === 'release' || $action === 'confirm') && $holdid > 0) {
 // Each extra tab is only offered to staff holding the matching system-context capability, so
 // the toggle never advertises a view its viewer cannot open.
 $viewtoggle = '';
-if ($canviewheld || $canviewexceptions) {
+if ($canviewheld || $canviewexceptions || $canviewresets) {
     $attemptsurl = new moodle_url(
         '/mod/quiz/accessrule/proctoring/overall_reports.php',
         $activefilters + ['view' => 'attempts']

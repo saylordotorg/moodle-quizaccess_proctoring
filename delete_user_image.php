@@ -52,11 +52,19 @@ $perpage = optional_param('perpage', 1, PARAM_INT);
 $pageurl = new moodle_url('/mod/quiz/accessrule/proctoring/userslist.php');
 $PAGE->set_url($pageurl);
 
-$imagefile = quizaccess_proctoring_get_image_file($userid);
-if ($imagefile) {
-    $imagefile->delete();
-}
+// The request-aware reset: deletes the photo and its records, logs who did it, closes any open
+// reset request so the queue cannot approve it later against a replacement photo, and tells the
+// student (CPIT-476, Codex review). The old direct file delete left the request open.
+$done = \quizaccess_proctoring\local\reference_photo::reset(
+    $userid,
+    get_string('userslist:resetreason', 'quizaccess_proctoring', fullname($USER)),
+    $systemcontext
+);
 
 // Redirect back to the user list.
 $url = new moodle_url("/mod/quiz/accessrule/proctoring/userslist.php?perpage=$perpage&page=$page");
+if (!$done) {
+    redirect($url, get_string('referencereset:busy', 'quizaccess_proctoring'), null,
+        \core\output\notification::NOTIFY_WARNING);
+}
 redirect($url, get_string('settings:deleteuserimagesuccess', 'quizaccess_proctoring'), -11, 'success');

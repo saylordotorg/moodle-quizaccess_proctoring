@@ -265,6 +265,7 @@ class delete_images_task extends scheduled_task {
             if (!$lock) {
                 continue;
             }
+            $wasdeleted = false;
             try {
                 $stillexpired = $DB->record_exists_sql(
                     self::expired_reference_sql() . ' AND ui.user_id = :onlyuser',
@@ -272,10 +273,16 @@ class delete_images_task extends scheduled_task {
                 );
                 if ($stillexpired) {
                     \quizaccess_proctoring\privacy\provider::delete_reference_photos([$userid]);
+                    $wasdeleted = true;
                     $deleted++;
                 }
             } finally {
                 $lock->release();
+            }
+            if ($wasdeleted) {
+                // Close any open reset request now that the photo it asked about is gone, so a
+                // later queue approval cannot delete a replacement photo instead (CPIT-476).
+                \quizaccess_proctoring\local\reference_photo::note_photo_deleted($userid);
             }
         }
         if ($deleted) {
