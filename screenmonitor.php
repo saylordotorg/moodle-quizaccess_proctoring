@@ -105,6 +105,9 @@ $js = <<<JS
     let ready = false;
     let stopped = true;
     let claimedattempt = null;
+    let lastrealclaimts = 0;
+    let lastzeroclaimts = 0;
+    let shareStartedAt = 0;
     let markerVisible = false;
     let lastMarkerSeen = 0;
     let lastMarkerMissingMessage = 0;
@@ -632,6 +635,7 @@ $js = <<<JS
 
         ready = true;
         stopped = false;
+        shareStartedAt = Date.now();
         checkMarker();
 
         videoTrack.addEventListener('ended', function() {
@@ -653,11 +657,16 @@ $js = <<<JS
             if (message.type === 'shutdown') {
                 // The exam was submitted: end the share and close this window, instead of leaving
                 // the student to find the browser's own "stop sharing" control (CPIT-508). Only
-                // while this helper still serves that attempt: the next attempt's pages claim the
-                // helper on every status poll (its preflight as attempt 0), so an old attempt's
-                // review page cannot end a share that has moved on.
+                // while this helper still serves that attempt: another running attempt's claim,
+                // or a preflight actively polling for the next attempt, keeps the share alive. A
+                // helper claimed by a configuration that never polls from attempt pages, or one
+                // that never heard a claim at all, still shuts down.
                 const target = Number(message.attemptid) || 0;
-                if (claimedattempt !== null && target && claimedattempt !== target) {
+                if (claimedattempt > 0 && target && claimedattempt !== target) {
+                    return;
+                }
+                if (claimedattempt === 0 && lastzeroclaimts && (Date.now() - lastzeroclaimts) < 15000
+                        && shareStartedAt && shareStartedAt > lastrealclaimts) {
                     return;
                 }
                 pageActive = false;
@@ -671,9 +680,21 @@ $js = <<<JS
                 return;
             }
             if (message.type === 'status_request') {
-                // The poll claims the helper for the polling page's attempt (CPIT-508).
+                // The poll claims the helper for the polling page's attempt (CPIT-508). A real
+                // attempt's claim always holds. A preflight claims attempt 0, and takes the
+                // helper over only when no attempt holds it or the current share started after
+                // the holding attempt's last poll (a fresh share for the next attempt): a stale
+                // preflight page left open behind a quiz popup keeps polling 0 against the old
+                // share, and must not wrestle ownership from the attempt actually running.
                 if (typeof message.attemptid !== 'undefined') {
-                    claimedattempt = Number(message.attemptid) || 0;
+                    const claim = Number(message.attemptid) || 0;
+                    if (claim > 0) {
+                        claimedattempt = claim;
+                        lastrealclaimts = Date.now();
+                    } else if (!claimedattempt || (shareStartedAt && shareStartedAt > lastrealclaimts)) {
+                        claimedattempt = 0;
+                        lastzeroclaimts = Date.now();
+                    }
                 }
                 // Run a fresh marker check instead of replying from cache: browsers
                 // throttle this hidden window's timers (to as little as once a
