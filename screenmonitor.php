@@ -662,7 +662,9 @@ $js = <<<JS
                 // helper claimed by a configuration that never polls from attempt pages, or one
                 // that never heard a claim at all, still shuts down.
                 const target = Number(message.attemptid) || 0;
-                if (claimedattempt > 0 && target && claimedattempt !== target) {
+                // Only a newer attempt's claim outranks the shutdown: a claim left by an older,
+                // already-submitted attempt's stale tab must not keep the share alive.
+                if (claimedattempt > 0 && target && claimedattempt > target) {
                     return;
                 }
                 // A fresh preflight claim protects the helper even before its share is ready: the
@@ -689,10 +691,14 @@ $js = <<<JS
                 // share, and must not wrestle ownership from the attempt actually running.
                 if (typeof message.attemptid !== 'undefined') {
                     const claim = Number(message.attemptid) || 0;
-                    if (claim > 0) {
+                    if (claim > 0 && claim >= (claimedattempt || 0)) {
+                        // Attempt ids only grow, so a tab left open on an older submitted attempt
+                        // keeps polling but can never take the helper back from the attempt that
+                        // superseded it.
                         claimedattempt = claim;
                         lastrealclaimts = Date.now();
-                    } else if (!claimedattempt || !stream || (shareStartedAt && shareStartedAt > lastrealclaimts)) {
+                    } else if (claim === 0 && (!claimedattempt || !stream
+                            || (shareStartedAt && shareStartedAt > lastrealclaimts))) {
                         // A preflight may take the helper over when no attempt holds it, when no
                         // share is active (nothing of the old attempt's left to protect, even
                         // mid-acquisition), or when the current share started after the holding
