@@ -441,6 +441,14 @@ class provider implements
                  WHERE c.contextlevel = :systemcontext";
         $contextlist->add_from_sql($sql, $systemparams);
 
+        // A reset request can outlive the photo it asked about, so it finds the system context
+        // on its own (CPIT-476).
+        $sql = "SELECT DISTINCT c.id
+                  FROM {context} c
+                  JOIN {quizaccess_proctoring_ref_requests} qrr ON qrr.userid = :userid
+                 WHERE c.contextlevel = :systemcontext";
+        $contextlist->add_from_sql($sql, $systemparams);
+
         $fileparams = ['component' => 'quizaccess_proctoring', 'userid' => $userid];
 
         $sqlfile = "SELECT DISTINCT contextid as id
@@ -477,6 +485,10 @@ class provider implements
         if ($context->contextlevel === CONTEXT_SYSTEM) {
             $sql = "SELECT DISTINCT qui.user_id AS userid
                       FROM {quizaccess_proctoring_user_images} qui";
+            $userlist->add_from_sql('userid', $sql, []);
+
+            $sql = "SELECT DISTINCT qrr.userid AS userid
+                      FROM {quizaccess_proctoring_ref_requests} qrr";
             $userlist->add_from_sql('userid', $sql, []);
 
             $sql = "SELECT DISTINCT f.itemid AS userid
@@ -1005,6 +1017,32 @@ class provider implements
 
                         writer::with_context($context)->export_data($subcontext, $data);
                     }
+                }
+
+                // Reset requests outlive the photo they asked about, so they export whether or
+                // not a reference image remains (CPIT-476).
+                $refrequests = $DB->get_records(
+                    'quizaccess_proctoring_ref_requests',
+                    ['userid' => $userid],
+                    'id ASC'
+                );
+                $index = 0;
+                foreach ($refrequests as $refrequest) {
+                    $index++;
+                    $subcontext = [
+                        get_string('quizaccess_proctoring', 'quizaccess_proctoring'),
+                        'proctoring_reference_reset_requests',
+                        $index,
+                    ];
+                    $data = (object)[
+                        'id' => $refrequest->id,
+                        'userid' => $refrequest->userid,
+                        'reason' => $refrequest->reason,
+                        'status' => $refrequest->status,
+                        'timecreated' => transform::datetime($refrequest->timecreated),
+                        'timedecided' => $refrequest->timedecided ? transform::datetime($refrequest->timedecided) : null,
+                    ];
+                    writer::with_context($context)->export_data($subcontext, $data);
                 }
             }
         }

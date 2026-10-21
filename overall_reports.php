@@ -99,8 +99,12 @@ $holdscope = \quizaccess_proctoring\local\overall_report::scoped_quiz_cmids(['qu
 $exceptionscope = \quizaccess_proctoring\local\overall_report::scoped_quiz_cmids(['quizaccess/proctoring:manageoverrides']);
 $canviewheld = $holdscope === null || !empty($holdscope);
 $canviewexceptions = $exceptionscope === null || !empty($exceptionscope);
-// Photo reset requests go to whoever reviews across courses, so the queue is theirs (CPIT-476).
-$canviewresets = quizaccess_proctoring_can_review_across_courses();
+// Photo reset requests are a site-wide queue over every student, so it needs the review
+// capability held site-wide - the same audience the request notifications go to. A reviewer
+// whose capability is scoped to one category must not read or decide requests outside it
+// (CPIT-476, Codex review).
+$canviewresets = quizaccess_proctoring_can_manage_admin_settings()
+    || has_capability('quizaccess/proctoring:reviewacrosscourses', context_system::instance());
 // The review queue - holds waiting for a decision, oldest first - is what opens by default.
 if ($view === '') {
     $view = $canviewheld ? 'held' : 'attempts';

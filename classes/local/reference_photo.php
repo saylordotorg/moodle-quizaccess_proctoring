@@ -84,18 +84,38 @@ class reference_photo {
 
         // Every reset closes the student's open request, so the queue cannot show work that is
         // already done, and tells the student: without the notice, Student Affairs had to reach
-        // out by hand to close the loop (CPIT-476, Stephanie).
-        $open = self::open_request($userid);
-        if ($open) {
-            $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
-                'id' => (int)$open->id,
-                'status' => self::REQUEST_RESET,
-                'decidedby' => (int)$USER->id,
-                'timedecided' => time(),
-            ]);
+        // out by hand to close the loop (CPIT-476, Stephanie). The close runs under the same
+        // per-student lock as declines, so a decline racing this reset cannot reopen the outcome
+        // and tell the student their deleted photo still stands (Codex review).
+        $decisionlock = self::decision_lock($userid);
+        if ($decisionlock) {
+            try {
+                $open = self::open_request($userid);
+                if ($open) {
+                    $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
+                        'id' => (int)$open->id,
+                        'status' => self::REQUEST_RESET,
+                        'decidedby' => (int)$USER->id,
+                        'timedecided' => time(),
+                    ]);
+                }
+            } finally {
+                $decisionlock->release();
+            }
         }
         self::notify_student($userid, true);
         return true;
+    }
+
+    /**
+     * The per-student lock serializing request creation and decisions (reset, decline).
+     *
+     * @param int $userid Student the request belongs to.
+     * @return \core\lock\lock|false The held lock, or false when it could not be taken in time.
+     */
+    private static function decision_lock(int $userid) {
+        $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring_resetrequest');
+        return $factory->get_lock('user' . $userid, 10);
     }
 
     /**
@@ -120,7 +140,7 @@ class reference_photo {
      */
     public static function open_requests(): array {
         global $DB;
-        $userfields = \core_user\fields::for_name()->get_sql('u', false, '', '', false)->selects;
+        $userfields = \core_user\fields::for_name()->get_sql('u')->selects;
         return $DB->get_records_sql(
             "SELECT r.*, u.email{$userfields}
                FROM {quizaccess_proctoring_ref_requests} r
@@ -141,15 +161,29 @@ class reference_photo {
     public static function decline_request(int $requestid, int $reviewerid): bool {
         global $DB;
         $request = $DB->get_record('quizaccess_proctoring_ref_requests', ['id' => $requestid]);
-        if (!$request || (int)$request->status !== self::REQUEST_OPEN) {
+        if (!$request) {
             return false;
         }
-        $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
-            'id' => $requestid,
-            'status' => self::REQUEST_DECLINED,
-            'decidedby' => $reviewerid,
-            'timedecided' => time(),
-        ]);
+        // Recheck under the per-student decision lock: a decline must not overwrite a reset that
+        // another reviewer completed between the queue page loading and this click (Codex review).
+        $lock = self::decision_lock((int)$request->userid);
+        if (!$lock) {
+            return false;
+        }
+        try {
+            $request = $DB->get_record('quizaccess_proctoring_ref_requests', ['id' => $requestid]);
+            if (!$request || (int)$request->status !== self::REQUEST_OPEN) {
+                return false;
+            }
+            $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
+                'id' => $requestid,
+                'status' => self::REQUEST_DECLINED,
+                'decidedby' => $reviewerid,
+                'timedecided' => time(),
+            ]);
+        } finally {
+            $lock->release();
+        }
         self::notify_student((int)$request->userid, false);
         return true;
     }
@@ -217,8 +251,7 @@ class reference_photo {
 
         // The open request is claimed under a lock before anyone is notified, so two sessions
         // submitting at once send one request, not two (PR #46 review).
-        $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring_resetrequest');
-        $lock = $factory->get_lock('user' . $userid, 10);
+        $lock = self::decision_lock($userid);
         if (!$lock) {
             return -1;
         }
