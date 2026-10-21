@@ -2564,60 +2564,132 @@ function quizaccess_proctoring_certificate_state(
  *         (no attempt, no grade yet, or no pass grade configured) - callers keep the plain label.
  */
 function quizaccess_proctoring_certificate_at_stake(int $courseid, int $userid, int $attemptid): ?bool {
-    global $CFG, $DB;
-
     if ($attemptid <= 0) {
         return null;
     }
+    $map = quizaccess_proctoring_certificates_at_stake([$attemptid => $userid]);
+    return $map[$attemptid] ?? null;
+}
+
+/**
+ * Bulk form of {@see quizaccess_proctoring_certificate_at_stake()} (PR #81 review).
+ *
+ * The Held certificates dashboard resolves every candidate hold before paginating - up to
+ * thousands of rows - so the lookups run as four set-based queries for the whole batch instead
+ * of four per attempt.
+ *
+ * @param array $userbyattempt Map of attemptid => expected userid.
+ * @return array Map of attemptid => bool|null (see the single-attempt helper).
+ */
+function quizaccess_proctoring_certificates_at_stake(array $userbyattempt): array {
+    global $CFG, $DB;
+
+    $results = [];
+    $ids = [];
+    foreach ($userbyattempt as $attemptid => $userid) {
+        $results[(int)$attemptid] = null;
+        if ((int)$attemptid > 0) {
+            $ids[] = (int)$attemptid;
+        }
+    }
+    if (!$ids) {
+        return $results;
+    }
+
     try {
         require_once($CFG->dirroot . '/mod/quiz/locallib.php');
-        $attempt = $DB->get_record('quiz_attempts', ['id' => $attemptid], 'id, quiz, userid, sumgrades');
-        if (!$attempt || (int)$attempt->userid !== $userid || $attempt->sumgrades === null) {
-            return null;
-        }
-        // With other finished attempts, the quiz's aggregate grade - not this attempt's - decides
-        // the certificate, and under averaging the hold's outcome can swing it across the pass
-        // grade. Only when this is the student's sole finished attempt does every grading method
-        // agree with the attempt itself; otherwise the plain label stands (Codex review).
-        $others = $DB->count_records_select(
+
+        [$insql, $params] = $DB->get_in_or_equal($ids, SQL_PARAMS_NAMED, 'casatt');
+        $attempts = $DB->get_records_select(
             'quiz_attempts',
-            "quiz = :quiz AND userid = :userid AND preview = 0 AND state = 'finished' AND id <> :id",
-            ['quiz' => (int)$attempt->quiz, 'userid' => $userid, 'id' => $attemptid]
+            "id {$insql}",
+            $params,
+            '',
+            'id, quiz, userid, state, preview, sumgrades'
         );
-        if ($others > 0) {
-            return null;
+        if (!$attempts) {
+            return $results;
         }
-        $quiz = $DB->get_record('quiz', ['id' => (int)$attempt->quiz], 'id, course, grade, sumgrades, decimalpoints');
-        if (!$quiz) {
-            return null;
+
+        $quizids = array_values(array_unique(array_map(static fn($a) => (int)$a->quiz, $attempts)));
+        $userids = array_values(array_unique(array_map(static fn($a) => (int)$a->userid, $attempts)));
+
+        // Finished non-preview attempt counts per (quiz, user) pair. The superset over the two id
+        // lists is fine: each pair's count is still that pair's own.
+        [$qsql, $qparams] = $DB->get_in_or_equal($quizids, SQL_PARAMS_NAMED, 'casqz');
+        [$usql, $uparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'casur');
+        $counts = [];
+        $rs = $DB->get_recordset_sql(
+            "SELECT quiz, userid, COUNT(id) AS cnt
+               FROM {quiz_attempts}
+              WHERE quiz {$qsql} AND userid {$usql} AND preview = 0 AND state = 'finished'
+           GROUP BY quiz, userid",
+            $qparams + $uparams
+        );
+        foreach ($rs as $row) {
+            $counts[(int)$row->quiz . '-' . (int)$row->userid] = (int)$row->cnt;
         }
-        $gradeitem = $DB->get_record('grade_items', [
-            'itemtype' => 'mod',
-            'itemmodule' => 'quiz',
-            'iteminstance' => (int)$quiz->id,
-            'courseid' => (int)$quiz->course,
-        ], 'id, gradepass, multfactor, plusfactor');
-        $gradepass = $gradeitem ? (float)$gradeitem->gradepass : 0.0;
-        if ($gradepass <= 0) {
-            return null;
+        $rs->close();
+
+        $quizzes = $DB->get_records_list('quiz', 'id', $quizids, '', 'id, course, grade, sumgrades, decimalpoints');
+
+        // The main quiz grade item only (itemnumber 0): an auxiliary module item would otherwise
+        // be able to supply its own pass mark or adjustments (PR #81 review).
+        $gradeitems = [];
+        $rs = $DB->get_recordset_select(
+            'grade_items',
+            "itemtype = 'mod' AND itemmodule = 'quiz' AND itemnumber = 0 AND iteminstance {$qsql}",
+            $qparams,
+            '',
+            'id, iteminstance, gradepass, multfactor, plusfactor'
+        );
+        foreach ($rs as $item) {
+            $gradeitems[(int)$item->iteminstance] = $item;
         }
-        // A gradebook multiplicator or offset changes the final grade Moodle compares with the
-        // pass grade; the raw rescaled mark no longer decides it, so the plain label stands
-        // (Codex review).
-        if (abs((float)$gradeitem->multfactor - 1.0) > 1.0E-7 || abs((float)$gradeitem->plusfactor) > 1.0E-7) {
-            return null;
+        $rs->close();
+
+        foreach ($attempts as $attempt) {
+            $attemptid = (int)$attempt->id;
+            if ((int)$attempt->userid !== (int)($userbyattempt[$attemptid] ?? 0) || $attempt->sumgrades === null) {
+                continue;
+            }
+            // With other finished attempts, the quiz's aggregate grade - not this attempt's -
+            // decides the certificate, and under averaging the hold's outcome can swing it across
+            // the pass grade. Only when this is the student's sole finished attempt does every
+            // grading method agree with the attempt itself (Codex review).
+            $pairtotal = $counts[(int)$attempt->quiz . '-' . (int)$attempt->userid] ?? 0;
+            $isfinished = (string)$attempt->state === 'finished' && (int)$attempt->preview === 0;
+            if ($pairtotal - ($isfinished ? 1 : 0) > 0) {
+                continue;
+            }
+            $quiz = $quizzes[(int)$attempt->quiz] ?? null;
+            $gradeitem = $gradeitems[(int)$attempt->quiz] ?? null;
+            if (!$quiz || !$gradeitem) {
+                continue;
+            }
+            $gradepass = (float)$gradeitem->gradepass;
+            if ($gradepass <= 0) {
+                continue;
+            }
+            // A gradebook multiplicator or offset changes the final grade Moodle compares with
+            // the pass grade; the raw rescaled mark no longer decides it (Codex review).
+            if (abs((float)$gradeitem->multfactor - 1.0) > 1.0E-7 || abs((float)$gradeitem->plusfactor) > 1.0E-7) {
+                continue;
+            }
+            $grade = quiz_rescale_grade($attempt->sumgrades, $quiz, false);
+            if ($grade === null) {
+                continue;
+            }
+            // Compare at Moodle's stored grade precision (five decimals): a boundary mark such as
+            // 2/3 of 100 rounds up to the stored 66.66667 and passes, keeping the plain label.
+            $results[$attemptid] = round((float)$grade, 5) >= round($gradepass, 5);
         }
-        $grade = quiz_rescale_grade($attempt->sumgrades, $quiz, false);
-        if ($grade === null) {
-            return null;
-        }
-        // Compare at Moodle's stored grade precision (five decimals): a boundary mark such as 2/3
-        // of 100 rounds up to the stored 66.66667 and passes, and must keep the plain label.
-        return round((float)$grade, 5) >= round($gradepass, 5);
     } catch (\Throwable $e) {
-        // Unknown beats wrong: any lookup failure keeps the plain label.
-        return null;
+        // Unknown beats wrong: any lookup failure keeps the plain label for the whole batch.
+        return array_fill_keys(array_keys($results), null);
     }
+
+    return $results;
 }
 
 /**
@@ -2638,6 +2710,9 @@ function quizaccess_proctoring_certificate_at_stake(int $courseid, int $userid, 
  * @param int $userid User id.
  * @param int $attemptid Quiz attempt id (0 when not known; falls back to the report id).
  * @param int $reportid Proctoring report id (used when the attempt id is unknown).
+ * @param array|null $precomputed Optional precomputed inputs for bulk callers: key 'atstake'
+ *        (bool|null, from {@see quizaccess_proctoring_certificates_at_stake()}) skips the
+ *        per-attempt lookups.
  * @return array{state:string,atstake:bool,label:string,class:string} Resolved certificate state,
  *         whether a certificate hangs on the review, label and CSS class. A held or withheld
  *         attempt below the quiz's pass grade reads "no certificate at stake" (CPIT-463).
@@ -2647,7 +2722,8 @@ function quizaccess_proctoring_resolve_certificate_label(
     int $cmid,
     int $userid,
     int $attemptid,
-    int $reportid
+    int $reportid,
+    ?array $precomputed = null
 ): array {
     global $DB;
 
@@ -2719,9 +2795,15 @@ function quizaccess_proctoring_resolve_certificate_label(
     // "certificate held/withheld" (CPIT-463, Stephanie). A conflict is left alone - there a
     // certificate demonstrably went out and needs revoking.
     $atstake = true;
-    if (in_array($state, ['held', 'withheld'], true)
-            && quizaccess_proctoring_certificate_at_stake($courseid, $userid, $attemptid) === false) {
-        $atstake = false;
+    if (in_array($state, ['held', 'withheld'], true)) {
+        // A bulk caller (the Held certificates dashboard) precomputes the tri-state for every row
+        // in four set-based queries and hands it in, instead of four queries per row (PR #81).
+        $stake = $precomputed !== null && array_key_exists('atstake', $precomputed)
+            ? $precomputed['atstake']
+            : quizaccess_proctoring_certificate_at_stake($courseid, $userid, $attemptid);
+        if ($stake === false) {
+            $atstake = false;
+        }
     }
 
     return [

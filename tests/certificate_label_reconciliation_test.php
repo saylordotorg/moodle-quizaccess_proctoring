@@ -170,7 +170,7 @@ final class certificate_label_reconciliation_test extends advanced_testcase {
                 'reviewerid' => 0,
                 'timecreated' => $now - 100,
                 'timemodified' => $now - 100,
-                'timereviewed' => null,
+                'timereviewed' => 0,
                 'autoreleaseblockedscore' => 0,
                 'autoreleaseblockedreason' => null,
             ]);
