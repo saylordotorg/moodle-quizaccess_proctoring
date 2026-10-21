@@ -1191,6 +1191,16 @@ final class overall_report {
         // Keep only attempts whose certificate label currently resolves to "held". The resolver
         // reconciles the live hold + gradebook state, so a released/graded attempt is excluded even
         // if a stale hold row remains.
+        // Every candidate is resolved before pagination, so the certificate-at-stake tri-state is
+        // precomputed for the whole batch in four set-based queries rather than four per row
+        // (PR #81 review).
+        $stakeinputs = [];
+        foreach ($holds as $hold) {
+            if ((int)$hold->attemptid > 0) {
+                $stakeinputs[(int)$hold->attemptid] = (int)$hold->userid;
+            }
+        }
+        $stakes = quizaccess_proctoring_certificates_at_stake($stakeinputs);
         $held = [];
         foreach ($holds as $hold) {
             $cert = quizaccess_proctoring_resolve_certificate_label(
@@ -1198,7 +1208,8 @@ final class overall_report {
                 (int)$hold->quizid,
                 (int)$hold->userid,
                 (int)$hold->attemptid,
-                (int)$hold->reportid
+                (int)$hold->reportid,
+                ['atstake' => $stakes[(int)$hold->attemptid] ?? null]
             );
             // A hold whose certificate went out anyway ('conflict') still needs action, more
             // urgently than a plain hold: a decision if it is active, a revocation if it is not.
@@ -1219,6 +1230,14 @@ final class overall_report {
                 'cert' => $cert,
             ];
         }
+
+        // Attempts whose grade is below the quiz's pass grade earn no certificate whatever the
+        // review decides: they stay reviewable, but group after the holds a certificate actually
+        // hangs on, oldest first within each group (CPIT-463, Stephanie).
+        $held = array_merge(
+            array_values(array_filter($held, static fn($row) => !empty($row['cert']['atstake']))),
+            array_values(array_filter($held, static fn($row) => empty($row['cert']['atstake'])))
+        );
 
         // Paginate the filtered set (already oldest-first from the query order).
         $total = count($held);

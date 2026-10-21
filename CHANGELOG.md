@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.39 — 2026-10-21
+- **A held failing attempt says what is actually at stake (CPIT-463).** An attempt scoring below the quiz's pass grade earns no certificate whatever the review decides, yet its hold read "Review required — grade/certificate held" like every other — Student Affairs flagged the mislabel while testing. Such attempts now read "Grade withheld — no certificate at stake" on the per-quiz report, the attempt panel and the Held certificates dashboard, and the dashboard groups them after the holds a certificate actually hangs on. The review machinery itself is unchanged: they are held, reviewed and released exactly as before.
+
 # v1.12.38 — 2026-10-21
 - **Screen sharing ends when the exam does (CPIT-508).** The persistent helper window that keeps the screen share alive across quiz pages never learned the exam was over, so students had to find the browser's own "stop sharing" control after submitting — and most reasonably assumed submission ended it. The pages after submission now tell the helper the attempt is finished: it stops the share, says the exam has been submitted, and closes itself. The helper knows which attempt it serves (every attempt page claims it, a preflight included), so a shutdown can neither miss a redirect flow nor end the next attempt’s share.
 

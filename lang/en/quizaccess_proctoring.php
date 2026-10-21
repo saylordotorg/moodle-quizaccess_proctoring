@@ -123,6 +123,7 @@ $string['captchamode_enabled'] = 'Require CAPTCHA before new attempts';
 $string['captchamode_help'] = 'Controls whether students must complete the selected CAPTCHA provider before starting a new proctored quiz attempt. Inherit uses the site-wide Saylor Proctored Quiz setting.';
 $string['captchamode_inherit'] = 'Use site default';
 $string['certificatestate:conflict'] = 'Certificate issued despite the hold - revoke it';
+$string['certificatestate:nocertatstake'] = 'Grade withheld - no certificate at stake';
 $string['certificatestate:held'] = 'Review required - grade/certificate held';
 $string['certificatestate:issued'] = 'Certificate issued';
 $string['certificatestate:released'] = 'Review released - grade restored';
