@@ -115,7 +115,7 @@ class reference_photo {
         } finally {
             $decisionlock->release();
         }
-        self::notify_student($userid, true);
+        self::notify_student($userid, 'done');
         return true;
     }
 
@@ -140,28 +140,53 @@ class reference_photo {
      * @param int $userid Student whose photo was deleted.
      */
     public static function note_photo_deleted(int $userid): void {
+        if (self::close_open_request($userid, 0)) {
+            self::notify_student($userid, 'done');
+        }
+    }
+
+    /**
+     * Staff replaced the photo: the open request is answered, not waiting (Codex review).
+     *
+     * Without this, the stale queue row could be approved later and delete the replacement the
+     * staff member just uploaded. Call it after releasing the reference lock.
+     *
+     * @param int $userid Student whose photo was replaced.
+     * @param int $decidedby Staff member who uploaded the replacement.
+     */
+    public static function note_photo_replaced(int $userid, int $decidedby): void {
+        if (self::close_open_request($userid, $decidedby)) {
+            self::notify_student($userid, 'replaced');
+        }
+    }
+
+    /**
+     * Close the student's open request as answered, under the decision lock.
+     *
+     * @param int $userid Student.
+     * @param int $decidedby Who answered it; 0 for automatic retirement.
+     * @return bool True when an open request was closed.
+     */
+    private static function close_open_request(int $userid, int $decidedby): bool {
         global $DB;
         $lock = self::decision_lock($userid);
         if (!$lock) {
-            return;
+            return false;
         }
-        $closed = false;
         try {
             $open = self::open_request($userid);
-            if ($open) {
-                $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
-                    'id' => (int)$open->id,
-                    'status' => self::REQUEST_RESET,
-                    'decidedby' => 0,
-                    'timedecided' => time(),
-                ]);
-                $closed = true;
+            if (!$open) {
+                return false;
             }
+            $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
+                'id' => (int)$open->id,
+                'status' => self::REQUEST_RESET,
+                'decidedby' => $decidedby,
+                'timedecided' => time(),
+            ]);
+            return true;
         } finally {
             $lock->release();
-        }
-        if ($closed) {
-            self::notify_student($userid, true);
         }
     }
 
@@ -231,7 +256,7 @@ class reference_photo {
         } finally {
             $lock->release();
         }
-        self::notify_student((int)$request->userid, false);
+        self::notify_student((int)$request->userid, 'declined');
         return true;
     }
 
@@ -242,18 +267,16 @@ class reference_photo {
      * system, not from Student Affairs chasing them by hand.
      *
      * @param int $userid Student.
-     * @param bool $wasreset True when the photo was reset; false when the request was declined.
+     * @param string $outcome One of 'done' (photo reset), 'declined', or 'replaced' (staff upload).
      */
-    private static function notify_student(int $userid, bool $wasreset): void {
+    private static function notify_student(int $userid, string $outcome): void {
         $student = \core_user::get_user($userid);
         if (!$student || $student->deleted) {
             return;
         }
         $a = (object)['contact' => support_contact::address()];
-        $subject = get_string($wasreset ? 'referencereset:donesubject' : 'referencereset:declinedsubject',
-            'quizaccess_proctoring');
-        $body = get_string($wasreset ? 'referencereset:donebody' : 'referencereset:declinedbody',
-            'quizaccess_proctoring', $a);
+        $subject = get_string("referencereset:{$outcome}subject", 'quizaccess_proctoring');
+        $body = get_string("referencereset:{$outcome}body", 'quizaccess_proctoring', $a);
         $message = new \core\message\message();
         $message->component = 'quizaccess_proctoring';
         $message->name = 'referencereset';

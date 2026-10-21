@@ -165,6 +165,9 @@ if ($mform->is_cancelled()) {
             $DB->insert_record('quizaccess_proctoring_face_images', $facetablerecord);
         }
         $referencelock->release();
+        // The upload answers any open reset request: left open, the stale queue row could be
+        // approved later and delete this replacement (CPIT-476, Codex review).
+        \quizaccess_proctoring\local\reference_photo::note_photo_replaced((int)$userid, (int)$USER->id);
         redirect(
             $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/userslist.php',
             get_string('image_updated', 'quizaccess_proctoring'),
@@ -200,6 +203,8 @@ if ($mform->is_cancelled()) {
             $DB->insert_record('quizaccess_proctoring_face_images', $facetablerecord);
         }
         $referencelock->release();
+        // Same as above: a fresh staff upload answers the open request, if any.
+        \quizaccess_proctoring\local\reference_photo::note_photo_replaced((int)$userid, (int)$USER->id);
         redirect(
             $CFG->wwwroot . '/mod/quiz/accessrule/proctoring/userslist.php',
             get_string('image_updated', 'quizaccess_proctoring'),

@@ -192,6 +192,43 @@ final class reference_photo_test extends advanced_testcase {
     }
 
     /**
+     * A staff photo upload answers the open request, so its stale queue row cannot be approved
+     * later and delete the replacement (Codex review).
+     */
+    public function test_staff_replacement_closes_the_open_request(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $student = $this->getDataGenerator()->create_user();
+        $staff = $this->getDataGenerator()->create_user();
+        $this->photo((int)$student->id);
+        $this->setUser($student);
+        $messages = $this->redirectMessages();
+        reference_photo::request_reset((int)$student->id, 'Blurry');
+        $messages->close();
+        $open = reference_photo::open_request((int)$student->id);
+
+        $this->setUser($staff);
+        $messages = $this->redirectMessages();
+        reference_photo::note_photo_replaced((int)$student->id, (int)$staff->id);
+        $delivered = $messages->get_messages();
+        $messages->close();
+
+        $row = $DB->get_record('quizaccess_proctoring_ref_requests', ['id' => (int)$open->id]);
+        $this->assertEquals(reference_photo::REQUEST_RESET, (int)$row->status);
+        $this->assertSame((int)$staff->id, (int)$row->decidedby);
+        $this->assertNull(reference_photo::open_request((int)$student->id));
+        $this->assertCount(1, $delivered);
+        $this->assertSame(get_string('referencereset:replacedsubject', 'quizaccess_proctoring'),
+            $delivered[0]->subject);
+
+        // With nothing open, a replacement notifies nobody.
+        $messages = $this->redirectMessages();
+        reference_photo::note_photo_replaced((int)$student->id, (int)$staff->id);
+        $this->assertCount(0, $messages->get_messages());
+        $messages->close();
+    }
+
+    /**
      * A staff reset answers the open request: the queue cannot show work already done.
      */
     public function test_reset_closes_the_open_request(): void {

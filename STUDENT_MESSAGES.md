@@ -160,6 +160,8 @@ Generated from `lang/en/quizaccess_proctoring.php`; `{$a}` and `{$a->...}` are f
 | `referencereset:declinedsubject` | Your proctoring photo request was reviewed |
 | `referencereset:donebody` | *Notification (popup + email) when the photo is reset, requested or not:* Your proctoring reference photo has been reset. You will take a new photo at the start of your next proctored exam. Questions? Contact {email}. |
 | `referencereset:donesubject` | Your proctoring photo has been reset |
+| `referencereset:replacedbody` | *Notification (popup + email) when a staff upload replaces the photo while a reset request is open:* Student Affairs uploaded a new proctoring reference photo for you, which closes your reset request. It will be used at your next proctored exam. Questions? Contact {email}. |
+| `referencereset:replacedsubject` | Your proctoring photo has been updated |
 | `referencereset:button` | Reset reference photo |
 | `referencereset:done` | The reference photo was reset. The student takes a new one at their next proctored exam. |
 | `referencereset:reason` | Reason (recorded in the logs) |
