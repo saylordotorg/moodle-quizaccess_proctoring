@@ -113,6 +113,102 @@ final class certificate_label_reconciliation_test extends advanced_testcase {
     }
 
     /**
+     * A held failing attempt says "no certificate at stake"; a passing one keeps the held label.
+     *
+     * Scenario (CPIT-463, Stephanie): an attempt below the quiz's pass grade earns no certificate
+     * whatever the review decides, so "Review required - grade/certificate held" overstates what
+     * hangs on the decision. The resolver reads the attempt's own grade (the hold only empties
+     * the gradebook) against the quiz's pass grade.
+     */
+    public function test_failing_attempt_reads_no_certificate_at_stake(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $quiz = $this->getDataGenerator()->create_module('quiz', [
+            'course' => $course->id, 'grade' => 10, 'sumgrades' => 10,
+        ]);
+        $cm = get_coursemodule_from_instance('quiz', $quiz->id, $course->id, false, MUST_EXIST);
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id, 'student');
+        // Pass grade 8/10, the Saylor convention Stephanie tested with (80%).
+        $DB->set_field('grade_items', 'gradepass', 8.0, [
+            'itemmodule' => 'quiz', 'iteminstance' => $quiz->id, 'courseid' => $course->id,
+        ]);
+
+        $now = time();
+        $makeattempt = function (int $attemptnumber, int $uniqueid, float $sumgrades) use ($DB, $quiz, $student, $now): int {
+            return (int)$DB->insert_record('quiz_attempts', (object)[
+                'quiz' => $quiz->id,
+                'userid' => $student->id,
+                'attempt' => $attemptnumber,
+                'uniqueid' => $uniqueid,
+                'layout' => '1,0',
+                'currentpage' => 0,
+                'preview' => 0,
+                'state' => 'finished',
+                'timestart' => $now - 600,
+                'timefinish' => $now - 60,
+                'timemodified' => $now,
+                'timemodifiedoffline' => 0,
+                'timecheckstate' => null,
+                'sumgrades' => $sumgrades,
+            ]);
+        };
+        $makehold = function (int $attemptid) use ($DB, $course, $cm, $quiz, $student, $now): void {
+            $DB->insert_record('quizaccess_proctoring_risk_holds', (object)[
+                'courseid' => $course->id,
+                'quizid' => $cm->id,
+                'quizinstance' => $quiz->id,
+                'userid' => $student->id,
+                'attemptid' => $attemptid,
+                'reportid' => 0,
+                'riskscore' => 60,
+                'threshold' => 40,
+                'originalgrade' => null,
+                'status' => QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+                'reviewerid' => 0,
+                'timecreated' => $now - 100,
+                'timemodified' => $now - 100,
+                'timereviewed' => null,
+                'autoreleaseblockedscore' => 0,
+                'autoreleaseblockedreason' => null,
+            ]);
+        };
+
+        // A failing attempt (6/10 against a pass grade of 8): held, but nothing certifiable.
+        $failing = $makeattempt(1, 990001, 6);
+        $makehold($failing);
+        $resolved = quizaccess_proctoring_resolve_certificate_label(
+            (int)$course->id, (int)$cm->id, (int)$student->id, $failing, 0);
+        $this->assertSame('held', $resolved['state']);
+        $this->assertFalse($resolved['atstake']);
+        $this->assertSame(get_string('certificatestate:nocertatstake', 'quizaccess_proctoring'), $resolved['label'],
+            'a held failing attempt must say no certificate is at stake');
+
+        // A passing attempt (9/10) keeps the certificate-held label.
+        $DB->delete_records('quizaccess_proctoring_risk_holds');
+        $passing = $makeattempt(2, 990002, 9);
+        $makehold($passing);
+        $resolved = quizaccess_proctoring_resolve_certificate_label(
+            (int)$course->id, (int)$cm->id, (int)$student->id, $passing, 0);
+        $this->assertSame('held', $resolved['state']);
+        $this->assertTrue($resolved['atstake']);
+        $this->assertSame(quizaccess_proctoring_certificate_state_label('held'), $resolved['label']);
+
+        // No pass grade configured: unknown beats wrong, so the plain label stands.
+        $DB->set_field('grade_items', 'gradepass', 0, [
+            'itemmodule' => 'quiz', 'iteminstance' => $quiz->id, 'courseid' => $course->id,
+        ]);
+        $DB->delete_records('quizaccess_proctoring_risk_holds');
+        $makehold($failing);
+        $resolved = quizaccess_proctoring_resolve_certificate_label(
+            (int)$course->id, (int)$cm->id, (int)$student->id, $failing, 0);
+        $this->assertTrue($resolved['atstake']);
+        $this->assertSame(quizaccess_proctoring_certificate_state_label('held'), $resolved['label']);
+    }
+
+    /**
      * A grade present with no hold on record resolves to 'issued'.
      *
      * Scenario: the attempt was graded and there was never a proctoring hold. The resolver must

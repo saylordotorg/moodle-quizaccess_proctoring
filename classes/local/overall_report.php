@@ -1220,6 +1220,14 @@ final class overall_report {
             ];
         }
 
+        // Attempts whose grade is below the quiz's pass grade earn no certificate whatever the
+        // review decides: they stay reviewable, but group after the holds a certificate actually
+        // hangs on, oldest first within each group (CPIT-463, Stephanie).
+        $held = array_merge(
+            array_values(array_filter($held, static fn($row) => !empty($row['cert']['atstake']))),
+            array_values(array_filter($held, static fn($row) => empty($row['cert']['atstake'])))
+        );
+
         // Paginate the filtered set (already oldest-first from the query order).
         $total = count($held);
         if ($page < 0) {

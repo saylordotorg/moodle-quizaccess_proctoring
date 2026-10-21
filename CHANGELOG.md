@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.39 — 2026-10-21
+- **A held failing attempt says what is actually at stake (CPIT-463).** An attempt scoring below the quiz's pass grade earns no certificate whatever the review decides, yet its hold read "Review required — grade/certificate held" like every other — Student Affairs flagged the mislabel while testing. Such attempts now read "Grade withheld — no certificate at stake" on the per-quiz report, the attempt panel and the Held certificates dashboard, and the dashboard groups them after the holds a certificate actually hangs on. The review machinery itself is unchanged: they are held, reviewed and released exactly as before.
+
 # v1.12.36 — 2026-10-21
 - **The proctoring report speaks the results report's language (CPIT-475).** Student Affairs reads the two side by side, and every difference read as an error. The Summary tab now embeds core's own attempt summary — the very renderer the results page uses — so labels ("Completed", "Duration"), date format, timezone, the Marks row and the grade's percentage can never drift again. The course report follows suit: "Last name" for "Surname", a "Started" column showing the attempt's start exactly as the results report formats it, "Grade/<max>" with the bare grade as the value so exports need no cleanup, "Review attempt" as a button, and Delete rendered last as an outlined danger button instead of sitting between the two review actions. The list exports to CSV from a new Export button, unpaged, through the same row pipeline the screen uses.
 

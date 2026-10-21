@@ -2550,6 +2550,53 @@ function quizaccess_proctoring_certificate_state(
 }
 
 /**
+ * Whether a certificate actually hangs on this attempt's review (CPIT-463, Stephanie).
+ *
+ * An attempt scoring below the quiz's pass grade earns no certificate whatever the review
+ * decides, so labelling its hold "Certificate withheld" is wrong. Compares the attempt's own
+ * grade (quiz_attempts.sumgrades survives the hold; only the gradebook is emptied) against the
+ * quiz's pass grade.
+ *
+ * @param int $courseid Course id.
+ * @param int $userid User id.
+ * @param int $attemptid Quiz attempt id.
+ * @return bool|null True when at/above the pass grade, false when below it, null when unknown
+ *         (no attempt, no grade yet, or no pass grade configured) - callers keep the plain label.
+ */
+function quizaccess_proctoring_certificate_at_stake(int $courseid, int $userid, int $attemptid): ?bool {
+    global $CFG, $DB;
+
+    if ($attemptid <= 0) {
+        return null;
+    }
+    try {
+        require_once($CFG->dirroot . '/mod/quiz/locallib.php');
+        $attempt = $DB->get_record('quiz_attempts', ['id' => $attemptid], 'id, quiz, userid, sumgrades');
+        if (!$attempt || (int)$attempt->userid !== $userid || $attempt->sumgrades === null) {
+            return null;
+        }
+        $quiz = $DB->get_record('quiz', ['id' => (int)$attempt->quiz], 'id, course, grade, sumgrades, decimalpoints');
+        if (!$quiz) {
+            return null;
+        }
+        $gradepass = (float)$DB->get_field('grade_items', 'gradepass', [
+            'itemtype' => 'mod',
+            'itemmodule' => 'quiz',
+            'iteminstance' => (int)$quiz->id,
+            'courseid' => (int)$quiz->course,
+        ]);
+        if ($gradepass <= 0) {
+            return null;
+        }
+        $grade = quiz_rescale_grade($attempt->sumgrades, $quiz, false);
+        return $grade !== null && (float)$grade >= $gradepass;
+    } catch (\Throwable $e) {
+        // Unknown beats wrong: any lookup failure keeps the plain label.
+        return null;
+    }
+}
+
+/**
  * Resolve the certificate label for an attempt from live hold and gradebook state.
  *
  * This is the single wiring point used by the per-quiz report and the cross-course dashboard so
@@ -2567,7 +2614,9 @@ function quizaccess_proctoring_certificate_state(
  * @param int $userid User id.
  * @param int $attemptid Quiz attempt id (0 when not known; falls back to the report id).
  * @param int $reportid Proctoring report id (used when the attempt id is unknown).
- * @return array{state:string,label:string,class:string} Resolved certificate state, label and CSS class.
+ * @return array{state:string,atstake:bool,label:string,class:string} Resolved certificate state,
+ *         whether a certificate hangs on the review, label and CSS class. A held or withheld
+ *         attempt below the quiz's pass grade reads "no certificate at stake" (CPIT-463).
  */
 function quizaccess_proctoring_resolve_certificate_label(
     int $courseid,
@@ -2642,9 +2691,21 @@ function quizaccess_proctoring_resolve_certificate_label(
         $certificateissued
     );
 
+    // A failing attempt's hold withholds a grade nobody would certify anyway: say so instead of
+    // "certificate held/withheld" (CPIT-463, Stephanie). A conflict is left alone - there a
+    // certificate demonstrably went out and needs revoking.
+    $atstake = true;
+    if (in_array($state, ['held', 'withheld'], true)
+            && quizaccess_proctoring_certificate_at_stake($courseid, $userid, $attemptid) === false) {
+        $atstake = false;
+    }
+
     return [
         'state' => $state,
-        'label' => quizaccess_proctoring_certificate_state_label($state),
+        'atstake' => $atstake,
+        'label' => $atstake
+            ? quizaccess_proctoring_certificate_state_label($state)
+            : get_string('certificatestate:nocertatstake', 'quizaccess_proctoring'),
         'class' => quizaccess_proctoring_certificate_state_class($state),
     ];
 }
