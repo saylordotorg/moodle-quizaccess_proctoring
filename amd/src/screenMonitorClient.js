@@ -79,6 +79,34 @@ define([], function() {
                 // The helper is optional; a shutdown failure must not interrupt the review page.
             }
         },
+        /**
+         * Claim the helper for this attempt without monitoring it.
+         *
+         * Used when desktop capture is off, so no full client runs on the attempt pages, but the
+         * preflight may still have opened the helper for the share requirement: without a claim,
+         * a stale preflight page left open behind a quiz popup holds the helper as attempt 0
+         * forever and blocks the finished attempt's shutdown (CPIT-508, Codex review).
+         *
+         * @param {Object} props Setup properties (screenmonitorkey and the attempt id).
+         * @return {Number|null} The interval id keeping the claim fresh, or null when not started.
+         */
+        claim: function(props) {
+            const monitorKey = (props && props.screenmonitorkey) || '';
+            const attemptid = Number(props && (props.screenmonitorattempt || props.status)) || 0;
+            if (!monitorKey || !attemptid || !window.BroadcastChannel) {
+                return null;
+            }
+            try {
+                const channel = new BroadcastChannel('quizaccess_proctoring_screen_' + monitorKey);
+                const send = function() {
+                    channel.postMessage({type: 'status_request', attemptid: attemptid, ts: Date.now()});
+                };
+                send();
+                return window.setInterval(send, 10000);
+            } catch (error) {
+                return null;
+            }
+        },
         create: function(props, callbacks) {
             callbacks = callbacks || {};
 

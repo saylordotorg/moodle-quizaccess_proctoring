@@ -632,6 +632,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let markerCheckTimer = null;
             let screenGateTimer = null;
             let screenMonitorClient = null;
+            let screenClaimTimer = null;
             let latestDesktopFrame = '';
             let latestDesktopTime = 0;
             let multiMonitorLastState = '';
@@ -2081,6 +2082,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
             const initScreenShareGate = function() {
                 if (!captureDesktop || document.getElementById('proctoring-screen-share-gate')) {
+                    // Desktop capture is off, but the preflight may still have opened the helper
+                    // window for the share requirement. Keep claiming it for this attempt, so the
+                    // post-submission shutdown reaches it and a stale preflight page cannot hold
+                    // it open as attempt 0 (CPIT-508, Codex review).
+                    if (!captureDesktop && !screenClaimTimer && props.screenmonitorkey) {
+                        screenClaimTimer = ScreenMonitorClient.claim(props);
+                    }
                     return;
                 }
 
@@ -2812,6 +2820,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 suspend: function() {
                     monitoringActive = false;
                     intervals.forEach(entry => window.clearInterval(entry.id));
+                    if (screenClaimTimer) {
+                        window.clearInterval(screenClaimTimer);
+                        screenClaimTimer = null;
+                    }
                     if (screenGateTimer) {
                         window.clearTimeout(screenGateTimer);
                     }
