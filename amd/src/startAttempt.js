@@ -3683,12 +3683,35 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     pendingConfirmCapture = null;
                     hideReferenceConfirm();
                     // A first-time student gets a moment to settle before their reference photo is
-                    // taken (CPIT-476).
+                    // taken (CPIT-476). The count is a large overlay on the camera box itself:
+                    // as small text under the box, testers took ten exams before noticing it.
                     const registrationInput = document.getElementById('faceregistrationneeded');
                     if (registrationInput && registrationInput.value === '1') {
+                        const video = document.getElementById('video');
+                        let overlay = null;
+                        if (video && video.parentNode) {
+                            overlay = document.createElement('div');
+                            overlay.setAttribute('aria-hidden', 'true');
+                            overlay.style.cssText = 'position:absolute;inset:0;display:flex;' +
+                                'align-items:center;justify-content:center;font-size:96px;' +
+                                'font-weight:700;color:#fff;background:rgba(0,0,0,0.45);' +
+                                'text-shadow:0 2px 8px rgba(0,0,0,0.8);pointer-events:none;z-index:5;';
+                            const host = video.parentNode;
+                            if (window.getComputedStyle(host).position === 'static') {
+                                host.style.position = 'relative';
+                            }
+                            host.appendChild(overlay);
+                        }
                         for (let second = 3; second > 0; second--) {
+                            // The text line stays for screen readers and as a fallback.
                             $("#face_validation_result").text(`${strings.referencecountdown} ${second}`);
+                            if (overlay) {
+                                overlay.textContent = String(second);
+                            }
                             await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
+                        if (overlay) {
+                            overlay.remove();
                         }
                     }
                     const photo = document.getElementById('photo');

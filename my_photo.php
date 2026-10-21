@@ -44,9 +44,13 @@ $hasphoto = reference_photo::exists((int)$USER->id);
 if (optional_param('action', '', PARAM_ALPHA) === 'request') {
     require_sesskey();
     if ($hasphoto && reference_photo::can_request((int)$USER->id)) {
-        reference_photo::request_reset((int)$USER->id, optional_param('reason', '', PARAM_TEXT));
-        redirect($url, get_string('myphoto:requestsent', 'quizaccess_proctoring'), null,
-            \core\output\notification::NOTIFY_SUCCESS);
+        // -1 means no request was created: one is already open, or the photo was reset while this
+        // page sat open. The reloaded page shows the real state either way (Codex review).
+        $sent = reference_photo::request_reset((int)$USER->id, optional_param('reason', '', PARAM_TEXT));
+        if ($sent >= 0) {
+            redirect($url, get_string('myphoto:requestsent', 'quizaccess_proctoring'), null,
+                \core\output\notification::NOTIFY_SUCCESS);
+        }
     }
     redirect($url);
 }
@@ -65,9 +69,23 @@ if (!$photourl) {
 echo html_writer::empty_tag('img', [
     'src' => $photourl,
     'alt' => get_string('myphoto:title', 'quizaccess_proctoring'),
-    'class' => 'img-thumbnail mb-3 d-block',
-    'width' => 320,
+    // At the size the matching actually uses, not a blow-up of a webcam frame (CPIT-476).
+    'class' => 'img-thumbnail mb-2 d-block',
+    'width' => 200,
 ]);
+// When the photo was taken, from the stored file itself: the retention line below means little
+// without it (CPIT-476, Stephanie).
+$takenon = 0;
+$fs = get_file_storage();
+$files = $fs->get_area_files(context_system::instance()->id, 'quizaccess_proctoring', 'user_photo',
+    (int)$USER->id, 'timecreated DESC', false);
+if ($files) {
+    $takenon = (int)reset($files)->get_timecreated();
+}
+if ($takenon > 0) {
+    echo html_writer::tag('p', get_string('myphoto:takenon', 'quizaccess_proctoring',
+        userdate($takenon)), ['class' => 'text-muted mb-1']);
+}
 $days = (int)get_config('quizaccess_proctoring', 'referenceretentiondays');
 if ($days > 0) {
     echo html_writer::tag('p', get_string('privacynotice:retentionreference', 'quizaccess_proctoring', $days),
@@ -75,9 +93,18 @@ if ($days > 0) {
 }
 
 echo $OUTPUT->heading(get_string('myphoto:requestheading', 'quizaccess_proctoring'), 3);
-if (!reference_photo::can_request((int)$USER->id)) {
-    echo $OUTPUT->notification(get_string('myphoto:requestpending', 'quizaccess_proctoring'),
-        \core\output\notification::NOTIFY_INFO);
+$openrequest = reference_photo::open_request((int)$USER->id);
+if ($openrequest) {
+    // Rendered page state, not a dismissible banner: the confirmation of a pending request must
+    // survive an accidental click on an alert's close button (CPIT-476, Stephanie).
+    echo html_writer::div(
+        html_writer::tag('p', get_string('myphoto:requestpendingsince', 'quizaccess_proctoring',
+            userdate((int)$openrequest->timecreated)), ['class' => 'mb-1 font-weight-bold fw-bold'])
+        . html_writer::tag('p', get_string('myphoto:requestturnaround', 'quizaccess_proctoring'), ['class' => 'mb-1'])
+        . html_writer::tag('p', get_string('myphoto:requestcontact', 'quizaccess_proctoring',
+            \quizaccess_proctoring\local\support_contact::address()), ['class' => 'mb-0']),
+        'card card-body bg-light mb-3'
+    );
 } else {
     echo html_writer::tag('p', get_string('myphoto:requestintro', 'quizaccess_proctoring'));
     echo html_writer::start_tag('form', ['method' => 'post', 'action' => $url->out(false)]);

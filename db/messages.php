@@ -41,6 +41,14 @@ $messageproviders = [
             'email' => MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
         ],
     ],
+    // Tells a student how their reference-photo reset request ended, or that staff reset their
+    // photo: without it, Student Affairs had to close the loop by hand (CPIT-476).
+    'referencereset' => [
+        'defaults' => [
+            'popup' => MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
+            'email' => MESSAGE_PERMITTED + MESSAGE_DEFAULT_ENABLED,
+        ],
+    ],
     // Tells proctoring reviewers that a student asked for a new reference photo (CPIT-476).
     'referenceresetrequest' => [
         'capability' => 'quizaccess/proctoring:reviewacrosscourses',

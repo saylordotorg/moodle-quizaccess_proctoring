@@ -67,6 +67,7 @@ $config = [
         'playbackfailed' => get_string('screenmonitor:playbackfailed', 'quizaccess_proctoring'),
         'noframes' => get_string('screenmonitor:noframes', 'quizaccess_proctoring'),
         'entirescreenrequired' => get_string('entirescreenrequired', 'quizaccess_proctoring'),
+        'finished' => get_string('screenmonitor:finished', 'quizaccess_proctoring'),
     ],
 ];
 
@@ -103,6 +104,9 @@ $js = <<<JS
     let canvas = null;
     let ready = false;
     let stopped = true;
+    let claimedattempt = 0;
+    let lastzeroclaimts = 0;
+    let lastzeropageload = 0;
     let markerVisible = false;
     let lastMarkerSeen = 0;
     let lastMarkerMissingMessage = 0;
@@ -648,7 +652,53 @@ $js = <<<JS
                 return;
             }
             const message = event.data || {};
+            if (message.type === 'shutdown') {
+                // The exam was submitted: end the share and close this window, instead of leaving
+                // the student to find the browser's own "stop sharing" control (CPIT-508). Only
+                // while this helper still serves that attempt: another running attempt's claim,
+                // or a preflight actively polling for the next attempt, keeps the share alive. A
+                // helper claimed by a configuration that never polls from attempt pages, or one
+                // that never heard a claim at all, still shuts down.
+                const target = Number(message.attemptid) || 0;
+                // Only a newer attempt's claim outranks the shutdown: a claim left by an older,
+                // already-submitted attempt's stale tab must not keep the share alive.
+                if (claimedattempt > 0 && target && claimedattempt > target) {
+                    return;
+                }
+                // A preflight that is polling right now and whose page loaded after the finished
+                // attempt started is preparing the next attempt: it keeps the helper, even before
+                // its share is ready (the screen picker may still be open). One left open since
+                // before the attempt started is stale and does not. The attempt's start is
+                // reconstructed from its age, a duration, so clock skew cancels out.
+                const attemptstarted = Date.now() - (Number(message.attemptagems) || 0);
+                if (lastzeroclaimts && (Date.now() - lastzeroclaimts) < 15000
+                        && lastzeropageload && lastzeropageload > attemptstarted) {
+                    return;
+                }
+                pageActive = false;
+                stopStream();
+                window.clearInterval(statusTimer);
+                statusTimer = null;
+                setStatus(config.strings.finished, 'success');
+                window.setTimeout(function() {
+                    window.close();
+                }, 1200);
+                return;
+            }
             if (message.type === 'status_request') {
+                // The poll claims the helper for the polling page's attempt (CPIT-508). Attempt
+                // ids only grow, so the newest attempt heard of holds the helper; a preflight
+                // (attempt 0) does not take ownership, it just records that it is here and when
+                // its page loaded, which is what the shutdown weighs it by.
+                if (typeof message.attemptid !== 'undefined') {
+                    const claim = Number(message.attemptid) || 0;
+                    if (claim > 0) {
+                        claimedattempt = Math.max(claimedattempt, claim);
+                    } else {
+                        lastzeroclaimts = Date.now();
+                        lastzeropageload = Number(message.pageloadts) || 0;
+                    }
+                }
                 // Run a fresh marker check instead of replying from cache: browsers
                 // throttle this hidden window's timers (to as little as once a
                 // minute), so the interval-driven marker state can be long stale by
