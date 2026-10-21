@@ -44,9 +44,13 @@ $hasphoto = reference_photo::exists((int)$USER->id);
 if (optional_param('action', '', PARAM_ALPHA) === 'request') {
     require_sesskey();
     if ($hasphoto && reference_photo::can_request((int)$USER->id)) {
-        reference_photo::request_reset((int)$USER->id, optional_param('reason', '', PARAM_TEXT));
-        redirect($url, get_string('myphoto:requestsent', 'quizaccess_proctoring'), null,
-            \core\output\notification::NOTIFY_SUCCESS);
+        // -1 means no request was created: one is already open, or the photo was reset while this
+        // page sat open. The reloaded page shows the real state either way (Codex review).
+        $sent = reference_photo::request_reset((int)$USER->id, optional_param('reason', '', PARAM_TEXT));
+        if ($sent >= 0) {
+            redirect($url, get_string('myphoto:requestsent', 'quizaccess_proctoring'), null,
+                \core\output\notification::NOTIFY_SUCCESS);
+        }
     }
     redirect($url);
 }

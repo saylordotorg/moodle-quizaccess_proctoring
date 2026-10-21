@@ -146,18 +146,45 @@ class reference_photo {
     }
 
     /**
-     * Staff replaced the photo: the open request is answered, not waiting (Codex review).
+     * Run a staff photo replacement under both locks, then close the open request (Codex review).
      *
-     * Without this, the stale queue row could be approved later and delete the replacement the
-     * staff member just uploaded. Call it after releasing the reference lock.
+     * The decision lock is taken before the reference lock, the order every queue decision uses:
+     * an approval racing this upload either finishes first (the request is closed, the upload
+     * proceeds against the fresh start) or waits until the request is marked answered, so it can
+     * never delete the replacement this upload is saving.
      *
-     * @param int $userid Student whose photo was replaced.
-     * @param int $decidedby Staff member who uploaded the replacement.
+     * @param int $userid Student whose photo is being replaced.
+     * @param int $decidedby Staff member uploading.
+     * @param callable $replace Saves the replacement; runs while both locks are held.
+     * @return bool False when a lock could not be taken, so nothing ran.
      */
-    public static function note_photo_replaced(int $userid, int $decidedby): void {
-        if (self::close_open_request($userid, $decidedby)) {
+    public static function replace_photo(int $userid, int $decidedby, callable $replace): bool {
+        global $CFG;
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+
+        $decisionlock = self::decision_lock($userid);
+        if (!$decisionlock) {
+            return false;
+        }
+        $closed = false;
+        try {
+            $referencelock = quizaccess_proctoring_get_reference_lock($userid);
+            if (!$referencelock) {
+                return false;
+            }
+            try {
+                $replace();
+            } finally {
+                $referencelock->release();
+            }
+            $closed = self::close_open_request_locked($userid, $decidedby);
+        } finally {
+            $decisionlock->release();
+        }
+        if ($closed) {
             self::notify_student($userid, 'replaced');
         }
+        return true;
     }
 
     /**
@@ -168,26 +195,37 @@ class reference_photo {
      * @return bool True when an open request was closed.
      */
     private static function close_open_request(int $userid, int $decidedby): bool {
-        global $DB;
         $lock = self::decision_lock($userid);
         if (!$lock) {
             return false;
         }
         try {
-            $open = self::open_request($userid);
-            if (!$open) {
-                return false;
-            }
-            $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
-                'id' => (int)$open->id,
-                'status' => self::REQUEST_RESET,
-                'decidedby' => $decidedby,
-                'timedecided' => time(),
-            ]);
-            return true;
+            return self::close_open_request_locked($userid, $decidedby);
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * The close itself; the caller holds the student's decision lock.
+     *
+     * @param int $userid Student.
+     * @param int $decidedby Who answered it; 0 for automatic retirement.
+     * @return bool True when an open request was closed.
+     */
+    private static function close_open_request_locked(int $userid, int $decidedby): bool {
+        global $DB;
+        $open = self::open_request($userid);
+        if (!$open) {
+            return false;
+        }
+        $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
+            'id' => (int)$open->id,
+            'status' => self::REQUEST_RESET,
+            'decidedby' => $decidedby,
+            'timedecided' => time(),
+        ]);
+        return true;
     }
 
     /**
@@ -314,7 +352,8 @@ class reference_photo {
      *
      * @param int $userid Student asking.
      * @param string $reason What is wrong with the photo, in the student's words.
-     * @return int Number of reviewers notified; -1 when a request was already sent today.
+     * @return int Number of reviewers notified; -1 when no request was created (one is already
+     *         open, the photo is gone, or the lock was held elsewhere).
      */
     public static function request_reset(int $userid, string $reason): int {
         global $DB;
@@ -327,6 +366,11 @@ class reference_photo {
         }
         try {
             if (!self::can_request($userid)) {
+                return -1;
+            }
+            // Recheck under the lock: a reset landing after the page's own check would leave this
+            // request pending against whatever photo comes next (Codex review).
+            if (!self::exists($userid)) {
                 return -1;
             }
             $DB->insert_record('quizaccess_proctoring_ref_requests', (object)[

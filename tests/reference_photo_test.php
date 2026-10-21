@@ -209,9 +209,12 @@ final class reference_photo_test extends advanced_testcase {
 
         $this->setUser($staff);
         $messages = $this->redirectMessages();
-        reference_photo::note_photo_replaced((int)$student->id, (int)$staff->id);
+        $saved = reference_photo::replace_photo((int)$student->id, (int)$staff->id, function (): void {
+            // The upload itself; it runs while both locks are held.
+        });
         $delivered = $messages->get_messages();
         $messages->close();
+        $this->assertTrue($saved);
 
         $row = $DB->get_record('quizaccess_proctoring_ref_requests', ['id' => (int)$open->id]);
         $this->assertEquals(reference_photo::REQUEST_RESET, (int)$row->status);
@@ -223,7 +226,8 @@ final class reference_photo_test extends advanced_testcase {
 
         // With nothing open, a replacement notifies nobody.
         $messages = $this->redirectMessages();
-        reference_photo::note_photo_replaced((int)$student->id, (int)$staff->id);
+        $this->assertTrue(reference_photo::replace_photo((int)$student->id, (int)$staff->id, function (): void {
+        }));
         $this->assertCount(0, $messages->get_messages());
         $messages->close();
     }
