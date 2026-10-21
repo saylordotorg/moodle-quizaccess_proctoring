@@ -105,6 +105,7 @@ $js = <<<JS
     let ready = false;
     let stopped = true;
     let claimedattempt = null;
+    let maxrealattempt = 0;
     let lastrealclaimts = 0;
     let lastzeroclaimts = 0;
     let shareStartedAt = 0;
@@ -691,11 +692,14 @@ $js = <<<JS
                 // share, and must not wrestle ownership from the attempt actually running.
                 if (typeof message.attemptid !== 'undefined') {
                     const claim = Number(message.attemptid) || 0;
-                    if (claim > 0 && claim >= (claimedattempt || 0)) {
+                    if (claim > 0 && claim >= (claimedattempt || 0)
+                            && !(claimedattempt === 0 && claim <= maxrealattempt)) {
                         // Attempt ids only grow, so a tab left open on an older submitted attempt
                         // keeps polling but can never take the helper back from the attempt that
-                        // superseded it.
+                        // superseded it - nor, once a preflight holds the helper, from that
+                        // preflight: only an attempt newer than any seen before supersedes it.
                         claimedattempt = claim;
+                        maxrealattempt = Math.max(maxrealattempt, claim);
                         lastrealclaimts = Date.now();
                     } else if (claim === 0 && (!claimedattempt || !stream
                             || (shareStartedAt && shareStartedAt > lastrealclaimts))) {

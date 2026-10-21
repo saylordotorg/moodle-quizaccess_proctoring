@@ -92,7 +92,7 @@ define([], function() {
          */
         claim: function(props) {
             const monitorKey = (props && props.screenmonitorkey) || '';
-            const attemptid = Number(props && (props.screenmonitorattempt || props.status)) || 0;
+            const attemptid = Number(props && (props.screenmonitorattempt || props.status || props.attemptid)) || 0;
             if (!monitorKey || !attemptid || !window.BroadcastChannel) {
                 return null;
             }
@@ -140,10 +140,11 @@ define([], function() {
                 }
             };
 
-            // Every status poll claims the helper for this page's attempt (the preflight has no
-            // attempt row yet and claims 0), so a finished attempt's shutdown can tell whether
-            // the helper still serves it or already serves the next attempt (CPIT-508).
-            const claimattempt = Number(props.screenmonitorattempt || props.status) || 0;
+            // Every status poll claims the helper for this page's attempt (a preflight with no
+            // attempt row yet claims 0; one resuming an existing attempt, such as an overdue
+            // attempt in its grace period, claims that attempt), so a finished attempt's shutdown
+            // can tell whether the helper still serves it or the next attempt (CPIT-508).
+            const claimattempt = Number(props.screenmonitorattempt || props.status || props.attemptid) || 0;
 
             const requestStatus = function() {
                 postMessage({
