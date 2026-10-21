@@ -632,7 +632,6 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let markerCheckTimer = null;
             let screenGateTimer = null;
             let screenMonitorClient = null;
-            let screenClaimTimer = null;
             let latestDesktopFrame = '';
             let latestDesktopTime = 0;
             let multiMonitorLastState = '';
@@ -2082,13 +2081,6 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
             const initScreenShareGate = function() {
                 if (!captureDesktop || document.getElementById('proctoring-screen-share-gate')) {
-                    // Desktop capture is off, but the preflight may still have opened the helper
-                    // window for the share requirement. Keep claiming it for this attempt, so the
-                    // post-submission shutdown reaches it and a stale preflight page cannot hold
-                    // it open as attempt 0 (CPIT-508, Codex review).
-                    if (!captureDesktop && !screenClaimTimer && props.screenmonitorkey) {
-                        screenClaimTimer = ScreenMonitorClient.claim(props);
-                    }
                     return;
                 }
 
@@ -2820,10 +2812,6 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 suspend: function() {
                     monitoringActive = false;
                     intervals.forEach(entry => window.clearInterval(entry.id));
-                    if (screenClaimTimer) {
-                        window.clearInterval(screenClaimTimer);
-                        screenClaimTimer = null;
-                    }
                     if (screenGateTimer) {
                         window.clearTimeout(screenGateTimer);
                     }
@@ -2953,6 +2941,15 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 let cameraStream = null;
                 let captureTimer = null;
                 let firstCaptureTimer = null;
+                // The helper window may hold a screen share for this attempt even when no monitor
+                // client runs here (desktop capture off, or no activity monitoring at all): claim
+                // it for this attempt regardless, so the post-submission shutdown reaches it and a
+                // stale preflight page cannot hold it as attempt 0 (CPIT-508, Codex review). The
+                // interval dies with the page; the full client takes over the claiming when
+                // desktop capture is on.
+                if (props.screenmonitorkey && parseInt(props.captureviolationdesktop, 10) !== 1) {
+                    ScreenMonitorClient.claim(props);
+                }
                 if (parseInt(props.monitorbrowseractivity, 10) === 1 ||
                         parseInt(props.blockclipboard, 10) === 1 ||
                         parseInt(props.monitormouseactivity || 0, 10) === 1 ||

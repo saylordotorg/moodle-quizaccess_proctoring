@@ -665,8 +665,9 @@ $js = <<<JS
                 if (claimedattempt > 0 && target && claimedattempt !== target) {
                     return;
                 }
-                if (claimedattempt === 0 && lastzeroclaimts && (Date.now() - lastzeroclaimts) < 15000
-                        && shareStartedAt && shareStartedAt > lastrealclaimts) {
+                // A fresh preflight claim protects the helper even before its share is ready: the
+                // screen picker may still be open when an old attempt's review page loads.
+                if (claimedattempt === 0 && lastzeroclaimts && (Date.now() - lastzeroclaimts) < 15000) {
                     return;
                 }
                 pageActive = false;
@@ -691,7 +692,11 @@ $js = <<<JS
                     if (claim > 0) {
                         claimedattempt = claim;
                         lastrealclaimts = Date.now();
-                    } else if (!claimedattempt || (shareStartedAt && shareStartedAt > lastrealclaimts)) {
+                    } else if (!claimedattempt || !stream || (shareStartedAt && shareStartedAt > lastrealclaimts)) {
+                        // A preflight may take the helper over when no attempt holds it, when no
+                        // share is active (nothing of the old attempt's left to protect, even
+                        // mid-acquisition), or when the current share started after the holding
+                        // attempt's last poll - a fresh share for the next attempt.
                         claimedattempt = 0;
                         lastzeroclaimts = Date.now();
                     }
