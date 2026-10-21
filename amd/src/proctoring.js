@@ -121,31 +121,45 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             });
         });
 
-        /** @var {String|null} The submit controls hideButtons() replaced, for restoreButtons(). */
-        let savedsubmitbuttons = null;
+        /** @var {jQuery|null} The submit controls hideButtons() detached, for restoreButtons(). */
+        let hiddensubmitcontrols = null;
+
+        /** @var {Boolean} Whether the camera check itself disabled the navigation button. */
+        let navdisabledbycamera = false;
 
         /**
          * Function hideButtons
          */
         async function hideButtons() {
             const strings = await loadStrings();
-            $('.mod_quiz-next-nav').prop("disabled", true);
+            const nav = $('.mod_quiz-next-nav');
+            // Claim only what this check itself disables: an upload in progress may have disabled
+            // the button already, and that must survive a later restore (Codex review).
+            if (nav.length && !nav.prop('disabled')) {
+                navdisabledbycamera = true;
+            }
+            nav.prop("disabled", true);
             const submitbtns = $('.submitbtns');
-            if (savedsubmitbuttons === null && submitbtns.length) {
-                savedsubmitbuttons = submitbtns.html();
+            if (hiddensubmitcontrols === null && submitbtns.length) {
+                // Detach the real nodes rather than serializing them: core_form/submit holds
+                // references to these buttons for double-submit protection (Codex review).
+                hiddensubmitcontrols = submitbtns.children().detach();
             }
             submitbtns.html(`<p class="text text-red red">${strings.enablewebcamerabeforesubmitting}</p>`);
         }
 
         /**
-         * Put back what hideButtons() took away, once the camera is working again (CPIT-507).
+         * Put back exactly what hideButtons() took away, once the camera works again (CPIT-507).
          */
         function restoreButtons() {
-            if (savedsubmitbuttons !== null) {
-                $('.submitbtns').html(savedsubmitbuttons);
-                savedsubmitbuttons = null;
+            if (hiddensubmitcontrols !== null) {
+                $('.submitbtns').empty().append(hiddensubmitcontrols);
+                hiddensubmitcontrols = null;
             }
-            $('.mod_quiz-next-nav').prop("disabled", false);
+            if (navdisabledbycamera) {
+                $('.mod_quiz-next-nav').prop("disabled", false);
+                navdisabledbycamera = false;
+            }
         }
 
         const showNotification = (message, type) => {
