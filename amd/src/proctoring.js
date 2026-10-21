@@ -3539,6 +3539,12 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         window.clearInterval(faceBlurTimer);
                         faceBlurTimer = null;
                     }
+                    // A recovery timer surviving into the back-forward cache would race the
+                    // pageshow restart and leave an untracked second capture (Codex review).
+                    if (cameraRecoverTimer) {
+                        window.clearTimeout(cameraRecoverTimer);
+                        cameraRecoverTimer = null;
+                    }
                     if (cameraStream) {
                         cameraStream.getTracks().forEach(track => track.stop());
                         cameraStream = null;
