@@ -229,6 +229,7 @@ class provider implements
                 'userid' => 'privacy:metadata:userid',
                 'reason' => 'privacy:metadata:refrequestreason',
                 'status' => 'privacy:metadata:refrequeststatus',
+                'decidedby' => 'privacy:metadata:reviewerid',
                 'timecreated' => 'privacy:metadata:timecreated',
             ],
             'privacy:metadata:quizaccess_proctoring_ref_requests'
@@ -441,13 +442,14 @@ class provider implements
                  WHERE c.contextlevel = :systemcontext";
         $contextlist->add_from_sql($sql, $systemparams);
 
-        // A reset request can outlive the photo it asked about, so it finds the system context
-        // on its own (CPIT-476).
+        // A reset request can outlive the photo it asked about, so it finds the system context on
+        // its own - for the student who asked and for the reviewer who decided it (CPIT-476).
         $sql = "SELECT DISTINCT c.id
                   FROM {context} c
-                  JOIN {quizaccess_proctoring_ref_requests} qrr ON qrr.userid = :userid
+                  JOIN {quizaccess_proctoring_ref_requests} qrr
+                       ON qrr.userid = :userid OR qrr.decidedby = :decider
                  WHERE c.contextlevel = :systemcontext";
-        $contextlist->add_from_sql($sql, $systemparams);
+        $contextlist->add_from_sql($sql, $systemparams + ['decider' => $userid]);
 
         $fileparams = ['component' => 'quizaccess_proctoring', 'userid' => $userid];
 
@@ -489,6 +491,11 @@ class provider implements
 
             $sql = "SELECT DISTINCT qrr.userid AS userid
                       FROM {quizaccess_proctoring_ref_requests} qrr";
+            $userlist->add_from_sql('userid', $sql, []);
+
+            $sql = "SELECT DISTINCT qrr.decidedby AS userid
+                      FROM {quizaccess_proctoring_ref_requests} qrr
+                     WHERE qrr.decidedby <> 0";
             $userlist->add_from_sql('userid', $sql, []);
 
             $sql = "SELECT DISTINCT f.itemid AS userid
@@ -1020,10 +1027,12 @@ class provider implements
                 }
 
                 // Reset requests outlive the photo they asked about, so they export whether or
-                // not a reference image remains (CPIT-476).
-                $refrequests = $DB->get_records(
+                // not a reference image remains - the student's own requests, and the ones this
+                // user decided as a reviewer (CPIT-476).
+                $refrequests = $DB->get_records_select(
                     'quizaccess_proctoring_ref_requests',
-                    ['userid' => $userid],
+                    'userid = :requester OR decidedby = :decider',
+                    ['requester' => $userid, 'decider' => $userid],
                     'id ASC'
                 );
                 $index = 0;
@@ -1039,6 +1048,7 @@ class provider implements
                         'userid' => $refrequest->userid,
                         'reason' => $refrequest->reason,
                         'status' => $refrequest->status,
+                        'decidedby' => $refrequest->decidedby,
                         'timecreated' => transform::datetime($refrequest->timecreated),
                         'timedecided' => $refrequest->timedecided ? transform::datetime($refrequest->timedecided) : null,
                     ];
@@ -1137,6 +1147,9 @@ class provider implements
         }
         [$insql, $params] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'refrequser');
         $DB->delete_records_select('quizaccess_proctoring_ref_requests', "userid {$insql}", $params);
+        // Keep other students' request history while removing the erased reviewer's attribution,
+        // as risk holds and finding reviews do for reviewerid (Codex review).
+        $DB->set_field_select('quizaccess_proctoring_ref_requests', 'decidedby', 0, "decidedby {$insql}", $params);
     }
 
     /**
@@ -1186,8 +1199,10 @@ class provider implements
         // through, so whatever remains of the user's records is removed directly. Their files went
         // with the deleted context.
         self::delete_remaining_user_records($userid);
-        // The reference photo lives in the system context whether or not it was listed above.
+        // The reference photo lives in the system context whether or not it was listed above, and
+        // the reset-request history goes with the account too (CPIT-476, Codex review).
         self::delete_reference_image_data_for_userids([$userid]);
+        self::delete_reference_requests_for_userids([$userid]);
     }
 
     /**

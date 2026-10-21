@@ -61,47 +61,59 @@ class reference_photo {
      * @param int $userid Student whose photo to reset.
      * @param string $reason Why, as entered by the reviewer.
      * @param \context $context Where the reviewer reset it from.
-     * @return bool False when another change to the photo held the lock, so nothing was reset.
+     * @param int|null $requestid When approving a queue row: the photo is only deleted while that
+     *        request is still open, so a concurrent decline cannot be overridden (Codex review).
+     * @return bool False when a lock was held elsewhere or the named request was already decided,
+     *        so nothing was reset.
      */
-    public static function reset(int $userid, string $reason, \context $context): bool {
+    public static function reset(int $userid, string $reason, \context $context, ?int $requestid = null): bool {
         global $CFG, $DB, $USER;
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
-        $lock = quizaccess_proctoring_get_reference_lock($userid);
-        if (!$lock) {
+        // The per-student decision lock is the outer lock everywhere (requests, declines, resets):
+        // the recheck, the deletion and the request close are one decision, so a decline racing
+        // this reset can neither be overridden nor reopen the outcome (Codex review).
+        $decisionlock = self::decision_lock($userid);
+        if (!$decisionlock) {
             return false;
         }
         try {
-            \quizaccess_proctoring\privacy\provider::delete_reference_photos([$userid]);
-        } finally {
-            $lock->release();
-        }
-        \quizaccess_proctoring\event\reference_photo_reset::create([
-            'context' => $context,
-            'relateduserid' => $userid,
-            'other' => ['reason' => \core_text::substr(trim($reason), 0, 1000)],
-        ])->trigger();
-
-        // Every reset closes the student's open request, so the queue cannot show work that is
-        // already done, and tells the student: without the notice, Student Affairs had to reach
-        // out by hand to close the loop (CPIT-476, Stephanie). The close runs under the same
-        // per-student lock as declines, so a decline racing this reset cannot reopen the outcome
-        // and tell the student their deleted photo still stands (Codex review).
-        $decisionlock = self::decision_lock($userid);
-        if ($decisionlock) {
-            try {
-                $open = self::open_request($userid);
-                if ($open) {
-                    $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
-                        'id' => (int)$open->id,
-                        'status' => self::REQUEST_RESET,
-                        'decidedby' => (int)$USER->id,
-                        'timedecided' => time(),
-                    ]);
+            if ($requestid !== null) {
+                $request = $DB->get_record('quizaccess_proctoring_ref_requests', ['id' => $requestid]);
+                if (!$request || (int)$request->userid !== $userid
+                        || (int)$request->status !== self::REQUEST_OPEN) {
+                    return false;
                 }
-            } finally {
-                $decisionlock->release();
             }
+            $lock = quizaccess_proctoring_get_reference_lock($userid);
+            if (!$lock) {
+                return false;
+            }
+            try {
+                \quizaccess_proctoring\privacy\provider::delete_reference_photos([$userid]);
+            } finally {
+                $lock->release();
+            }
+            \quizaccess_proctoring\event\reference_photo_reset::create([
+                'context' => $context,
+                'relateduserid' => $userid,
+                'other' => ['reason' => \core_text::substr(trim($reason), 0, 1000)],
+            ])->trigger();
+
+            // Every reset closes the student's open request, so the queue cannot show work that
+            // is already done, and tells the student: without the notice, Student Affairs had to
+            // reach out by hand to close the loop (CPIT-476, Stephanie).
+            $open = self::open_request($userid);
+            if ($open) {
+                $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
+                    'id' => (int)$open->id,
+                    'status' => self::REQUEST_RESET,
+                    'decidedby' => (int)$USER->id,
+                    'timedecided' => time(),
+                ]);
+            }
+        } finally {
+            $decisionlock->release();
         }
         self::notify_student($userid, true);
         return true;

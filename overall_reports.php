@@ -385,22 +385,38 @@ if ($action === 'decidephotoreset') {
             \core\output\notification::NOTIFY_INFO);
     }
     if ($approve) {
-        // reset() deletes the photo, closes the open request and notifies the student.
+        // reset() rechecks the request under the decision lock, deletes the photo, closes the
+        // request and notifies the student; false means another reviewer decided it first, or a
+        // lock timed out - either way nothing was reset (Codex review).
         $done = \quizaccess_proctoring\local\reference_photo::reset(
             (int)$request->userid,
             get_string('referencequeue:resetreason', 'quizaccess_proctoring', fullname($USER)),
-            context_system::instance()
+            context_system::instance(),
+            $requestid
         );
+    } else {
+        $done = \quizaccess_proctoring\local\reference_photo::decline_request($requestid, (int)$USER->id);
+    }
+    if (!$done) {
+        // Say what actually happened: the row was decided by someone else, or a lock timed out
+        // and the request is still open - never "declined" when nothing changed (Codex review).
+        $stillopen = $DB->record_exists('quizaccess_proctoring_ref_requests', [
+            'id' => $requestid,
+            'status' => \quizaccess_proctoring\local\reference_photo::REQUEST_OPEN,
+        ]);
         redirect(
             $resetsurl,
-            get_string($done ? 'referencequeue:resetnotice' : 'referencereset:busy', 'quizaccess_proctoring'),
+            get_string($stillopen ? 'referencereset:busy' : 'referencequeue:alreadyhandled', 'quizaccess_proctoring'),
             null,
-            $done ? \core\output\notification::NOTIFY_SUCCESS : \core\output\notification::NOTIFY_WARNING
+            $stillopen ? \core\output\notification::NOTIFY_WARNING : \core\output\notification::NOTIFY_INFO
         );
     }
-    \quizaccess_proctoring\local\reference_photo::decline_request($requestid, (int)$USER->id);
-    redirect($resetsurl, get_string('referencequeue:declinednotice', 'quizaccess_proctoring'), null,
-        \core\output\notification::NOTIFY_SUCCESS);
+    redirect(
+        $resetsurl,
+        get_string($approve ? 'referencequeue:resetnotice' : 'referencequeue:declinednotice', 'quizaccess_proctoring'),
+        null,
+        \core\output\notification::NOTIFY_SUCCESS
+    );
 }
 
 // The reset-request queue: every open request in one table, worked and marked here so the team

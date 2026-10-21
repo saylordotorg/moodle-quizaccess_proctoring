@@ -181,6 +181,14 @@ final class reference_photo_test extends advanced_testcase {
         $this->assertTrue(reference_photo::can_request((int)$student->id));
         // A second decline of the same row reports that someone else got there first.
         $this->assertFalse(reference_photo::decline_request((int)$open->id, (int)$reviewer->id));
+        // An approval of the decided row is refused too, and deletes nothing: the queue's reset
+        // button must not override a decline another reviewer already made.
+        $messages = $this->redirectMessages();
+        $this->assertFalse(reference_photo::reset((int)$student->id, 'Queue approval',
+            \context_system::instance(), (int)$open->id));
+        $this->assertCount(0, $messages->get_messages());
+        $messages->close();
+        $this->assertTrue(reference_photo::exists((int)$student->id));
     }
 
     /**
