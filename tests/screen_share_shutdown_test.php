@@ -65,9 +65,9 @@ final class screen_share_shutdown_test extends advanced_testcase {
             'the shutdown must ride the finished-attempt early return');
 
         $client = $this->source('amd/src/screenMonitorClient.js');
-        $this->assertStringContainsString("shutdown: function(key)", $client,
+        $this->assertStringContainsString("shutdown: function(key, minshareagems)", $client,
             'the client module must export the shutdown call');
-        $this->assertStringContainsString("postMessage({type: 'shutdown'", $client,
+        $this->assertStringContainsString("type: 'shutdown'", $client,
             'the shutdown must be broadcast to the helper window');
         // The built bundle carries it too, or the page serves stale behaviour.
         $this->assertStringContainsString('"shutdown"', $this->source('amd/build/screenMonitorClient.min.js'),
@@ -87,6 +87,8 @@ final class screen_share_shutdown_test extends advanced_testcase {
             'the helper must close itself after the share ends');
         $this->assertStringContainsString('screenmonitor:finished', $monitor,
             'the helper must tell the student the exam has been submitted');
+        $this->assertStringContainsString('minshareagems', $monitor,
+            'the helper must leave a share younger than the finished attempt alone (the next preflight)');
         // The student-facing wording exists and says sharing ended.
         $finished = get_string('screenmonitor:finished', 'quizaccess_proctoring');
         $this->assertStringContainsString('screen sharing has ended', $finished);

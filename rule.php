@@ -2262,17 +2262,24 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         // revisiting this page later, reviewing an old attempt, or preparing the next attempt
         // cannot end a live share (CPIT-508, Codex review).
         if (self::should_use_persistent_screen_monitor() && !$this->user_has_open_attempt()) {
-            $lastfinished = (int)$DB->get_field_sql(
-                "SELECT MAX(timefinish)
-                   FROM {quiz_attempts}
-                  WHERE quiz = :quiz AND userid = :userid AND preview = 0 AND state = 'finished'",
-                ['quiz' => (int)$this->quiz->id, 'userid' => (int)$USER->id]
+            $latest = $DB->get_records_select(
+                'quiz_attempts',
+                "quiz = :quiz AND userid = :userid AND preview = 0 AND state = 'finished'",
+                ['quiz' => (int)$this->quiz->id, 'userid' => (int)$USER->id],
+                'timefinish DESC',
+                'id, timestart, timefinish',
+                0,
+                1
             );
-            if ($lastfinished && time() - $lastfinished < 600) {
+            $latest = $latest ? reset($latest) : null;
+            if ($latest && time() - (int)$latest->timefinish < 600) {
                 $PAGE->requires->js_call_amd(
                     'quizaccess_proctoring/screenMonitorClient',
                     'shutdown',
-                    ['cm' . (int)$this->quiz->cmid . 'user' . (int)$USER->id]
+                    [
+                        'cm' . (int)$this->quiz->cmid . 'user' . (int)$USER->id,
+                        max(0, ((int)$latest->timefinish - (int)$latest->timestart)) * 1000,
+                    ]
                 );
             }
         }
@@ -2339,10 +2346,14 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             // is shared by every attempt of this quiz, so reviewing an old attempt while another
             // is still running must not end the live share (Codex review).
             if (self::should_use_persistent_screen_monitor() && !$this->user_has_open_attempt()) {
+                $finished = $DB->get_record('quiz_attempts', ['id' => (int)$attempt], 'id, timestart, timefinish');
                 $page->requires->js_call_amd(
                     'quizaccess_proctoring/screenMonitorClient',
                     'shutdown',
-                    ['cm' . (int)$cmid . 'user' . (int)$USER->id]
+                    [
+                        'cm' . (int)$cmid . 'user' . (int)$USER->id,
+                        $finished ? max(0, ((int)$finished->timefinish - (int)$finished->timestart)) * 1000 : 0,
+                    ]
                 );
             }
             return;

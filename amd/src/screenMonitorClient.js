@@ -56,14 +56,21 @@ define([], function() {
          * own stop control (CPIT-508). Fire-and-forget: with no helper listening, nobody hears it.
          *
          * @param {String} key The monitor key the attempt pages used (cm<cmid>user<userid>).
+         * @param {Number} minshareagems The finished attempt's duration in milliseconds: a share
+         *        younger than this cannot be that attempt's share (it is the next attempt's
+         *        preflight), so the helper leaves it running.
          */
-        shutdown: function(key) {
+        shutdown: function(key, minshareagems) {
             if (!key || !window.BroadcastChannel) {
                 return;
             }
             try {
                 const channel = new BroadcastChannel('quizaccess_proctoring_screen_' + key);
-                channel.postMessage({type: 'shutdown', ts: Date.now()});
+                channel.postMessage({
+                    type: 'shutdown',
+                    minshareagems: Number(minshareagems) || 0,
+                    ts: Date.now()
+                });
                 // Leave the channel open briefly: closing in the same tick can drop the message.
                 window.setTimeout(function() {
                     channel.close();
