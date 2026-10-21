@@ -231,6 +231,7 @@ class provider implements
                 'status' => 'privacy:metadata:refrequeststatus',
                 'decidedby' => 'privacy:metadata:reviewerid',
                 'timecreated' => 'privacy:metadata:timecreated',
+                'timedecided' => 'privacy:metadata:refrequesttimedecided',
             ],
             'privacy:metadata:quizaccess_proctoring_ref_requests'
         );

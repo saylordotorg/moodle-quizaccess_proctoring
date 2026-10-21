@@ -434,11 +434,49 @@ if ($view === 'photoresets') {
     echo $viewtoggle;
     echo html_writer::div(get_string('referencequeue:intro', 'quizaccess_proctoring'), 'text-muted mb-3');
 
+    // The handled history: a decided request must not simply vanish from the only staff-facing
+    // view, or nobody can see who handled it or how (PR #79 review).
+    $renderdecided = function () use ($OUTPUT): string {
+        $decided = \quizaccess_proctoring\local\reference_photo::recent_decisions();
+        if (!$decided) {
+            return '';
+        }
+        $out = $OUTPUT->heading(get_string('referencequeue:decidedheading', 'quizaccess_proctoring'), 3, 'mt-4');
+        $table = new html_table();
+        $table->head = [
+            get_string('referencequeue:colstudent', 'quizaccess_proctoring'),
+            get_string('referencequeue:colreason', 'quizaccess_proctoring'),
+            get_string('referencequeue:coloutcome', 'quizaccess_proctoring'),
+            get_string('referencequeue:coldecidedby', 'quizaccess_proctoring'),
+            get_string('referencequeue:coldecided', 'quizaccess_proctoring'),
+        ];
+        $table->attributes['class'] = 'generaltable';
+        foreach ($decided as $request) {
+            $decider = username_load_fields_from_object(new stdClass(), $request, 'decider');
+            $table->data[] = [
+                html_writer::link(
+                    new moodle_url('/user/profile.php', ['id' => (int)$request->userid]),
+                    fullname($request)
+                ) . html_writer::div(s($request->email), 'text-muted small'),
+                format_text((string)$request->reason, FORMAT_PLAIN),
+                (int)$request->status === \quizaccess_proctoring\local\reference_photo::REQUEST_RESET
+                    ? get_string('referencequeue:outcomereset', 'quizaccess_proctoring')
+                    : get_string('referencequeue:outcomedeclined', 'quizaccess_proctoring'),
+                (int)$request->decidedby > 0 && trim(fullname($decider)) !== ''
+                    ? fullname($decider)
+                    : get_string('referencequeue:decidedbysystem', 'quizaccess_proctoring'),
+                \quizaccess_proctoring\local\display_time::staff((int)$request->timedecided),
+            ];
+        }
+        return $out . html_writer::table($table);
+    };
+
     if (empty($openrequests)) {
         echo $OUTPUT->notification(
             get_string('referencequeue:nonepending', 'quizaccess_proctoring'),
             \core\output\notification::NOTIFY_INFO
         );
+        echo $renderdecided();
         echo $OUTPUT->footer();
         return;
     }
@@ -478,6 +516,7 @@ if ($view === 'photoresets') {
         ];
     }
     echo html_writer::table($table);
+    echo $renderdecided();
     echo $OUTPUT->footer();
     return;
 }

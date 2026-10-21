@@ -255,6 +255,33 @@ class reference_photo {
     }
 
     /**
+     * The most recently decided requests, for the queue's handled section (PR #79 review).
+     *
+     * Without it, a decided row vanished from the only staff-facing view, so nobody could see
+     * who handled a request or how - the very bookkeeping the queue exists to provide.
+     *
+     * @param int $limit How many to return.
+     * @return array<int, \stdClass> Request rows, newest decision first, with the student's name
+     *         fields joined on and the decider's prefixed "decider" (null for automatic resets).
+     */
+    public static function recent_decisions(int $limit = 25): array {
+        global $DB;
+        $userfields = \core_user\fields::for_name()->get_sql('u')->selects;
+        $deciderfields = \core_user\fields::for_name()->get_sql('d', false, 'decider')->selects;
+        return $DB->get_records_sql(
+            "SELECT r.*, u.email{$userfields}{$deciderfields}
+               FROM {quizaccess_proctoring_ref_requests} r
+               JOIN {user} u ON u.id = r.userid
+          LEFT JOIN {user} d ON d.id = r.decidedby
+              WHERE r.status <> :open AND u.deleted = 0
+           ORDER BY r.timedecided DESC, r.id DESC",
+            ['open' => self::REQUEST_OPEN],
+            0,
+            $limit
+        );
+    }
+
+    /**
      * Decline an open request: the photo on file stands, and the student is told.
      *
      * @param int $requestid Request row id.

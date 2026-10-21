@@ -179,6 +179,11 @@ final class reference_photo_test extends advanced_testcase {
         // The photo stands, and the student may ask again.
         $this->assertTrue(reference_photo::exists((int)$student->id));
         $this->assertTrue(reference_photo::can_request((int)$student->id));
+        // The decision stays visible on the queue's handled list, with who and how (PR #79).
+        $decisions = array_values(reference_photo::recent_decisions());
+        $this->assertCount(1, $decisions);
+        $this->assertEquals(reference_photo::REQUEST_DECLINED, (int)$decisions[0]->status);
+        $this->assertSame($reviewer->firstname, $decisions[0]->deciderfirstname);
         // A second decline of the same row reports that someone else got there first.
         $this->assertFalse(reference_photo::decline_request((int)$open->id, (int)$reviewer->id));
         // An approval of the decided row is refused too, and deletes nothing: the queue's reset
