@@ -69,17 +69,24 @@ final class reference_photo_test extends advanced_testcase {
         $this->setUser($reviewer);
 
         $sink = $this->redirectEvents();
+        $messages = $this->redirectMessages();
         $context = \context_module::instance($quiz->cmid);
         $this->assertTrue(reference_photo::reset((int)$student->id, 'Photo shows the ceiling', $context));
         $events = array_values(array_filter($sink->get_events(),
             fn($e) => $e instanceof \quizaccess_proctoring\event\reference_photo_reset));
         $sink->close();
+        $delivered = $messages->get_messages();
+        $messages->close();
 
         $this->assertFalse(reference_photo::exists((int)$student->id));
         $this->assertCount(1, $events);
         $this->assertSame((int)$reviewer->id, (int)$events[0]->userid);
         $this->assertSame((int)$student->id, (int)$events[0]->relateduserid);
         $this->assertSame('Photo shows the ceiling', $events[0]->other['reason']);
+        // The student hears about the reset from the system, not from staff chasing them (CPIT-476).
+        $this->assertCount(1, $delivered);
+        $this->assertSame((int)$student->id, (int)$delivered[0]->useridto);
+        $this->assertSame(get_string('referencereset:donesubject', 'quizaccess_proctoring'), $delivered[0]->subject);
     }
 
     /**
@@ -95,14 +102,16 @@ final class reference_photo_test extends advanced_testcase {
         quizaccess_proctoring_set_face_preflight_passed((int)$quiz->cmid);
         $this->assertTrue(quizaccess_proctoring_has_face_preflight_passed((int)$quiz->cmid));
 
+        $messages = $this->redirectMessages();
         reference_photo::reset((int)$student->id, 'Wrong person', \context_module::instance($quiz->cmid));
+        $messages->close();
         $this->assertFalse(quizaccess_proctoring_has_face_preflight_passed((int)$quiz->cmid));
     }
 
     /**
-     * A student's request goes to the proctoring reviewers, once a day.
+     * A student's request goes to the proctoring reviewers, one at a time while open.
      */
-    public function test_request_reaches_reviewers_once_a_day(): void {
+    public function test_request_reaches_reviewers_once_while_open(): void {
         $this->resetAfterTest();
         $role = reviewer_role::ensure();
         $reviewer = $this->getDataGenerator()->create_user();
@@ -125,13 +134,82 @@ final class reference_photo_test extends advanced_testcase {
         $this->assertCount(1, $delivered);
         $this->assertSame((int)$reviewer->id, (int)$delivered[0]->useridto);
         $this->assertStringContainsString('It is blurry', $delivered[0]->fullmessage);
+        // The notification points reviewers at the queue, where decisions are marked (CPIT-476).
+        $this->assertStringContainsString('view=photoresets', $delivered[0]->fullmessage);
         $this->assertCount(1, $requested);
         $this->assertFalse(reference_photo::can_request((int)$student->id));
+        $open = reference_photo::open_request((int)$student->id);
+        $this->assertNotNull($open, 'the request is a queue row, not just an email');
+        $this->assertSame('It is blurry', $open->reason);
 
-        // A second request the same day is refused and notifies nobody.
+        // A repeat while the first request waits is refused and notifies nobody.
         $messages = $this->redirectMessages();
         $this->assertSame(-1, reference_photo::request_reset((int)$student->id, 'Again'));
         $this->assertCount(0, $messages->get_messages());
         $messages->close();
+    }
+
+    /**
+     * Declining a request closes it, tells the student, and lets them ask again.
+     */
+    public function test_decline_closes_and_notifies(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $student = $this->getDataGenerator()->create_user();
+        $reviewer = $this->getDataGenerator()->create_user();
+        $this->photo((int)$student->id);
+        $this->setUser($student);
+        $messages = $this->redirectMessages();
+        reference_photo::request_reset((int)$student->id, 'Too dark');
+        $messages->close();
+        $open = reference_photo::open_request((int)$student->id);
+
+        $this->setUser($reviewer);
+        $messages = $this->redirectMessages();
+        $this->assertTrue(reference_photo::decline_request((int)$open->id, (int)$reviewer->id));
+        $delivered = $messages->get_messages();
+        $messages->close();
+
+        $row = $DB->get_record('quizaccess_proctoring_ref_requests', ['id' => (int)$open->id]);
+        $this->assertEquals(reference_photo::REQUEST_DECLINED, (int)$row->status);
+        $this->assertSame((int)$reviewer->id, (int)$row->decidedby);
+        $this->assertCount(1, $delivered);
+        $this->assertSame((int)$student->id, (int)$delivered[0]->useridto);
+        $this->assertSame(get_string('referencereset:declinedsubject', 'quizaccess_proctoring'), $delivered[0]->subject);
+        // The photo stands, and the student may ask again.
+        $this->assertTrue(reference_photo::exists((int)$student->id));
+        $this->assertTrue(reference_photo::can_request((int)$student->id));
+        // A second decline of the same row reports that someone else got there first.
+        $this->assertFalse(reference_photo::decline_request((int)$open->id, (int)$reviewer->id));
+    }
+
+    /**
+     * A staff reset answers the open request: the queue cannot show work already done.
+     */
+    public function test_reset_closes_the_open_request(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id]);
+        $student = $this->getDataGenerator()->create_user();
+        $reviewer = $this->getDataGenerator()->create_user();
+        $this->photo((int)$student->id);
+        $this->setUser($student);
+        $messages = $this->redirectMessages();
+        reference_photo::request_reset((int)$student->id, 'Old photo');
+        $messages->close();
+        $open = reference_photo::open_request((int)$student->id);
+
+        $this->setUser($reviewer);
+        $messages = $this->redirectMessages();
+        $this->assertTrue(reference_photo::reset((int)$student->id, 'Queue approval',
+            \context_module::instance($quiz->cmid)));
+        $messages->close();
+
+        $row = $DB->get_record('quizaccess_proctoring_ref_requests', ['id' => (int)$open->id]);
+        $this->assertEquals(reference_photo::REQUEST_RESET, (int)$row->status);
+        $this->assertSame((int)$reviewer->id, (int)$row->decidedby);
+        $this->assertNull(reference_photo::open_request((int)$student->id));
+        $this->assertSame([], reference_photo::open_requests());
     }
 }

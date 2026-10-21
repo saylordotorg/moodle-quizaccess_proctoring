@@ -99,13 +99,16 @@ $holdscope = \quizaccess_proctoring\local\overall_report::scoped_quiz_cmids(['qu
 $exceptionscope = \quizaccess_proctoring\local\overall_report::scoped_quiz_cmids(['quizaccess/proctoring:manageoverrides']);
 $canviewheld = $holdscope === null || !empty($holdscope);
 $canviewexceptions = $exceptionscope === null || !empty($exceptionscope);
+// Photo reset requests go to whoever reviews across courses, so the queue is theirs (CPIT-476).
+$canviewresets = quizaccess_proctoring_can_review_across_courses();
 // The review queue - holds waiting for a decision, oldest first - is what opens by default.
 if ($view === '') {
     $view = $canviewheld ? 'held' : 'attempts';
 }
-if (!in_array($view, ['attempts', 'held', 'idexceptions'], true)
+if (!in_array($view, ['attempts', 'held', 'idexceptions', 'photoresets'], true)
         || ($view === 'held' && !$canviewheld)
-        || ($view === 'idexceptions' && !$canviewexceptions)) {
+        || ($view === 'idexceptions' && !$canviewexceptions)
+        || ($view === 'photoresets' && !$canviewresets)) {
     $view = 'attempts';
 }
 
@@ -343,7 +346,114 @@ if ($canviewheld || $canviewexceptions) {
             get_string('idexemption:viewtoggle', 'quizaccess_proctoring')
         );
     }
+    if ($canviewresets) {
+        $resetsurl = new moodle_url(
+            '/mod/quiz/accessrule/proctoring/overall_reports.php',
+            ['view' => 'photoresets']
+        );
+        $tabs[] = new tabobject(
+            'photoresets',
+            $resetsurl->out(false),
+            get_string('referencequeue:viewtoggle', 'quizaccess_proctoring')
+        );
+    }
     $viewtoggle = $OUTPUT->tabtree($tabs, $view);
+}
+
+// Decide a photo reset request: reset the photo, or decline it. Either way the row is marked with
+// who decided it and the student is notified, so the queue never shows handled work (CPIT-476).
+if ($action === 'decidephotoreset') {
+    require_sesskey();
+    if (!$canviewresets) {
+        throw new required_capability_exception(
+            context_system::instance(),
+            'quizaccess/proctoring:reviewacrosscourses',
+            'nopermissions',
+            ''
+        );
+    }
+    $requestid = required_param('requestid', PARAM_INT);
+    $approve = optional_param('approve', 0, PARAM_BOOL);
+    $resetsurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', ['view' => 'photoresets']);
+    $request = $DB->get_record('quizaccess_proctoring_ref_requests', ['id' => $requestid]);
+    if (!$request || (int)$request->status !== \quizaccess_proctoring\local\reference_photo::REQUEST_OPEN) {
+        redirect($resetsurl, get_string('referencequeue:alreadyhandled', 'quizaccess_proctoring'), null,
+            \core\output\notification::NOTIFY_INFO);
+    }
+    if ($approve) {
+        // reset() deletes the photo, closes the open request and notifies the student.
+        $done = \quizaccess_proctoring\local\reference_photo::reset(
+            (int)$request->userid,
+            get_string('referencequeue:resetreason', 'quizaccess_proctoring', fullname($USER)),
+            context_system::instance()
+        );
+        redirect(
+            $resetsurl,
+            get_string($done ? 'referencequeue:resetnotice' : 'referencereset:busy', 'quizaccess_proctoring'),
+            null,
+            $done ? \core\output\notification::NOTIFY_SUCCESS : \core\output\notification::NOTIFY_WARNING
+        );
+    }
+    \quizaccess_proctoring\local\reference_photo::decline_request($requestid, (int)$USER->id);
+    redirect($resetsurl, get_string('referencequeue:declinednotice', 'quizaccess_proctoring'), null,
+        \core\output\notification::NOTIFY_SUCCESS);
+}
+
+// The reset-request queue: every open request in one table, worked and marked here so the team
+// can see what is already handled (CPIT-476, Stephanie).
+if ($view === 'photoresets') {
+    $openrequests = \quizaccess_proctoring\local\reference_photo::open_requests();
+    $formurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php');
+
+    echo $OUTPUT->header();
+    echo $OUTPUT->heading(get_string('referencequeue:heading', 'quizaccess_proctoring'));
+    echo $viewtoggle;
+    echo html_writer::div(get_string('referencequeue:intro', 'quizaccess_proctoring'), 'text-muted mb-3');
+
+    if (empty($openrequests)) {
+        echo $OUTPUT->notification(
+            get_string('referencequeue:nonepending', 'quizaccess_proctoring'),
+            \core\output\notification::NOTIFY_INFO
+        );
+        echo $OUTPUT->footer();
+        return;
+    }
+
+    $table = new html_table();
+    $table->head = [
+        get_string('referencequeue:colstudent', 'quizaccess_proctoring'),
+        get_string('referencequeue:colreason', 'quizaccess_proctoring'),
+        get_string('referencequeue:colrequested', 'quizaccess_proctoring'),
+        get_string('referencequeue:colactions', 'quizaccess_proctoring'),
+    ];
+    $table->attributes['class'] = 'generaltable';
+    foreach ($openrequests as $request) {
+        $student = html_writer::link(
+            new moodle_url('/user/profile.php', ['id' => (int)$request->userid]),
+            fullname($request)
+        ) . html_writer::div(s($request->email), 'text-muted small');
+        $decide = function (bool $approve) use ($formurl, $request): string {
+            global $OUTPUT;
+            $label = $approve
+                ? get_string('referencequeue:resetbutton', 'quizaccess_proctoring')
+                : get_string('referencequeue:declinebutton', 'quizaccess_proctoring');
+            return $OUTPUT->single_button(new moodle_url($formurl, [
+                'action' => 'decidephotoreset',
+                'requestid' => (int)$request->id,
+                'approve' => $approve ? 1 : 0,
+                'sesskey' => sesskey(),
+            ]), $label, 'post', ['type' => $approve ? 'primary' : 'secondary']);
+        };
+        $table->data[] = [
+            $student,
+            format_text((string)$request->reason, FORMAT_PLAIN),
+            \quizaccess_proctoring\local\display_time::staff((int)$request->timecreated),
+            html_writer::div($decide(true) . $decide(false), 'd-flex flex-wrap'),
+        ];
+    }
+    echo html_writer::table($table);
+    echo $OUTPUT->footer();
+    return;
 }
 
 // Cross-exam ID exception queue: every pending request in one table, so a batch of decisions

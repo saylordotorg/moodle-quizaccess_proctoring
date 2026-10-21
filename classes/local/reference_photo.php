@@ -30,8 +30,17 @@ use moodle_url;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class reference_photo {
-    /** @var string User preference recording the last reset request, to limit them to one a day. */
+    /** @var string User preference recording the last reset request (legacy; requests are rows now). */
     public const REQUEST_PREFERENCE = 'quizaccess_proctoring_referenceresetrequested';
+
+    /** @var int A reset request waiting for a reviewer. */
+    public const REQUEST_OPEN = 0;
+
+    /** @var int The request was answered by resetting the photo. */
+    public const REQUEST_RESET = 1;
+
+    /** @var int The request was declined; the photo on file stands. */
+    public const REQUEST_DECLINED = 2;
 
     /**
      * Whether the user has a reference photo on file.
@@ -55,7 +64,7 @@ class reference_photo {
      * @return bool False when another change to the photo held the lock, so nothing was reset.
      */
     public static function reset(int $userid, string $reason, \context $context): bool {
-        global $CFG;
+        global $CFG, $DB, $USER;
         require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
         $lock = quizaccess_proctoring_get_reference_lock($userid);
@@ -72,18 +81,125 @@ class reference_photo {
             'relateduserid' => $userid,
             'other' => ['reason' => \core_text::substr(trim($reason), 0, 1000)],
         ])->trigger();
+
+        // Every reset closes the student's open request, so the queue cannot show work that is
+        // already done, and tells the student: without the notice, Student Affairs had to reach
+        // out by hand to close the loop (CPIT-476, Stephanie).
+        $open = self::open_request($userid);
+        if ($open) {
+            $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
+                'id' => (int)$open->id,
+                'status' => self::REQUEST_RESET,
+                'decidedby' => (int)$USER->id,
+                'timedecided' => time(),
+            ]);
+        }
+        self::notify_student($userid, true);
         return true;
+    }
+
+    /**
+     * The student's open reset request, if any.
+     *
+     * @param int $userid Student.
+     * @return \stdClass|null
+     */
+    public static function open_request(int $userid): ?\stdClass {
+        global $DB;
+        $open = $DB->get_records('quizaccess_proctoring_ref_requests', [
+            'userid' => $userid,
+            'status' => self::REQUEST_OPEN,
+        ], 'id DESC', '*', 0, 1);
+        return $open ? reset($open) : null;
+    }
+
+    /**
+     * Every open reset request, oldest first, for the reviewers' queue (CPIT-476).
+     *
+     * @return array<int, \stdClass> Request rows with the student's name fields joined on.
+     */
+    public static function open_requests(): array {
+        global $DB;
+        $userfields = \core_user\fields::for_name()->get_sql('u', false, '', '', false)->selects;
+        return $DB->get_records_sql(
+            "SELECT r.*, u.email{$userfields}
+               FROM {quizaccess_proctoring_ref_requests} r
+               JOIN {user} u ON u.id = r.userid
+              WHERE r.status = :open AND u.deleted = 0
+           ORDER BY r.timecreated ASC, r.id ASC",
+            ['open' => self::REQUEST_OPEN]
+        );
+    }
+
+    /**
+     * Decline an open request: the photo on file stands, and the student is told.
+     *
+     * @param int $requestid Request row id.
+     * @param int $reviewerid Reviewer deciding.
+     * @return bool False when the request was not open (someone else got there first).
+     */
+    public static function decline_request(int $requestid, int $reviewerid): bool {
+        global $DB;
+        $request = $DB->get_record('quizaccess_proctoring_ref_requests', ['id' => $requestid]);
+        if (!$request || (int)$request->status !== self::REQUEST_OPEN) {
+            return false;
+        }
+        $DB->update_record('quizaccess_proctoring_ref_requests', (object)[
+            'id' => $requestid,
+            'status' => self::REQUEST_DECLINED,
+            'decidedby' => $reviewerid,
+            'timedecided' => time(),
+        ]);
+        self::notify_student((int)$request->userid, false);
+        return true;
+    }
+
+    /**
+     * Tell the student how their photo request ended (CPIT-476).
+     *
+     * Also sent when staff reset the photo without a request: the student finds out from the
+     * system, not from Student Affairs chasing them by hand.
+     *
+     * @param int $userid Student.
+     * @param bool $wasreset True when the photo was reset; false when the request was declined.
+     */
+    private static function notify_student(int $userid, bool $wasreset): void {
+        $student = \core_user::get_user($userid);
+        if (!$student || $student->deleted) {
+            return;
+        }
+        $a = (object)['contact' => support_contact::address()];
+        $subject = get_string($wasreset ? 'referencereset:donesubject' : 'referencereset:declinedsubject',
+            'quizaccess_proctoring');
+        $body = get_string($wasreset ? 'referencereset:donebody' : 'referencereset:declinedbody',
+            'quizaccess_proctoring', $a);
+        $message = new \core\message\message();
+        $message->component = 'quizaccess_proctoring';
+        $message->name = 'referencereset';
+        $message->userfrom = \core_user::get_noreply_user();
+        $message->userto = $student;
+        $message->subject = $subject;
+        $message->fullmessage = $body;
+        $message->fullmessageformat = FORMAT_PLAIN;
+        $message->fullmessagehtml = text_to_html($body);
+        $message->smallmessage = $subject;
+        $message->notification = 1;
+        $message->contexturl = (new moodle_url('/mod/quiz/accessrule/proctoring/my_photo.php'))->out(false);
+        $message->contexturlname = get_string('myphoto:title', 'quizaccess_proctoring');
+        message_send($message);
     }
 
     /**
      * Whether the student may send another reset request now.
      *
+     * One at a time while a request is open (CPIT-476, Stephanie): repeat requests while the
+     * first waits only multiply the queue's rows for the same photo.
+     *
      * @param int $userid Student.
      * @return bool
      */
     public static function can_request(int $userid): bool {
-        $last = (int)get_user_preferences(self::REQUEST_PREFERENCE, 0, $userid);
-        return $last < time() - DAYSECS;
+        return self::open_request($userid) === null;
     }
 
     /**
@@ -97,7 +213,9 @@ class reference_photo {
      * @return int Number of reviewers notified; -1 when a request was already sent today.
      */
     public static function request_reset(int $userid, string $reason): int {
-        // The day's request is claimed under a lock before anyone is notified, so two sessions
+        global $DB;
+
+        // The open request is claimed under a lock before anyone is notified, so two sessions
         // submitting at once send one request, not two (PR #46 review).
         $factory = \core\lock\lock_config::get_lock_factory('quizaccess_proctoring_resetrequest');
         $lock = $factory->get_lock('user' . $userid, 10);
@@ -108,7 +226,12 @@ class reference_photo {
             if (!self::can_request($userid)) {
                 return -1;
             }
-            set_user_preference(self::REQUEST_PREFERENCE, time(), $userid);
+            $DB->insert_record('quizaccess_proctoring_ref_requests', (object)[
+                'userid' => $userid,
+                'reason' => \core_text::substr(trim($reason), 0, 1000),
+                'status' => self::REQUEST_OPEN,
+                'timecreated' => time(),
+            ]);
         } finally {
             $lock->release();
         }
@@ -134,6 +257,12 @@ class reference_photo {
             'email' => $student->email,
             'reason' => trim($reason) !== '' ? \core_text::substr(trim($reason), 0, 1000) : '-',
             'profileurl' => (new moodle_url('/user/profile.php', ['id' => $userid]))->out(false),
+            // The place to work the request from (CPIT-476): the queue marks who handled what,
+            // where the old profile link left reviewers hunting for a course and an attempt.
+            'queueurl' => (new moodle_url(
+                '/mod/quiz/accessrule/proctoring/overall_reports.php',
+                ['view' => 'photoresets']
+            ))->out(false),
         ];
         $subject = get_string('referencerequest:subject', 'quizaccess_proctoring', $a);
         $body = get_string('referencerequest:body', 'quizaccess_proctoring', $a);
@@ -150,8 +279,8 @@ class reference_photo {
             $message->fullmessagehtml = text_to_html($body);
             $message->smallmessage = $subject;
             $message->notification = 1;
-            $message->contexturl = $a->profileurl;
-            $message->contexturlname = $a->student;
+            $message->contexturl = $a->queueurl;
+            $message->contexturlname = get_string('referencerequest:queuename', 'quizaccess_proctoring');
             if (message_send($message)) {
                 $sent++;
             }

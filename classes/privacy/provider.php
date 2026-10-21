@@ -223,6 +223,17 @@ class provider implements
             'privacy:metadata:quizaccess_proctoring_idv'
         );
 
+        $collection->add_database_table(
+            'quizaccess_proctoring_ref_requests',
+            [
+                'userid' => 'privacy:metadata:userid',
+                'reason' => 'privacy:metadata:refrequestreason',
+                'status' => 'privacy:metadata:refrequeststatus',
+                'timecreated' => 'privacy:metadata:timecreated',
+            ],
+            'privacy:metadata:quizaccess_proctoring_ref_requests'
+        );
+
         $quizaccessproctoringuserimages = [
             'user_id' => 'privacy:metadata:userid',
             'photo_draft_id' => 'privacy:metadata:photo_draft_id',
@@ -1039,6 +1050,7 @@ class provider implements
         } else if ($context->contextlevel === CONTEXT_SYSTEM) {
             $DB->delete_records('quizaccess_proctoring_face_images', ['parent_type' => 'admin_image']);
             $DB->delete_records('quizaccess_proctoring_user_images');
+            $DB->delete_records('quizaccess_proctoring_ref_requests');
 
             $fs = get_file_storage();
             $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'user_photo');
@@ -1059,6 +1071,7 @@ class provider implements
 
         if ($context->contextlevel === CONTEXT_SYSTEM) {
             self::delete_reference_image_data_for_userids($userids);
+            self::delete_reference_requests_for_userids($userids);
             return;
         }
 
@@ -1067,6 +1080,25 @@ class provider implements
         }
 
         self::delete_module_data_for_userids($context, $userids);
+    }
+
+    /**
+     * Deletes the users' reference-photo reset requests (CPIT-476).
+     *
+     * Separate from the reference-image helper on purpose: that helper also runs for an ordinary
+     * staff photo reset, which must keep the request history it just answered.
+     *
+     * @param array $userids User IDs.
+     */
+    private static function delete_reference_requests_for_userids(array $userids): void {
+        global $DB;
+
+        $userids = array_values(array_filter(array_map('intval', $userids)));
+        if (!$userids) {
+            return;
+        }
+        [$insql, $params] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'refrequser');
+        $DB->delete_records_select('quizaccess_proctoring_ref_requests', "userid {$insql}", $params);
     }
 
     /**
@@ -1088,6 +1120,7 @@ class provider implements
                 self::delete_module_data_for_userids($context, [$userid]);
             } else if ($context->contextlevel === CONTEXT_SYSTEM) {
                 self::delete_reference_image_data_for_userids([$userid]);
+                self::delete_reference_requests_for_userids([$userid]);
             }
         }
     }
