@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.38 — 2026-10-21
+- **Screen sharing ends when the exam does (CPIT-508).** The persistent helper window that keeps the screen share alive across quiz pages never learned the exam was over, so students had to find the browser's own "stop sharing" control after submitting — and most reasonably assumed submission ended it. The review page now tells the helper the attempt is finished: it stops the share, says the exam has been submitted, and closes itself.
+
 # v1.12.36 — 2026-10-21
 - **The proctoring report speaks the results report's language (CPIT-475).** Student Affairs reads the two side by side, and every difference read as an error. The Summary tab now embeds core's own attempt summary — the very renderer the results page uses — so labels ("Completed", "Duration"), date format, timezone, the Marks row and the grade's percentage can never drift again. The course report follows suit: "Last name" for "Surname", a "Started" column showing the attempt's start exactly as the results report formats it, "Grade/<max>" with the bare grade as the value so exports need no cleanup, "Review attempt" as a button, and Delete rendered last as an outlined danger button instead of sitting between the two review actions. The list exports to CSV from a new Export button, unpaged, through the same row pipeline the screen uses.
 

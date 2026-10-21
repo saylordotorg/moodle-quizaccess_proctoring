@@ -1035,6 +1035,7 @@ $string['screenmarkerdraghint'] = 'Drag this box to move it out of the way. It m
 $string['screenmarkerlabel'] = 'Screen check';
 $string['screenmarkerwrongmonitor'] = 'The shared screen does not show this quiz page. Move the quiz window to the shared monitor or share the monitor containing the quiz. If the quiz is already on the shared screen, keep the "Screen check" box visible (not covered by another window), turn off Night Shift, True Tone or other colour filters on the display, and try again.';
 $string['screenmonitor:captureunavailable'] = 'Your browser could not read the shared screen. Check screen-recording permissions on your computer, then try sharing again.';
+$string['screenmonitor:finished'] = 'Your exam has been submitted and screen sharing has ended. You can close this window.';
 $string['screenmonitor:instructions'] = 'Keep this window open while you take the quiz. It holds the screen share so Moodle does not ask again on every quiz page.';
 $string['screenmonitor:noframes'] = 'Screen sharing started, but no screen image arrived. Keep this window and the shared screen visible, then try sharing again.';
 $string['screenmonitor:permissiondenied'] = 'Screen sharing was not allowed. Try again, choose Entire screen, and allow any screen-recording permission requested by your browser or computer.';

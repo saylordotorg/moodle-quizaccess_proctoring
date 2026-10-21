@@ -2312,6 +2312,16 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $page->set_heading($page->title);
 
         if ($cmid && $attempt && $this->maybe_show_finished_attempt_risk_hold_notice((int)$cmid, (int)$attempt)) {
+            // The attempt is finished, so live monitoring never starts here - and the persistent
+            // helper window must stop sharing the screen too, rather than leaving the student to
+            // find the browser's own stop control after submitting (CPIT-508).
+            if (self::should_use_persistent_screen_monitor()) {
+                $page->requires->js_call_amd(
+                    'quizaccess_proctoring/screenMonitorClient',
+                    'shutdown',
+                    ['cm' . (int)$cmid . 'user' . (int)$USER->id]
+                );
+            }
             return;
         }
 

@@ -48,6 +48,30 @@ define([], function() {
     };
 
     return {
+        /**
+         * Tell the helper window the exam is over, so it stops sharing and closes itself.
+         *
+         * Called on a finished attempt's pages (summary, review), where monitoring never starts:
+         * without it the helper keeps the student's screen shared until they find the browser's
+         * own stop control (CPIT-508). Fire-and-forget: with no helper listening, nobody hears it.
+         *
+         * @param {String} key The monitor key the attempt pages used (cm<cmid>user<userid>).
+         */
+        shutdown: function(key) {
+            if (!key || !window.BroadcastChannel) {
+                return;
+            }
+            try {
+                const channel = new BroadcastChannel('quizaccess_proctoring_screen_' + key);
+                channel.postMessage({type: 'shutdown', ts: Date.now()});
+                // Leave the channel open briefly: closing in the same tick can drop the message.
+                window.setTimeout(function() {
+                    channel.close();
+                }, 1000);
+            } catch (error) {
+                // The helper is optional; a shutdown failure must not interrupt the review page.
+            }
+        },
         create: function(props, callbacks) {
             callbacks = callbacks || {};
 

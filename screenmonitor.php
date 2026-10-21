@@ -67,6 +67,7 @@ $config = [
         'playbackfailed' => get_string('screenmonitor:playbackfailed', 'quizaccess_proctoring'),
         'noframes' => get_string('screenmonitor:noframes', 'quizaccess_proctoring'),
         'entirescreenrequired' => get_string('entirescreenrequired', 'quizaccess_proctoring'),
+        'finished' => get_string('screenmonitor:finished', 'quizaccess_proctoring'),
     ],
 ];
 
@@ -648,6 +649,20 @@ $js = <<<JS
                 return;
             }
             const message = event.data || {};
+            if (message.type === 'shutdown') {
+                // The exam was submitted: end the share and close this window, instead of leaving
+                // the student to find the browser's own "stop sharing" control (CPIT-508). The
+                // message stays visible in case the browser refuses the scripted close.
+                pageActive = false;
+                stopStream();
+                window.clearInterval(statusTimer);
+                statusTimer = null;
+                setStatus(config.strings.finished, 'success');
+                window.setTimeout(function() {
+                    window.close();
+                }, 1200);
+                return;
+            }
             if (message.type === 'status_request') {
                 // Run a fresh marker check instead of replying from cache: browsers
                 // throttle this hidden window's timers (to as little as once a
