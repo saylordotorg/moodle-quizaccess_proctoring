@@ -2591,13 +2591,20 @@ function quizaccess_proctoring_certificate_at_stake(int $courseid, int $userid, 
         if (!$quiz) {
             return null;
         }
-        $gradepass = (float)$DB->get_field('grade_items', 'gradepass', [
+        $gradeitem = $DB->get_record('grade_items', [
             'itemtype' => 'mod',
             'itemmodule' => 'quiz',
             'iteminstance' => (int)$quiz->id,
             'courseid' => (int)$quiz->course,
-        ]);
+        ], 'id, gradepass, multfactor, plusfactor');
+        $gradepass = $gradeitem ? (float)$gradeitem->gradepass : 0.0;
         if ($gradepass <= 0) {
+            return null;
+        }
+        // A gradebook multiplicator or offset changes the final grade Moodle compares with the
+        // pass grade; the raw rescaled mark no longer decides it, so the plain label stands
+        // (Codex review).
+        if (abs((float)$gradeitem->multfactor - 1.0) > 1.0E-7 || abs((float)$gradeitem->plusfactor) > 1.0E-7) {
             return null;
         }
         $grade = quiz_rescale_grade($attempt->sumgrades, $quiz, false);
