@@ -1556,6 +1556,34 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026101610, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026102202) {
+        // Escalating "face out of frame" warnings that end the attempt on the Nth time (CPIT-510):
+        // the quiz's own strike limit (-1 = inherit the site setting), and a per-student override
+        // tri-state so an accommodation can waive it.
+        $table = new xmldb_table('quizaccess_proctoring');
+        $field = new xmldb_field('facestrikes', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '-1', 'expectedtools');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $table = new xmldb_table('quizaccess_proctoring_overrides');
+        $field = new xmldb_field(
+            'facestrikesstate',
+            XMLDB_TYPE_INTEGER,
+            '2',
+            null,
+            XMLDB_NOTNULL,
+            null,
+            '-1',
+            'phonedetectionstate'
+        );
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_plugin_savepoint(true, 2026102202, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
 

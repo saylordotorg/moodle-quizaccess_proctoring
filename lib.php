@@ -1923,6 +1923,44 @@ function quizaccess_proctoring_get_student_risk_hold_notice_html(stdClass $hold)
 }
 
 /**
+ * Build the student-facing notice for an attempt that ended because the face kept leaving the
+ * webcam frame (CPIT-510), worded for what happened to it: held, failed, or only submitted.
+ *
+ * @param stdClass|null $hold The attempt's hold, or null when the outcome takes no grade action.
+ * @param int $limit Strikes that ended the attempt.
+ * @return string Rendered Bootstrap alert HTML.
+ */
+function quizaccess_proctoring_get_face_strikes_notice_html(?stdClass $hold, int $limit): string {
+    $component = 'quizaccess_proctoring';
+    $status = $hold ? (int)$hold->status : -1;
+    $class = 'alert-info';
+    if ($status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
+        $message = get_string('facestrike:noticeheld', $component, $limit);
+        $days = quizaccess_proctoring_get_risk_review_auto_release_days();
+        if ($days > 0) {
+            $message .= ' ' . ($days === 1
+                ? get_string('riskreview:studentnoticereviewwindowoneday', $component)
+                : get_string('riskreview:studentnoticereviewwindow', $component, $days));
+        } else {
+            $message .= ' ' . get_string('riskreview:studentnoticenorelease', $component);
+        }
+        $class = 'alert-warning';
+    } else if ($status === QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED || $status === QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED) {
+        $message = get_string('facestrike:noticefailed', $component, $limit);
+        $class = 'alert-danger';
+    } else {
+        $message = get_string('facestrike:noticesubmitted', $component, $limit);
+    }
+
+    $title = html_writer::tag('strong', s(get_string('facestrike:noticetitle', $component)), ['class' => 'd-block mb-1']);
+    return html_writer::tag(
+        'div',
+        $title . html_writer::tag('div', s($message)),
+        ['class' => 'alert ' . $class . ' quizaccess-proctoring-face-strikes-notice', 'role' => 'alert']
+    );
+}
+
+/**
  * Build the student-facing notice for an automatically failed high-risk attempt.
  *
  * @param stdClass $hold Automatic-failure risk record.
@@ -3338,6 +3376,13 @@ function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $deci
 
         $subject = get_string('message:' . $decision . 'subject', 'quizaccess_proctoring', $a);
         $body = get_string('message:' . $decision . 'body', 'quizaccess_proctoring', $a);
+        if (
+            $decision === 'autofailed'
+                && \quizaccess_proctoring\local\face_strikes::ended((int)$hold->attemptid, (int)$hold->userid)
+        ) {
+            // Failed because the face kept leaving the frame, not for a risk score (CPIT-510).
+            $body = get_string('message:facestrikesautofailedbody', 'quizaccess_proctoring', $a);
+        }
 
         $message = new \core\message\message();
         $message->component = 'quizaccess_proctoring';

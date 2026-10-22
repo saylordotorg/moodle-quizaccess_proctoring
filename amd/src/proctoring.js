@@ -4,8 +4,8 @@ let isCameraAllowed = false;
 let precheckStream = null;
 
 define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proctoring/screenMonitorClient',
-    'quizaccess_proctoring/evidenceQueue', 'quizaccess_proctoring/globalScript'],
-    function($, Ajax, Notification, Str, ScreenMonitorClient, EvidenceQueue, GlobalScript) {
+    'quizaccess_proctoring/evidenceQueue', 'quizaccess_proctoring/globalScript', 'quizaccess_proctoring/faceStrikes'],
+    function($, Ajax, Notification, Str, ScreenMonitorClient, EvidenceQueue, GlobalScript, FaceStrikes) {
         // Whether this looks like a phone or tablet. Only asked once screen sharing has turned out
         // to be unavailable: a tablet asking for the desktop site reports a desktop operating
         // system, so the touch screen is the tell (CPIT-495).
@@ -63,6 +63,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 {key: 'coverage:rejected', component: 'quizaccess_proctoring'},
                 {key: 'screensharenotonmobile', component: 'quizaccess_proctoring'},
                 {key: 'screenmarkerdraghint', component: 'quizaccess_proctoring'},
+                {key: 'facestrike:dismiss', component: 'quizaccess_proctoring'},
             ];
             try {
                 const strings = await Str.get_strings(stringkeys);
@@ -102,6 +103,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     coveragerejected: strings[32],
                     screensharenotonmobile: strings[33],
                     screenmarkerdraghint: strings[34],
+                    facestrikedismiss: strings[35],
                 };
             } catch (error) {
                 Notification.exception(error);
@@ -3128,7 +3130,165 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     endFacePause('page_left', true);
                 };
 
+                // Escalating warnings that end the attempt when the face keeps leaving the frame
+                // (CPIT-510). The server keeps the count and decides the end; faceStrikes times the
+                // pauses and says which warning to show.
+                let faceStrikeControl = null;
+                let faceStrikesEnded = false;
+                const showFaceStrikeNotice = function(text) {
+                    // While the quiz is blurred the pause notice carries the warning; the banner
+                    // keeps it on screen once the face is back, until dismissed.
+                    const blurNotice = document.getElementById('proctoring-face-blur-notice');
+                    if (blurNotice) {
+                        blurNotice.textContent = text;
+                    }
+                    let banner = document.getElementById('proctoring-face-strike-notice');
+                    if (!banner) {
+                        banner = document.createElement('div');
+                        banner.id = 'proctoring-face-strike-notice';
+                        banner.className = 'proctoring-face-strike-notice';
+                        banner.setAttribute('role', 'alert');
+                        const message = document.createElement('span');
+                        message.className = 'proctoring-face-strike-message';
+                        banner.appendChild(message);
+                        const dismiss = document.createElement('button');
+                        dismiss.type = 'button';
+                        dismiss.className = 'btn btn-sm btn-outline-secondary ms-2 ml-2';
+                        dismiss.textContent = strings.facestrikedismiss || 'Dismiss';
+                        dismiss.addEventListener('click', function() {
+                            banner.style.display = 'none';
+                        });
+                        banner.appendChild(dismiss);
+                        document.body.appendChild(banner);
+                    }
+                    banner.querySelector('.proctoring-face-strike-message').textContent = text;
+                    banner.style.display = '';
+                };
+                const submitAttemptForFaceStrikes = function() {
+                    const form = document.getElementById('responseform');
+                    if (!form) {
+                        // No quiz form on this page: the reload lets the server submit the attempt.
+                        window.location.reload();
+                        return;
+                    }
+                    // Submitting the page's own form keeps the answers on it, which a server-side
+                    // submission would lose.
+                    let finish = form.querySelector('input[name="finishattempt"]');
+                    if (!finish) {
+                        finish = document.createElement('input');
+                        finish.type = 'hidden';
+                        finish.name = 'finishattempt';
+                        form.appendChild(finish);
+                    }
+                    finish.value = '1';
+                    if (typeof form.requestSubmit === 'function') {
+                        form.requestSubmit();
+                    } else {
+                        form.submit();
+                    }
+                };
+                const startFaceStrikes = function() {
+                    const settings = FaceStrikes && FaceStrikes.settings ? FaceStrikes.settings() : null;
+                    if (!settings || faceStrikeControl) {
+                        return;
+                    }
+                    const lockoutdays = parseInt(settings.lockoutdays, 10) || 0;
+                    // Kept once loaded; a failed lookup is asked again by the next warning rather
+                    // than silencing every warning for the rest of the page.
+                    let consequence = null;
+                    const consequenceText = function() {
+                        if (!consequence) {
+                            consequence = Str.get_string(
+                                'facestrike:consequence_' + settings.outcome
+                                    + (settings.outcome !== 'none' && lockoutdays > 0 ? '_lockout' : ''),
+                                'quizaccess_proctoring',
+                                lockoutdays
+                            ).catch(function(error) {
+                                consequence = null;
+                                throw error;
+                            });
+                        }
+                        return consequence;
+                    };
+                    // Loaded now, while the page is quiet, so the first warning does not wait for it.
+                    consequenceText().catch(() => null);
+                    const notifyStrike = function(count, limit, tries) {
+                        consequenceText().then(function(clause) {
+                            return Str.get_string(
+                                FaceStrikes.noticeKey(count, limit),
+                                'quizaccess_proctoring',
+                                FaceStrikes.noticeParams(count, limit, clause)
+                            );
+                        }).then(function(text) {
+                            showFaceStrikeNotice(text);
+                            noteFaceWarning('warning_shown', {key: 'facestrike:' + count, message: text.slice(0, 500)});
+                            return text;
+                        }).catch(function() {
+                            if (tries < 5) {
+                                window.setTimeout(() => notifyStrike(count, limit, tries + 1), 3000);
+                            }
+                        });
+                    };
+                    let storage = null;
+                    try {
+                        storage = window.sessionStorage;
+                    } catch (error) {
+                        storage = null;
+                    }
+                    faceStrikeControl = FaceStrikes.create({
+                        limit: parseInt(settings.limit, 10) || 0,
+                        strikes: parseInt(settings.strikes, 10) || 0,
+                        minSeconds: parseInt(settings.minseconds, 10) || 5,
+                        attemptId: parseInt(props.status, 10) || 0,
+                        now: captureClock,
+                        storage: storage,
+                        cameraLive: function() {
+                            const tracks = cameraStream ? cameraStream.getVideoTracks() : [];
+                            return tracks.length > 0
+                                && !tracks.every(track => track.readyState === 'ended' || track.muted);
+                        },
+                        send: function(strike) {
+                            return Ajax.call([{
+                                methodname: 'quizaccess_proctoring_log_event',
+                                args: {
+                                    courseid: parseInt(props.courseid, 10) || 0,
+                                    quizid: parseInt(props.quizid, 10) || 0,
+                                    attemptid: parseInt(props.status, 10) || 0,
+                                    reportid: parseInt(props.id, 10) || 0,
+                                    eventtype: 'face_strike',
+                                    eventdetail: JSON.stringify({
+                                        strike: strike.number,
+                                        pauseseconds: Math.round((captureClock() - strike.pausedat) / 1000),
+                                    }),
+                                    pagevisibility: document.visibilityState || '',
+                                    currenturl: window.location.href,
+                                    screenshot: '',
+                                    capturedat: strike.capturedat,
+                                    requestid: strike.requestid,
+                                }
+                            }])[0];
+                        },
+                        notify: function(count, limit) {
+                            notifyStrike(count, limit, 0);
+                        },
+                        end: function() {
+                            // The attempt is over: the quiz stays blurred whatever the camera sees,
+                            // and is submitted once the student has had time to read why.
+                            faceStrikesEnded = true;
+                            document.body.classList.add('proctoring-face-blur-active');
+                            const blurNotice = document.getElementById('proctoring-face-blur-notice');
+                            if (blurNotice) {
+                                blurNotice.style.display = 'block';
+                            }
+                            window.setTimeout(submitAttemptForFaceStrikes, 5000);
+                        },
+                    });
+                };
+
                 const setQuizBlurredForFace = (blurred) => {
+                    if (!blurred && faceStrikesEnded) {
+                        return;
+                    }
                     const wasBlurred = document.body.classList.contains('proctoring-face-blur-active');
                     document.body.classList.toggle('proctoring-face-blur-active', blurred);
                     const notice = document.getElementById('proctoring-face-blur-notice');
@@ -3141,8 +3301,18 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     if (blurred && !wasBlurred) {
                         facePauseStartedAt = Date.now();
                         logFacePause('face_missing_start', {reason: 'no_face_in_view'}, captureFacePauseFrame());
+                        if (faceStrikeControl) {
+                            faceStrikeControl.pauseStarted();
+                        }
                     } else if (!blurred && wasBlurred) {
                         endFacePause('face_back_in_view');
+                        if (faceStrikeControl) {
+                            faceStrikeControl.pauseEnded();
+                        }
+                        // The next pause starts with the ordinary notice; a strike replaces it.
+                        if (notice) {
+                            notice.textContent = strings.faceblurmessage || '';
+                        }
                     }
                 };
 
@@ -3158,6 +3328,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             '</div>'
                         );
                     }
+                    startFaceStrikes();
 
                     // The grace period runs once per attempt, from its first page, not again on every
                     // page: short questions would otherwise keep the check inside it (CPIT-470).
@@ -3189,7 +3360,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         const cameratracks = cameraStream ? cameraStream.getVideoTracks() : [];
                         if (!cameratracks.length
                                 || cameratracks.every(track => track.readyState === 'ended' || track.muted)) {
+                            // Nor can a dead camera count toward ending the attempt (CPIT-510).
+                            if (faceStrikeControl) {
+                                faceStrikeControl.cameraLost();
+                            }
                             return;
+                        }
+                        if (faceStrikeControl) {
+                            faceStrikeControl.cameraBack();
                         }
 
                         const graceActive = Date.now() < graceEndsAt;
@@ -3216,6 +3394,9 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             if (faceVisible) {
                                 facePresentCount++;
                                 faceMissingCount = 0;
+                                if (faceStrikeControl) {
+                                    faceStrikeControl.faceSeen();
+                                }
                                 if (facePresentCount >= faceBlurHits) {
                                     setQuizBlurredForFace(false);
                                 }
@@ -3526,6 +3707,10 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 document.addEventListener('submit', endFacePauseForLeaving, true);
                 window.addEventListener('beforeunload', endFacePauseForLeaving, true);
                 window.addEventListener('pagehide', function() {
+                    // A pause still running carries its strike state to the next page (CPIT-510).
+                    if (faceStrikeControl) {
+                        faceStrikeControl.pageLeaving();
+                    }
                     // A pause still running when the page is left ends here, before uploads stop.
                     endFacePauseOnPagehide();
                     pageActive = false;

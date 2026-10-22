@@ -247,6 +247,29 @@ Generated from `lang/en/quizaccess_proctoring.php`; `{$a}` and `{$a->...}` are f
 | `info:cameraallow` | Your camera is now in use. |
 | `warning:cameraallowwarning` | Please allow camera access. |
 
+## Face out of frame: warnings that end the attempt
+
+Since 1.13.0 (CPIT-510), when a site or quiz sets "End the attempt when the face leaves the frame". A time counts when the quiz has been paused for no face for the configured number of seconds. With a limit of 4 the student sees `first`, `again`, `final`, then `ended`; with a limit of 2, `onlywarning` then `ended`. `{$a->consequence}` is one of the `consequence_…` clauses, chosen by the site's outcome setting and whether the retake lockout is on.
+
+| String key | Text |
+| --- | --- |
+| `facestrike:rule` | Keep your face in view of your webcam for the whole exam. Each time it leaves the frame for more than a few seconds you will be warned, and if it happens {$a->limit} times your attempt will end and {$a->consequence}. — *on the quiz page, before the exam starts* |
+| `facestrike:first` | We can't see your face. Please adjust your camera or lighting so your full face is visible. This is your first warning. |
+| `facestrike:again` | Your face left the frame again. This is warning {$a->count} of {$a->warnings}. If it leaves the frame {$a->remaining} more times, your attempt will end and {$a->consequence}. |
+| `facestrike:final` | Your face has left the frame several times. This is your final warning: if it leaves the frame again, your attempt will end and {$a->consequence}. |
+| `facestrike:onlywarning` | We can't see your face. Please adjust your camera or lighting so your full face is visible. This is your only warning: if your face leaves the frame again, your attempt will end and {$a->consequence}. |
+| `facestrike:ended` | Your face was out of frame again. This is notice {$a->limit} of {$a->limit}: your attempt has ended and will {$a->consequence}. It is being submitted now. |
+| `facestrike:consequence_hold` | be held for review: no grade or certificate is released until the review is complete |
+| `facestrike:consequence_hold_lockout` | be held for review: no grade or certificate is released until the review is complete, and you will not be able to retake the exam for up to {$a} days |
+| `facestrike:consequence_autofail` | receive a failing grade |
+| `facestrike:consequence_autofail_lockout` | receive a failing grade, and you will have to wait {$a} days before retaking the exam |
+| `facestrike:consequence_none` | be submitted as it stands |
+| `facestrike:dismiss` | Dismiss — *button on the warning banner* |
+| `facestrike:noticetitle` | Your attempt ended: your face left the webcam frame — *after submission* |
+| `facestrike:noticeheld` | Your face left the webcam frame {$a} times, so your attempt was submitted and is held for Student Affairs review. Your grade and certificate eligibility are withheld until the review is complete. |
+| `facestrike:noticefailed` | Your face left the webcam frame {$a} times, so your attempt was submitted and failed. The attempt grade is zero and certificate eligibility is withheld. |
+| `facestrike:noticesubmitted` | Your face left the webcam frame {$a} times, so your attempt was submitted. |
+
 ## Emails and notifications to students
 
 When each is sent, and how:
@@ -276,6 +299,7 @@ When each is sent, and how:
 | `idexemptionemail:timeformat` | %d %B %Y, %I:%M %p %Z |
 | `message:autofailedbody` | Your attempt for "{$a->quiz}" in {$a->course} reached the configured high-risk threshold and was automatically failed. Your attempt grade has been set to zero. {$a->questions} |
 | `message:autofailedsubject` | Proctored quiz attempt automatically failed |
+| `message:facestrikesautofailedbody` | Your attempt for "{$a->quiz}" in {$a->course} ended because your face left the webcam frame too many times, and it was automatically failed. Your attempt grade has been set to zero. {$a->questions} — *in place of `message:autofailedbody` when the face strikes ended the attempt* |
 | `message:confirmedbody` | Your attempt for "{$a->quiz}" in {$a->course} has been reviewed. A proctoring violation was confirmed, and your grade for this attempt has been set to zero. {$a->questions} |
 | `message:confirmedsubject` | Proctored quiz review complete: violation confirmed |
 | `message:heldbody` | Your attempt for "{$a->quiz}" in {$a->course} has been selected for a proctoring review. Your grade — and any certificate that depends on it — is withheld until the review completes{$a->window}. If you have just received a message saying you completed the course, please disregard it until the review completes. You will be notified of the outcome, and you do not need to do anything in the meantime. |

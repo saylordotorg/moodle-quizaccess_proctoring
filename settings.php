@@ -824,6 +824,39 @@ if ($canmanageproctoring) {
         PARAM_INT
     ));
 
+    // Escalating warnings that end the attempt when the face keeps leaving the frame (CPIT-510).
+    $facestrikeoptions = [0 => get_string('facestrikes_off', 'quizaccess_proctoring')];
+    for ($limit = 2; $limit <= 10; $limit++) {
+        $facestrikeoptions[$limit] = get_string('facestrikes_limit', 'quizaccess_proctoring', $limit);
+    }
+    $settings->add(new admin_setting_configselect(
+        'quizaccess_proctoring/facestrikes',
+        get_string('setting:facestrikes', 'quizaccess_proctoring'),
+        get_string('setting:facestrikes_desc', 'quizaccess_proctoring'),
+        0,
+        $facestrikeoptions
+    ));
+
+    $settings->add(new admin_setting_configtext(
+        'quizaccess_proctoring/facestrikeminseconds',
+        get_string('setting:facestrikeminseconds', 'quizaccess_proctoring'),
+        get_string('setting:facestrikeminseconds_desc', 'quizaccess_proctoring'),
+        5,
+        PARAM_INT
+    ));
+
+    $settings->add(new admin_setting_configselect(
+        'quizaccess_proctoring/facestrikesoutcome',
+        get_string('setting:facestrikesoutcome', 'quizaccess_proctoring'),
+        get_string('setting:facestrikesoutcome_desc', 'quizaccess_proctoring'),
+        'hold',
+        [
+            'hold' => get_string('setting:facestrikesoutcome_hold', 'quizaccess_proctoring'),
+            'autofail' => get_string('setting:facestrikesoutcome_autofail', 'quizaccess_proctoring'),
+            'none' => get_string('setting:facestrikesoutcome_none', 'quizaccess_proctoring'),
+        ]
+    ));
+
     $settings->add(new admin_setting_configcheckbox(
         'quizaccess_proctoring/detectphone',
         get_string('setting:detectphone', 'quizaccess_proctoring'),

@@ -92,7 +92,11 @@ class proctoring_observer {
             $aireviewenabled = \quizaccess_proctoring_ai_review_configured($aireviewsettings);
             $risklockoutenabled = \quizaccess_proctoring_get_cheating_lockout_days() > 0 &&
                 (int)$risksettings['mode'] !== \QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED;
-            if (empty($risksettings['enabled']) && !$risklockoutenabled && !$aireviewenabled) {
+            // An attempt ended because the face kept leaving the frame takes its own outcome,
+            // whatever the risk score and the quiz's high-risk action (CPIT-510): the outcome
+            // recorded when it ended, not whatever the setting says now.
+            $facestrikeoutcome = local\face_strikes::ended_outcome($attemptid, (int)$attempt->userid);
+            if (empty($risksettings['enabled']) && !$risklockoutenabled && !$aireviewenabled && $facestrikeoutcome === '') {
                 return;
             }
 
@@ -127,33 +131,68 @@ class proctoring_observer {
                 (!empty($risksettings['enabled']) || $risklockoutenabled) &&
                     (int)$risk['score'] >= (int)$risksettings['threshold']
             ) {
-                // Review-only evidence (a second face) can hold an attempt but never fail it: fail
-                // automatically only when the rest of the evidence reaches the threshold on its own.
-                if (
-                    $riskaction === \QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL
-                    && \quizaccess_proctoring\local\risk_calculator::score_without_review_only_factors($risk)
-                        >= (int)$risksettings['threshold']
-                ) {
-                    $holdid = \quizaccess_proctoring_fail_high_risk_attempt(
-                        (int)$quiz->course,
-                        (int)$cm->id,
-                        (int)$attempt->userid,
-                        $attemptid,
-                        (int)$report->id,
-                        (int)$risk['score'],
-                        (int)$risksettings['threshold']
-                    );
-                } else {
-                    $holdid = \quizaccess_proctoring_apply_risk_hold(
-                        (int)$quiz->course,
-                        (int)$cm->id,
-                        (int)$attempt->userid,
-                        $attemptid,
-                        (int)$report->id,
-                        (int)$risk['score'],
-                        (int)$risksettings['threshold']
-                    );
+                // A failure here must not cost the attempt its face-strike outcome below (CPIT-510,
+                // Codex review): on Moodle 5.0 the attempt is not graded yet, and failing it throws.
+                try {
+                    // Review-only evidence (a second face) can hold an attempt but never fail it: fail
+                    // automatically only when the rest of the evidence reaches the threshold on its own.
+                    // An attempt the face strikes ended with a hold for review is held, not failed: the
+                    // pauses that ended it also raise its score, and the rule promised a review.
+                    if (
+                        $riskaction === \QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL
+                        && $facestrikeoutcome !== local\face_strikes::OUTCOME_HOLD
+                        && \quizaccess_proctoring\local\risk_calculator::score_without_review_only_factors($risk)
+                            >= (int)$risksettings['threshold']
+                    ) {
+                        $holdid = \quizaccess_proctoring_fail_high_risk_attempt(
+                            (int)$quiz->course,
+                            (int)$cm->id,
+                            (int)$attempt->userid,
+                            $attemptid,
+                            (int)$report->id,
+                            (int)$risk['score'],
+                            (int)$risksettings['threshold']
+                        );
+                    } else {
+                        $holdid = \quizaccess_proctoring_apply_risk_hold(
+                            (int)$quiz->course,
+                            (int)$cm->id,
+                            (int)$attempt->userid,
+                            $attemptid,
+                            (int)$report->id,
+                            (int)$risk['score'],
+                            (int)$risksettings['threshold']
+                        );
+                    }
+                } catch (\Throwable $e) {
+                    \quizaccess_proctoring_log_failure('applying the high-risk action to attempt ' . $attemptid, $e);
                 }
+            }
+
+            if ($facestrikeoutcome === local\face_strikes::OUTCOME_AUTOFAIL && (string)$attempt->state === 'finished') {
+                // Also over a hold the risk score just opened: the strikes decide this attempt.
+                $holdid = \quizaccess_proctoring_fail_high_risk_attempt(
+                    (int)$quiz->course,
+                    (int)$cm->id,
+                    (int)$attempt->userid,
+                    $attemptid,
+                    (int)$report->id,
+                    (int)$risk['score'],
+                    (int)$risksettings['threshold']
+                );
+            } else if ($facestrikeoutcome !== '' && $facestrikeoutcome !== local\face_strikes::OUTCOME_NONE && $holdid === 0) {
+                // Moodle 5.0 submits an attempt before grading it, and only a graded attempt can be
+                // failed: the grade is held now, quietly, and handle_quiz_attempt_graded() fails it.
+                $holdid = \quizaccess_proctoring_apply_risk_hold(
+                    (int)$quiz->course,
+                    (int)$cm->id,
+                    (int)$attempt->userid,
+                    $attemptid,
+                    (int)$report->id,
+                    (int)$risk['score'],
+                    (int)$risksettings['threshold'],
+                    $facestrikeoutcome === local\face_strikes::OUTCOME_HOLD
+                );
             }
 
             if ($aireviewenabled) {
@@ -178,6 +217,62 @@ class proctoring_observer {
             // Never block the student's submission, but make the failure visible: a swallowed
             // error here means a high-risk attempt was neither held nor failed.
             \quizaccess_proctoring_log_failure('processing the submission risk review for attempt ' . $event->objectid, $e);
+        }
+    }
+
+    /**
+     * Fail a graded attempt the face strikes ended, where the outcome is automatic failure (CPIT-510).
+     *
+     * Moodle 5.0 submits an attempt and grades it in two steps, and fires attempt_graded only after
+     * the second; the submission handler can only hold the grade, since only a finished attempt can
+     * be failed. Moodle 4.5 has no such event and fails the attempt at submission.
+     *
+     * @param \core\event\base $event The \mod_quiz\event\attempt_graded event.
+     * @return void
+     */
+    public static function handle_quiz_attempt_graded(\core\event\base $event) {
+        global $CFG, $DB;
+
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+
+        try {
+            $attemptid = (int)$event->objectid;
+            $attempt = $DB->get_record('quiz_attempts', ['id' => $attemptid]);
+            if (
+                !$attempt || (string)$attempt->state !== 'finished'
+                    || local\face_strikes::ended_outcome($attemptid, (int)$attempt->userid)
+                        !== local\face_strikes::OUTCOME_AUTOFAIL
+            ) {
+                return;
+            }
+            $quiz = $DB->get_record('quiz', ['id' => $attempt->quiz], '*', MUST_EXIST);
+            $cm = get_coursemodule_from_instance('quiz', $quiz->id, $quiz->course, false, MUST_EXIST);
+            $reports = $DB->get_records('quizaccess_proctoring_logs', [
+                'courseid' => $quiz->course,
+                'quizid' => $cm->id,
+                'userid' => $attempt->userid,
+                'status' => $attemptid,
+                'deletionprogress' => 0,
+            ], 'id ASC', 'id', 0, 1);
+            $reportid = $reports ? (int)reset($reports)->id : 0;
+            $risk = \quizaccess_proctoring_calculate_attempt_risk(
+                (int)$quiz->course,
+                (int)$cm->id,
+                (int)$attempt->userid,
+                $reportid
+            );
+            $risksettings = \quizaccess_proctoring_get_effective_risk_review_settings((int)$cm->id);
+            \quizaccess_proctoring_fail_high_risk_attempt(
+                (int)$quiz->course,
+                (int)$cm->id,
+                (int)$attempt->userid,
+                $attemptid,
+                $reportid,
+                (int)$risk['score'],
+                (int)$risksettings['threshold']
+            );
+        } catch (\Throwable $e) {
+            \quizaccess_proctoring_log_failure('failing graded attempt ' . $event->objectid . ' after face strikes', $e);
         }
     }
 }

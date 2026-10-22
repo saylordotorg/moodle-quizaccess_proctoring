@@ -57,6 +57,7 @@ namespace quizaccess_proctoring\local;
  * | {@see override_resolver::REQ_SCREENSHARE}        | `screensharestate`     |
  * | {@see override_resolver::REQ_MULTIMONITOR}       | `multimonitorstate`    |
  * | {@see override_resolver::REQ_PHONEDETECTION}     | `phonedetectionstate`  |
+ * | {@see override_resolver::REQ_FACESTRIKES}        | `facestrikesstate`     |
  */
 class override_resolver {
     /** @var string CAPTCHA (security check) requirement key. */
@@ -76,6 +77,9 @@ class override_resolver {
 
     /** @var string Webcam phone-detection requirement key. */
     const REQ_PHONEDETECTION = 'phonedetection';
+
+    /** @var string Ending the attempt after the face leaves the webcam frame N times (CPIT-510). */
+    const REQ_FACESTRIKES = 'facestrikes';
 
     /** @var int Inherit: no override influence; base state stands. */
     const STATE_INHERIT = -1;
@@ -98,6 +102,7 @@ class override_resolver {
         self::REQ_SCREENSHARE => 'screensharestate',
         self::REQ_MULTIMONITOR => 'multimonitorstate',
         self::REQ_PHONEDETECTION => 'phonedetectionstate',
+        self::REQ_FACESTRIKES => 'facestrikesstate',
     ];
 
     /**
