@@ -4,8 +4,8 @@ let isCameraAllowed = false;
 let precheckStream = null;
 
 define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proctoring/screenMonitorClient',
-    'quizaccess_proctoring/evidenceQueue'],
-    function($, Ajax, Notification, Str, ScreenMonitorClient, EvidenceQueue) {
+    'quizaccess_proctoring/evidenceQueue', 'quizaccess_proctoring/globalScript'],
+    function($, Ajax, Notification, Str, ScreenMonitorClient, EvidenceQueue, GlobalScript) {
         // Whether this looks like a phone or tablet. Only asked once screen sharing has turned out
         // to be unavailable: a tablet asking for the desktop site reports a desktop operating
         // system, so the touch screen is the tell (CPIT-495).
@@ -1941,16 +1941,6 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 startMarkerChecks();
             };
 
-            const loadExternalScript = function(src) {
-                return new Promise(function(resolve, reject) {
-                    const script = document.createElement('script');
-                    script.src = src;
-                    script.onload = resolve;
-                    script.onerror = reject;
-                    document.head.appendChild(script);
-                });
-            };
-
             const capturePhoneEvidenceFrame = function(video) {
                 if (!phoneCanvas) {
                     phoneCanvas = document.createElement('canvas');
@@ -2092,11 +2082,13 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }
 
                 try {
+                    // UMD bundles: a plain script tag registers them with RequireJS instead of
+                    // window, so detection never started (CPIT-484).
                     if (!window.tf) {
-                        await loadExternalScript(props.phonedetectliburl + '/tf.min.js');
+                        await GlobalScript.load(props.phonedetectliburl + '/tf.min.js');
                     }
                     if (!window.cocoSsd) {
-                        await loadExternalScript(props.phonedetectliburl + '/coco-ssd.min.js');
+                        await GlobalScript.load(props.phonedetectliburl + '/coco-ssd.min.js');
                     }
                     phoneModel = await window.cocoSsd.load({
                         modelUrl: props.phonedetectliburl + '/model/model.json'
