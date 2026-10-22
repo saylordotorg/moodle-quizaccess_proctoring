@@ -395,11 +395,25 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @return bool True when the phone's browser can take it.
      */
     private function phone_browser_can_take_exam(): bool {
-        if (self::mobile_screen_share_mode() === self::MOBILE_SCREEN_SHARE_BYPASS) {
-            return true;
+        global $USER;
+
+        $bypass = self::mobile_screen_share_mode() === self::MOBILE_SCREEN_SHARE_BYPASS;
+        // The screen share a phone would be asked for, as the preflight resolves it for this
+        // student: the site and quiz first, then a per-student override, which can force the share
+        // even where phones skip it, or waive it (Codex review).
+        $share = !$bypass && $this->configured_requires_entire_screen();
+        if (!empty($this->quiz->course) && !empty($this->quiz->id)) {
+            $resolver = '\quizaccess_proctoring\local\override_resolver';
+            $share = $resolver::resolve_all(
+                (int)$this->quiz->course,
+                (int)$this->quiz->id,
+                (int)$USER->id,
+                time(),
+                [$resolver::REQ_SCREENSHARE => $share]
+            )[$resolver::REQ_SCREENSHARE];
         }
-        // Required or blocked on phones: only an exam that never shares the screen runs there.
-        return !$this->configured_requires_entire_screen() && !self::site_captures_violation_desktop();
+        // Where phones are not exempt, desktop capture during the attempt needs a share too.
+        return !$share && ($bypass || !self::site_captures_violation_desktop());
     }
 
     /**
