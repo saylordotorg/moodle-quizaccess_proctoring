@@ -86,7 +86,7 @@ final class rule_description_webservice_test extends advanced_testcase {
         $this->resetAfterTest();
         $this->setAdminUser();
         $quizobj = $this->create_quizobj();
-        $notice = function() use ($quizobj): string {
+        $notice = function () use ($quizobj): string {
             $rule = new class ($quizobj, time()) extends \quizaccess_proctoring {
                 /**
                  * Report a web service request, as the Moodle app makes.
@@ -116,6 +116,27 @@ final class rule_description_webservice_test extends advanced_testcase {
         set_config('mobilescreensharemode', 'bypass', 'quizaccess_proctoring');
         set_config('requireentirescreen', 1, 'quizaccess_proctoring');
         $this->assertSame(get_string('appusebrowser', 'quizaccess_proctoring'), $notice());
+
+        // A per-student override is the student's real requirement, as the preflight applies it.
+        global $DB, $USER;
+        $override = function (int $state) use ($DB, $USER, $quizobj): void {
+            $DB->delete_records('quizaccess_proctoring_overrides', ['userid' => $USER->id]);
+            $DB->insert_record('quizaccess_proctoring_overrides', (object)[
+                'courseid' => (int)$quizobj->get_quiz()->course, 'quizid' => 0, 'userid' => (int)$USER->id,
+                'captchastate' => -1, 'webcamstate' => -1, 'idverificationstate' => -1, 'screensharestate' => $state,
+                'multimonitorstate' => -1, 'phonedetectionstate' => -1, 'justification' => 'Accommodation',
+                'expiry' => null, 'revoked' => 0, 'grantedby' => 2, 'timecreated' => time() - 60, 'timemodified' => time() - 60,
+            ]);
+        };
+        $override(1);
+        $this->assertSame(get_string('appusecomputer', 'quizaccess_proctoring'), $notice(), 'Forced even where phones skip it.');
+        set_config('mobilescreensharemode', 'require', 'quizaccess_proctoring');
+        set_config('captureviolationdesktop', 0, 'quizaccess_proctoring');
+        set_config('requireentirescreen', 0, 'quizaccess_proctoring');
+        $this->assertSame(get_string('appusecomputer', 'quizaccess_proctoring'), $notice(), 'Forced on a share-free quiz.');
+        $override(0);
+        set_config('requireentirescreen', 1, 'quizaccess_proctoring');
+        $this->assertSame(get_string('appusebrowser', 'quizaccess_proctoring'), $notice(), 'Waived for this student.');
     }
 
     /**
