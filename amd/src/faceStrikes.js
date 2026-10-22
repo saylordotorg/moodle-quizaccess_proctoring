@@ -78,12 +78,14 @@ define([], function() {
         const minMs = Math.max(1, options.minSeconds || 5) * 1000;
         let limit = options.limit;
         // The server's count when the page loaded, the highest count it has answered with since,
-        // and the strikes this page made. A cumulative answer can already include a strike whose
-        // own answer is still on its way, so the two are compared, never added.
+        // the strikes an earlier page could not deliver, and the strikes this page made. A
+        // cumulative answer can already include a strike whose own answer is still on its way, so
+        // the server's count and the page's own are compared, never added.
         const base = options.strikes || 0;
         let acknowledged = base;
+        let recovered = 0;
         let made = 0;
-        const count = () => Math.max(acknowledged, base + made);
+        const count = () => Math.max(acknowledged, base + recovered + made);
         let shown = base;
         let ended = false;
         let paused = false;
@@ -127,6 +129,10 @@ define([], function() {
         // still being retried when the page goes is delivered by the next page.
         const saved = read(outboxKey);
         const outbox = saved && typeof saved === 'object' ? saved : {};
+        // Taken as not yet on the server, which is what an undelivered strike almost always is.
+        // One that landed but whose answer was lost is counted twice here: that can only bring a
+        // warning forward, never the end, which only the server decides.
+        recovered = Object.keys(outbox).length;
         const saveOutbox = function() {
             write(outboxKey, Object.keys(outbox).length ? outbox : null);
         };
@@ -203,8 +209,7 @@ define([], function() {
             deliver(record, 0);
         };
 
-        // What the previous page could not deliver. Its count is already in the server's answer
-        // once it lands, so it is not added to this page's own strikes.
+        // Deliver what the previous page could not.
         Object.keys(outbox).forEach(function(requestid) {
             deliver(outbox[requestid], 0);
         });

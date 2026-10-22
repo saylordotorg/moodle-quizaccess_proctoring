@@ -300,6 +300,29 @@ for (const built of [false, true]) {
         assert.strictEqual(srv.sent.length, 2);
     });
 
+    test(`${label}: a recovered strike counts toward the next warning before it lands`, async () => {
+        const m = load(built);
+        const storage = memoryStorage();
+        const c = clock();
+        const srv = server(3);
+        srv.failNext = 1;
+        const first = controller(m, {clock: c, limit: 3, storage, send: (s) => srv.send(s)});
+        first.ctl.pauseStarted();
+        await c.advance(5000);
+        first.ctl.pageLeaving();
+
+        // The next page cannot reach the server for a while: its own strike is the second of three,
+        // and the student is told it is the final warning.
+        srv.failNext = 100;
+        const second = controller(m, {clock: c, limit: 3, storage, send: (s) => srv.send(s)});
+        await c.advance(10);
+        second.ctl.faceSeen();
+        second.ctl.pauseStarted();
+        await c.advance(5000);
+        assert.deepStrictEqual(second.log.notices, ['facestrike:final']);
+        assert.strictEqual(second.log.ended, 0);
+    });
+
     test(`${label}: a pause spanning several pages keeps its whole length`, async () => {
         const m = load(built);
         const storage = memoryStorage();
