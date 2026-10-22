@@ -57,9 +57,28 @@ final class message_texts_test extends advanced_testcase {
                 $this->assertContains($part, ['subject', 'body']);
                 $this->assertTrue($manager->string_exists($key, 'quizaccess_proctoring'), $key);
                 $this->assertSame([$id, $part], message_texts::locate($key));
+                // The edit page explains every placeholder and previews it with a sample.
+                foreach (message_texts::placeholders($key) as $name) {
+                    $this->assertNotSame('', message_texts::describe($name), $name);
+                    $this->assertArrayHasKey($name, message_texts::samples(), $name);
+                }
             }
         }
         $this->assertNull(message_texts::locate('idexemptionemail:approved:eyebrow'));
+    }
+
+    /**
+     * The HTML version escapes the text, links web and email addresses, and keeps line breaks.
+     */
+    public function test_the_html_version_links_and_escapes(): void {
+        $html = message_texts::html("Read <b>this</b>:\n- https://learn.saylor.org/a?b=1&c=2.\n- Write to help@example.org.");
+        $this->assertStringContainsString('&lt;b&gt;this&lt;/b&gt;', $html);
+        $this->assertStringNotContainsString('<b>', $html);
+        $this->assertStringContainsString('<a href="https://learn.saylor.org/a?b=1&amp;c=2">https://learn.saylor.org/a?b=1&amp;c=2</a>.', $html);
+        $this->assertStringContainsString('<a href="mailto:help@example.org">help@example.org</a>.', $html);
+        $this->assertSame(2, substr_count($html, '<br />'));
+        $this->assertStringStartsWith('<div class="text_to_html">', $html);
+        $this->assertStringNotContainsString('<div', message_texts::html('plain', false));
     }
 
     /**

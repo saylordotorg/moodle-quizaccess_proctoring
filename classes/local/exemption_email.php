@@ -233,7 +233,7 @@ class exemption_email {
                 s($spec['title'] ?? '') . '</div></td></tr>' .
             '<tr><td class="px" style="padding:14px 40px 0; ' . $font . '">' .
             '<div style="font-size:15px; color:#3c434a; ' . $lh . ' line-height:23px;">' .
-                s($spec['intro'] ?? '') . '</div></td></tr>' .
+                message_texts::html((string)($spec['intro'] ?? ''), false) . '</div></td></tr>' .
             '<tr><td class="px" style="padding:24px 40px 0;">' .
             '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" ' .
                 'style="background-color:#f5f8fa; border:1px solid #e1e8ee; border-radius:8px;">' .

@@ -3395,7 +3395,8 @@ function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $deci
         $message->subject = $subject;
         $message->fullmessage = $body;
         $message->fullmessageformat = FORMAT_PLAIN;
-        $message->fullmessagehtml = text_to_html($body);
+        // Escaped, with links and line breaks: the wording may come from staff (CPIT-512).
+        $message->fullmessagehtml = $texts::html($body);
         $message->smallmessage = $subject;
         $message->notification = 1;
         // The quiz the notification is about, so the per-student report can list what this

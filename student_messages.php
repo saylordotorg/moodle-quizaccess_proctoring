@@ -84,19 +84,37 @@ if ($edit !== '') {
             \core\output\notification::NOTIFY_SUCCESS
         );
     }
+    // Live preview with sample values, and the placeholder buttons.
+    $parts = [];
+    foreach (message_texts::MESSAGES[$edit]['parts'] as $part => $key) {
+        $parts[$part] = array_values(array_unique(array_values(message_texts::placeholders($key))));
+    }
+    $PAGE->requires->js_call_amd('quizaccess_proctoring/messagePreview', 'init', [[
+        'parts' => $parts,
+        'samples' => message_texts::samples(),
+    ]]);
     echo $OUTPUT->header();
+    echo html_writer::start_div('proctoring-student-messages');
+    echo html_writer::link(
+        new moodle_url($baseurl, [], 'message-' . $edit),
+        get_string('messagetexts:backtolist', $component),
+        ['class' => 'btn btn-secondary btn-sm mb-3']
+    );
     echo $OUTPUT->heading(get_string('messagetexts:message_' . $edit, $component), 3);
     echo html_writer::tag('p', s(get_string('messagetexts:when_' . $edit, $component)), ['class' => 'text-muted']);
     $form->display();
+    echo html_writer::end_div();
     echo $OUTPUT->footer();
     exit;
 }
 
 echo $OUTPUT->header();
+// Links on this page are underlined, not told apart by colour alone (CPIT-512, Student Affairs).
+echo html_writer::start_div('proctoring-student-messages');
 echo html_writer::link(
     new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'),
     get_string('messagetexts:back', $component),
-    ['class' => 'd-inline-block mb-3']
+    ['class' => 'btn btn-secondary btn-sm mb-3']
 );
 echo html_writer::tag('p', s(get_string($canedit ? 'messagetexts:introedit' : 'messagetexts:introview', $component)));
 
@@ -137,7 +155,8 @@ foreach (message_texts::MESSAGES as $id => $message) {
             $editor = core_user::get_user((int)$record->usermodified);
             $status = get_string('messagetexts:edited', $component, (object)[
                 'user' => $editor ? fullname($editor) : '-',
-                'time' => userdate((int)$record->timemodified),
+                // In the institution's timezone, zone named, as every other proctoring date.
+                'time' => \quizaccess_proctoring\local\display_time::staff((int)$record->timemodified),
             ]);
         }
         $badge = $record ? 'badge badge-info bg-info text-dark' : 'badge badge-light bg-light text-dark';
@@ -172,4 +191,5 @@ foreach (message_texts::MESSAGES as $id => $message) {
     echo html_writer::div($out, 'card card-body mb-3', ['id' => 'message-' . $id]);
 }
 
+echo html_writer::end_div();
 echo $OUTPUT->footer();
