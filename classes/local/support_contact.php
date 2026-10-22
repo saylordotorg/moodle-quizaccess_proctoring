@@ -42,6 +42,23 @@ class support_contact {
     }
 
     /**
+     * The "If you have questions..." sentence that closes a hold-outcome message.
+     *
+     * Student Affairs answers these, not the course instructor (CPIT-481), so the sentence
+     * names the staffed address; a site without one keeps the instructor wording.
+     *
+     * @return string Localized sentence.
+     */
+    public static function questions_sentence(): string {
+        $contact = self::address();
+        if ($contact === '') {
+            return get_string('message:questionsinstructor', 'quizaccess_proctoring');
+        }
+
+        return get_string('message:questionscontact', 'quizaccess_proctoring', $contact);
+    }
+
+    /**
      * Display name shown beside the Reply-To address.
      *
      * @param string|null $lang Language code, or null for the current language.

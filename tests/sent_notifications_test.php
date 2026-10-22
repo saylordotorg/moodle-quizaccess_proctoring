@@ -231,4 +231,47 @@ final class sent_notifications_test extends advanced_testcase {
         $this->assertCount(1, $rows);
         $this->assertSame($detail['subject'], $rows[0]['subject']);
     }
+
+    /**
+     * A confirmed or automatically failed outcome sends questions to the support address,
+     * not the instructor (CPIT-481); without an address it falls back to the instructor.
+     */
+    public function test_outcome_messages_name_the_support_address(): void {
+        $this->resetAfterTest();
+        set_config('holddecisionnotify', 1, 'quizaccess_proctoring');
+        set_config('idexemptioncontactemail', 'support@example.org', 'quizaccess_proctoring');
+
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $quiz = $generator->create_module('quiz', ['course' => $course->id]);
+        $user = $generator->create_user();
+        $hold = (object)[
+            'courseid' => (int)$course->id,
+            'quizid' => (int)$quiz->cmid,
+            'quizinstance' => (int)$quiz->id,
+            'userid' => (int)$user->id,
+            'attemptid' => 12345,
+        ];
+
+        $sink = $this->redirectMessages();
+        quizaccess_proctoring_notify_hold_decision($hold, 'confirmed');
+        quizaccess_proctoring_notify_hold_decision($hold, 'autofailed');
+        set_config('idexemptioncontactemail', '', 'quizaccess_proctoring');
+        quizaccess_proctoring_notify_hold_decision($hold, 'confirmed');
+        $messages = $sink->get_messages();
+        $sink->close();
+
+        $this->assertCount(3, $messages);
+        foreach ([$messages[0], $messages[1]] as $message) {
+            $this->assertStringContainsString(
+                'If you have questions, please send a message to support@example.org.',
+                $message->fullmessage
+            );
+            $this->assertStringNotContainsString('instructor', $message->fullmessage);
+        }
+        $this->assertStringContainsString(
+            'If you have questions, please contact your instructor.',
+            $messages[2]->fullmessage
+        );
+    }
 }
