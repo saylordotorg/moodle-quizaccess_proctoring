@@ -4943,3 +4943,13 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     color: #495057;
     text-align: center;
 }
+
+/* Messages to students (CPIT-512): links are underlined, not told apart by colour alone. */
+.proctoring-student-messages a:not(.btn) {
+    text-decoration: underline;
+}
+
+.proctoring-student-messages .proctoring-message-preview [data-proctoring-preview] {
+    min-height: 2.5em;
+    white-space: normal;
+}

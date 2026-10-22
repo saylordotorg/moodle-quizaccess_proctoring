@@ -151,6 +151,72 @@ final class message_texts {
     }
 
     /**
+     * Web and email addresses in a message, which become links in its HTML version.
+     *
+     * Kept in step with the preview on the edit page (amd/src/messagePreview.js).
+     */
+    const LINK_PATTERN = '~(https?://[^\s<>"\']+[^\s<>"\'.,;:!?)]|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})~';
+
+    /**
+     * The HTML version of a plain-text message: escaped, with web and email addresses as links
+     * and each line break kept, so a list typed one item per line arrives as one.
+     *
+     * @param string $text Plain text.
+     * @param bool $wrap Whether to wrap it in a div, as text_to_html() does.
+     * @return string HTML.
+     */
+    public static function html(string $text, bool $wrap = true): string {
+        $html = '';
+        foreach (preg_split(self::LINK_PATTERN, $text, -1, PREG_SPLIT_DELIM_CAPTURE) as $i => $piece) {
+            if ($i % 2 === 0) {
+                $html .= s($piece);
+                continue;
+            }
+            $href = preg_match('~^https?://~i', $piece) ? $piece : 'mailto:' . $piece;
+            $html .= \html_writer::link($href, s($piece));
+        }
+        $html = nl2br($html);
+        return $wrap ? \html_writer::div($html, 'text_to_html') : $html;
+    }
+
+    /**
+     * Sample values for the edit page's preview, by placeholder name.
+     *
+     * The ones that depend on settings - the review window, the questions sentence and the
+     * support address - are what a student would receive today.
+     *
+     * @return array For example ['quiz' => 'Final Exam'].
+     */
+    public static function samples(): array {
+        global $CFG;
+
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+        $component = 'quizaccess_proctoring';
+        $days = quizaccess_proctoring_get_risk_review_auto_release_days();
+        $contact = support_contact::address();
+        return [
+            'quiz' => get_string('messagetexts:samplequiz', $component),
+            'course' => get_string('messagetexts:samplecourse', $component),
+            'window' => $days > 0 ? get_string('message:heldwindow', $component, $days) : '',
+            'questions' => support_contact::questions_sentence(),
+            'contact' => $contact !== '' ? $contact : get_string('messagetexts:samplecontact', $component),
+        ];
+    }
+
+    /**
+     * What a placeholder becomes when the message is sent.
+     *
+     * @param string $name Placeholder name.
+     * @return string Description.
+     */
+    public static function describe(string $name): string {
+        $key = 'messagetexts:placeholder_' . $name;
+        return get_string_manager()->string_exists($key, 'quizaccess_proctoring')
+            ? get_string($key, 'quizaccess_proctoring')
+            : '';
+    }
+
+    /**
      * The wording staff stored for a string, or null when it is not edited.
      *
      * @param string $key Language string key.

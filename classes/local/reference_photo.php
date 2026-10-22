@@ -344,7 +344,7 @@ class reference_photo {
         $message->subject = $subject;
         $message->fullmessage = $body;
         $message->fullmessageformat = FORMAT_PLAIN;
-        $message->fullmessagehtml = text_to_html($body);
+        $message->fullmessagehtml = message_texts::html($body);
         $message->smallmessage = $subject;
         $message->notification = 1;
         $message->contexturl = (new moodle_url('/mod/quiz/accessrule/proctoring/my_photo.php'))->out(false);
@@ -444,7 +444,7 @@ class reference_photo {
             $message->subject = $subject;
             $message->fullmessage = $body;
             $message->fullmessageformat = FORMAT_PLAIN;
-            $message->fullmessagehtml = text_to_html($body);
+            $message->fullmessagehtml = message_texts::html($body);
             $message->smallmessage = $subject;
             $message->notification = 1;
             $message->contexturl = $a->queueurl;
