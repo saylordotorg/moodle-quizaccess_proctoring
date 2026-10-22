@@ -328,9 +328,24 @@ class reference_photo {
      * @param string $outcome One of 'done' (photo reset), 'declined', or 'replaced' (staff upload).
      */
     private static function notify_student(int $userid, string $outcome): void {
+        $message = self::outcome_message($userid, $outcome);
+        if ($message) {
+            message_send($message);
+        }
+    }
+
+    /**
+     * The notification that tells a student how their photo request ended, or null when there is
+     * no one to tell.
+     *
+     * @param int $userid Student.
+     * @param string $outcome One of 'done' (photo reset), 'declined', or 'replaced' (staff upload).
+     * @return \core\message\message|null The message, ready to send.
+     */
+    public static function outcome_message(int $userid, string $outcome): ?\core\message\message {
         $student = \core_user::get_user($userid);
         if (!$student || $student->deleted) {
-            return;
+            return null;
         }
         $a = (object)['contact' => support_contact::address()];
         // The wording Student Affairs set in Moodle, where they changed it (CPIT-512).
@@ -355,7 +370,7 @@ class reference_photo {
             $message->replyto = $contact;
             $message->replytoname = support_contact::name();
         }
-        message_send($message);
+        return $message;
     }
 
     /**

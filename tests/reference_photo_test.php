@@ -304,8 +304,10 @@ final class reference_photo_test extends advanced_testcase {
         $this->assertCount(1, $mailed);
         $this->assertSame('contact@example.org', $mailed[0]->to);
         $this->assertMatchesRegularExpression('/^Reply-To: .*student@example\.org/mi', $mailed[0]->header);
-        $this->assertStringContainsString('It is blurry', $mailed[0]->body);
-        $this->assertStringContainsString('view=photoresets', $mailed[0]->body);
+        // A multipart message, quoted-printable encoded.
+        $body = quoted_printable_decode($mailed[0]->body);
+        $this->assertStringContainsString('It is blurry', $body);
+        $this->assertStringContainsString('view=photoresets', $body);
         // The queue still has it.
         $this->assertNotNull(reference_photo::open_request((int)$student->id));
     }
@@ -315,19 +317,19 @@ final class reference_photo_test extends advanced_testcase {
      */
     public function test_outcome_replies_go_to_student_support(): void {
         $this->resetAfterTest();
+        $student = $this->getDataGenerator()->create_user();
+
+        // Without a support address, Reply-To is left to Moodle.
+        $message = reference_photo::outcome_message((int)$student->id, 'done');
+        $this->assertEmpty($message->replyto ?? '');
+
         set_config('idexemptioncontactemail', 'contact@example.org', 'quizaccess_proctoring');
-        $course = $this->getDataGenerator()->create_course();
-        $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id]);
-        $student = $this->getDataGenerator()->create_user(['email' => 'student@example.org']);
-        $this->photo((int)$student->id);
-        $this->setAdminUser();
-
-        $emails = $this->redirectEmails();
-        reference_photo::reset((int)$student->id, 'Blurry', \context_module::instance($quiz->cmid));
-        $mailed = array_values(array_filter($emails->get_messages(), fn($m) => $m->to === 'student@example.org'));
-        $emails->close();
-
-        $this->assertCount(1, $mailed);
-        $this->assertMatchesRegularExpression('/^Reply-To: .*contact@example\.org/mi', $mailed[0]->header);
+        foreach (['done', 'declined', 'replaced'] as $outcome) {
+            $message = reference_photo::outcome_message((int)$student->id, $outcome);
+            $this->assertSame('contact@example.org', $message->replyto, $outcome);
+            $this->assertSame(\quizaccess_proctoring\local\support_contact::name(), $message->replytoname);
+            $this->assertSame((int)$student->id, (int)$message->userto->id);
+            $this->assertStringContainsString('contact@example.org', $message->fullmessage);
+        }
     }
 }
