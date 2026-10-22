@@ -349,6 +349,12 @@ class reference_photo {
         $message->notification = 1;
         $message->contexturl = (new moodle_url('/mod/quiz/accessrule/proctoring/my_photo.php'))->out(false);
         $message->contexturlname = get_string('myphoto:title', 'quizaccess_proctoring');
+        // A student who replies reaches student support, not the noreply address (CPIT-476).
+        $contact = support_contact::address();
+        if ($contact !== '') {
+            $message->replyto = $contact;
+            $message->replytoname = support_contact::name();
+        }
         message_send($message);
     }
 
@@ -366,15 +372,16 @@ class reference_photo {
     }
 
     /**
-     * Ask the proctoring reviewers to reset the student's photo.
+     * Ask Student Affairs to reset the student's photo.
      *
-     * Goes to everyone holding the cross-course review capability site-wide, which is the Student
-     * Affairs reviewer role; to the site administrators when nobody does.
+     * Emailed to the student support address when one is set (CPIT-476); otherwise sent to
+     * everyone holding the cross-course review capability site-wide, which is the Student Affairs
+     * reviewer role, or to the site administrators when nobody does.
      *
      * @param int $userid Student asking.
      * @param string $reason What is wrong with the photo, in the student's words.
-     * @return int Number of reviewers notified; -1 when no request was created (one is already
-     *         open, the photo is gone, or the lock was held elsewhere).
+     * @return int Recipients notified (1 for the support address); -1 when no request was created
+     *         (one is already open, the photo is gone, or the lock was held elsewhere).
      */
     public static function request_reset(int $userid, string $reason): int {
         global $DB;
@@ -405,21 +412,6 @@ class reference_photo {
         }
 
         $student = \core_user::get_user($userid, '*', MUST_EXIST);
-        $recipients = get_users_by_capability(
-            \context_system::instance(),
-            'quizaccess/proctoring:reviewacrosscourses',
-            'u.*',
-            '',
-            '',
-            '',
-            '',
-            '',
-            false
-        );
-        if (!$recipients) {
-            $recipients = get_admins();
-        }
-
         $a = (object)[
             'student' => fullname($student),
             'email' => $student->email,
@@ -434,6 +426,75 @@ class reference_photo {
         ];
         $subject = get_string('referencerequest:subject', 'quizaccess_proctoring', $a);
         $body = get_string('referencerequest:body', 'quizaccess_proctoring', $a);
+
+        // With a student support address, the request goes there alone: a shared inbox the team
+        // works from, rather than a copy in each reviewer's mailbox (CPIT-476, Student Affairs).
+        // Replying answers the student. The queue tab lists the request either way.
+        $contact = support_contact::address();
+        if ($contact !== '') {
+            $sent = self::email_support($contact, $student, $subject, $body) ? 1 : 0;
+        } else {
+            $sent = self::notify_reviewers($subject, $body, $a->queueurl);
+        }
+        \quizaccess_proctoring\event\reference_reset_requested::create([
+            'context' => \context_user::instance($userid),
+            'relateduserid' => $userid,
+        ])->trigger();
+        return $sent;
+    }
+
+    /**
+     * Email a reset request to the student support address, with Reply-To set to the student.
+     *
+     * @param string $contact Student support address.
+     * @param \stdClass $student Student asking.
+     * @param string $subject Subject.
+     * @param string $body Plain-text body.
+     * @return bool Whether the email was accepted for delivery.
+     */
+    private static function email_support(string $contact, \stdClass $student, string $subject, string $body): bool {
+        $recipient = clone(\core_user::get_support_user());
+        $recipient->email = $contact;
+        $recipient->mailformat = 1;
+        $recipient->emailstop = 0;
+        return (bool)email_to_user(
+            $recipient,
+            \core_user::get_noreply_user(),
+            $subject,
+            $body,
+            message_texts::html($body),
+            '',
+            '',
+            true,
+            (string)$student->email,
+            fullname($student)
+        );
+    }
+
+    /**
+     * Notify every cross-course reviewer of a reset request, or the site administrators when
+     * nobody holds that capability. Used when no student support address is set.
+     *
+     * @param string $subject Subject.
+     * @param string $body Plain-text body.
+     * @param string $queueurl The photo reset queue.
+     * @return int Reviewers notified.
+     */
+    private static function notify_reviewers(string $subject, string $body, string $queueurl): int {
+        $recipients = get_users_by_capability(
+            \context_system::instance(),
+            'quizaccess/proctoring:reviewacrosscourses',
+            'u.*',
+            '',
+            '',
+            '',
+            '',
+            '',
+            false
+        );
+        if (!$recipients) {
+            $recipients = get_admins();
+        }
         $sent = 0;
         foreach ($recipients as $recipient) {
             $message = new \core\message\message();
@@ -447,16 +508,12 @@ class reference_photo {
             $message->fullmessagehtml = message_texts::html($body);
             $message->smallmessage = $subject;
             $message->notification = 1;
-            $message->contexturl = $a->queueurl;
+            $message->contexturl = $queueurl;
             $message->contexturlname = get_string('referencerequest:queuename', 'quizaccess_proctoring');
             if (message_send($message)) {
                 $sent++;
             }
         }
-        \quizaccess_proctoring\event\reference_reset_requested::create([
-            'context' => \context_user::instance($userid),
-            'relateduserid' => $userid,
-        ])->trigger();
         return $sent;
     }
 }

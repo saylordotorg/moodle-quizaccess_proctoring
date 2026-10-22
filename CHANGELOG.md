@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.15.2 — 2026-10-22
+- **Photo reset requests go to student support, and replies reach a person (CPIT-476, Student Affairs).** With a student support address set (the "ID exception contact email" setting), a student's request for a new reference photo is emailed to that address alone, instead of a copy to every reviewer: the team works one shared inbox, with Reply-To set to the student so answering reaches them. The request is still a row on the Photo reset requests tab, and a site without an address keeps notifying the reviewers. The notification a student gets about the outcome (photo reset, request declined, photo replaced) now has Reply-To set to the support address, where a reply used to go to the site's noreply address. The "My proctoring photo" page shows when the photo was taken and when a request was sent in the institution's timezone with the zone named, like every other proctoring date.
+
 # v1.15.1 — 2026-10-22
 - **The Moodle app tells students to take a proctored exam in the browser (CPIT-454).** The app cannot run proctoring, so it blocks the attempt with its own "This quiz can't be attempted in the app" notice, which Student Affairs found students would read as an error. The first thing the app now shows on a proctored quiz is our own line: the exam cannot be taken in the Moodle app; tap "Open in browser" to take it in the phone's web browser, where the webcam checks work. Where the site requires or blocks screen sharing on phones and the exam shares the screen, it says instead that the exam needs a laptop or desktop computer, since a phone browser could not take it either. The quiz page in a browser is unchanged.
 

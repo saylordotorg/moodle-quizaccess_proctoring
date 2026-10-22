@@ -266,4 +266,58 @@ final class reference_photo_test extends advanced_testcase {
         $this->assertNull(reference_photo::open_request((int)$student->id));
         $this->assertSame([], reference_photo::open_requests());
     }
+
+    /**
+     * With a student support address, the request is emailed there alone, and replying answers
+     * the student (CPIT-476, Student Affairs).
+     */
+    public function test_request_goes_to_the_support_address_alone(): void {
+        $this->resetAfterTest();
+        set_config('idexemptioncontactemail', 'contact@example.org', 'quizaccess_proctoring');
+        $role = reviewer_role::ensure();
+        $reviewer = $this->getDataGenerator()->create_user();
+        role_assign($role->id, $reviewer->id, \context_system::instance());
+        $student = $this->getDataGenerator()->create_user(['email' => 'student@example.org']);
+        $this->photo((int)$student->id);
+        $this->setUser($student);
+
+        $messages = $this->redirectMessages();
+        $emails = $this->redirectEmails();
+        $sent = reference_photo::request_reset((int)$student->id, 'It is blurry');
+        $notified = $messages->get_messages();
+        $mailed = $emails->get_messages();
+        $messages->close();
+        $emails->close();
+
+        $this->assertSame(1, $sent);
+        $this->assertCount(0, $notified, 'The reviewers get no copy of their own.');
+        $this->assertCount(1, $mailed);
+        $this->assertSame('contact@example.org', $mailed[0]->to);
+        $this->assertMatchesRegularExpression('/^Reply-To: .*student@example\.org/mi', $mailed[0]->header);
+        $this->assertStringContainsString('It is blurry', $mailed[0]->body);
+        $this->assertStringContainsString('view=photoresets', $mailed[0]->body);
+        // The queue still has it.
+        $this->assertNotNull(reference_photo::open_request((int)$student->id));
+    }
+
+    /**
+     * A student who replies to the outcome reaches student support, not the noreply address.
+     */
+    public function test_outcome_replies_go_to_student_support(): void {
+        $this->resetAfterTest();
+        set_config('idexemptioncontactemail', 'contact@example.org', 'quizaccess_proctoring');
+        $course = $this->getDataGenerator()->create_course();
+        $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id]);
+        $student = $this->getDataGenerator()->create_user(['email' => 'student@example.org']);
+        $this->photo((int)$student->id);
+        $this->setAdminUser();
+
+        $emails = $this->redirectEmails();
+        reference_photo::reset((int)$student->id, 'Blurry', \context_module::instance($quiz->cmid));
+        $mailed = array_values(array_filter($emails->get_messages(), fn($m) => $m->to === 'student@example.org'));
+        $emails->close();
+
+        $this->assertCount(1, $mailed);
+        $this->assertMatchesRegularExpression('/^Reply-To: .*contact@example\.org/mi', $mailed[0]->header);
+    }
 }
