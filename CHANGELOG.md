@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.12.42 — 2026-10-22
+- **Phone detection actually starts (CPIT-484).** Student Affairs held a phone up to the webcam on dev and nothing was flagged; the report said the detector never started. TensorFlow.js and COCO-SSD are UMD bundles, and on a Moodle page — which always runs RequireJS — a plain script tag made them register anonymous AMD modules instead of setting `window.tf` / `window.cocoSsd`, so the model never loaded (RequireJS logged "Mismatched anonymous define() module"). The libraries are now fetched and run as inline scripts with RequireJS's `define` and `require` hidden only for that synchronous run (new `globalScript` module), so they land on `window` and no module RequireJS loads in the meantime can see them missing. Checked against the files deployed on dev: the model loads and finds "cell phone" at 0.95–0.99 confidence in photos of a phone held up to the camera.
+- **Questions about a confirmed violation or an automatic failure go to student support, not the instructor (CPIT-481).** At Student Affairs' request, the confirmed and automatically-failed notifications — and the confirmed notice on the quiz page — now end "If you have questions, please send a message to contact@saylor.org." The address is the site's student support contact (the "ID exception contact email" setting, already the Reply-To on these messages); a site with none configured keeps the instructor wording.
+
 # v1.12.41 — 2026-10-22
 - **The proctoring JavaScript bundle is rebuilt whole.** v1.12.40's merge left Git conflict markers inside the built `proctoring.min.js` (the source was fine), and because Moodle concatenates every plugin's JavaScript into one file, the syntax error stopped ALL of Moodle's JavaScript site-wide — invisible menus, dead drawers and editors on every theme. The bundle and its source map are rebuilt from the intact source, which carries both v1.12.38's helper claim and v1.12.40's camera recovery.
 
