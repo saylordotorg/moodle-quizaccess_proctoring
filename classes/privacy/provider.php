@@ -236,6 +236,16 @@ class provider implements
             'privacy:metadata:quizaccess_proctoring_ref_requests'
         );
 
+        // Who last reworded a student message (CPIT-512): staff attribution only.
+        $collection->add_database_table(
+            'quizaccess_proctoring_msg_texts',
+            [
+                'usermodified' => 'privacy:metadata:messagetexteditor',
+                'timemodified' => 'privacy:metadata:timemodified',
+            ],
+            'privacy:metadata:quizaccess_proctoring_msg_texts'
+        );
+
         $quizaccessproctoringuserimages = [
             'user_id' => 'privacy:metadata:userid',
             'photo_draft_id' => 'privacy:metadata:photo_draft_id',
@@ -452,6 +462,13 @@ class provider implements
                  WHERE c.contextlevel = :systemcontext";
         $contextlist->add_from_sql($sql, $systemparams + ['decider' => $userid]);
 
+        // The staff member who last reworded a student message (CPIT-512).
+        $sql = "SELECT DISTINCT c.id
+                  FROM {context} c
+                  JOIN {quizaccess_proctoring_msg_texts} qmt ON qmt.usermodified = :editor
+                 WHERE c.contextlevel = :systemcontext";
+        $contextlist->add_from_sql($sql, $systemparams + ['editor' => $userid]);
+
         $fileparams = ['component' => 'quizaccess_proctoring', 'userid' => $userid];
 
         $sqlfile = "SELECT DISTINCT contextid as id
@@ -497,6 +514,11 @@ class provider implements
             $sql = "SELECT DISTINCT qrr.decidedby AS userid
                       FROM {quizaccess_proctoring_ref_requests} qrr
                      WHERE qrr.decidedby <> 0";
+            $userlist->add_from_sql('userid', $sql, []);
+
+            $sql = "SELECT DISTINCT qmt.usermodified AS userid
+                      FROM {quizaccess_proctoring_msg_texts} qmt
+                     WHERE qmt.usermodified <> 0";
             $userlist->add_from_sql('userid', $sql, []);
 
             $sql = "SELECT DISTINCT f.itemid AS userid
@@ -1055,6 +1077,23 @@ class provider implements
                     ];
                     writer::with_context($context)->export_data($subcontext, $data);
                 }
+
+                // The student messages this user last reworded (CPIT-512).
+                $edits = $DB->get_records('quizaccess_proctoring_msg_texts', ['usermodified' => $userid], 'id ASC');
+                $index = 0;
+                foreach ($edits as $edit) {
+                    $index++;
+                    $subcontext = [
+                        get_string('quizaccess_proctoring', 'quizaccess_proctoring'),
+                        'proctoring_student_message_edits',
+                        $index,
+                    ];
+                    writer::with_context($context)->export_data($subcontext, (object)[
+                        'stringid' => $edit->stringid,
+                        'text' => $edit->text,
+                        'timemodified' => transform::datetime($edit->timemodified),
+                    ]);
+                }
             }
         }
     }
@@ -1100,6 +1139,8 @@ class provider implements
             $DB->delete_records('quizaccess_proctoring_face_images', ['parent_type' => 'admin_image']);
             $DB->delete_records('quizaccess_proctoring_user_images');
             $DB->delete_records('quizaccess_proctoring_ref_requests');
+            // The reworded messages are site configuration and stay; who edited them goes (CPIT-512).
+            $DB->set_field('quizaccess_proctoring_msg_texts', 'usermodified', 0);
 
             $fs = get_file_storage();
             $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'user_photo');
@@ -1151,6 +1192,8 @@ class provider implements
         // Keep other students' request history while removing the erased reviewer's attribution,
         // as risk holds and finding reviews do for reviewerid (Codex review).
         $DB->set_field_select('quizaccess_proctoring_ref_requests', 'decidedby', 0, "decidedby {$insql}", $params);
+        // The reworded messages stay; only who reworded them goes (CPIT-512).
+        $DB->set_field_select('quizaccess_proctoring_msg_texts', 'usermodified', 0, "usermodified {$insql}", $params);
     }
 
     /**

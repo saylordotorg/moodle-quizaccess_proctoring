@@ -2,6 +2,8 @@
 
 Every student-facing string in the plugin, grouped by where the student sees it (CPIT-481). Student Affairs can review the wording here. A string can be changed without a code release through Site administration > Language > Language customisation, component `quizaccess_proctoring`.
 
+**Emails and notifications can be reworded in Moodle (since 1.14.0, CPIT-512):** the "Messages to students" page, reached from the Proctoring reports page, lists every email and notification sent to students — when it is sent, how, which settings control it, and the wording in use now. Staff with the `quizaccess/proctoring:editstudentmessages` capability edit the subject and body there, with placeholders written as `[quiz]`, `[course]`, and so on. The edited wording takes precedence over the strings below (and over Language customisation) until it is reset. In-exam warnings stay on Language customisation.
+
 Generated from `lang/en/quizaccess_proctoring.php`; `{$a}` and `{$a->...}` are filled in when the message is shown.
 
 ## Before the exam: setup steps
