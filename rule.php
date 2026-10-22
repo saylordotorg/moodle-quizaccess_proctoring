@@ -2141,6 +2141,20 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $mform->setDefault('expectedtools', self::EXPECTED_TOOLS_NONE);
         $mform->addHelpButton('expectedtools', 'expectedtools', 'quizaccess_proctoring');
         $mform->hideIf('expectedtools', 'proctoringrequired', 'eq', 0);
+
+        // End the attempt when the face keeps leaving the webcam frame (CPIT-510).
+        $facestrikeoptions = [
+            -1 => get_string('facestrikes_inherit', 'quizaccess_proctoring'),
+            0 => get_string('facestrikes_off', 'quizaccess_proctoring'),
+        ];
+        $strikes = \quizaccess_proctoring\local\face_strikes::class;
+        foreach (range($strikes::MIN_LIMIT, $strikes::MAX_LIMIT) as $limit) {
+            $facestrikeoptions[$limit] = get_string('facestrikes_limit', 'quizaccess_proctoring', $limit);
+        }
+        $mform->addElement('select', 'facestrikes', get_string('facestrikes', 'quizaccess_proctoring'), $facestrikeoptions);
+        $mform->setDefault('facestrikes', -1);
+        $mform->addHelpButton('facestrikes', 'facestrikes', 'quizaccess_proctoring');
+        $mform->hideIf('facestrikes', 'proctoringrequired', 'eq', 0);
     }
 
     /**
@@ -2168,6 +2182,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             }
 
             $expectedtools = (int)($quiz->expectedtools ?? self::EXPECTED_TOOLS_NONE);
+            $facestrikes = isset($quiz->facestrikes) ? (int)$quiz->facestrikes : -1;
+            if ($facestrikes !== -1) {
+                $facestrikes = \quizaccess_proctoring\local\face_strikes::clamp_limit($facestrikes);
+            }
             $record = (object)[
                 'quizid' => $quiz->id,
                 'proctoringrequired' => 1,
@@ -2180,6 +2198,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                     self::EXPECTED_TOOLS_CALCULATOR,
                     self::EXPECTED_TOOLS_OPEN,
                 ], true) ? $expectedtools : self::EXPECTED_TOOLS_NONE,
+                'facestrikes' => $facestrikes,
             ];
 
             // Add or update the proctoring settings for this quiz.
@@ -2217,7 +2236,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         return [
             'proctoring.proctoringrequired, proctoring.requireentirescreen, ' .
                 'proctoring.captchamode, proctoring.riskreviewmode, ' .
-                'proctoring.riskreviewthreshold, proctoring.expectedtools', // Fields to select.
+                'proctoring.riskreviewthreshold, proctoring.expectedtools, proctoring.facestrikes', // Fields to select.
             'LEFT JOIN {quizaccess_proctoring} proctoring ON proctoring.quizid = quiz.id', // Join clause.
             [], // No additional parameters.
         ];
@@ -2232,6 +2251,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     public function description() {
         global $DB, $PAGE, $USER;
 
+        // The face-strike rule is told before the exam starts, not discovered at the first warning
+        // (CPIT-510).
+        $facestrikerule = $this->face_strike_rule_message();
+
         // The Moodle app fetches these messages through mod_quiz_get_quiz_access_information,
         // which declares them PARAM_TEXT and rejects any value that cleaning would change, so
         // the <strong> in the header or the report button's markup fails the whole call with
@@ -2242,6 +2265,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $instructions = self::launch_instructions();
             if ($instructions !== '') {
                 $messages[] = clean_param(html_to_text($instructions, 0, false), PARAM_TEXT);
+            }
+            if ($facestrikerule !== '') {
+                $messages[] = clean_param($facestrikerule, PARAM_TEXT);
             }
             return $messages;
         }
@@ -2294,6 +2320,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         if ($instructions !== '') {
             $messages[] = html_writer::div($instructions, 'proctoring-launch-instructions');
         }
+        if ($facestrikerule !== '') {
+            $messages[] = html_writer::div(s($facestrikerule), 'proctoring-face-strike-rule alert alert-warning');
+        }
         $messages[] = $this->get_download_config_button();
         if (\quizaccess_proctoring\local\readiness::enabled()) {
             $messages[] = html_writer::link(
@@ -2309,6 +2338,31 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         );
 
         return $messages;
+    }
+
+    /**
+     * The face-strike rule as the current student will meet it, or '' when it does not apply.
+     *
+     * @return string Plain text.
+     */
+    private function face_strike_rule_message(): string {
+        global $USER;
+
+        $limit = \quizaccess_proctoring\local\face_strikes::limit_for(
+            (int)$this->quiz->course,
+            (int)$this->quiz->id,
+            (int)$USER->id,
+            time()
+        );
+        if ($limit <= 0) {
+            return '';
+        }
+        return get_string('facestrike:rule', 'quizaccess_proctoring', (object)[
+            'limit' => $limit,
+            'consequence' => \quizaccess_proctoring\local\face_strikes::consequence(
+                \quizaccess_proctoring\local\face_strikes::outcome()
+            ),
+        ]);
     }
 
     /**
@@ -2339,6 +2393,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $page->set_title($this->quizobj->get_course()->shortname . ': ' . $page->title);
         $page->set_popup_notification_allowed(false);
         $page->set_heading($page->title);
+
+        // The face strikes ended this attempt, but its page never submitted it - closed, crashed
+        // or reloaded first: submit it now and show the outcome instead of the quiz (CPIT-510).
+        if (
+            $attempt && (int)$DB->get_field('quiz_attempts', 'userid', ['id' => (int)$attempt]) === (int)$USER->id
+                && \quizaccess_proctoring\local\face_strikes::finish_ended_attempt((int)$attempt, true)
+        ) {
+            redirect(new moodle_url('/mod/quiz/review.php', ['attempt' => (int)$attempt] + ($cmid ? ['cmid' => (int)$cmid] : [])));
+        }
 
         if ($cmid && $attempt && $this->maybe_show_finished_attempt_risk_hold_notice((int)$cmid, (int)$attempt)) {
             // The attempt is finished, so live monitoring never starts here - and the persistent
@@ -2431,6 +2494,27 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->faceblurhits = max(1, min(10, $faceblurhits));
             $faceblurinitialgrace = (int)(get_config('quizaccess_proctoring', 'faceblurinitialgrace') ?: 10);
             $record->faceblurinitialgrace = max(0, min(60, $faceblurinitialgrace));
+
+            // Escalating warnings that end the attempt when the face keeps leaving the frame
+            // (CPIT-510). Its own call: the setup arguments are already close to the 1024
+            // characters js_call_amd() allows.
+            if (!empty($record->blurquizwithoutface)) {
+                $strikes = \quizaccess_proctoring\local\face_strikes::page_state(
+                    (int)$COURSE->id,
+                    (int)$contextquiz->instance,
+                    (int)$USER->id,
+                    (int)$attempt
+                );
+                if ($strikes['limit'] > 0) {
+                    $page->requires->js_call_amd('quizaccess_proctoring/faceStrikes', 'configure', [[
+                        'limit' => $strikes['limit'],
+                        'strikes' => $strikes['strikes'],
+                        'minseconds' => $strikes['minseconds'],
+                        'outcome' => \quizaccess_proctoring\local\face_strikes::outcome(),
+                        'lockoutdays' => quizaccess_proctoring_get_cheating_lockout_days(),
+                    ]]);
+                }
+            }
 
             // Webcam phone detection: only requested when the site monitor is on, the student has
             // no waiving per-student override, and the object-detection libraries are vendored.
@@ -2607,7 +2691,28 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $attemptid,
             $report ? (int)$report->id : 0
         );
-        if ($hold && (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
+        // An attempt the face strikes ended says so, rather than citing a risk score (CPIT-510).
+        $facestrikesended = \quizaccess_proctoring\local\face_strikes::ended_event($attemptid, (int)$USER->id);
+        if ($facestrikesended) {
+            $detail = json_decode((string)$facestrikesended->eventdetail, true);
+            $holdstatus = $hold ? (int)$hold->status : -1;
+            $type = \core\output\notification::NOTIFY_INFO;
+            if ($holdstatus === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
+                $type = \core\output\notification::NOTIFY_WARNING;
+            } else if (
+                $holdstatus === QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED
+                    || $holdstatus === QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED
+            ) {
+                $type = \core\output\notification::NOTIFY_ERROR;
+            }
+            \core\notification::add(
+                quizaccess_proctoring_get_face_strikes_notice_html(
+                    $hold ?: null,
+                    is_array($detail) ? (int)($detail['limit'] ?? 0) : 0
+                ),
+                $type
+            );
+        } else if ($hold && (int)$hold->status === QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
             \core\notification::add(
                 quizaccess_proctoring_get_student_risk_hold_notice_html($hold),
                 \core\output\notification::NOTIFY_WARNING

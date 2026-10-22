@@ -1566,6 +1566,11 @@ if (
             (int)$studentid,
             (int)$riskscore['attemptid']
         );
+        // How many pauses counted as the face leaving the frame, and whether they ended the attempt (CPIT-510).
+        $riskscore['facestrikelabel'] = \quizaccess_proctoring\local\face_strikes::summary(
+            (int)$studentid,
+            (int)$riskscore['attemptid']
+        );
         // Which checks could run depends on the browser, so say which one the attempt used.
         $browserlabel = quizaccess_proctoring_browser_label($factorcoverage['browser'], $factorcoverage['os']);
         if ($browserlabel !== '') {

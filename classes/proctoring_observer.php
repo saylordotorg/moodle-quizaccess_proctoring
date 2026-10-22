@@ -92,7 +92,12 @@ class proctoring_observer {
             $aireviewenabled = \quizaccess_proctoring_ai_review_configured($aireviewsettings);
             $risklockoutenabled = \quizaccess_proctoring_get_cheating_lockout_days() > 0 &&
                 (int)$risksettings['mode'] !== \QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED;
-            if (empty($risksettings['enabled']) && !$risklockoutenabled && !$aireviewenabled) {
+            // An attempt ended because the face kept leaving the frame takes its own outcome,
+            // whatever the risk score and the quiz's high-risk action (CPIT-510).
+            $facestrikeoutcome = local\face_strikes::ended($attemptid, (int)$attempt->userid)
+                ? local\face_strikes::outcome()
+                : '';
+            if (empty($risksettings['enabled']) && !$risklockoutenabled && !$aireviewenabled && $facestrikeoutcome === '') {
                 return;
             }
 
@@ -154,6 +159,29 @@ class proctoring_observer {
                         (int)$risksettings['threshold']
                     );
                 }
+            }
+
+            if ($facestrikeoutcome === local\face_strikes::OUTCOME_AUTOFAIL) {
+                // Also over a hold the risk score just opened: the strikes decide this attempt.
+                $holdid = \quizaccess_proctoring_fail_high_risk_attempt(
+                    (int)$quiz->course,
+                    (int)$cm->id,
+                    (int)$attempt->userid,
+                    $attemptid,
+                    (int)$report->id,
+                    (int)$risk['score'],
+                    (int)$risksettings['threshold']
+                );
+            } else if ($facestrikeoutcome === local\face_strikes::OUTCOME_HOLD && $holdid === 0) {
+                $holdid = \quizaccess_proctoring_apply_risk_hold(
+                    (int)$quiz->course,
+                    (int)$cm->id,
+                    (int)$attempt->userid,
+                    $attemptid,
+                    (int)$report->id,
+                    (int)$risk['score'],
+                    (int)$risksettings['threshold']
+                );
             }
 
             if ($aireviewenabled) {

@@ -2138,6 +2138,29 @@ body.quizaccess-proctoring-settings-page #admin-deleteallimages .btn-danger {
     top: 152px;
 }
 
+/* The latest face-strike warning, kept on screen once the face is back (CPIT-510). */
+.proctoring-face-strike-notice {
+    position: fixed;
+    top: 96px;
+    left: 50%;
+    z-index: 10002;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: min(620px, calc(100vw - 32px));
+    padding: 12px 16px;
+    border: 1px solid #b7791f;
+    background: #fffaf0;
+    color: #6b4a07;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+    font-weight: 600;
+    transform: translateX(-50%);
+}
+
+body.proctoring-face-blur-active .proctoring-face-strike-notice {
+    display: none;
+}
+
 body.proctoring-face-blur-active #region-main,
 body.proctoring-multimonitor-blur-active #region-main {
     filter: blur(8px);

@@ -124,4 +124,16 @@ $tasks = [
         'dayofweek' => '*',
         'disabled'  => 0,
     ],
+
+    // This task submits attempts the face strikes ended whose page never submitted them (CPIT-510).
+    [
+        'classname' => 'quizaccess_proctoring\task\finish_face_strike_attempts_task',
+        'blocking'  => 0,
+        'minute'    => '*/5',
+        'hour'      => '*',
+        'day'       => '*',
+        'month'     => '*',
+        'dayofweek' => '*',
+        'disabled'  => 0,
+    ],
 ];

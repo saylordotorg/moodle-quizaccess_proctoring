@@ -165,6 +165,7 @@ final class legacy_exemption_migration_test extends advanced_testcase {
             override_resolver::REQ_SCREENSHARE => true,
             override_resolver::REQ_MULTIMONITOR => true,
             override_resolver::REQ_PHONEDETECTION => true,
+            override_resolver::REQ_FACESTRIKES => true,
         ];
 
         // With no override, resolve_all() returns the base states unchanged — no legacy path

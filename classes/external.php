@@ -429,6 +429,9 @@ class quizaccess_proctoring_external extends external_api {
             'multiple_faces_detection_started',
             'face_missing_start',
             'face_missing_end',
+            // A face pause long enough to count toward ending the attempt (CPIT-510). The event
+            // that ends it, face_strikes_ended, is the server's alone and is not accepted here.
+            \quizaccess_proctoring\local\face_strikes::EVENT_STRIKE,
             'away_capture',
             // The PrintScreen key (CPIT-485): context only, never scored.
             'possible_screenshot',
@@ -491,7 +494,9 @@ class quizaccess_proctoring_external extends external_api {
                 (string)$requestid
             );
             if ($existing) {
-                return ['eventid' => (int)$existing->id, 'warnings' => []];
+                // A retried strike whose first answer was lost still learns where the count stands.
+                return ['eventid' => (int)$existing->id, 'warnings' => []]
+                    + self::face_strike_state($eventtype, (int)$courseid, (int)$cm->id, $attemptid, $reportid);
             }
             if (!empty($screenshot)) {
                 self::validate_image_payload($screenshot, self::MAX_DESKTOP_IMAGE_BYTES);
@@ -549,7 +554,7 @@ class quizaccess_proctoring_external extends external_api {
             return [
             'eventid' => $eventid,
             'warnings' => [],
-            ];
+            ] + self::face_strike_state($eventtype, (int)$courseid, (int)$cm->id, $attemptid, $reportid);
         } finally {
             if ($lock) {
                 $lock->release();
@@ -567,8 +572,41 @@ class quizaccess_proctoring_external extends external_api {
             [
                 'eventid' => new external_value(PARAM_INT, 'event id'),
                 'warnings' => new external_warnings(),
+                'facestrikes' => new external_value(PARAM_INT, 'face strikes logged for the attempt', VALUE_OPTIONAL),
+                'facestrikelimit' => new external_value(PARAM_INT, 'strikes that end the attempt; 0 when off', VALUE_OPTIONAL),
+                'attemptended' => new external_value(PARAM_BOOL, 'whether the strikes ended the attempt', VALUE_OPTIONAL),
             ]
         );
+    }
+
+    /**
+     * Count a face strike and say where the attempt stands (CPIT-510).
+     *
+     * @param string $eventtype Logged event type.
+     * @param int $courseid Course id.
+     * @param int $cmid Quiz course-module id.
+     * @param int $attemptid Attempt id.
+     * @param int $reportid Proctoring report id.
+     * @return array The strike fields of the log_event answer; empty for any other event.
+     */
+    private static function face_strike_state(string $eventtype, int $courseid, int $cmid, int $attemptid, int $reportid): array {
+        global $USER;
+
+        if ($eventtype !== \quizaccess_proctoring\local\face_strikes::EVENT_STRIKE) {
+            return [];
+        }
+        $state = \quizaccess_proctoring\local\face_strikes::record_strike(
+            $courseid,
+            $cmid,
+            (int)$USER->id,
+            $attemptid,
+            $reportid
+        );
+        return [
+            'facestrikes' => (int)$state['strikes'],
+            'facestrikelimit' => (int)$state['limit'],
+            'attemptended' => (bool)$state['ended'],
+        ];
     }
 
     /**
