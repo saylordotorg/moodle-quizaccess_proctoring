@@ -1997,6 +1997,7 @@ function quizaccess_proctoring_get_student_risk_confirmed_notice_html(stdClass $
     $message = get_string('riskreview:confirmedstudentbody', 'quizaccess_proctoring', (object)[
         'score' => (int)$hold->riskscore,
         'threshold' => (int)$hold->threshold,
+        'questions' => \quizaccess_proctoring\local\support_contact::questions_sentence(),
     ]);
     $title = html_writer::tag(
         'strong',
@@ -3371,6 +3372,7 @@ function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $deci
                 ? get_string('message:heldwindow', 'quizaccess_proctoring', $days)
                 : '';
         }
+        $a->questions = \quizaccess_proctoring\local\support_contact::questions_sentence();
 
         $subject = get_string('message:' . $decision . 'subject', 'quizaccess_proctoring', $a);
         $body = get_string('message:' . $decision . 'body', 'quizaccess_proctoring', $a);

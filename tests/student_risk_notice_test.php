@@ -68,6 +68,12 @@ final class student_risk_notice_test extends advanced_testcase {
         $this->assertStringContainsString('70/100', $html);
         $this->assertStringContainsString('grade is zero', $html);
         $this->assertStringContainsString('certificate eligibility is withheld', $html);
+
+        // Questions go to the support address, not the instructor (CPIT-481).
+        set_config('idexemptioncontactemail', 'support@example.org', 'quizaccess_proctoring');
+        $html = quizaccess_proctoring_get_student_risk_confirmed_notice_html($hold);
+        $this->assertStringContainsString('please send a message to support@example.org', $html);
+        $this->assertStringNotContainsString('instructor', $html);
     }
 
     /**

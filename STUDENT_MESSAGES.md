@@ -297,14 +297,16 @@ When each is sent, and how:
 | `idexemptionemail:labelrequested` | Requested |
 | `idexemptionemail:replytoname` | Student support |
 | `idexemptionemail:timeformat` | %d %B %Y, %I:%M %p %Z |
-| `message:autofailedbody` | Your attempt for "{$a->quiz}" in {$a->course} reached the configured high-risk threshold and was automatically failed. Your attempt grade has been set to zero. If you have questions, please contact your instructor. |
+| `message:autofailedbody` | Your attempt for "{$a->quiz}" in {$a->course} reached the configured high-risk threshold and was automatically failed. Your attempt grade has been set to zero. {$a->questions} |
 | `message:autofailedsubject` | Proctored quiz attempt automatically failed |
-| `message:facestrikesautofailedbody` | Your attempt for "{$a->quiz}" in {$a->course} ended because your face left the webcam frame too many times, and it was automatically failed. Your attempt grade has been set to zero. If you have questions, please contact your instructor. — *in place of `message:autofailedbody` when the face strikes ended the attempt* |
-| `message:confirmedbody` | Your attempt for "{$a->quiz}" in {$a->course} has been reviewed. A proctoring violation was confirmed, and your grade for this attempt has been set to zero. If you have questions, please contact your instructor. |
+| `message:facestrikesautofailedbody` | Your attempt for "{$a->quiz}" in {$a->course} ended because your face left the webcam frame too many times, and it was automatically failed. Your attempt grade has been set to zero. {$a->questions} — *in place of `message:autofailedbody` when the face strikes ended the attempt* |
+| `message:confirmedbody` | Your attempt for "{$a->quiz}" in {$a->course} has been reviewed. A proctoring violation was confirmed, and your grade for this attempt has been set to zero. {$a->questions} |
 | `message:confirmedsubject` | Proctored quiz review complete: violation confirmed |
 | `message:heldbody` | Your attempt for "{$a->quiz}" in {$a->course} has been selected for a proctoring review. Your grade — and any certificate that depends on it — is withheld until the review completes{$a->window}. If you have just received a message saying you completed the course, please disregard it until the review completes. You will be notified of the outcome, and you do not need to do anything in the meantime. |
 | `message:heldsubject` | Proctored quiz attempt held for review |
 | `message:heldwindow` | , normally within {$a} days |
+| `message:questionscontact` | If you have questions, please send a message to {$a}. — *ends the confirmed and automatically-failed messages; `{$a}` is the site's student support address (the "ID exception contact email" setting, contact@saylor.org on Saylor sites)* |
+| `message:questionsinstructor` | If you have questions, please contact your instructor. — *used instead only when no support address is configured* |
 | `message:releasedbody` | Your attempt for "{$a->quiz}" in {$a->course} has been reviewed. The hold on your grade has been released, so your grade for this attempt is now available. |
 | `message:releasedsubject` | Proctored quiz review complete: hold released |
 
