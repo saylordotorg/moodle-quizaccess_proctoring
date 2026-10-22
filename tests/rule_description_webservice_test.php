@@ -66,13 +66,29 @@ final class rule_description_webservice_test extends advanced_testcase {
         };
         $messages = $rule->description();
 
-        $this->assertCount(1, $messages);
+        $this->assertCount(2, $messages);
         foreach ($messages as $message) {
             // Throws invalid_parameter_exception when cleaning changes the value, as core does for return values.
             $this->assertSame($message, validate_param($message, PARAM_TEXT));
+            $this->assertStringNotContainsString('<', $message);
         }
-        $this->assertStringNotContainsString('<', $messages[0]);
-        $this->assertStringContainsString('webcam', $messages[0]);
+        // First, that the exam is taken in the browser and how (CPIT-454); then the webcam notice.
+        $this->assertSame(get_string('appusebrowser', 'quizaccess_proctoring'), $messages[0]);
+        $this->assertStringContainsString('Open in browser', $messages[0]);
+        $this->assertStringContainsString('webcam', $messages[1]);
+    }
+
+    /**
+     * The browser's quiz page does not tell the student to leave the app it is not in.
+     */
+    public function test_web_description_has_no_app_notice(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $messages = (new \quizaccess_proctoring($this->create_quizobj(), time()))->description();
+        foreach ($messages as $message) {
+            $this->assertStringNotContainsString('Open in browser', $message);
+        }
     }
 
     /**
@@ -108,9 +124,9 @@ final class rule_description_webservice_test extends advanced_testcase {
             }
         };
         $messages = $rule->description();
-        $this->assertCount(2, $messages);
-        $this->assertSame($messages[1], validate_param($messages[1], PARAM_TEXT));
-        $this->assertStringContainsStringIgnoringCase('photo ID', $messages[1]);
+        $this->assertCount(3, $messages);
+        $this->assertSame($messages[2], validate_param($messages[2], PARAM_TEXT));
+        $this->assertStringContainsStringIgnoringCase('photo ID', $messages[2]);
     }
 
     /**

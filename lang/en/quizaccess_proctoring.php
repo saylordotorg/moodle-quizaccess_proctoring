@@ -1836,3 +1836,5 @@ $string['messagetexts:samplecontact'] = 'contact@example.org';
 $string['messagetexts:samplecourse'] = 'BUS101: Introduction to Business';
 $string['messagetexts:sampleempty'] = '(empty on this site)';
 $string['messagetexts:samplequiz'] = 'Final Exam';
+// What the Moodle app shows on a proctored quiz (CPIT-454).
+$string['appusebrowser'] = 'This proctored exam cannot be taken in the Moodle app. Tap "Open in browser" to take it in your phone\'s web browser (Chrome or Safari), where the webcam checks work.';

@@ -2261,7 +2261,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         // "Invalid response value detected". Web services get the header as plain text only:
         // the button cannot be rendered as text, and there is no page to attach the JS to.
         if ($this->is_web_service_request()) {
-            $messages = [clean_param(get_string('proctoringheader', 'quizaccess_proctoring'), PARAM_TEXT)];
+            // The app cannot run proctoring and blocks the attempt with its own message, which
+            // reads like an error: say first that the exam is taken in the browser, and how
+            // (CPIT-454, Student Affairs).
+            $messages = [
+                clean_param(get_string('appusebrowser', 'quizaccess_proctoring'), PARAM_TEXT),
+                clean_param(get_string('proctoringheader', 'quizaccess_proctoring'), PARAM_TEXT),
+            ];
             $instructions = self::launch_instructions();
             if ($instructions !== '') {
                 $messages[] = clean_param(html_to_text($instructions, 0, false), PARAM_TEXT);
