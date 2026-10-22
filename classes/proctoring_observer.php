@@ -131,32 +131,38 @@ class proctoring_observer {
                 (!empty($risksettings['enabled']) || $risklockoutenabled) &&
                     (int)$risk['score'] >= (int)$risksettings['threshold']
             ) {
-                // Review-only evidence (a second face) can hold an attempt but never fail it: fail
-                // automatically only when the rest of the evidence reaches the threshold on its own.
-                if (
-                    $riskaction === \QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL
-                    && \quizaccess_proctoring\local\risk_calculator::score_without_review_only_factors($risk)
-                        >= (int)$risksettings['threshold']
-                ) {
-                    $holdid = \quizaccess_proctoring_fail_high_risk_attempt(
-                        (int)$quiz->course,
-                        (int)$cm->id,
-                        (int)$attempt->userid,
-                        $attemptid,
-                        (int)$report->id,
-                        (int)$risk['score'],
-                        (int)$risksettings['threshold']
-                    );
-                } else {
-                    $holdid = \quizaccess_proctoring_apply_risk_hold(
-                        (int)$quiz->course,
-                        (int)$cm->id,
-                        (int)$attempt->userid,
-                        $attemptid,
-                        (int)$report->id,
-                        (int)$risk['score'],
-                        (int)$risksettings['threshold']
-                    );
+                // A failure here must not cost the attempt its face-strike outcome below (CPIT-510,
+                // Codex review): on Moodle 5.0 the attempt is not graded yet, and failing it throws.
+                try {
+                    // Review-only evidence (a second face) can hold an attempt but never fail it: fail
+                    // automatically only when the rest of the evidence reaches the threshold on its own.
+                    if (
+                        $riskaction === \QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL
+                        && \quizaccess_proctoring\local\risk_calculator::score_without_review_only_factors($risk)
+                            >= (int)$risksettings['threshold']
+                    ) {
+                        $holdid = \quizaccess_proctoring_fail_high_risk_attempt(
+                            (int)$quiz->course,
+                            (int)$cm->id,
+                            (int)$attempt->userid,
+                            $attemptid,
+                            (int)$report->id,
+                            (int)$risk['score'],
+                            (int)$risksettings['threshold']
+                        );
+                    } else {
+                        $holdid = \quizaccess_proctoring_apply_risk_hold(
+                            (int)$quiz->course,
+                            (int)$cm->id,
+                            (int)$attempt->userid,
+                            $attemptid,
+                            (int)$report->id,
+                            (int)$risk['score'],
+                            (int)$risksettings['threshold']
+                        );
+                    }
+                } catch (\Throwable $e) {
+                    \quizaccess_proctoring_log_failure('applying the high-risk action to attempt ' . $attemptid, $e);
                 }
             }
 
