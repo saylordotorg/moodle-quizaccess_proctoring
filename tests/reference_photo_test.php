@@ -45,6 +45,16 @@ require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 final class reference_photo_test extends advanced_testcase {
 
     /**
+     * Start from a site without a student support address, where reset requests go to the
+     * reviewers; the support-address tests set one (the setting ships with a default, PR #89 review).
+     */
+    protected function setUp(): void {
+        parent::setUp();
+        $this->resetAfterTest();
+        set_config('idexemptioncontactemail', '', 'quizaccess_proctoring');
+    }
+
+    /**
      * Give a user a reference photo row.
      *
      * @param int $userid User.
