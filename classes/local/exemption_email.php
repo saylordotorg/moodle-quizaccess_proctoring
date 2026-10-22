@@ -295,7 +295,9 @@ class exemption_email {
      * @return string Localized string.
      */
     private static function str(string $lang, string $key, $a = null): string {
-        return get_string_manager()->get_string($key, 'quizaccess_proctoring', $a, $lang);
+        // The subject and introduction can be reworded by Student Affairs in Moodle (CPIT-512);
+        // every other string of the email stays a language string.
+        return message_texts::get($key, $a, $lang);
     }
 
     /**

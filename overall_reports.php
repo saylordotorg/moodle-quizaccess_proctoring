@@ -323,7 +323,9 @@ if (($action === 'release' || $action === 'confirm') && $holdid > 0) {
 // Each extra tab is only offered to staff holding the matching system-context capability, so
 // the toggle never advertises a view its viewer cannot open.
 $viewtoggle = '';
-if ($canviewheld || $canviewexceptions || $canviewresets) {
+// The messages students are sent, and their wording, live on a page of their own (CPIT-512).
+$canviewmessages = \quizaccess_proctoring\local\message_texts::can_view();
+if ($canviewheld || $canviewexceptions || $canviewresets || $canviewmessages) {
     $attemptsurl = new moodle_url(
         '/mod/quiz/accessrule/proctoring/overall_reports.php',
         $activefilters + ['view' => 'attempts']
@@ -363,6 +365,13 @@ if ($canviewheld || $canviewexceptions || $canviewresets) {
             'photoresets',
             $resetsurl->out(false),
             get_string('referencequeue:viewtoggle', 'quizaccess_proctoring')
+        );
+    }
+    if ($canviewmessages) {
+        $tabs[] = new tabobject(
+            'studentmessages',
+            (new moodle_url('/mod/quiz/accessrule/proctoring/student_messages.php'))->out(false),
+            get_string('messagetexts:title', 'quizaccess_proctoring')
         );
     }
     $viewtoggle = $OUTPUT->tabtree($tabs, $view);

@@ -140,4 +140,15 @@ $capabilities = [
             'manager' => CAP_ALLOW,
         ],
     ],
+
+    // Rewords the emails and notifications students are sent, on the "Messages to students" page,
+    // for Student Affairs (CPIT-512). Every student receives the edited text, hence RISK_SPAM.
+    'quizaccess/proctoring:editstudentmessages' => [
+        'riskbitmask' => RISK_SPAM,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_SYSTEM,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+    ],
 ];

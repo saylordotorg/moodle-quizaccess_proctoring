@@ -1299,6 +1299,14 @@ if ($canmanageproctoring) {
         $proctoringpagecap
     ));
 
+    // Messages to students and their wording (CPIT-512).
+    $ADMIN->add($proctoringcategory, new admin_externalpage(
+        'quizaccess_proctoring_student_messages',
+        get_string('messagetexts:title', 'quizaccess_proctoring'),
+        new moodle_url('/mod/quiz/accessrule/proctoring/student_messages.php'),
+        $proctoringpagecap
+    ));
+
     // 3. Risk factor scoring (per-factor enable/points/cap and risk level boundaries).
     $PAGE->requires->js_call_amd('quizaccess_proctoring/riskFactorSettings', 'init');
     $riskfactorspage = new admin_settingpage(
