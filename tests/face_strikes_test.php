@@ -155,6 +155,39 @@ final class face_strikes_test extends advanced_testcase {
     }
 
     /**
+     * An attempt keeps the rule it started under: a setting changed meanwhile cannot end it sooner
+     * than its warnings said, or change what happens when it ends.
+     */
+    public function test_attempt_keeps_the_rule_it_started_under(): void {
+        [$attemptid, $reportid] = $this->attempt('inprogress');
+        $rule = face_strikes::attempt_rule(
+            (int)$this->course->id,
+            (int)$this->quiz->cmid,
+            (int)$this->student->id,
+            $attemptid,
+            $reportid
+        );
+        $this->assertSame(['limit' => 4, 'outcome' => face_strikes::OUTCOME_HOLD], $rule);
+
+        set_config('facestrikes', 2, 'quizaccess_proctoring');
+        set_config('facestrikesoutcome', face_strikes::OUTCOME_AUTOFAIL, 'quizaccess_proctoring');
+        for ($i = 1; $i <= 3; $i++) {
+            $this->strike($attemptid, $reportid);
+            $this->assertFalse($this->record($attemptid, $reportid)['ended']);
+        }
+        $this->strike($attemptid, $reportid);
+        $this->assertTrue($this->record($attemptid, $reportid)['ended']);
+        $this->assertSame(face_strikes::OUTCOME_HOLD, face_strikes::ended_outcome($attemptid, (int)$this->student->id));
+
+        // A new attempt takes the rule as it is now.
+        [$next, $nextreport] = $this->attempt('inprogress');
+        $this->assertSame(
+            ['limit' => 2, 'outcome' => face_strikes::OUTCOME_AUTOFAIL],
+            face_strikes::attempt_rule((int)$this->course->id, (int)$this->quiz->cmid, (int)$this->student->id, $next, $nextreport)
+        );
+    }
+
+    /**
      * Only an open attempt can be ended, and a waived student never is.
      */
     public function test_finished_or_waived_attempts_are_not_ended(): void {
@@ -388,8 +421,19 @@ final class face_strikes_test extends advanced_testcase {
         [$attemptid, $reportid] = $this->attempt('inprogress');
         $this->strike($attemptid, $reportid);
         $this->strike($attemptid, $reportid);
-        $state = face_strikes::page_state((int)$this->course->id, (int)$this->quiz->id, (int)$this->student->id, $attemptid);
-        $this->assertSame(['limit' => 4, 'strikes' => 2, 'minseconds' => face_strikes::DEFAULT_MIN_SECONDS], $state);
+        $state = face_strikes::page_state(
+            (int)$this->course->id,
+            (int)$this->quiz->cmid,
+            (int)$this->student->id,
+            $attemptid,
+            $reportid
+        );
+        $this->assertSame([
+            'limit' => 4,
+            'strikes' => 2,
+            'minseconds' => face_strikes::DEFAULT_MIN_SECONDS,
+            'outcome' => face_strikes::OUTCOME_HOLD,
+        ], $state);
 
         set_config('facestrikeminseconds', 500, 'quizaccess_proctoring');
         $this->assertSame(60, face_strikes::min_seconds());

@@ -45,6 +45,8 @@ final class monitoring_coverage {
         // The precheck's screen scan rejecting a share, with what it saw (CPIT-498): a record
         // of the setup page diagnosing itself, not suspicious activity.
         'screen_marker_not_found',
+        // The face-strike rule an attempt runs under (CPIT-510): the server's record, not an action.
+        'face_strikes_started',
     ];
 
     /**

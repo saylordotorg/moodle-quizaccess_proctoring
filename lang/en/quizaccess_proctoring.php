@@ -1727,6 +1727,7 @@ $string['feedback:afterexam'] = 'Tell us how the proctored exam went (optional, 
 // Escalating "face out of frame" warnings that end the attempt on the Nth time (CPIT-510).
 $string['eventtype:face_strike'] = 'Face out of frame: counted toward ending the attempt';
 $string['eventtype:face_strikes_ended'] = 'Attempt ended: face out of frame too many times';
+$string['eventtype:face_strikes_started'] = 'Face-out-of-frame rule in force for this attempt';
 $string['facestrike:again'] = 'Your face left the frame again. This is warning {$a->count} of {$a->warnings}. If it leaves the frame {$a->remaining} more times, your attempt will end and {$a->consequence}.';
 $string['facestrike:consequence_autofail'] = 'receive a failing grade';
 $string['facestrike:consequence_autofail_lockout'] = 'receive a failing grade, and you will have to wait {$a} days before retaking the exam';

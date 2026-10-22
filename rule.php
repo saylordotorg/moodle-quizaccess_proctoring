@@ -2501,16 +2501,17 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             if (!empty($record->blurquizwithoutface)) {
                 $strikes = \quizaccess_proctoring\local\face_strikes::page_state(
                     (int)$COURSE->id,
-                    (int)$contextquiz->instance,
+                    (int)$cmid,
                     (int)$USER->id,
-                    (int)$attempt
+                    (int)$attempt,
+                    (int)$record->id
                 );
                 if ($strikes['limit'] > 0) {
                     $page->requires->js_call_amd('quizaccess_proctoring/faceStrikes', 'configure', [[
                         'limit' => $strikes['limit'],
                         'strikes' => $strikes['strikes'],
                         'minseconds' => $strikes['minseconds'],
-                        'outcome' => \quizaccess_proctoring\local\face_strikes::outcome(),
+                        'outcome' => $strikes['outcome'],
                         'lockoutdays' => quizaccess_proctoring_get_cheating_lockout_days(),
                     ]]);
                 }

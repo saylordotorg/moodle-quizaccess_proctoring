@@ -42,6 +42,9 @@ final class face_strikes {
     /** @var string Logged by the server, never the page, when the strikes reach the limit. */
     const EVENT_ENDED = 'face_strikes_ended';
 
+    /** @var string Logged by the server with the rule an attempt runs under: its limit and outcome. */
+    const EVENT_STARTED = 'face_strikes_started';
+
     /** @var string Hold the attempt for review: grade and certificate withheld, retake lockout. */
     const OUTCOME_HOLD = 'hold';
 
@@ -210,6 +213,65 @@ final class face_strikes {
     }
 
     /**
+     * The rule as it stands for one attempt: fixed the first time it is asked, so a setting
+     * changed while the attempt runs cannot change the warnings the student has already been
+     * given, or end the attempt sooner than they said.
+     *
+     * @param int $courseid Course id.
+     * @param int $cmid Quiz course-module id.
+     * @param int $userid Student id.
+     * @param int $attemptid Attempt id.
+     * @param int $reportid Proctoring report id.
+     * @return array 'limit' (0 when the rule does not apply) and 'outcome'.
+     */
+    public static function attempt_rule(int $courseid, int $cmid, int $userid, int $attemptid, int $reportid): array {
+        global $DB;
+
+        $rule = ['limit' => 0, 'outcome' => self::outcome()];
+        $attempt = $attemptid > 0
+            ? $DB->get_record('quiz_attempts', ['id' => $attemptid], 'id, quiz, userid, timestart')
+            : false;
+        if (!$attempt || (int)$attempt->userid !== $userid) {
+            return $rule;
+        }
+        $events = $DB->get_records('quizaccess_proctoring_events', [
+            'attemptid' => $attemptid,
+            'userid' => $userid,
+            'eventtype' => self::EVENT_STARTED,
+        ], 'id ASC', 'id, eventdetail', 0, 1);
+        if ($events) {
+            $detail = json_decode((string)reset($events)->eventdetail, true);
+            if (is_array($detail)) {
+                $outcome = (string)($detail['outcome'] ?? '');
+                return [
+                    'limit' => self::clamp_limit((int)($detail['limit'] ?? 0)),
+                    'outcome' => in_array($outcome, [self::OUTCOME_HOLD, self::OUTCOME_AUTOFAIL, self::OUTCOME_NONE], true)
+                        ? $outcome
+                        : self::outcome(),
+                ];
+            }
+        }
+
+        $rule['limit'] = self::limit_for($courseid, (int)$attempt->quiz, $userid, (int)$attempt->timestart);
+        if ($rule['limit'] > 0) {
+            $DB->insert_record('quizaccess_proctoring_events', (object)[
+                'courseid' => $courseid,
+                'quizid' => $cmid,
+                'userid' => $userid,
+                'attemptid' => $attemptid,
+                'reportid' => $reportid,
+                'eventtype' => self::EVENT_STARTED,
+                'eventdetail' => json_encode($rule),
+                'pagevisibility' => '',
+                'currenturl' => '',
+                'screenshoturl' => '',
+                'timemodified' => time(),
+            ]);
+        }
+        return $rule;
+    }
+
+    /**
      * Whether the strikes ended this attempt.
      *
      * @param int $attemptid Attempt id.
@@ -242,7 +304,8 @@ final class face_strikes {
             return $state;
         }
         $state['ended'] = self::ended($attemptid, $userid);
-        $state['limit'] = self::limit_for($courseid, (int)$attempt->quiz, $userid, (int)$attempt->timestart);
+        $rule = self::attempt_rule($courseid, $cmid, $userid, $attemptid, $reportid);
+        $state['limit'] = $rule['limit'];
         if (
             $state['ended'] || $state['limit'] <= 0 || $state['strikes'] < $state['limit']
                 || !in_array((string)$attempt->state, ['inprogress', 'overdue'], true)
@@ -260,7 +323,7 @@ final class face_strikes {
             'eventdetail' => json_encode([
                 'strikes' => $state['strikes'],
                 'limit' => $state['limit'],
-                'outcome' => self::outcome(),
+                'outcome' => $rule['outcome'],
             ]),
             'pagevisibility' => '',
             'currenturl' => '',
@@ -361,20 +424,19 @@ final class face_strikes {
      * What the attempt page needs to run the rule.
      *
      * @param int $courseid Course id.
-     * @param int $quizid Quiz instance id.
+     * @param int $cmid Quiz course-module id.
      * @param int $userid Student id.
      * @param int $attemptid Attempt id.
-     * @return array 'limit' (0 when off), 'strikes' and 'minseconds'.
+     * @param int $reportid Proctoring report id.
+     * @return array 'limit' (0 when off), 'strikes', 'minseconds' and 'outcome'.
      */
-    public static function page_state(int $courseid, int $quizid, int $userid, int $attemptid): array {
-        global $DB;
-
-        $timestart = (int)$DB->get_field('quiz_attempts', 'timestart', ['id' => $attemptid]);
-        $limit = self::limit_for($courseid, $quizid, $userid, $timestart ?: time());
+    public static function page_state(int $courseid, int $cmid, int $userid, int $attemptid, int $reportid): array {
+        $rule = self::attempt_rule($courseid, $cmid, $userid, $attemptid, $reportid);
         return [
-            'limit' => $limit,
-            'strikes' => $limit > 0 ? self::count($attemptid, $userid) : 0,
+            'limit' => $rule['limit'],
+            'strikes' => $rule['limit'] > 0 ? self::count($attemptid, $userid) : 0,
             'minseconds' => self::min_seconds(),
+            'outcome' => $rule['outcome'],
         ];
     }
 

@@ -3201,12 +3201,42 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         return;
                     }
                     const lockoutdays = parseInt(settings.lockoutdays, 10) || 0;
-                    const consequence = Str.get_string(
-                        'facestrike:consequence_' + settings.outcome
-                            + (settings.outcome !== 'none' && lockoutdays > 0 ? '_lockout' : ''),
-                        'quizaccess_proctoring',
-                        lockoutdays
-                    );
+                    // Kept once loaded; a failed lookup is asked again by the next warning rather
+                    // than silencing every warning for the rest of the page.
+                    let consequence = null;
+                    const consequenceText = function() {
+                        if (!consequence) {
+                            consequence = Str.get_string(
+                                'facestrike:consequence_' + settings.outcome
+                                    + (settings.outcome !== 'none' && lockoutdays > 0 ? '_lockout' : ''),
+                                'quizaccess_proctoring',
+                                lockoutdays
+                            ).catch(function(error) {
+                                consequence = null;
+                                throw error;
+                            });
+                        }
+                        return consequence;
+                    };
+                    // Loaded now, while the page is quiet, so the first warning does not wait for it.
+                    consequenceText().catch(() => null);
+                    const notifyStrike = function(count, limit, tries) {
+                        consequenceText().then(function(clause) {
+                            return Str.get_string(
+                                FaceStrikes.noticeKey(count, limit),
+                                'quizaccess_proctoring',
+                                FaceStrikes.noticeParams(count, limit, clause)
+                            );
+                        }).then(function(text) {
+                            showFaceStrikeNotice(text);
+                            noteFaceWarning('warning_shown', {key: 'facestrike:' + count, message: text.slice(0, 500)});
+                            return text;
+                        }).catch(function() {
+                            if (tries < 5) {
+                                window.setTimeout(() => notifyStrike(count, limit, tries + 1), 3000);
+                            }
+                        });
+                    };
                     let storage = null;
                     try {
                         storage = window.sessionStorage;
@@ -3247,17 +3277,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                             }])[0];
                         },
                         notify: function(count, limit) {
-                            consequence.then(function(clause) {
-                                return Str.get_string(
-                                    FaceStrikes.noticeKey(count, limit),
-                                    'quizaccess_proctoring',
-                                    FaceStrikes.noticeParams(count, limit, clause)
-                                );
-                            }).then(function(text) {
-                                showFaceStrikeNotice(text);
-                                noteFaceWarning('warning_shown', {key: 'facestrike:' + count, message: text.slice(0, 500)});
-                                return text;
-                            }).catch(Notification.exception);
+                            notifyStrike(count, limit, 0);
                         },
                         end: function() {
                             // The attempt is over: the quiz stays blurred whatever the camera sees,
