@@ -93,10 +93,9 @@ class proctoring_observer {
             $risklockoutenabled = \quizaccess_proctoring_get_cheating_lockout_days() > 0 &&
                 (int)$risksettings['mode'] !== \QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED;
             // An attempt ended because the face kept leaving the frame takes its own outcome,
-            // whatever the risk score and the quiz's high-risk action (CPIT-510).
-            $facestrikeoutcome = local\face_strikes::ended($attemptid, (int)$attempt->userid)
-                ? local\face_strikes::outcome()
-                : '';
+            // whatever the risk score and the quiz's high-risk action (CPIT-510): the outcome
+            // recorded when it ended, not whatever the setting says now.
+            $facestrikeoutcome = local\face_strikes::ended_outcome($attemptid, (int)$attempt->userid);
             if (empty($risksettings['enabled']) && !$risklockoutenabled && !$aireviewenabled && $facestrikeoutcome === '') {
                 return;
             }
@@ -232,8 +231,8 @@ class proctoring_observer {
             $attempt = $DB->get_record('quiz_attempts', ['id' => $attemptid]);
             if (
                 !$attempt || (string)$attempt->state !== 'finished'
-                    || local\face_strikes::outcome() !== local\face_strikes::OUTCOME_AUTOFAIL
-                    || !local\face_strikes::ended($attemptid, (int)$attempt->userid)
+                    || local\face_strikes::ended_outcome($attemptid, (int)$attempt->userid)
+                        !== local\face_strikes::OUTCOME_AUTOFAIL
             ) {
                 return;
             }

@@ -317,6 +317,25 @@ for (const built of [false, true]) {
         assert.strictEqual(srv.sent.length, 1, 'Sixty seconds out of frame across three pages is a strike.');
     });
 
+    test(`${label}: time with the camera dead does not count`, async () => {
+        const m = load(built);
+        const c = clock();
+        const srv = server(4);
+        const {ctl} = controller(m, {clock: c, send: (s) => srv.send(s)});
+        ctl.pauseStarted();
+        await c.advance(3000);
+        ctl.cameraLost();
+        await c.advance(60000);
+        assert.strictEqual(srv.sent.length, 0, 'A camera failure is not a face out of frame.');
+
+        // Back, the pause carries on from the three seconds it had.
+        ctl.cameraBack();
+        await c.advance(1900);
+        assert.strictEqual(srv.sent.length, 0);
+        await c.advance(100);
+        assert.strictEqual(srv.sent.length, 1);
+    });
+
     test(`${label}: a pause carried over a page change is not counted twice`, async () => {
         const m = load(built);
         const storage = memoryStorage();

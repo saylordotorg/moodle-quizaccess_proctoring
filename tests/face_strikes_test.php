@@ -358,6 +358,8 @@ final class face_strikes_test extends advanced_testcase {
             (int)$DB->get_field('quizaccess_proctoring_risk_holds', 'status', ['id' => $hold->id])
         );
 
+        // The outcome recorded when the attempt ended stands, whatever the setting says now.
+        set_config('facestrikesoutcome', face_strikes::OUTCOME_NONE, 'quizaccess_proctoring');
         $DB->set_field('quiz_attempts', 'state', 'finished', ['id' => $attemptid]);
         proctoring_observer::handle_quiz_attempt_graded($event);
         $this->assertSame(

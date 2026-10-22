@@ -65,7 +65,7 @@ define([], function() {
      * @param {Object} options limit, strikes, minSeconds, attemptId, send(strike) returning a
      *     promise of the log_event answer, notify(count, limit), end(), and optional now,
      *     setTimeout, clearTimeout and storage (a sessionStorage-like object).
-     * @returns {Object} pauseStarted, pauseEnded, faceSeen, pageLeaving and state.
+     * @returns {Object} pauseStarted, pauseEnded, cameraLost, cameraBack, faceSeen, pageLeaving and state.
      */
     const create = function(options) {
         const now = options.now || Date.now;
@@ -87,6 +87,8 @@ define([], function() {
         let ended = false;
         let paused = false;
         let struck = false;
+        // The camera stopped while the quiz was paused: the pause's time does not count meanwhile.
+        let suspended = false;
         let pausedAt = 0;
         // Time the current pause had already lasted on earlier pages.
         let inherited = 0;
@@ -207,6 +209,7 @@ define([], function() {
                 }
                 paused = true;
                 struck = false;
+                suspended = false;
                 inherited = 0;
                 pausedAt = now();
                 if (ended || limit <= 0) {
@@ -226,11 +229,39 @@ define([], function() {
             pauseEnded: function() {
                 paused = false;
                 struck = false;
+                suspended = false;
                 inherited = 0;
                 if (timer !== null) {
                     cancel(timer);
                     timer = null;
                 }
+            },
+            /**
+             * The camera stopped sending frames. That is a camera problem, not a face out of frame:
+             * the pause's time stops counting, and what it had counted is kept.
+             */
+            cameraLost: function() {
+                if (!paused || suspended) {
+                    return;
+                }
+                suspended = true;
+                if (timer !== null) {
+                    cancel(timer);
+                    timer = null;
+                    inherited += now() - pausedAt;
+                }
+            },
+            /** The camera is sending frames again: a pause still on carries on counting. */
+            cameraBack: function() {
+                if (!suspended) {
+                    return;
+                }
+                suspended = false;
+                if (!paused || struck || ended || limit <= 0) {
+                    return;
+                }
+                pausedAt = now();
+                timer = later(strike, Math.max(0, minMs - inherited));
             },
             /** A face was seen: a pause after this is a new one, whatever the page before left. */
             faceSeen: function() {
@@ -241,7 +272,7 @@ define([], function() {
                 if (!paused || ended) {
                     return;
                 }
-                write(key, {at: now(), struck: struck, elapsed: inherited + now() - pausedAt});
+                write(key, {at: now(), struck: struck, elapsed: inherited + (suspended ? 0 : now() - pausedAt)});
             },
             /** Where things stand, for tests and diagnostics. */
             state: function() {

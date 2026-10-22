@@ -188,6 +188,28 @@ final class face_strikes {
     }
 
     /**
+     * The outcome decided when the strikes ended this attempt, or '' when they did not.
+     *
+     * The outcome is recorded with the ending, so changing the site setting afterwards cannot
+     * change what happens to an attempt that has already ended.
+     *
+     * @param int $attemptid Attempt id.
+     * @param int $userid Student id.
+     * @return string One of the OUTCOME_* constants, or ''.
+     */
+    public static function ended_outcome(int $attemptid, int $userid): string {
+        $ended = self::ended_event($attemptid, $userid);
+        if (!$ended) {
+            return '';
+        }
+        $detail = json_decode((string)$ended->eventdetail, true);
+        $outcome = is_array($detail) ? (string)($detail['outcome'] ?? '') : '';
+        return in_array($outcome, [self::OUTCOME_HOLD, self::OUTCOME_AUTOFAIL, self::OUTCOME_NONE], true)
+            ? $outcome
+            : self::outcome();
+    }
+
+    /**
      * Whether the strikes ended this attempt.
      *
      * @param int $attemptid Attempt id.

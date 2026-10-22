@@ -3343,7 +3343,14 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         const cameratracks = cameraStream ? cameraStream.getVideoTracks() : [];
                         if (!cameratracks.length
                                 || cameratracks.every(track => track.readyState === 'ended' || track.muted)) {
+                            // Nor can a dead camera count toward ending the attempt (CPIT-510).
+                            if (faceStrikeControl) {
+                                faceStrikeControl.cameraLost();
+                            }
                             return;
+                        }
+                        if (faceStrikeControl) {
+                            faceStrikeControl.cameraBack();
                         }
 
                         const graceActive = Date.now() < graceEndsAt;
