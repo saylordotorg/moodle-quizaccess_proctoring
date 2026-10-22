@@ -317,6 +317,56 @@ final class face_strikes_test extends advanced_testcase {
     }
 
     /**
+     * Moodle 5.0 submits before it grades: the submission quietly holds the grade, and the attempt
+     * is failed once graded.
+     */
+    public function test_automatic_failure_waits_for_grading_where_moodle_grades_after_submitting(): void {
+        global $DB;
+
+        set_config('facestrikesoutcome', face_strikes::OUTCOME_AUTOFAIL, 'quizaccess_proctoring');
+        set_config('holdcreatednotify', 1, 'quizaccess_proctoring');
+        $sink = $this->redirectMessages();
+        [$attemptid, $reportid] = $this->attempt('finished');
+        $DB->set_field('quiz_attempts', 'state', 'submitted', ['id' => $attemptid]);
+        $DB->insert_record('quizaccess_proctoring_events', (object)[
+            'courseid' => $this->course->id,
+            'quizid' => $this->quiz->cmid,
+            'userid' => $this->student->id,
+            'attemptid' => $attemptid,
+            'reportid' => $reportid,
+            'eventtype' => face_strikes::EVENT_ENDED,
+            'eventdetail' => json_encode(['strikes' => 4, 'limit' => 4, 'outcome' => face_strikes::OUTCOME_AUTOFAIL]),
+            'timemodified' => time(),
+        ]);
+        $event = \mod_quiz\event\attempt_submitted::create([
+            'objectid' => $attemptid,
+            'relateduserid' => $this->student->id,
+            'courseid' => $this->course->id,
+            'context' => \context_module::instance($this->quiz->cmid),
+            'other' => ['submitterid' => $this->student->id, 'quizid' => $this->quiz->id],
+        ]);
+
+        proctoring_observer::handle_quiz_attempt_submitted($event);
+        $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['attemptid' => $attemptid], '*', MUST_EXIST);
+        $this->assertSame(QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE, (int)$hold->status);
+        $this->assertSame(0, $sink->count(), 'No "held for review" notice for an attempt about to be failed.');
+
+        // Not graded yet: nothing more happens.
+        proctoring_observer::handle_quiz_attempt_graded($event);
+        $this->assertSame(
+            QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+            (int)$DB->get_field('quizaccess_proctoring_risk_holds', 'status', ['id' => $hold->id])
+        );
+
+        $DB->set_field('quiz_attempts', 'state', 'finished', ['id' => $attemptid]);
+        proctoring_observer::handle_quiz_attempt_graded($event);
+        $this->assertSame(
+            QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
+            (int)$DB->get_field('quizaccess_proctoring_risk_holds', 'status', ['id' => $hold->id])
+        );
+    }
+
+    /**
      * Outcomes and the hold status each leaves.
      *
      * @return array Cases.

@@ -194,14 +194,15 @@ for (const built of [false, true]) {
         srv.failNext = 2;
         ctl.pauseStarted();
         await c.advance(5000);
-        // Shown at once, but not ended until the server has it.
-        assert.deepStrictEqual(log.notices, ['facestrike:ended']);
+        // Neither told nor ended until the server has it.
+        assert.deepStrictEqual(log.notices, []);
         assert.strictEqual(log.ended, 0);
 
         // Retried with the same request id until it lands.
         await c.advance(10000);
         assert.strictEqual(srv.sent.length, 3);
         assert.strictEqual(new Set(srv.sent.map((s) => s.requestid)).size, 1);
+        assert.deepStrictEqual(log.notices, ['facestrike:ended']);
         assert.strictEqual(log.ended, 1);
         assert.strictEqual(ctl.state().ended, true);
 
@@ -227,7 +228,7 @@ for (const built of [false, true]) {
         ctl.pauseStarted();
         // The fourth lands first; the server then has three, so the attempt has not ended yet.
         await c.advance(5100);
-        assert.deepStrictEqual(log.notices, ['facestrike:final', 'facestrike:ended']);
+        assert.deepStrictEqual(log.notices, ['facestrike:final']);
         assert.strictEqual(ctl.state().count, 4);
         assert.strictEqual(log.ended, 0);
 
@@ -235,6 +236,85 @@ for (const built of [false, true]) {
         await c.advance(2000);
         assert.strictEqual(log.ended, 1);
         assert.deepStrictEqual(log.notices, ['facestrike:final', 'facestrike:ended']);
+    });
+
+    test(`${label}: answers arriving out of order are not counted twice`, async () => {
+        const m = load(built);
+        const c = clock();
+        // A server that takes each strike at once but answers only when the test says so.
+        let total = 0;
+        const answers = [];
+        const send = () => {
+            total++;
+            const snapshot = total;
+            return new Promise((resolve) => answers.push(() => resolve({
+                facestrikes: snapshot === 2 ? total : snapshot,
+                facestrikelimit: 4,
+                attemptended: false,
+            })));
+        };
+        const {ctl, log} = controller(m, {clock: c, send});
+        for (let i = 0; i < 2; i++) {
+            ctl.pauseStarted();
+            await c.advance(5000);
+            ctl.pauseEnded();
+        }
+        // The second answer, already counting both, arrives before the first.
+        answers[1]();
+        await c.advance(10);
+        answers[0]();
+        await c.advance(10);
+        assert.strictEqual(ctl.state().count, 2);
+
+        ctl.pauseStarted();
+        await c.advance(5000);
+        assert.deepStrictEqual(log.notices, ['facestrike:first', 'facestrike:again', 'facestrike:final']);
+    });
+
+    test(`${label}: a strike not yet delivered when the page goes is delivered by the next`, async () => {
+        const m = load(built);
+        const storage = memoryStorage();
+        const c = clock();
+        const srv = server(4);
+        srv.failNext = 1;
+        const first = controller(m, {clock: c, storage, send: (s) => srv.send(s)});
+        first.ctl.pauseStarted();
+        await c.advance(5000);
+        first.ctl.pageLeaving();
+        first.ctl.pauseEnded();
+        assert.strictEqual(srv.sent.length, 1);
+
+        // The next page loads with the server still at zero, and sends the strike again.
+        await c.advance(1000);
+        const second = controller(m, {clock: c, storage, send: (s) => srv.send(s)});
+        await c.advance(10);
+        assert.strictEqual(srv.sent.length, 2);
+        assert.strictEqual(srv.sent[0].requestid, srv.sent[1].requestid);
+        assert.ok(srv.sent[1].capturedat >= srv.sent[0].capturedat, 'Each try carries a fresh capture time.');
+        assert.strictEqual(second.ctl.state().count, 1);
+        assert.deepStrictEqual(second.log.notices, ['facestrike:first']);
+
+        // Delivered: a third page has nothing left to send.
+        controller(m, {clock: c, storage, strikes: 1, send: (s) => srv.send(s)});
+        await c.advance(10);
+        assert.strictEqual(srv.sent.length, 2);
+    });
+
+    test(`${label}: a pause spanning several pages keeps its whole length`, async () => {
+        const m = load(built);
+        const storage = memoryStorage();
+        const c = clock();
+        const srv = server(4);
+        // Twenty seconds on each page, against a sixty-second threshold.
+        for (let page = 1; page <= 3; page++) {
+            const {ctl} = controller(m, {clock: c, storage, minSeconds: 60, send: (s) => srv.send(s)});
+            ctl.pauseStarted();
+            await c.advance(20000);
+            ctl.pageLeaving();
+            ctl.pauseEnded();
+            await c.advance(1000);
+        }
+        assert.strictEqual(srv.sent.length, 1, 'Sixty seconds out of frame across three pages is a strike.');
     });
 
     test(`${label}: a pause carried over a page change is not counted twice`, async () => {

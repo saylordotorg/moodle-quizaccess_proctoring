@@ -18,6 +18,9 @@ define([], function() {
     /** Delays between attempts to deliver a strike the server has not acknowledged. */
     const RETRY_DELAYS_MS = [2000, 5000, 10000, 20000, 30000];
 
+    /** Tries before a strike is given up: about twenty minutes. */
+    const MAX_TRIES = 45;
+
     /** @var {Object|null} The attempt page's settings, from configure(). */
     let config = null;
 
@@ -70,29 +73,60 @@ define([], function() {
         const cancel = options.clearTimeout || window.clearTimeout.bind(window);
         const storage = options.storage || null;
         const key = 'quizaccess_proctoring_face_strike_' + options.attemptId;
+        const outboxKey = key + '_outbox';
         const minMs = Math.max(1, options.minSeconds || 5) * 1000;
         let limit = options.limit;
-        // What the server has acknowledged, and the strikes of this page still on their way to it.
-        let acknowledged = options.strikes || 0;
-        let pending = 0;
-        const count = () => acknowledged + pending;
-        let shown = acknowledged;
+        // The server's count when the page loaded, the highest count it has answered with since,
+        // and the strikes this page made. A cumulative answer can already include a strike whose
+        // own answer is still on its way, so the two are compared, never added.
+        const base = options.strikes || 0;
+        let acknowledged = base;
+        let made = 0;
+        const count = () => Math.max(acknowledged, base + made);
+        let shown = base;
         let ended = false;
         let paused = false;
         let struck = false;
         let pausedAt = 0;
+        // Time the current pause had already lasted on earlier pages.
+        let inherited = 0;
         let timer = null;
 
-        // The previous page of this attempt left in the middle of a pause.
-        let carry = null;
-        if (storage) {
-            try {
-                carry = JSON.parse(storage.getItem(key) || 'null');
-                storage.removeItem(key);
-            } catch (error) {
-                carry = null;
+        const read = function(name) {
+            if (!storage) {
+                return null;
             }
-        }
+            try {
+                return JSON.parse(storage.getItem(name) || 'null');
+            } catch (error) {
+                return null;
+            }
+        };
+        const write = function(name, value) {
+            if (!storage) {
+                return;
+            }
+            try {
+                if (value === null) {
+                    storage.removeItem(name);
+                } else {
+                    storage.setItem(name, JSON.stringify(value));
+                }
+            } catch (error) {
+                // Storage unavailable: nothing carries over to the next page.
+            }
+        };
+
+        // The previous page of this attempt left in the middle of a pause.
+        let carry = read(key);
+        write(key, null);
+        // Strikes the server has not acknowledged yet, by request id. Kept in storage, so a strike
+        // still being retried when the page goes is delivered by the next page.
+        const saved = read(outboxKey);
+        const outbox = saved && typeof saved === 'object' ? saved : {};
+        const saveOutbox = function() {
+            write(outboxKey, Object.keys(outbox).length ? outbox : null);
+        };
 
         const show = function(n) {
             if (n > 0 && n !== shown) {
@@ -102,8 +136,13 @@ define([], function() {
         };
 
         const deliver = function(strike, tries) {
-            Promise.resolve().then(() => options.send(strike)).then(function(answer) {
-                pending = Math.max(0, pending - 1);
+            Promise.resolve().then(function() {
+                // A fresh capture time on every try: the server accepts a retry by its request id,
+                // but not a capture time from long ago.
+                return options.send(Object.assign({}, strike, {capturedat: Math.floor(now() / 1000)}));
+            }).then(function(answer) {
+                delete outbox[strike.requestid];
+                saveOutbox();
                 if (ended || !answer) {
                     return;
                 }
@@ -120,15 +159,13 @@ define([], function() {
                     options.end();
                     return;
                 }
-                if (shown >= limit && count() < limit) {
-                    // Told the attempt ended, but the server disagrees (or turned the rule off):
-                    // show where it really stands.
-                    shown = 0;
-                    show(count());
+                // Warnings only: that the attempt has ended is the server's to say.
+                if (limit > 0) {
+                    show(Math.min(count(), limit - 1));
                 }
                 return;
             }).catch(function() {
-                if (ended) {
+                if (ended || tries + 1 >= MAX_TRIES) {
                     return;
                 }
                 later(() => deliver(strike, tries + 1), RETRY_DELAYS_MS[Math.min(tries, RETRY_DELAYS_MS.length - 1)]);
@@ -141,15 +178,26 @@ define([], function() {
                 return;
             }
             struck = true;
-            pending++;
-            show(count());
-            deliver({
+            made++;
+            const record = {
                 number: count(),
-                pausedat: pausedAt,
-                capturedat: Math.floor(now() / 1000),
+                pausedat: pausedAt - inherited,
                 requestid: 'strike-' + options.attemptId + '-' + count() + '-' + Math.random().toString(36).slice(2, 10),
-            }, 0);
+            };
+            outbox[record.requestid] = record;
+            saveOutbox();
+            // A warning shows at once; the end waits until the server confirms it.
+            if (count() < limit) {
+                show(count());
+            }
+            deliver(record, 0);
         };
+
+        // What the previous page could not deliver. Its count is already in the server's answer
+        // once it lands, so it is not added to this page's own strikes.
+        Object.keys(outbox).forEach(function(requestid) {
+            deliver(outbox[requestid], 0);
+        });
 
         return {
             /** The quiz was paused for no face. */
@@ -159,6 +207,7 @@ define([], function() {
                 }
                 paused = true;
                 struck = false;
+                inherited = 0;
                 pausedAt = now();
                 if (ended || limit <= 0) {
                     return;
@@ -170,13 +219,14 @@ define([], function() {
                     struck = true;
                     return;
                 }
-                const elapsed = continued ? Math.max(0, continued.elapsed || 0) : 0;
-                timer = later(strike, Math.max(0, minMs - elapsed));
+                inherited = continued ? Math.max(0, continued.elapsed || 0) : 0;
+                timer = later(strike, Math.max(0, minMs - inherited));
             },
             /** The face is back and the pause is over. */
             pauseEnded: function() {
                 paused = false;
                 struck = false;
+                inherited = 0;
                 if (timer !== null) {
                     cancel(timer);
                     timer = null;
@@ -188,14 +238,10 @@ define([], function() {
             },
             /** The page is going: a pause in progress carries over to the next page. */
             pageLeaving: function() {
-                if (!storage || !paused || ended) {
+                if (!paused || ended) {
                     return;
                 }
-                try {
-                    storage.setItem(key, JSON.stringify({at: now(), struck: struck, elapsed: now() - pausedAt}));
-                } catch (error) {
-                    // Storage unavailable: the next page counts its pause on its own.
-                }
+                write(key, {at: now(), struck: struck, elapsed: inherited + now() - pausedAt});
             },
             /** Where things stand, for tests and diagnostics. */
             state: function() {

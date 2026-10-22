@@ -43,6 +43,12 @@ $observers = [
         'callback' => '\quizaccess_proctoring\proctoring_observer::handle_quiz_attempt_submitted',
     ],
     [
+        // Moodle 5.0+ only (the event does not exist in 4.5): an attempt the face strikes ended is
+        // failed once graded, as Moodle 5.0 grades after submitting (CPIT-510).
+        'eventname' => '\mod_quiz\event\attempt_graded',
+        'callback' => '\quizaccess_proctoring\proctoring_observer::handle_quiz_attempt_graded',
+    ],
+    [
         // Re-apply risk holds when a quiz regrade, recompute or manual edit changes a held grade.
         'eventname' => '\core\event\user_graded',
         'callback' => '\quizaccess_proctoring\local\risk_hold_enforcer::handle_user_graded',

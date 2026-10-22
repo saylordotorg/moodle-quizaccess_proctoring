@@ -161,7 +161,7 @@ class proctoring_observer {
                 }
             }
 
-            if ($facestrikeoutcome === local\face_strikes::OUTCOME_AUTOFAIL) {
+            if ($facestrikeoutcome === local\face_strikes::OUTCOME_AUTOFAIL && (string)$attempt->state === 'finished') {
                 // Also over a hold the risk score just opened: the strikes decide this attempt.
                 $holdid = \quizaccess_proctoring_fail_high_risk_attempt(
                     (int)$quiz->course,
@@ -172,7 +172,9 @@ class proctoring_observer {
                     (int)$risk['score'],
                     (int)$risksettings['threshold']
                 );
-            } else if ($facestrikeoutcome === local\face_strikes::OUTCOME_HOLD && $holdid === 0) {
+            } else if ($facestrikeoutcome !== '' && $facestrikeoutcome !== local\face_strikes::OUTCOME_NONE && $holdid === 0) {
+                // Moodle 5.0 submits an attempt before grading it, and only a graded attempt can be
+                // failed: the grade is held now, quietly, and handle_quiz_attempt_graded() fails it.
                 $holdid = \quizaccess_proctoring_apply_risk_hold(
                     (int)$quiz->course,
                     (int)$cm->id,
@@ -180,7 +182,8 @@ class proctoring_observer {
                     $attemptid,
                     (int)$report->id,
                     (int)$risk['score'],
-                    (int)$risksettings['threshold']
+                    (int)$risksettings['threshold'],
+                    $facestrikeoutcome === local\face_strikes::OUTCOME_HOLD
                 );
             }
 
@@ -206,6 +209,62 @@ class proctoring_observer {
             // Never block the student's submission, but make the failure visible: a swallowed
             // error here means a high-risk attempt was neither held nor failed.
             \quizaccess_proctoring_log_failure('processing the submission risk review for attempt ' . $event->objectid, $e);
+        }
+    }
+
+    /**
+     * Fail a graded attempt the face strikes ended, where the outcome is automatic failure (CPIT-510).
+     *
+     * Moodle 5.0 submits an attempt and grades it in two steps, and fires attempt_graded only after
+     * the second; the submission handler can only hold the grade, since only a finished attempt can
+     * be failed. Moodle 4.5 has no such event and fails the attempt at submission.
+     *
+     * @param \core\event\base $event The \mod_quiz\event\attempt_graded event.
+     * @return void
+     */
+    public static function handle_quiz_attempt_graded(\core\event\base $event) {
+        global $CFG, $DB;
+
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+
+        try {
+            $attemptid = (int)$event->objectid;
+            $attempt = $DB->get_record('quiz_attempts', ['id' => $attemptid]);
+            if (
+                !$attempt || (string)$attempt->state !== 'finished'
+                    || local\face_strikes::outcome() !== local\face_strikes::OUTCOME_AUTOFAIL
+                    || !local\face_strikes::ended($attemptid, (int)$attempt->userid)
+            ) {
+                return;
+            }
+            $quiz = $DB->get_record('quiz', ['id' => $attempt->quiz], '*', MUST_EXIST);
+            $cm = get_coursemodule_from_instance('quiz', $quiz->id, $quiz->course, false, MUST_EXIST);
+            $reports = $DB->get_records('quizaccess_proctoring_logs', [
+                'courseid' => $quiz->course,
+                'quizid' => $cm->id,
+                'userid' => $attempt->userid,
+                'status' => $attemptid,
+                'deletionprogress' => 0,
+            ], 'id ASC', 'id', 0, 1);
+            $reportid = $reports ? (int)reset($reports)->id : 0;
+            $risk = \quizaccess_proctoring_calculate_attempt_risk(
+                (int)$quiz->course,
+                (int)$cm->id,
+                (int)$attempt->userid,
+                $reportid
+            );
+            $risksettings = \quizaccess_proctoring_get_effective_risk_review_settings((int)$cm->id);
+            \quizaccess_proctoring_fail_high_risk_attempt(
+                (int)$quiz->course,
+                (int)$cm->id,
+                (int)$attempt->userid,
+                $attemptid,
+                $reportid,
+                (int)$risk['score'],
+                (int)$risksettings['threshold']
+            );
+        } catch (\Throwable $e) {
+            \quizaccess_proctoring_log_failure('failing graded attempt ' . $event->objectid . ' after face strikes', $e);
         }
     }
 }
