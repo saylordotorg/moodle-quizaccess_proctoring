@@ -1077,6 +1077,23 @@ class provider implements
                     ];
                     writer::with_context($context)->export_data($subcontext, $data);
                 }
+
+                // The student messages this user last reworded (CPIT-512).
+                $edits = $DB->get_records('quizaccess_proctoring_msg_texts', ['usermodified' => $userid], 'id ASC');
+                $index = 0;
+                foreach ($edits as $edit) {
+                    $index++;
+                    $subcontext = [
+                        get_string('quizaccess_proctoring', 'quizaccess_proctoring'),
+                        'proctoring_student_message_edits',
+                        $index,
+                    ];
+                    writer::with_context($context)->export_data($subcontext, (object)[
+                        'stringid' => $edit->stringid,
+                        'text' => $edit->text,
+                        'timemodified' => transform::datetime($edit->timemodified),
+                    ]);
+                }
             }
         }
     }
@@ -1122,6 +1139,8 @@ class provider implements
             $DB->delete_records('quizaccess_proctoring_face_images', ['parent_type' => 'admin_image']);
             $DB->delete_records('quizaccess_proctoring_user_images');
             $DB->delete_records('quizaccess_proctoring_ref_requests');
+            // The reworded messages are site configuration and stay; who edited them goes (CPIT-512).
+            $DB->set_field('quizaccess_proctoring_msg_texts', 'usermodified', 0);
 
             $fs = get_file_storage();
             $fs->delete_area_files($context->id, 'quizaccess_proctoring', 'user_photo');

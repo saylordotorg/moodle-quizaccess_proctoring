@@ -1465,4 +1465,13 @@ if ($canmanageproctoring) {
     ));
 
     $settings = null;
+} else if (has_capability('quizaccess/proctoring:editstudentmessages', context_system::instance())) {
+    // Staff who only reword the student messages (CPIT-512) do not get the proctoring category
+    // above, so their way to the page is under Site administration > Reports.
+    $ADMIN->add('reports', new admin_externalpage(
+        'quizaccess_proctoring_student_messages',
+        get_string('messagetexts:title', 'quizaccess_proctoring'),
+        new moodle_url('/mod/quiz/accessrule/proctoring/student_messages.php'),
+        'quizaccess/proctoring:editstudentmessages'
+    ));
 }

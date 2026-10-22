@@ -220,4 +220,35 @@ final class message_texts_test extends advanced_testcase {
         $this->assertSame('Your grade is back', $record->text);
         $this->assertSame(0, (int)$record->usermodified);
     }
+
+    /**
+     * An editor's export lists what they reworded, and erasing the whole system context keeps
+     * the wording but not who wrote it.
+     */
+    public function test_privacy_export_and_context_erasure(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $editor = $this->getDataGenerator()->create_user();
+        message_texts::save('message:releasedsubject', 'Your grade is back', (int)$editor->id);
+        $system = \context_system::instance();
+
+        \quizaccess_proctoring\privacy\provider::export_user_data(new \core_privacy\local\request\approved_contextlist(
+            $editor,
+            'quizaccess_proctoring',
+            [$system->id]
+        ));
+        $exported = \core_privacy\local\request\writer::with_context($system)->get_data([
+            get_string('quizaccess_proctoring', 'quizaccess_proctoring'),
+            'proctoring_student_message_edits',
+            1,
+        ]);
+        $this->assertSame('message:releasedsubject', $exported->stringid);
+        $this->assertSame('Your grade is back', $exported->text);
+
+        \quizaccess_proctoring\privacy\provider::delete_data_for_all_users_in_context($system);
+        $record = $DB->get_record('quizaccess_proctoring_msg_texts', ['stringid' => 'message:releasedsubject'], '*', MUST_EXIST);
+        $this->assertSame('Your grade is back', $record->text);
+        $this->assertSame(0, (int)$record->usermodified);
+    }
 }
