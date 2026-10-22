@@ -2497,24 +2497,23 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
             // Escalating warnings that end the attempt when the face keeps leaving the frame
             // (CPIT-510). Its own call: the setup arguments are already close to the 1024
-            // characters js_call_amd() allows.
-            if (!empty($record->blurquizwithoutface)) {
-                $strikes = \quizaccess_proctoring\local\face_strikes::page_state(
-                    (int)$COURSE->id,
-                    (int)$cmid,
-                    (int)$USER->id,
-                    (int)$attempt,
-                    (int)$record->id
-                );
-                if ($strikes['limit'] > 0) {
-                    $page->requires->js_call_amd('quizaccess_proctoring/faceStrikes', 'configure', [[
-                        'limit' => $strikes['limit'],
-                        'strikes' => $strikes['strikes'],
-                        'minseconds' => $strikes['minseconds'],
-                        'outcome' => $strikes['outcome'],
-                        'lockoutdays' => quizaccess_proctoring_get_cheating_lockout_days(),
-                    ]]);
-                }
+            // characters js_call_amd() allows. Asked on every attempt page, rule or not: the first
+            // fixes the rule the attempt keeps.
+            $strikes = \quizaccess_proctoring\local\face_strikes::page_state(
+                (int)$COURSE->id,
+                (int)$cmid,
+                (int)$USER->id,
+                (int)$attempt,
+                (int)$record->id
+            );
+            if ($strikes['limit'] > 0 && !empty($record->blurquizwithoutface)) {
+                $page->requires->js_call_amd('quizaccess_proctoring/faceStrikes', 'configure', [[
+                    'limit' => $strikes['limit'],
+                    'strikes' => $strikes['strikes'],
+                    'minseconds' => $strikes['minseconds'],
+                    'outcome' => $strikes['outcome'],
+                    'lockoutdays' => quizaccess_proctoring_get_cheating_lockout_days(),
+                ]]);
             }
 
             // Webcam phone detection: only requested when the site monitor is on, the student has

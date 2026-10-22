@@ -402,6 +402,92 @@ final class face_strikes_test extends advanced_testcase {
     }
 
     /**
+     * A hold for review from the face strikes is not overridden by the quiz's high-risk automatic
+     * failure: the pauses that ended the attempt raise its score too, and the rule promised a review.
+     */
+    public function test_face_strike_hold_wins_over_high_risk_automatic_failure(): void {
+        global $DB;
+
+        $this->redirectMessages();
+        $DB->set_field(
+            'quizaccess_proctoring',
+            'riskreviewmode',
+            QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL,
+            ['quizid' => $this->quiz->id]
+        );
+        $DB->set_field('quizaccess_proctoring', 'riskreviewthreshold', 1, ['quizid' => $this->quiz->id]);
+        [$attemptid, $reportid] = $this->attempt('finished');
+        foreach (['focus_lost', 'tab_hidden', 'focus_lost', 'tab_hidden', 'focus_lost', 'tab_hidden'] as $type) {
+            $DB->insert_record('quizaccess_proctoring_events', (object)[
+                'courseid' => $this->course->id,
+                'quizid' => $this->quiz->cmid,
+                'userid' => $this->student->id,
+                'attemptid' => $attemptid,
+                'reportid' => $reportid,
+                'eventtype' => $type,
+                'eventdetail' => '{}',
+                'timemodified' => time() - 100,
+            ]);
+        }
+        $risk = quizaccess_proctoring_calculate_attempt_risk(
+            (int)$this->course->id,
+            (int)$this->quiz->cmid,
+            (int)$this->student->id,
+            $reportid
+        );
+        $this->assertGreaterThanOrEqual(
+            1,
+            \quizaccess_proctoring\local\risk_calculator::score_without_review_only_factors($risk),
+            'The attempt reaches the automatic-failure threshold on its own.'
+        );
+
+        $DB->insert_record('quizaccess_proctoring_events', (object)[
+            'courseid' => $this->course->id,
+            'quizid' => $this->quiz->cmid,
+            'userid' => $this->student->id,
+            'attemptid' => $attemptid,
+            'reportid' => $reportid,
+            'eventtype' => face_strikes::EVENT_ENDED,
+            'eventdetail' => json_encode(['strikes' => 4, 'limit' => 4, 'outcome' => face_strikes::OUTCOME_HOLD]),
+            'timemodified' => time(),
+        ]);
+        proctoring_observer::handle_quiz_attempt_submitted(\mod_quiz\event\attempt_submitted::create([
+            'objectid' => $attemptid,
+            'relateduserid' => $this->student->id,
+            'courseid' => $this->course->id,
+            'context' => \context_module::instance($this->quiz->cmid),
+            'other' => ['submitterid' => $this->student->id, 'quizid' => $this->quiz->id],
+        ]));
+
+        $this->assertSame(
+            QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+            (int)$DB->get_field('quizaccess_proctoring_risk_holds', 'status', ['attemptid' => $attemptid], MUST_EXIST)
+        );
+    }
+
+    /**
+     * An attempt that started without the rule keeps running without it when the rule is turned on.
+     */
+    public function test_attempt_started_without_the_rule_keeps_it_off(): void {
+        set_config('facestrikes', 0, 'quizaccess_proctoring');
+        [$attemptid, $reportid] = $this->attempt('inprogress');
+        $state = face_strikes::page_state(
+            (int)$this->course->id,
+            (int)$this->quiz->cmid,
+            (int)$this->student->id,
+            $attemptid,
+            $reportid
+        );
+        $this->assertSame(0, $state['limit']);
+
+        set_config('facestrikes', 2, 'quizaccess_proctoring');
+        for ($i = 0; $i < 3; $i++) {
+            $this->strike($attemptid, $reportid);
+        }
+        $this->assertSame(['strikes' => 3, 'limit' => 0, 'ended' => false], $this->record($attemptid, $reportid));
+    }
+
+    /**
      * Outcomes and the hold status each leaves.
      *
      * @return array Cases.

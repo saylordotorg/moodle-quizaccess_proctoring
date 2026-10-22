@@ -252,22 +252,22 @@ final class face_strikes {
             }
         }
 
+        // Recorded even when the rule does not apply, so turning it on later cannot reach an
+        // attempt that started without it.
         $rule['limit'] = self::limit_for($courseid, (int)$attempt->quiz, $userid, (int)$attempt->timestart);
-        if ($rule['limit'] > 0) {
-            $DB->insert_record('quizaccess_proctoring_events', (object)[
-                'courseid' => $courseid,
-                'quizid' => $cmid,
-                'userid' => $userid,
-                'attemptid' => $attemptid,
-                'reportid' => $reportid,
-                'eventtype' => self::EVENT_STARTED,
-                'eventdetail' => json_encode($rule),
-                'pagevisibility' => '',
-                'currenturl' => '',
-                'screenshoturl' => '',
-                'timemodified' => time(),
-            ]);
-        }
+        $DB->insert_record('quizaccess_proctoring_events', (object)[
+            'courseid' => $courseid,
+            'quizid' => $cmid,
+            'userid' => $userid,
+            'attemptid' => $attemptid,
+            'reportid' => $reportid,
+            'eventtype' => self::EVENT_STARTED,
+            'eventdetail' => json_encode($rule),
+            'pagevisibility' => '',
+            'currenturl' => '',
+            'screenshoturl' => '',
+            'timemodified' => time(),
+        ]);
         return $rule;
     }
 

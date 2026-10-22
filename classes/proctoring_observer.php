@@ -136,8 +136,11 @@ class proctoring_observer {
                 try {
                     // Review-only evidence (a second face) can hold an attempt but never fail it: fail
                     // automatically only when the rest of the evidence reaches the threshold on its own.
+                    // An attempt the face strikes ended with a hold for review is held, not failed: the
+                    // pauses that ended it also raise its score, and the rule promised a review.
                     if (
                         $riskaction === \QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL
+                        && $facestrikeoutcome !== local\face_strikes::OUTCOME_HOLD
                         && \quizaccess_proctoring\local\risk_calculator::score_without_review_only_factors($risk)
                             >= (int)$risksettings['threshold']
                     ) {
