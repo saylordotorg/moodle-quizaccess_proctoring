@@ -3220,6 +3220,11 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         attemptId: parseInt(props.status, 10) || 0,
                         now: captureClock,
                         storage: storage,
+                        cameraLive: function() {
+                            const tracks = cameraStream ? cameraStream.getVideoTracks() : [];
+                            return tracks.length > 0
+                                && !tracks.every(track => track.readyState === 'ended' || track.muted);
+                        },
                         send: function(strike) {
                             return Ajax.call([{
                                 methodname: 'quizaccess_proctoring_log_event',

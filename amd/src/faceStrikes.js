@@ -64,7 +64,8 @@ define([], function() {
      *
      * @param {Object} options limit, strikes, minSeconds, attemptId, send(strike) returning a
      *     promise of the log_event answer, notify(count, limit), end(), and optional now,
-     *     setTimeout, clearTimeout and storage (a sessionStorage-like object).
+     *     setTimeout, clearTimeout, storage (a sessionStorage-like object) and cameraLive()
+     *     (whether the camera is sending frames, checked before a strike counts).
      * @returns {Object} pauseStarted, pauseEnded, cameraLost, cameraBack, faceSeen, pageLeaving and state.
      */
     const create = function(options) {
@@ -179,6 +180,13 @@ define([], function() {
             if (!paused || struck || ended || limit <= 0) {
                 return;
             }
+            if (options.cameraLive && !options.cameraLive()) {
+                // The camera died since the last check: the time until now counts, but not the
+                // strike, until the camera is back and the pause is still on.
+                suspended = true;
+                inherited += now() - pausedAt;
+                return;
+            }
             struck = true;
             made++;
             const record = {
@@ -273,6 +281,16 @@ define([], function() {
                     return;
                 }
                 write(key, {at: now(), struck: struck, elapsed: inherited + (suspended ? 0 : now() - pausedAt)});
+                // The next page carries the pause on. This one stops timing it, in case it is kept
+                // in the back-forward cache and restored: it must not count the same pause again.
+                paused = false;
+                struck = false;
+                suspended = false;
+                inherited = 0;
+                if (timer !== null) {
+                    cancel(timer);
+                    timer = null;
+                }
             },
             /** Where things stand, for tests and diagnostics. */
             state: function() {

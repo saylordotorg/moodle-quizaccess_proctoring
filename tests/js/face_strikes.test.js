@@ -336,6 +336,39 @@ for (const built of [false, true]) {
         assert.strictEqual(srv.sent.length, 1);
     });
 
+    test(`${label}: a camera found dead when the strike is due holds the strike back`, async () => {
+        const m = load(built);
+        const c = clock();
+        const srv = server(4);
+        let live = true;
+        const {ctl} = controller(m, {clock: c, cameraLive: () => live, send: (s) => srv.send(s)});
+        ctl.pauseStarted();
+        await c.advance(4000);
+        live = false;
+        await c.advance(30000);
+        assert.strictEqual(srv.sent.length, 0);
+        live = true;
+        ctl.cameraBack();
+        await c.advance(10);
+        assert.strictEqual(srv.sent.length, 1, 'Back, with the pause still on and its time already up.');
+    });
+
+    test(`${label}: a page that left does not time its pause any more`, async () => {
+        const m = load(built);
+        const storage = memoryStorage();
+        const c = clock();
+        const srv = server(4);
+        // As the browser's back-forward cache would keep it: the page is hidden but not destroyed.
+        const kept = controller(m, {clock: c, storage, send: (s) => srv.send(s)});
+        kept.ctl.pauseStarted();
+        await c.advance(3000);
+        kept.ctl.pageLeaving();
+        const next = controller(m, {clock: c, storage, send: (s) => srv.send(s)});
+        next.ctl.pauseStarted();
+        await c.advance(30000);
+        assert.strictEqual(srv.sent.length, 1, 'One absence, one strike.');
+    });
+
     test(`${label}: a pause carried over a page change is not counted twice`, async () => {
         const m = load(built);
         const storage = memoryStorage();
