@@ -79,6 +79,46 @@ final class rule_description_webservice_test extends advanced_testcase {
     }
 
     /**
+     * Where phones must share a screen, the app sends the student to a computer, not to a phone
+     * browser that cannot take the exam either (Codex review).
+     */
+    public function test_app_notice_follows_the_phone_screen_share_policy(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $quizobj = $this->create_quizobj();
+        $notice = function() use ($quizobj): string {
+            $rule = new class ($quizobj, time()) extends \quizaccess_proctoring {
+                /**
+                 * Report a web service request, as the Moodle app makes.
+                 *
+                 * @return bool
+                 */
+                protected function is_web_service_request(): bool {
+                    return true;
+                }
+            };
+            return $rule->description()[0];
+        };
+
+        foreach (['require', 'block'] as $mode) {
+            set_config('mobilescreensharemode', $mode, 'quizaccess_proctoring');
+            set_config('requireentirescreen', 1, 'quizaccess_proctoring');
+            $this->assertSame(get_string('appusecomputer', 'quizaccess_proctoring'), $notice(), $mode);
+            $this->assertSame($notice(), validate_param($notice(), PARAM_TEXT));
+
+            // An exam that never shares the screen runs in the phone's browser.
+            set_config('requireentirescreen', 0, 'quizaccess_proctoring');
+            set_config('captureviolationdesktop', 0, 'quizaccess_proctoring');
+            $this->assertSame(get_string('appusebrowser', 'quizaccess_proctoring'), $notice(), $mode);
+            set_config('captureviolationdesktop', 1, 'quizaccess_proctoring');
+        }
+
+        set_config('mobilescreensharemode', 'bypass', 'quizaccess_proctoring');
+        set_config('requireentirescreen', 1, 'quizaccess_proctoring');
+        $this->assertSame(get_string('appusebrowser', 'quizaccess_proctoring'), $notice());
+    }
+
+    /**
      * The browser's quiz page does not tell the student to leave the app it is not in.
      */
     public function test_web_description_has_no_app_notice(): void {
