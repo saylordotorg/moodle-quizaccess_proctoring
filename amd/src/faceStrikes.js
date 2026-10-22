@@ -223,6 +223,15 @@ define([], function() {
                 if (ended || limit <= 0) {
                     return;
                 }
+                // The latest pause left mid-way: by a page before this one, or - restored from the
+                // back-forward cache - by this very page, or a page after it.
+                const stored = read(key);
+                if (stored) {
+                    write(key, null);
+                    if (!carry || stored.at > carry.at) {
+                        carry = stored;
+                    }
+                }
                 const continued = carry && pausedAt - carry.at <= CONTINUATION_MS ? carry : null;
                 carry = null;
                 if (continued && continued.struck) {
@@ -273,16 +282,20 @@ define([], function() {
             },
             /** A face was seen: a pause after this is a new one, whatever the page before left. */
             faceSeen: function() {
-                carry = null;
+                if (carry) {
+                    carry = null;
+                    write(key, null);
+                }
             },
             /** The page is going: a pause in progress carries over to the next page. */
             pageLeaving: function() {
                 if (!paused || ended) {
                     return;
                 }
-                write(key, {at: now(), struck: struck, elapsed: inherited + (suspended ? 0 : now() - pausedAt)});
-                // The next page carries the pause on. This one stops timing it, in case it is kept
-                // in the back-forward cache and restored: it must not count the same pause again.
+                carry = {at: now(), struck: struck, elapsed: inherited + (suspended ? 0 : now() - pausedAt)};
+                write(key, carry);
+                // The next page carries the pause on. This one stops timing it, and keeps its own copy
+                // in case it is restored from the back-forward cache: the same pause, not a new one.
                 paused = false;
                 struck = false;
                 suspended = false;

@@ -369,6 +369,24 @@ for (const built of [false, true]) {
         assert.strictEqual(srv.sent.length, 1, 'One absence, one strike.');
     });
 
+    test(`${label}: a page restored from the back-forward cache carries its pause on`, async () => {
+        const m = load(built);
+        const storage = memoryStorage();
+        const c = clock();
+        const srv = server(4);
+        const page = controller(m, {clock: c, storage, send: (s) => srv.send(s)});
+        page.ctl.pauseStarted();
+        await c.advance(6000);
+        assert.strictEqual(srv.sent.length, 1);
+        page.ctl.pageLeaving();
+
+        // Back without the face ever seen: the same absence, whether or not another page read it.
+        await c.advance(3000);
+        page.ctl.pauseStarted();
+        await c.advance(30000);
+        assert.strictEqual(srv.sent.length, 1);
+    });
+
     test(`${label}: a pause carried over a page change is not counted twice`, async () => {
         const m = load(built);
         const storage = memoryStorage();
