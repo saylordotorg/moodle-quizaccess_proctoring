@@ -2591,16 +2591,19 @@ function quizaccess_proctoring_certificate_state(
 /**
  * Whether a certificate actually hangs on this attempt's review (CPIT-463, Stephanie).
  *
- * An attempt scoring below the quiz's pass grade earns no certificate whatever the review
- * decides, so labelling its hold "Certificate withheld" is wrong. Compares the attempt's own
- * grade (quiz_attempts.sumgrades survives the hold; only the gradebook is emptied) against the
- * quiz's pass grade.
+ * A certificate hangs on the decision only when releasing the attempt passes the quiz and voiding
+ * it fails it. A failing attempt fails either way, and beside an earlier passing attempt under
+ * "highest grade" the quiz passes either way, so labelling either hold "Certificate withheld" is
+ * wrong. The quiz grade is worked out both ways under the quiz's grading method over all the
+ * student's finished attempts (quiz_attempts.sumgrades survives the hold; only the gradebook is
+ * emptied), with confirmed or auto-failed attempts counting as zero, as the enforcer scores them.
  *
  * @param int $courseid Course id.
  * @param int $userid User id.
  * @param int $attemptid Quiz attempt id.
- * @return bool|null True when at/above the pass grade, false when below it, null when unknown
- *         (no attempt, no grade yet, or no pass grade configured) - callers keep the plain label.
+ * @return bool|null True when the decision decides the pass, false when it cannot, null when
+ *         unknown (no attempt, no grade yet, no pass grade configured, or another of the
+ *         student's attempts still under review) - callers keep the plain label.
  */
 function quizaccess_proctoring_certificate_at_stake(int $courseid, int $userid, int $attemptid): ?bool {
     if ($attemptid <= 0) {
@@ -2614,8 +2617,8 @@ function quizaccess_proctoring_certificate_at_stake(int $courseid, int $userid, 
  * Bulk form of {@see quizaccess_proctoring_certificate_at_stake()} (PR #81 review).
  *
  * The Held certificates dashboard resolves every candidate hold before paginating - up to
- * thousands of rows - so the lookups run as four set-based queries for the whole batch instead
- * of four per attempt.
+ * thousands of rows - so the lookups run as five set-based queries for the whole batch instead
+ * of five per attempt.
  *
  * @param array $userbyattempt Map of attemptid => expected userid.
  * @return array Map of attemptid => bool|null (see the single-attempt helper).
@@ -2653,24 +2656,40 @@ function quizaccess_proctoring_certificates_at_stake(array $userbyattempt): arra
         $quizids = array_values(array_unique(array_map(static fn($a) => (int)$a->quiz, $attempts)));
         $userids = array_values(array_unique(array_map(static fn($a) => (int)$a->userid, $attempts)));
 
-        // Finished non-preview attempt counts per (quiz, user) pair. The superset over the two id
-        // lists is fine: each pair's count is still that pair's own.
+        // Every finished non-preview attempt of each (quiz, user) pair, in attempt order: with
+        // several, the quiz's grading method over all of them decides the certificate (CPIT-463).
+        // The superset over the two id lists is fine: each pair only reads its own attempts.
         [$qsql, $qparams] = $DB->get_in_or_equal($quizids, SQL_PARAMS_NAMED, 'casqz');
         [$usql, $uparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'casur');
-        $counts = [];
+        $finished = [];
         $rs = $DB->get_recordset_sql(
-            "SELECT quiz, userid, COUNT(id) AS cnt
+            "SELECT id, quiz, userid, attempt, sumgrades
                FROM {quiz_attempts}
               WHERE quiz {$qsql} AND userid {$usql} AND preview = 0 AND state = 'finished'
-           GROUP BY quiz, userid",
+           ORDER BY quiz, userid, attempt, id",
             $qparams + $uparams
         );
         foreach ($rs as $row) {
-            $counts[(int)$row->quiz . '-' . (int)$row->userid] = (int)$row->cnt;
+            $finished[(int)$row->quiz . '-' . (int)$row->userid][(int)$row->id] = $row;
         }
         $rs->close();
 
-        $quizzes = $DB->get_records_list('quiz', 'id', $quizids, '', 'id, course, grade, sumgrades, decimalpoints');
+        // The hold statuses on those attempts: a confirmed or auto-failed attempt counts as zero,
+        // as the enforcer scores it, and another undecided hold leaves the outcome open.
+        $holdstatuses = [];
+        $rs = $DB->get_recordset_sql(
+            "SELECT h.id, h.attemptid, h.status
+               FROM {quizaccess_proctoring_risk_holds} h
+               JOIN {quiz_attempts} qa ON qa.id = h.attemptid
+              WHERE qa.quiz {$qsql} AND qa.userid {$usql} AND qa.preview = 0 AND qa.state = 'finished'",
+            $qparams + $uparams
+        );
+        foreach ($rs as $row) {
+            $holdstatuses[(int)$row->attemptid][] = (int)$row->status;
+        }
+        $rs->close();
+
+        $quizzes = $DB->get_records_list('quiz', 'id', $quizids, '', 'id, course, grade, sumgrades, decimalpoints, grademethod');
 
         // The main quiz grade item only (itemnumber 0): an auxiliary module item would otherwise
         // be able to supply its own pass mark or adjustments (PR #81 review).
@@ -2692,15 +2711,6 @@ function quizaccess_proctoring_certificates_at_stake(array $userbyattempt): arra
             if ((int)$attempt->userid !== (int)($userbyattempt[$attemptid] ?? 0) || $attempt->sumgrades === null) {
                 continue;
             }
-            // With other finished attempts, the quiz's aggregate grade - not this attempt's -
-            // decides the certificate, and under averaging the hold's outcome can swing it across
-            // the pass grade. Only when this is the student's sole finished attempt does every
-            // grading method agree with the attempt itself (Codex review).
-            $pairtotal = $counts[(int)$attempt->quiz . '-' . (int)$attempt->userid] ?? 0;
-            $isfinished = (string)$attempt->state === 'finished' && (int)$attempt->preview === 0;
-            if ($pairtotal - ($isfinished ? 1 : 0) > 0) {
-                continue;
-            }
             $quiz = $quizzes[(int)$attempt->quiz] ?? null;
             $gradeitem = $gradeitems[(int)$attempt->quiz] ?? null;
             if (!$quiz || !$gradeitem) {
@@ -2715,13 +2725,55 @@ function quizaccess_proctoring_certificates_at_stake(array $userbyattempt): arra
             if (abs((float)$gradeitem->multfactor - 1.0) > 1.0E-7 || abs((float)$gradeitem->plusfactor) > 1.0E-7) {
                 continue;
             }
-            $grade = quiz_rescale_grade($attempt->sumgrades, $quiz, false);
-            if ($grade === null) {
+
+            $pairattempts = $finished[(int)$attempt->quiz . '-' . (int)$attempt->userid] ?? [];
+            if (!isset($pairattempts[$attemptid])) {
+                // An attempt that is not (yet) finished joins no aggregate; on its own it is
+                // still judged by its mark, but beside finished attempts the outcome is unclear.
+                if ($pairattempts) {
+                    continue;
+                }
+                $pairattempts = [$attemptid => $attempt];
+            }
+
+            $voided = [];
+            $open = false;
+            foreach ($pairattempts as $otherid => $other) {
+                if ($otherid === $attemptid) {
+                    continue;
+                }
+                $statuses = $holdstatuses[$otherid] ?? [];
+                if (in_array(QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE, $statuses, true) || $other->sumgrades === null) {
+                    // Another attempt still under review, or not graded yet: what this decision
+                    // changes is not known, so keep the plain label.
+                    $open = true;
+                    break;
+                }
+                if (in_array(QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED, $statuses, true) ||
+                        in_array(QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED, $statuses, true)) {
+                    $voided[] = $otherid;
+                }
+            }
+            if ($open) {
+                continue;
+            }
+
+            // The quiz grade if this attempt is released, and if it is voided. A certificate hangs
+            // on the decision only when release passes and voiding fails: a failing attempt fails
+            // either way, and beside a passing attempt under "highest grade" it passes either way.
+            $released = \quizaccess_proctoring\local\risk_hold_enforcer::final_grade($quiz, $pairattempts, $voided);
+            $withheld = \quizaccess_proctoring\local\risk_hold_enforcer::final_grade(
+                $quiz,
+                $pairattempts,
+                array_merge($voided, [$attemptid])
+            );
+            if ($released === null) {
                 continue;
             }
             // Compare at Moodle's stored grade precision (five decimals): a boundary mark such as
             // 2/3 of 100 rounds up to the stored 66.66667 and passes, keeping the plain label.
-            $results[$attemptid] = round((float)$grade, 5) >= round($gradepass, 5);
+            $passes = static fn(?float $grade): bool => $grade !== null && round($grade, 5) >= round($gradepass, 5);
+            $results[$attemptid] = $passes($released) && !$passes($withheld);
         }
     } catch (\Throwable $e) {
         // Unknown beats wrong: any lookup failure keeps the plain label for the whole batch.
@@ -2836,7 +2888,7 @@ function quizaccess_proctoring_resolve_certificate_label(
     $atstake = true;
     if (in_array($state, ['held', 'withheld'], true)) {
         // A bulk caller (the Held certificates dashboard) precomputes the tri-state for every row
-        // in four set-based queries and hands it in, instead of four queries per row (PR #81).
+        // in five set-based queries and hands it in, instead of five queries per row (PR #81).
         $stake = $precomputed !== null && array_key_exists('atstake', $precomputed)
             ? $precomputed['atstake']
             : quizaccess_proctoring_certificate_at_stake($courseid, $userid, $attemptid);
