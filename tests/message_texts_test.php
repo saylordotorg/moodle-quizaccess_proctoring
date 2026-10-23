@@ -124,6 +124,35 @@ final class message_texts_test extends advanced_testcase {
     }
 
     /**
+     * A greeting by name can be added to any message, and the ID exception emails can name the
+     * course; neither has to be kept (CPIT-512, Student Affairs).
+     */
+    public function test_optional_placeholders(): void {
+        $this->assertSame(
+            ['{$a->firstname}' => 'firstname', '{$a->fullname}' => 'fullname'],
+            message_texts::optional_placeholders('message:heldsubject')
+        );
+        $this->assertSame(
+            ['{$a->firstname}' => 'firstname', '{$a->fullname}' => 'fullname', '{$a->course}' => 'course'],
+            message_texts::optional_placeholders('idexemptionemail:approved:subject')
+        );
+        // A message that must keep [course] does not offer it a second time.
+        $this->assertArrayNotHasKey('{$a->course}', message_texts::optional_placeholders('message:heldbody'));
+
+        $key = 'message:confirmedbody';
+        $this->assertSame('', message_texts::validate($key, 'Hi [firstname], [quiz] in [course]. [questions]', false));
+        $this->assertSame('', message_texts::validate($key, 'Your attempt for [quiz] in [course] failed. [questions]', false));
+        $this->assertStringContainsString(
+            '[firstnam]',
+            message_texts::validate($key, 'Hi [firstnam], [quiz] [course] [questions]', false)
+        );
+        $this->assertStringContainsString('[course]', message_texts::validate('message:heldsubject', 'About [course]', true));
+
+        $text = 'Hi [firstname], about [quiz]';
+        $this->assertSame($text, message_texts::to_editor($key, message_texts::from_editor($key, $text)));
+    }
+
+    /**
      * Saved wording is what get() fills in; reset, or saving the shipped text, goes back to it.
      */
     public function test_saved_wording_wins_until_reset(): void {
@@ -164,10 +193,10 @@ final class message_texts_test extends advanced_testcase {
         $generator = $this->getDataGenerator();
         $course = $generator->create_course(['fullname' => 'Business 101']);
         $quiz = $generator->create_module('quiz', ['course' => $course->id, 'name' => 'Final exam']);
-        $student = $generator->create_user();
+        $student = $generator->create_user(['firstname' => 'Dana', 'lastname' => 'Okafor']);
 
-        message_texts::save('message:confirmedsubject', 'Your review is complete', 2);
-        message_texts::save('message:confirmedbody', 'We reviewed [quiz] in [course]. [questions]', 2);
+        message_texts::save('message:confirmedsubject', '[fullname], your review is complete', 2);
+        message_texts::save('message:confirmedbody', 'Hi [firstname], we reviewed [quiz] in [course]. [questions]', 2);
 
         $sink = $this->redirectMessages();
         quizaccess_proctoring_notify_hold_decision((object)[
@@ -181,8 +210,8 @@ final class message_texts_test extends advanced_testcase {
         $sink->close();
 
         $this->assertCount(1, $messages);
-        $this->assertSame('Your review is complete', $messages[0]->subject);
-        $expected = 'We reviewed Final exam in Business 101. '
+        $this->assertSame('Dana Okafor, your review is complete', $messages[0]->subject);
+        $expected = 'Hi Dana, we reviewed Final exam in Business 101. '
             . \quizaccess_proctoring\local\support_contact::questions_sentence();
         $this->assertSame($expected, $messages[0]->fullmessage);
 
@@ -197,9 +226,9 @@ final class message_texts_test extends advanced_testcase {
     public function test_the_id_exception_email_uses_the_edited_text(): void {
         $this->resetAfterTest();
         $generator = $this->getDataGenerator();
-        $student = $generator->create_user();
-        message_texts::save('idexemptionemail:approved:subject', 'Good news about [quiz]', 2);
-        message_texts::save('idexemptionemail:approved:intro', 'You can take [quiz] without the ID step.', 2);
+        $student = $generator->create_user(['firstname' => 'Dana']);
+        message_texts::save('idexemptionemail:approved:subject', 'Good news about [quiz] ([course])', 2);
+        message_texts::save('idexemptionemail:approved:intro', 'Hi [firstname], you can take [quiz] without the ID step.', 2);
 
         $sink = $this->redirectEmails();
         \quizaccess_proctoring\local\exemption_email::notify_student_decision($student, true, 'Business 101', 'Final exam', 99, '');
@@ -207,9 +236,9 @@ final class message_texts_test extends advanced_testcase {
         $sink->close();
 
         $this->assertCount(1, $emails);
-        $this->assertSame('Good news about Final exam', $emails[0]->subject);
+        $this->assertSame('Good news about Final exam (Business 101)', $emails[0]->subject);
         $body = quoted_printable_decode($emails[0]->body);
-        $this->assertStringContainsString('You can take Final exam without the ID step.', $body);
+        $this->assertStringContainsString('Hi Dana, you can take Final exam without the ID step.', $body);
         $this->assertStringContainsString(get_string('idexemptionemail:approved:title', 'quizaccess_proctoring'), $body);
     }
 

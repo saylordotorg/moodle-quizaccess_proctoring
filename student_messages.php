@@ -87,7 +87,7 @@ if ($edit !== '') {
     // Live preview with sample values, and the placeholder buttons.
     $parts = [];
     foreach (message_texts::MESSAGES[$edit]['parts'] as $part => $key) {
-        $parts[$part] = array_values(array_unique(array_values(message_texts::placeholders($key))));
+        $parts[$part] = array_values(array_unique(array_values(message_texts::all_placeholders($key))));
     }
     $PAGE->requires->js_call_amd('quizaccess_proctoring/messagePreview', 'init', [[
         'parts' => $parts,

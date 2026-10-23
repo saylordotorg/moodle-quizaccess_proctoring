@@ -76,7 +76,7 @@ final class page_security_audit_test extends \advanced_testcase {
      * A course-wide review grant must not bypass a prohibition on one quiz.
      */
     public function test_review_respects_module_capability_prohibition(): void {
-        global $DB, $PAGE;
+        global $DB;
 
         $this->resetAfterTest();
         $course = $this->getDataGenerator()->create_course();
@@ -92,10 +92,31 @@ final class page_security_audit_test extends \advanced_testcase {
         $this->assertTrue(has_capability('quizaccess/proctoring:reviewriskholds', \context_course::instance($course->id)));
         $this->assertSame((int)$allowed->cmid, (int)report_access::require_review($course->id, $allowed->cmid)->instanceid);
 
-        // Each action is a separate request; require_login() sets that request's page context.
-        $PAGE = new \moodle_page();
         $this->expectException(\required_capability_exception::class);
         report_access::require_review($course->id, $blocked->cmid);
+    }
+
+    /**
+     * A decision made after the page has loaded its theme must not try to change the page's
+     * course: for a site administrator the review page loads the theme before the decision runs,
+     * and "Escalate to integrity case" failed with a coding error (CPIT-513).
+     */
+    public function test_review_after_theme_is_loaded(): void {
+        global $PAGE;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course();
+        $quiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id]);
+
+        $PAGE = new \moodle_page();
+        $PAGE->set_context(\context_system::instance());
+        $PAGE->set_url(new \moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'));
+        $this->assertNotEmpty($PAGE->theme->name);
+
+        $context = report_access::require_review($course->id, $quiz->cmid);
+        $this->assertSame((int)$quiz->cmid, (int)$context->instanceid);
+        $this->assertSame(\context_system::instance()->id, $PAGE->context->id);
     }
 
     /**
