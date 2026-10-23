@@ -237,7 +237,7 @@ function quizaccess_proctoring_myprofile_navigation(\core_user\output\myprofile\
         'quizaccess_proctoring_reviewqueue',
         get_string('reviewqueue:profilelink', 'quizaccess_proctoring'),
         null,
-        new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php')
+        new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', ['view' => 'attempts', 'queue' => 'all'])
     ));
 }
 

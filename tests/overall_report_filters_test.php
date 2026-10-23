@@ -439,9 +439,17 @@ final class overall_report_filters_test extends advanced_testcase {
         $this->assertStringContainsString('/user/profile.php', $row['profileurl']);
         $this->assertStringContainsString('id=' . $user->id, $row['profileurl']);
 
-        // Attempt facts: 8 of 10 raw rescaled onto a 100-point quiz, and half an hour spent.
-        $this->assertSame('80.00 / 100.00', $row['scorelabel']);
+        // Attempt facts: 8 of 10 raw rescaled onto a 100-point quiz, and half an hour spent. The
+        // only graded row sets the column header's maximum, so the row shows the bare grade, as
+        // the results report does (CPIT-515).
+        $this->assertSame('80.00', $row['scorelabel']);
+        $this->assertSame('Grade/100.00', $this->build()['scoreheader']);
         $this->assertSame(format_time(1800), $row['duration']);
+        // The exam date: the attempt's start, in the results report's format (CPIT-515).
+        $this->assertSame(
+            userdate($start, \quizaccess_proctoring\local\display_time::staff_format(false)),
+            $row['started']
+        );
 
         // Account age, and the signup date behind it for the column's tooltip. The generator makes
         // users "now", so backdate this one to something a reviewer would actually be weighing up.
@@ -472,6 +480,57 @@ final class overall_report_filters_test extends advanced_testcase {
         // Straight into the attempt Moodle recorded.
         $this->assertStringContainsString('/mod/quiz/review.php', $row['attempturl']);
         $this->assertStringContainsString('attempt=' . $attemptid, $row['attempturl']);
+
+        // A decided hold names who decided it and when, as a sign-off does (CPIT-515).
+        global $CFG;
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
+        $reviewer =$this->getDataGenerator()->create_user(['firstname' => 'Rae', 'lastname' => 'Viewer']);
+        $holdid = (int)$DB->insert_record('quizaccess_proctoring_risk_holds', (object)[
+            'courseid' => $this->course->id, 'quizid' => $this->quiz->cmid, 'quizinstance' => $this->quiz->id,
+            'userid' => $user->id, 'attemptid' => $attemptid, 'riskscore' => 80, 'threshold' => 70,
+            'status' => QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED, 'reviewerid' => $reviewer->id,
+            'timecreated' => $start + 1800, 'timereviewed' => $start + 3600, 'timemodified' => $start + 3600,
+        ]);
+        $labels = [];
+        // No reviewer is not proof of automation: erasing a reviewer's data zeroes reviewerid too.
+        foreach ([[$reviewer->id, QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED], [0, QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED],
+                [$reviewer->id, QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED], [0, QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED],
+                [0, QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED]] as [$reviewerid, $status]) {
+            $DB->update_record('quizaccess_proctoring_risk_holds', (object)[
+                'id' => $holdid, 'reviewerid' => $reviewerid, 'status' => $status,
+            ]);
+            foreach ($this->build()['rows'] as $candidate) {
+                if ($candidate['fullname'] === 'Cy Clark') {
+                    $labels[] = $candidate['signofflabel'];
+                }
+            }
+        }
+        $date = \quizaccess_proctoring\local\display_time::staff($start + 3600);
+        $this->assertSame([
+            get_string('overallreport:releasedby', 'quizaccess_proctoring', (object)['reviewer' => 'Rae Viewer', 'date' => $date]),
+            get_string('overallreport:releasedbynone', 'quizaccess_proctoring', (object)['reviewer' => '', 'date' => $date]),
+            get_string('overallreport:confirmedby', 'quizaccess_proctoring', (object)['reviewer' => 'Rae Viewer', 'date' => $date]),
+            get_string('overallreport:confirmedbynone', 'quizaccess_proctoring', (object)['reviewer' => '', 'date' => $date]),
+            get_string('overallreport:autofailedon', 'quizaccess_proctoring', (object)['reviewer' => '', 'date' => $date]),
+        ], $labels);
+    }
+
+    /**
+     * "Grade/10.00" over bare grades only when the page's graded rows share the maximum; a page
+     * that mixes quizzes keeps "Grade" and each row's own maximum (CPIT-515).
+     */
+    public function test_grade_column_header_follows_the_page(): void {
+        $row = fn(string $score, string $max) => [
+            'score' => $score, 'scoremax' => $max, 'scorelabel' => $score === '' ? 'Not graded' : "$score / $max",
+        ];
+
+        [$rows, $header] = overall_report::score_column([$row('8.00', '10.00'), $row('', ''), $row('6.50', '10.00')]);
+        $this->assertSame('Grade/10.00', $header);
+        $this->assertSame(['8.00', 'Not graded', '6.50'], array_column($rows, 'scorelabel'));
+
+        [$rows, $header] = overall_report::score_column([$row('8.00', '10.00'), $row('17.00', '20.00')]);
+        $this->assertSame('Grade', $header);
+        $this->assertSame(['8.00 / 10.00', '17.00 / 20.00'], array_column($rows, 'scorelabel'));
     }
 
     /**

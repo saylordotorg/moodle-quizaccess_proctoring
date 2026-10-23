@@ -919,6 +919,7 @@ $templatecontext = [
     ]),
     'summary' => $summary,
     'rows' => $data['rows'],
+    'scoreheader' => $data['scoreheader'],
     'hasrows' => $data['hasrows'],
     // A student or risk filter that matches nothing is not an empty queue, so it keeps the plain
     // "nothing matches these filters" message instead of claiming the queue is caught up.

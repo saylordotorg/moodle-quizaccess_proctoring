@@ -63,9 +63,10 @@ class hook_callbacks {
         if (!quizaccess_proctoring_can_review_across_courses_cached()) {
             return;
         }
+        // Straight to every attempt, the page Student Affairs works from (CPIT-515).
         $hook->get_primaryview()->add(
             get_string('reviewqueue:navlink', 'quizaccess_proctoring'),
-            new \moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'),
+            new \moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', ['view' => 'attempts', 'queue' => 'all']),
             \navigation_node::TYPE_CUSTOM,
             null,
             'quizaccess_proctoring_reviewqueue'
