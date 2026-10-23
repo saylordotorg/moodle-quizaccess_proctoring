@@ -565,15 +565,46 @@ final class overall_report {
             'view' => 'attempts',
         ];
 
+        [$rows, $scoreheader] = self::score_column(self::decorate_rows($pagerows, $holdscope, $filterparams));
+
         return [
             'summary' => $summary,
-            'rows' => self::decorate_rows($pagerows, $holdscope, $filterparams),
+            'rows' => $rows,
+            'scoreheader' => $scoreheader,
             'hasrows' => !empty($pagerows),
             'truncated' => $truncated,
             'total' => $total,
             'page' => $page,
             'perpage' => self::PER_PAGE,
         ];
+    }
+
+    /**
+     * The grade column as the quiz results report has it: "Grade/10.00" over bare grades.
+     *
+     * Only when every graded row on the page shares that maximum (CPIT-515, Student Affairs). This
+     * report spans quizzes, so where they differ the header stays "Grade" and each row keeps its
+     * "8.00 / 10.00", rather than a header that would misstate some rows' maximum.
+     *
+     * @param array $rows Rows from decorate_rows().
+     * @return array [rows with scorelabel set for the column, the column header]
+     */
+    public static function score_column(array $rows): array {
+        $maxes = [];
+        foreach ($rows as $row) {
+            if ($row['score'] !== '') {
+                $maxes[$row['scoremax']] = true;
+            }
+        }
+        if (count($maxes) !== 1) {
+            return [$rows, get_string('overallreport:col_score', 'quizaccess_proctoring')];
+        }
+        foreach ($rows as $index => $row) {
+            if ($row['score'] !== '') {
+                $rows[$index]['scorelabel'] = $row['score'];
+            }
+        }
+        return [$rows, get_string('overallreport:col_scoreoutof', 'quizaccess_proctoring', array_key_first($maxes))];
     }
 
     /**
@@ -967,6 +998,25 @@ final class overall_report {
                         : get_string('overallreport:unknownuser', 'quizaccess_proctoring'),
                     'date' => display_time::staff((int)$signoff->timecreated),
                 ]);
+            } else if ($hold && (int)$hold->status !== \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE && (int)$hold->timereviewed > 0) {
+                // A decided hold names who decided it and when, as a sign-off does: only sign-offs
+                // did, so released and confirmed attempts read as unattributed (CPIT-515).
+                $reviewerid = (int)$hold->reviewerid;
+                if ($reviewerid > 0 && !array_key_exists($reviewerid, $reviewers)) {
+                    $reviewers[$reviewerid] = \core_user::get_user($reviewerid) ?: null;
+                }
+                $reviewer = $reviewerid > 0 ? ($reviewers[$reviewerid] ?? null) : null;
+                $confirmed = (int)$hold->status !== \QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED;
+                $signofflabel = get_string(
+                    'overallreport:' . ($confirmed ? 'confirmedby' : 'releasedby') . ($reviewerid > 0 ? '' : 'auto'),
+                    'quizaccess_proctoring',
+                    (object)[
+                        'reviewer' => $reviewer
+                            ? fullname($reviewer)
+                            : get_string('overallreport:unknownuser', 'quizaccess_proctoring'),
+                        'date' => display_time::staff((int)$hold->timereviewed),
+                    ]
+                );
             }
 
             $holdactive = $hold && (int)$hold->status === \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
@@ -1033,14 +1083,27 @@ final class overall_report {
             $attempt = $quizattempts[(int)$a['attemptid']] ?? null;
             $quiz = $quizinfo[$a['cmid']] ?? null;
             $scorelabel = '';
+            $score = '';
+            $scoremax = '';
             if ($attempt && $quiz) {
-                $scorelabel = $attempt->sumgrades === null
-                    ? get_string('overallreport:notgraded', 'quizaccess_proctoring')
-                    : get_string('overallreport:scoreoutof', 'quizaccess_proctoring', (object)[
-                        'score' => quiz_rescale_grade($attempt->sumgrades, $quiz, true),
-                        'max' => format_float($quiz->grade, $quiz->decimalpoints),
+                if ($attempt->sumgrades === null) {
+                    $scorelabel = get_string('overallreport:notgraded', 'quizaccess_proctoring');
+                } else {
+                    // The bare grade and its maximum too: score_column() puts the maximum in the
+                    // header when the whole page shares it, as the results report does (CPIT-515).
+                    $score = quiz_rescale_grade($attempt->sumgrades, $quiz, true);
+                    $scoremax = format_float($quiz->grade, $quiz->decimalpoints);
+                    $scorelabel = get_string('overallreport:scoreoutof', 'quizaccess_proctoring', (object)[
+                        'score' => $score,
+                        'max' => $scoremax,
                     ]);
+                }
             }
+            // The exam date: when the attempt started, formatted as the results report formats it
+            // (CPIT-515). Without an attempt, the last proctoring activity is the nearest there is.
+            $started = $attempt && (int)$attempt->timestart > 0
+                ? userdate((int)$attempt->timestart, display_time::staff_format(false))
+                : display_time::staff((int)$a['lastactivity']);
             $durationseconds = 0;
             if ($attempt && (int)$attempt->timestart > 0 && (int)$attempt->timefinish > (int)$attempt->timestart) {
                 $durationseconds = (int)$attempt->timefinish - (int)$attempt->timestart;
@@ -1074,6 +1137,9 @@ final class overall_report {
                 'course' => $coursecache[$a['courseid']],
                 'quiz' => $quizcache[$a['cmid']],
                 'scorelabel' => $scorelabel,
+                'score' => $score,
+                'scoremax' => $scoremax,
+                'started' => $started,
                 'duration' => $durationseconds > 0 ? format_time($durationseconds) : '',
                 'accountage' => $accountage === null ? '' : format_time($accountage),
                 'accountcreated' => $a['usercreated'] > 0 ? display_time::staff((int)$a['usercreated']) : '',
@@ -1449,7 +1515,11 @@ final class overall_report {
                 'riskscore' => $risk['score'],
                 'risklevel' => $risk['level'],
                 'riskbadgeclass' => $risk['badgeclass'],
-                'holdlabel' => $a['cert']['label'],
+                // Every row here is a held grade, so the column says only whether a certificate
+                // hangs on it (CPIT-515).
+                'holdlabel' => empty($a['cert']['atstake'])
+                    ? get_string('heldcertificates:nocertatstake', 'quizaccess_proctoring')
+                    : $a['cert']['label'],
                 'holdclass' => $a['cert']['class'],
                 'viewurl' => $viewurl->out(false),
             ];

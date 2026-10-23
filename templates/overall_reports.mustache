@@ -30,6 +30,7 @@
         "views": [{"label": "Withheld certificates (2)", "url": "#", "isactive": true}],
         "flowheldnote": "The same withheld attempts are listed on the <a href=\"#\">Held certificates</a> tab.",
         "countnote": "Showing 2 of 12 attempts",
+        "scoreheader": "Grade/20.00",
         "rows": [
             {
                 "fullname": "John Doe", "email": "john.doe@example.com", "userurl": "#", "course": "CS105", "quiz": "Final exam",
@@ -39,7 +40,7 @@
                 "isneeds": true, "hassignals": true,
                 "signals": [{"factor": "AI tool", "pts": "+30"}],
                 "breakdown": [{"factor": "AI tool", "pts": "+30"}],
-                "userid": 42, "profileurl": "#", "scorelabel": "17.00 / 20.00", "duration": "42 mins 6 secs",
+                "userid": 42, "profileurl": "#", "scorelabel": "17.00", "started": "1 January 2026  9:15 AM", "duration": "42 mins 6 secs",
                 "accountage": "2 years 145 days", "accountcreated": "14 March 2024  9:02 AM", "attempturl": "#",
                 "canact": true, "releaseurl": "#", "confirmurl": "#", "viewurl": "#",
                 "cansignoff": false, "signoffurl": "", "undosignoffurl": "", "signofflabel": "", "notelabel": "2 reviewer notes"
@@ -169,16 +170,14 @@
                 <tr>
                     <th scope="col">{{#str}}overallreport:col_risk, quizaccess_proctoring{{/str}}</th>
                     <th scope="col">{{#str}}overallreport:col_student, quizaccess_proctoring{{/str}}</th>
-                    <th scope="col">{{#str}}overallreport:col_moodleid, quizaccess_proctoring{{/str}}</th>
-                    <th scope="col">{{#str}}overallreport:col_course, quizaccess_proctoring{{/str}}</th>
-                    <th scope="col">{{#str}}overallreport:col_quiz, quizaccess_proctoring{{/str}}</th>
-                    <th scope="col">{{#str}}overallreport:col_score, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}overallreport:col_exam, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{#str}}overallreport:col_started, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col">{{scoreheader}}</th>
                     <th scope="col">{{#str}}overallreport:col_duration, quizaccess_proctoring{{/str}}</th>
                     <th scope="col">{{#str}}overallreport:col_accountage, quizaccess_proctoring{{/str}}</th>
                     <th scope="col">{{#str}}overallreport:col_signals, quizaccess_proctoring{{/str}}</th>
-                    <th scope="col">{{#str}}overallreport:col_lastactivity, quizaccess_proctoring{{/str}}</th>
                     <th scope="col">{{#str}}overallreport:col_status, quizaccess_proctoring{{/str}}</th>
-                    <th scope="col">{{#str}}overallreport:col_actions, quizaccess_proctoring{{/str}}</th>
+                    <th scope="col" class="proctoring-overview-cell-actions">{{#str}}overallreport:col_actions, quizaccess_proctoring{{/str}}</th>
                 </tr>
             </thead>
             <tbody>
@@ -193,10 +192,13 @@
                     <td class="proctoring-overview-cell-student">
                         <a class="proctoring-overview-student" href="{{profileurl}}">{{fullname}}</a>
                         <span class="proctoring-overview-email">{{email}}</span>
+                        <span class="proctoring-overview-email">{{#str}}overallreport:moodleid, quizaccess_proctoring, {{userid}}{{/str}}</span>
                     </td>
-                    <td><a href="{{profileurl}}">{{userid}}</a></td>
-                    <td>{{course}}</td>
-                    <td>{{quiz}}</td>
+                    <td class="proctoring-overview-cell-exam">
+                        <span class="proctoring-overview-course">{{course}}</span>
+                        <span class="proctoring-overview-email">{{quiz}}</span>
+                    </td>
+                    <td class="proctoring-overview-when">{{started}}</td>
                     <td>{{scorelabel}}</td>
                     <td>{{duration}}</td>
                     <td title="{{accountcreated}}">{{accountage}}</td>
@@ -216,7 +218,6 @@
                         <span class="proctoring-overview-signalrow"><span class="proctoring-overview-signaldot is-ok"></span>{{#str}}overallreport:nosignals, quizaccess_proctoring{{/str}}</span>
                         {{/hassignals}}
                     </td>
-                    <td class="proctoring-overview-when">{{lastactivity}}</td>
                     <td>
                         <span class="proctoring-overview-status proctoring-overview-status-{{reviewstate}}">{{statuslabel}}</span>
                         {{#signofflabel}}<span class="proctoring-overview-signoff">{{signofflabel}}</span>{{/signofflabel}}

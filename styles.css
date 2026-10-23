@@ -3640,7 +3640,8 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
 
 /* Attempts table */
 .proctoring-overview-tablewrap {
-    /* Twelve columns will not fit a narrow window; the table scrolls, the page does not. */
+    /* Ten columns may not fit a narrow window; the table scrolls, the page does not, and the
+       actions column stays in view while it does (CPIT-515). */
     overflow-x: auto;
     background: #fff;
     border: 1px solid #dde3e9;
@@ -3690,8 +3691,26 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
 }
 
 .proctoring-overview-cell-student .proctoring-overview-student,
-.proctoring-overview-cell-student .proctoring-overview-email {
+.proctoring-overview-cell-student .proctoring-overview-email,
+.proctoring-overview-cell-exam .proctoring-overview-course,
+.proctoring-overview-cell-exam .proctoring-overview-email {
     display: block;
+}
+
+/* Release and confirm stay on screen when the table scrolls sideways (CPIT-515). */
+.proctoring-overview-table .proctoring-overview-cell-actions {
+    position: sticky;
+    right: 0;
+    background: #fff;
+    box-shadow: -6px 0 6px -6px rgba(30, 42, 53, 0.25);
+}
+
+.proctoring-overview-table thead th.proctoring-overview-cell-actions {
+    background: #f7f9fb;
+}
+
+.proctoring-overview-table tbody tr.is-needs .proctoring-overview-cell-actions {
+    background: #fdf7f6;
 }
 
 /* The count the "Most detected events" sort and the minimum filter both act on. */

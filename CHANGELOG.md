@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.18.0 — 2026-10-23
+- **The Proctoring reviews pages, first round of Student Affairs' requests (CPIT-515).**
+  - The "Proctoring reviews" link in the top navigation, and the one on the profile page, open the Attempts report on All attempts instead of the review queue.
+  - One name for each decision everywhere: the attempts report's "Mark reviewed — no concern" on a held attempt is now "Release — no concern", like the individual report's "Release grade hold" and the Held certificates page's "Release"; "Escalate to integrity case" is "Confirm violation", as the other two pages already said. Signing off a flagged attempt, which has no hold to release, keeps "Mark reviewed — no concern".
+  - The grade column reads as the quiz results report does: "Grade/10.00" over bare grades ("8.00") whenever every graded row on the page shares that maximum; a page mixing quizzes with different maximums keeps "Grade" and each row's "8.00 / 10.00".
+  - A "Started" column gives the exam date (the attempt's start, in the results report's format), in place of "Last activity".
+  - The table is two columns narrower — the Moodle ID sits under the student's email, and course and quiz share one column — and its actions column stays in view when the table still has to scroll sideways.
+  - Released and confirmed holds now say who decided them and when ("Released by … on …", "Violation confirmed by … on …", or "automatically"), as signed-off attempts already did; only sign-offs were attributed, which is why some reviewed rows showed a name and others did not.
+  - The Held certificates page's Certificate column says "No certificate at stake" without the redundant "Grade withheld" — every row there is a held grade.
+
 # v1.17.1 — 2026-10-23
 - **"Started" reads like the quiz results report, and account age is measured at the attempt (CPIT-475, Student Affairs).** The course proctoring report's Started column printed Moodle's long default date ("Thursday, 16 October 2025, 7:59 PM"), so it never matched the results report next to it; it now uses the results report's own format — core's `strftimedatetime` with its comma dropped, in the reader's timezone — so it follows each site's language pack the way the results report does. "Account age" on that report and on the Exam integrity review page counted to today, so it kept growing while an attempt waited for review and could not show that an account was made days before the exam; it is now the account's age when the attempt started, headed "Account age at attempt", and sorts by it. The signup date stays in the cell's tooltip.
 
