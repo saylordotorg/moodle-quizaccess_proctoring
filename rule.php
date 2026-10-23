@@ -397,6 +397,12 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     private function phone_browser_can_take_exam(): bool {
         global $USER;
 
+        // Where the site blocks phones, the browser turns them away whatever a per-student waiver
+        // says, so the notice must not send the student there (Codex review).
+        if ($this->mobile_screen_share_block_applies()) {
+            return false;
+        }
+
         $bypass = self::mobile_screen_share_mode() === self::MOBILE_SCREEN_SHARE_BYPASS;
         // The screen share a phone would be asked for, as the preflight resolves it for this
         // student: the site and quiz first, then a per-student override, which can force the share
@@ -422,7 +428,17 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @return bool True when the student should use a desktop/laptop browser.
      */
     private function mobile_screen_share_blocks_attempt() {
-        if (!self::is_mobile_or_tablet() || self::mobile_screen_share_mode() !== self::MOBILE_SCREEN_SHARE_BLOCK) {
+        return self::is_mobile_or_tablet() && $this->mobile_screen_share_block_applies();
+    }
+
+    /**
+     * Whether this exam blocks phones and tablets: the site blocks them where a screen share is
+     * needed, and this exam needs one, as configured.
+     *
+     * @return bool True when a phone or tablet browser is turned away.
+     */
+    private function mobile_screen_share_block_applies(): bool {
+        if (self::mobile_screen_share_mode() !== self::MOBILE_SCREEN_SHARE_BLOCK) {
             return false;
         }
 
