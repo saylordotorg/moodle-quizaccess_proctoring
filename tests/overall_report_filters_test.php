@@ -492,8 +492,10 @@ final class overall_report_filters_test extends advanced_testcase {
             'timecreated' => $start + 1800, 'timereviewed' => $start + 3600, 'timemodified' => $start + 3600,
         ]);
         $labels = [];
+        // No reviewer is not proof of automation: erasing a reviewer's data zeroes reviewerid too.
         foreach ([[$reviewer->id, QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED], [0, QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED],
-                [$reviewer->id, QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED]] as [$reviewerid, $status]) {
+                [$reviewer->id, QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED], [0, QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED],
+                [0, QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED]] as [$reviewerid, $status]) {
             $DB->update_record('quizaccess_proctoring_risk_holds', (object)[
                 'id' => $holdid, 'reviewerid' => $reviewerid, 'status' => $status,
             ]);
@@ -506,8 +508,10 @@ final class overall_report_filters_test extends advanced_testcase {
         $date = \quizaccess_proctoring\local\display_time::staff($start + 3600);
         $this->assertSame([
             get_string('overallreport:releasedby', 'quizaccess_proctoring', (object)['reviewer' => 'Rae Viewer', 'date' => $date]),
-            get_string('overallreport:releasedbyauto', 'quizaccess_proctoring', (object)['reviewer' => '', 'date' => $date]),
+            get_string('overallreport:releasedbynone', 'quizaccess_proctoring', (object)['reviewer' => '', 'date' => $date]),
             get_string('overallreport:confirmedby', 'quizaccess_proctoring', (object)['reviewer' => 'Rae Viewer', 'date' => $date]),
+            get_string('overallreport:confirmedbynone', 'quizaccess_proctoring', (object)['reviewer' => '', 'date' => $date]),
+            get_string('overallreport:autofailedon', 'quizaccess_proctoring', (object)['reviewer' => '', 'date' => $date]),
         ], $labels);
     }
 

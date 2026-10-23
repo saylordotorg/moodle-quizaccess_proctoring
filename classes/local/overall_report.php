@@ -1006,9 +1006,19 @@ final class overall_report {
                     $reviewers[$reviewerid] = \core_user::get_user($reviewerid) ?: null;
                 }
                 $reviewer = $reviewerid > 0 ? ($reviewers[$reviewerid] ?? null) : null;
-                $confirmed = (int)$hold->status !== \QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED;
+                // Only an automatic failure is known to be automatic. No reviewer on a release or a
+                // confirmation means an automatic release, or a reviewer whose details were erased
+                // (the privacy provider zeroes reviewerid), so those say only that none is recorded.
+                $status = (int)$hold->status;
+                if ($status === \QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED) {
+                    $labelkey = 'autofailedon';
+                } else if ($status === \QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED) {
+                    $labelkey = $reviewerid > 0 ? 'confirmedby' : 'confirmedbynone';
+                } else {
+                    $labelkey = $reviewerid > 0 ? 'releasedby' : 'releasedbynone';
+                }
                 $signofflabel = get_string(
-                    'overallreport:' . ($confirmed ? 'confirmedby' : 'releasedby') . ($reviewerid > 0 ? '' : 'auto'),
+                    'overallreport:' . $labelkey,
                     'quizaccess_proctoring',
                     (object)[
                         'reviewer' => $reviewer

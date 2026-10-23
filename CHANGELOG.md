@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
   - The grade column reads as the quiz results report does: "Grade/10.00" over bare grades ("8.00") whenever every graded row on the page shares that maximum; a page mixing quizzes with different maximums keeps "Grade" and each row's "8.00 / 10.00".
   - A "Started" column gives the exam date (the attempt's start, in the results report's format), in place of "Last activity".
   - The table is two columns narrower — the Moodle ID sits under the student's email, and course and quiz share one column — and its actions column stays in view when the table still has to scroll sideways.
-  - Released and confirmed holds now say who decided them and when ("Released by … on …", "Violation confirmed by … on …", or "automatically"), as signed-off attempts already did; only sign-offs were attributed, which is why some reviewed rows showed a name and others did not.
+  - Released and confirmed holds now say who decided them and when ("Released by … on …", "Violation confirmed by … on …", "Failed automatically on …"), as signed-off attempts already did; only sign-offs were attributed, which is why some reviewed rows showed a name and others did not. A release or confirmation with no reviewer recorded says just that — an automatic release, or a reviewer whose details were erased under the privacy API, which zeroes the reviewer (Codex review) — rather than claiming it was automatic.
   - The Held certificates page's Certificate column says "No certificate at stake" without the redundant "Grade withheld" — every row there is a held grade.
 
 # v1.17.1 — 2026-10-23
