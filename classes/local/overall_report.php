@@ -1197,7 +1197,7 @@ final class overall_report {
         // reconciles the live hold + gradebook state, so a released/graded attempt is excluded even
         // if a stale hold row remains.
         // Every candidate is resolved before pagination, so the certificate-at-stake tri-state is
-        // precomputed for the whole batch in five set-based queries rather than five per row
+        // precomputed for the whole batch in set-based queries rather than five per row
         // (PR #81 review).
         $stakeinputs = [];
         foreach ($holds as $hold) {

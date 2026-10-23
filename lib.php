@@ -2617,8 +2617,8 @@ function quizaccess_proctoring_certificate_at_stake(int $courseid, int $userid, 
  * Bulk form of {@see quizaccess_proctoring_certificate_at_stake()} (PR #81 review).
  *
  * The Held certificates dashboard resolves every candidate hold before paginating - up to
- * thousands of rows - so the lookups run as five set-based queries for the whole batch instead
- * of five per attempt.
+ * thousands of rows - so the lookups run as set-based queries for the whole batch, per quiz and
+ * in chunks, instead of five per attempt.
  *
  * @param array $userbyattempt Map of attemptid => expected userid.
  * @return array Map of attemptid => bool|null (see the single-attempt helper).
@@ -2654,40 +2654,58 @@ function quizaccess_proctoring_certificates_at_stake(array $userbyattempt): arra
         }
 
         $quizids = array_values(array_unique(array_map(static fn($a) => (int)$a->quiz, $attempts)));
-        $userids = array_values(array_unique(array_map(static fn($a) => (int)$a->userid, $attempts)));
+        $usersbyquiz = [];
+        foreach ($attempts as $attempt) {
+            $usersbyquiz[(int)$attempt->quiz][(int)$attempt->userid] = (int)$attempt->userid;
+        }
 
         // Every finished non-preview attempt of each (quiz, user) pair, in attempt order: with
         // several, the quiz's grading method over all of them decides the certificate (CPIT-463).
-        // The superset over the two id lists is fine: each pair only reads its own attempts.
-        [$qsql, $qparams] = $DB->get_in_or_equal($quizids, SQL_PARAMS_NAMED, 'casqz');
-        [$usql, $uparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'casur');
+        // Read per quiz for only that quiz's held students, in chunks, so a batch spanning many
+        // quizzes never fetches every student's attempts on every quiz (PR #91 review).
         $finished = [];
-        $rs = $DB->get_recordset_sql(
-            "SELECT id, quiz, userid, attempt, sumgrades
-               FROM {quiz_attempts}
-              WHERE quiz {$qsql} AND userid {$usql} AND preview = 0 AND state = 'finished'
-           ORDER BY quiz, userid, attempt, id",
-            $qparams + $uparams
-        );
-        foreach ($rs as $row) {
-            $finished[(int)$row->quiz . '-' . (int)$row->userid][(int)$row->id] = $row;
+        foreach ($usersbyquiz as $quizid => $quizusers) {
+            foreach (array_chunk(array_values($quizusers), 1000) as $chunk) {
+                [$usql, $uparams] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'casur');
+                $rs = $DB->get_recordset_sql(
+                    "SELECT id, quiz, userid, attempt, sumgrades
+                       FROM {quiz_attempts}
+                      WHERE quiz = :casquiz AND userid {$usql} AND preview = 0 AND state = 'finished'
+                   ORDER BY userid, attempt, id",
+                    ['casquiz' => $quizid] + $uparams
+                );
+                foreach ($rs as $row) {
+                    $finished[(int)$row->quiz . '-' . (int)$row->userid][(int)$row->id] = $row;
+                }
+                $rs->close();
+            }
         }
-        $rs->close();
 
         // The hold statuses on those attempts: a confirmed or auto-failed attempt counts as zero,
         // as the enforcer scores it, and another undecided hold leaves the outcome open.
-        $holdstatuses = [];
-        $rs = $DB->get_recordset_sql(
-            "SELECT h.id, h.attemptid, h.status
-               FROM {quizaccess_proctoring_risk_holds} h
-               JOIN {quiz_attempts} qa ON qa.id = h.attemptid
-              WHERE qa.quiz {$qsql} AND qa.userid {$usql} AND qa.preview = 0 AND qa.state = 'finished'",
-            $qparams + $uparams
-        );
-        foreach ($rs as $row) {
-            $holdstatuses[(int)$row->attemptid][] = (int)$row->status;
+        $finishedids = [];
+        foreach ($finished as $pairattempts) {
+            foreach (array_keys($pairattempts) as $finishedid) {
+                $finishedids[] = (int)$finishedid;
+            }
         }
-        $rs->close();
+        $holdstatuses = [];
+        foreach (array_chunk($finishedids, 1000) as $chunk) {
+            [$hsql, $hparams] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'cashold');
+            $rs = $DB->get_recordset_select(
+                'quizaccess_proctoring_risk_holds',
+                "attemptid {$hsql}",
+                $hparams,
+                '',
+                'id, attemptid, status'
+            );
+            foreach ($rs as $row) {
+                $holdstatuses[(int)$row->attemptid][] = (int)$row->status;
+            }
+            $rs->close();
+        }
+
+        [$qsql, $qparams] = $DB->get_in_or_equal($quizids, SQL_PARAMS_NAMED, 'casqz');
 
         $quizzes = $DB->get_records_list('quiz', 'id', $quizids, '', 'id, course, grade, sumgrades, decimalpoints, grademethod');
 
@@ -2888,7 +2906,7 @@ function quizaccess_proctoring_resolve_certificate_label(
     $atstake = true;
     if (in_array($state, ['held', 'withheld'], true)) {
         // A bulk caller (the Held certificates dashboard) precomputes the tri-state for every row
-        // in five set-based queries and hands it in, instead of five queries per row (PR #81).
+        // in set-based queries and hands it in, instead of five queries per row (PR #81).
         $stake = $precomputed !== null && array_key_exists('atstake', $precomputed)
             ? $precomputed['atstake']
             : quizaccess_proctoring_certificate_at_stake($courseid, $userid, $attemptid);
