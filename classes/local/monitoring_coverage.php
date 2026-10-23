@@ -33,7 +33,8 @@ final class monitoring_coverage {
         'monitoring_started',
         'screen_capture',
         'phone_detection_started',
-        // Phone detection failing to start, with the browser's reason (CPIT-484).
+        // Phone detection failing to start, with the browser's reason (CPIT-484): never scored;
+        // the report shows the reason in its "Not monitored" list (factor_coverage).
         'phone_detection_unavailable',
         'multiple_faces_detection_started',
         // A staff reset of the photo ID verification (CPIT-487): an action by staff, not the student.

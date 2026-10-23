@@ -67,6 +67,14 @@ final class factor_coverage {
     ];
 
     /**
+     * The event in which a detector's browser says why it could not start, with its reason in the
+     * event's `error` (CPIT-484). A neutral event, so the report shows it here and nowhere else.
+     */
+    private const DETECTOR_FAILURE_EVENTS = [
+        'phonedetected' => 'phone_detection_unavailable',
+    ];
+
+    /**
      * The in-browser monitor each browser-side factor depends on. Every listed monitor must have
      * run for the factor to count as checked.
      */
@@ -91,7 +99,8 @@ final class factor_coverage {
      * @param int $userid Student ID.
      * @param int $attemptid Quiz attempt ID, or 0 when unknown.
      * @return array 'reasons' (factor key => reason, only for factors that were not checked),
-     *               'browser' and 'os' (empty strings when not recorded).
+     *               'browser' and 'os' (empty strings when not recorded), and 'detectorerrors'
+     *               (factor key => what the browser said, for a detector that could not start).
      */
     public static function for_attempt(int $courseid, int $cmid, int $userid, int $attemptid): array {
         global $DB;
@@ -102,6 +111,7 @@ final class factor_coverage {
         $browserdata = false;
         $monitorunsupported = false;
         $detectorsstarted = [];
+        $detectorerrors = [];
         // Unknown until the attempt's captures are counted; an attempt without an id has none to count.
         $comparedcount = -1;
         $facecheckcount = -1;
@@ -141,6 +151,25 @@ final class factor_coverage {
                         AND eventtype ' . $typesql,
                     $scope + $typeparams
                 );
+            }
+            foreach (self::DETECTOR_FAILURE_EVENTS as $factorkey => $eventtype) {
+                if (!empty($detectorsstarted[$factorkey])) {
+                    continue;
+                }
+                $failures = $DB->get_records(
+                    'quizaccess_proctoring_events',
+                    $scope + ['eventtype' => $eventtype],
+                    'id DESC',
+                    'id, eventdetail',
+                    0,
+                    1
+                );
+                $detail = $failures ? json_decode((string)reset($failures)->eventdetail, true) : null;
+                $error = is_array($detail) && isset($detail['error']) && is_scalar($detail['error'])
+                    ? trim(\core_text::substr((string)$detail['error'], 0, 200)) : '';
+                if ($error !== '') {
+                    $detectorerrors[$factorkey] = $error;
+                }
             }
 
             $logwhere = 'courseid = :courseid AND quizid = :cmid AND userid = :userid
@@ -195,7 +224,13 @@ final class factor_coverage {
             }
         }
 
-        return ['reasons' => $reasons, 'browser' => $browser, 'os' => $os];
+        // Only for a detector the report lists as not having started.
+        $detectorerrors = array_intersect_key(
+            $detectorerrors,
+            array_filter($reasons, fn($reason) => $reason === self::REASON_DETECTOR_FAILED)
+        );
+
+        return ['reasons' => $reasons, 'browser' => $browser, 'os' => $os, 'detectorerrors' => $detectorerrors];
     }
 
     /**

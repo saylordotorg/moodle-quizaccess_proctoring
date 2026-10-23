@@ -43,7 +43,6 @@ class activity_grouper {
         'mouse_left_window',
         'mouse_returned_window',
         'monitor_detection_unavailable',
-        'phone_detection_unavailable',
         // A PrintScreen key press is context, not a flagged event (CPIT-485, PR #55 review).
         'possible_screenshot',
     ];
