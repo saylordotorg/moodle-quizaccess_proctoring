@@ -593,6 +593,7 @@ $string['overallreport:status_clean'] = 'Clean';
 $string['overallreport:status_escalated'] = 'Violation confirmed';
 $string['overallreport:status_flagged'] = 'Flagged';
 $string['overallreport:status_needs'] = 'Certificate withheld';
+$string['overallreport:status_needs_nocert'] = 'Grade withheld';
 $string['overallreport:status_reviewed'] = 'Reviewed';
 $string['overallreport:truncated'] = 'Showing up to {$a} attempts per data source. Narrow the period or choose a course to see the rest.';
 $string['overallreport:unknownuser'] = 'Unknown user';
