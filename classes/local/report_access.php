@@ -64,6 +64,12 @@ final class report_access {
     /**
      * Check the actual quiz, including module-level capability overrides.
      *
+     * The caller has already logged the user in. This deliberately does not call
+     * require_login($course): the cross-course review page has set its own page up - for a site
+     * administrator that loads the theme - and moving the page to the quiz's course afterwards is
+     * a coding error, which is what "Escalate to integrity case" showed administrators (CPIT-513).
+     * The capability on the quiz itself is what authorises the decision.
+     *
      * @param int $courseid Course id expected by the action.
      * @param int $cmid Quiz course-module id being changed.
      * @return \context_module Authorized quiz context.
@@ -74,7 +80,6 @@ final class report_access {
             throw new \moodle_exception('invalidrequest', 'error');
         }
 
-        require_login($course, false, $cm);
         $context = \context_module::instance((int)$cm->id);
         require_capability('quizaccess/proctoring:reviewriskholds', $context);
 

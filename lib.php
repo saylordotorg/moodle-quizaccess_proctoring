@@ -3446,14 +3446,15 @@ function quizaccess_proctoring_notify_hold_decision(stdClass $hold, string $deci
 
         // The wording Student Affairs set in Moodle, where they changed it (CPIT-512).
         $texts = \quizaccess_proctoring\local\message_texts::class;
-        $subject = $texts::get('message:' . $decision . 'subject', $a);
-        $body = $texts::get('message:' . $decision . 'body', $a);
+        $student = $texts::student_values($user);
+        $subject = $texts::get('message:' . $decision . 'subject', $a, null, $student);
+        $body = $texts::get('message:' . $decision . 'body', $a, null, $student);
         if (
             $decision === 'autofailed'
                 && \quizaccess_proctoring\local\face_strikes::ended((int)$hold->attemptid, (int)$hold->userid)
         ) {
             // Failed because the face kept leaving the frame, not for a risk score (CPIT-510).
-            $body = $texts::get('message:facestrikesautofailedbody', $a);
+            $body = $texts::get('message:facestrikesautofailedbody', $a, null, $student);
         }
 
         $message = new \core\message\message();

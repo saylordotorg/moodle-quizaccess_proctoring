@@ -349,8 +349,9 @@ class reference_photo {
         }
         $a = (object)['contact' => support_contact::address()];
         // The wording Student Affairs set in Moodle, where they changed it (CPIT-512).
-        $subject = message_texts::get("referencereset:{$outcome}subject", $a);
-        $body = message_texts::get("referencereset:{$outcome}body", $a);
+        $values = message_texts::student_values($student);
+        $subject = message_texts::get("referencereset:{$outcome}subject", $a, null, $values);
+        $body = message_texts::get("referencereset:{$outcome}body", $a, null, $values);
         $message = new \core\message\message();
         $message->component = 'quizaccess_proctoring';
         $message->name = 'referencereset';

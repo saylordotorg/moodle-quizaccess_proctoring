@@ -65,11 +65,14 @@ class message_text_form extends \moodleform {
             $mform->setType($part, PARAM_TEXT);
             $mform->setDefault($part, message_texts::to_editor($key));
             $names = array_unique(array_values(message_texts::placeholders($key)));
-            $mform->addElement('static', $part . 'placeholders', '', s(get_string(
+            $optional = array_values(message_texts::optional_placeholders($key));
+            $keep = get_string(
                 $names ? 'messagetexts:placeholders' : 'messagetexts:noplaceholders',
                 $component,
                 '[' . implode('], [', $names) . ']'
-            )));
+            );
+            $add = get_string('messagetexts:placeholdersoptional', $component, '[' . implode('], [', $optional) . ']');
+            $mform->addElement('static', $part . 'placeholders', '', s($keep . ' ' . $add));
         }
 
         // How the student will see it, with sample values (filled in as the text is typed).
@@ -93,11 +96,17 @@ class message_text_form extends \moodleform {
     private function placeholder_bank(string $id): string {
         $component = 'quizaccess_proctoring';
         $uses = [];
+        $required = [];
         foreach (message_texts::MESSAGES[$id]['parts'] as $part => $key) {
-            foreach (array_unique(array_values(message_texts::placeholders($key))) as $name) {
+            foreach (array_unique(array_values(message_texts::all_placeholders($key))) as $name) {
                 $uses[$name][] = get_string('messagetexts:' . $part, $component);
             }
+            $required = array_merge($required, array_values(message_texts::placeholders($key)));
         }
+        // The ones the message must keep first, then the ones that can be added (CPIT-512).
+        uksort($uses, function ($a, $b) use ($required) {
+            return (int)!in_array($a, $required, true) <=> (int)!in_array($b, $required, true);
+        });
         $heading = \html_writer::tag('h4', s(get_string('messagetexts:placeholdersheading', $component)), ['class' => 'h6']);
         if (!$uses) {
             return \html_writer::div(
@@ -118,8 +127,12 @@ class message_text_form extends \moodleform {
         ];
         foreach ($uses as $name => $parts) {
             $sample = (string)($samples[$name] ?? '');
+            $isrequired = in_array($name, $required, true);
             $table->data[] = [
-                \html_writer::tag('code', s('[' . $name . ']')),
+                \html_writer::tag('code', s('[' . $name . ']')) . \html_writer::div(
+                    s(get_string($isrequired ? 'messagetexts:placeholderrequired' : 'messagetexts:placeholderoptional', $component)),
+                    'small text-muted'
+                ),
                 s(message_texts::describe($name)),
                 $sample !== '' ? s($sample) : \html_writer::span(s(get_string('messagetexts:sampleempty', $component)), 'text-muted'),
                 s(implode(', ', $parts)),

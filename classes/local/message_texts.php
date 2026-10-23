@@ -52,34 +52,41 @@ final class message_texts {
      * channel: the Moodle message provider (sent as a notification and an email as the student's
      * notification preferences allow), or 'email' for a message only ever emailed. settings: the
      * plugin settings that decide whether it is sent at all. parts: the language strings staff can
-     * reword. scalar: the placeholder name of a string's bare {$a}.
+     * reword. scalar: the placeholder name of a string's bare {$a}. optional: placeholders staff
+     * may add on top of {@see self::OPTIONAL}, which the shipped wording does not use.
      */
     const MESSAGES = [
         'held' => [
             'channel' => 'holdcreated',
             'settings' => ['holdcreatednotify'],
             'parts' => ['subject' => 'message:heldsubject', 'body' => 'message:heldbody'],
+            // The subjects name no exam; a student with two exams in review can tell which (CPIT-512).
+            'optional' => ['quiz', 'course'],
         ],
         'released' => [
             'channel' => 'holddecision',
             'settings' => ['holddecisionnotify', 'holddecisionnotifyautorelease'],
             'parts' => ['subject' => 'message:releasedsubject', 'body' => 'message:releasedbody'],
+            'optional' => ['quiz', 'course'],
         ],
         'confirmed' => [
             'channel' => 'holddecision',
             'settings' => ['holddecisionnotify'],
             'parts' => ['subject' => 'message:confirmedsubject', 'body' => 'message:confirmedbody'],
+            'optional' => ['quiz', 'course'],
         ],
         'autofailed' => [
             'channel' => 'holddecision',
             'settings' => ['holddecisionnotify', 'riskreviewenabled'],
             'parts' => ['subject' => 'message:autofailedsubject', 'body' => 'message:autofailedbody'],
+            'optional' => ['quiz', 'course'],
         ],
         // Shares its subject with 'autofailed'.
         'facestrikesautofailed' => [
             'channel' => 'holddecision',
             'settings' => ['holddecisionnotify', 'facestrikes', 'facestrikesoutcome'],
             'parts' => ['body' => 'message:facestrikesautofailedbody'],
+            'optional' => ['quiz', 'course'],
         ],
         'photoreset' => [
             'channel' => 'referencereset',
@@ -101,14 +108,35 @@ final class message_texts {
             'settings' => [],
             'parts' => ['subject' => 'idexemptionemail:approved:subject', 'body' => 'idexemptionemail:approved:intro'],
             'scalar' => 'quiz',
+            'optional' => ['course'],
         ],
         'idexceptiondeclined' => [
             'channel' => 'email',
             'settings' => [],
             'parts' => ['subject' => 'idexemptionemail:declined:subject', 'body' => 'idexemptionemail:declined:intro'],
             'scalar' => 'quiz',
+            'optional' => ['course'],
         ],
     ];
+
+    /**
+     * Placeholders every message can use although its shipped wording does not: a greeting by
+     * name (CPIT-512, Student Affairs). Staff may add or leave them out.
+     */
+    const OPTIONAL = ['firstname', 'fullname'];
+
+    /**
+     * Values of the optional placeholders that come from the student.
+     *
+     * @param \stdClass $user The student.
+     * @return array Value by placeholder name.
+     */
+    public static function student_values(\stdClass $user): array {
+        return [
+            'firstname' => (string)($user->firstname ?? ''),
+            'fullname' => fullname($user),
+        ];
+    }
 
     /**
      * A message's wording, filled in: the edited text when staff changed it, the language string
@@ -117,14 +145,15 @@ final class message_texts {
      * @param string $key Language string key.
      * @param mixed $a Placeholder values, as for get_string().
      * @param string|null $lang Language for the language string; the edited text has one wording.
+     * @param array $optional Values of the optional placeholders, by name; only edited text has them.
      * @return string Text.
      */
-    public static function get(string $key, $a = null, ?string $lang = null): string {
+    public static function get(string $key, $a = null, ?string $lang = null, array $optional = []): string {
         $stored = self::locate($key) === null ? null : self::stored($key);
         if ($stored === null) {
             return get_string_manager()->get_string($key, 'quizaccess_proctoring', $a, $lang);
         }
-        return self::fill($stored, $a);
+        return self::fill(self::fill($stored, $a), (object)$optional);
     }
 
     /**
@@ -195,6 +224,8 @@ final class message_texts {
         $days = quizaccess_proctoring_get_risk_review_auto_release_days();
         $contact = support_contact::address();
         return [
+            'firstname' => get_string('messagetexts:samplefirstname', $component),
+            'fullname' => get_string('messagetexts:samplefullname', $component),
             'quiz' => get_string('messagetexts:samplequiz', $component),
             'course' => get_string('messagetexts:samplecourse', $component),
             'window' => $days > 0 ? get_string('message:heldwindow', $component, $days) : '',
@@ -275,6 +306,34 @@ final class message_texts {
     }
 
     /**
+     * The placeholders staff may add to a string, token => name: those its shipped wording does
+     * not already have.
+     *
+     * @param string $key Language string key.
+     * @return array For example ['{$a->firstname}' => 'firstname'].
+     */
+    public static function optional_placeholders(string $key): array {
+        $located = self::locate($key);
+        $names = array_merge(self::OPTIONAL, $located ? (self::MESSAGES[$located[0]]['optional'] ?? []) : []);
+        $names = array_diff($names, array_values(self::placeholders($key)));
+        $optional = [];
+        foreach ($names as $name) {
+            $optional['{$a->' . $name . '}'] = $name;
+        }
+        return $optional;
+    }
+
+    /**
+     * Every placeholder a string can use, token => name: the ones it must keep, then the optional ones.
+     *
+     * @param string $key Language string key.
+     * @return array Name by token.
+     */
+    public static function all_placeholders(string $key): array {
+        return self::placeholders($key) + self::optional_placeholders($key);
+    }
+
+    /**
      * Wording as staff see it, with [name] placeholders.
      *
      * @param string $key Language string key.
@@ -284,7 +343,7 @@ final class message_texts {
     public static function to_editor(string $key, ?string $text = null): string {
         $text = $text ?? (self::stored($key) ?? self::default_text($key));
         $replace = [];
-        foreach (self::placeholders($key) as $token => $name) {
+        foreach (self::all_placeholders($key) as $token => $name) {
             $replace[$token] = '[' . $name . ']';
         }
         return strtr($text, $replace);
@@ -299,7 +358,7 @@ final class message_texts {
      */
     public static function from_editor(string $key, string $text): string {
         $replace = [];
-        foreach (self::placeholders($key) as $token => $name) {
+        foreach (self::all_placeholders($key) as $token => $name) {
             $replace['[' . $name . ']'] = $token;
         }
         return strtr($text, $replace);
@@ -325,9 +384,9 @@ final class message_texts {
         if ($issubject && preg_match('/[\r\n]/', $text)) {
             return get_string('messagetexts:errorsubjectline', 'quizaccess_proctoring');
         }
-        $names = array_unique(array_values(self::placeholders($key)));
+        $required = array_unique(array_values(self::placeholders($key)));
         $missing = [];
-        foreach ($names as $name) {
+        foreach ($required as $name) {
             if (strpos($text, '[' . $name . ']') === false) {
                 $missing[] = '[' . $name . ']';
             }
@@ -337,6 +396,7 @@ final class message_texts {
         }
         // A bracketed word that is no placeholder of this message is most likely a misspelled one,
         // which would reach the student as written.
+        $names = array_unique(array_values(self::all_placeholders($key)));
         preg_match_all('/\[([a-z0-9_]+)\]/', $text, $matches);
         $unknown = array_diff(array_unique($matches[1]), $names);
         if ($unknown) {

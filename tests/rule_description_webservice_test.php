@@ -137,6 +137,10 @@ final class rule_description_webservice_test extends advanced_testcase {
         $override(0);
         set_config('requireentirescreen', 1, 'quizaccess_proctoring');
         $this->assertSame(get_string('appusebrowser', 'quizaccess_proctoring'), $notice(), 'Waived for this student.');
+
+        // Where phones are blocked, the browser turns the student away whatever the waiver says.
+        set_config('mobilescreensharemode', 'block', 'quizaccess_proctoring');
+        $this->assertSame(get_string('appusecomputer', 'quizaccess_proctoring'), $notice(), 'Blocked despite the waiver.');
     }
 
     /**
