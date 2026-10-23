@@ -146,12 +146,16 @@ function quizaccess_proctoring_format_event_detail(string $eventdetail): string 
  *
  * @param string $factorkey Risk factor key.
  * @param string $reason One of the factor_coverage::REASON_* constants.
+ * @param string $error What the browser said when its detector could not start (CPIT-484), or ''.
  * @return array Template context with the factor label and why it was not checked.
  */
-function quizaccess_proctoring_not_monitored_item(string $factorkey, string $reason): array {
+function quizaccess_proctoring_not_monitored_item(string $factorkey, string $reason, string $error = ''): array {
+    $detectorfailed = $reason === \quizaccess_proctoring\local\factor_coverage::REASON_DETECTOR_FAILED;
     return [
         'label' => get_string('riskscore:' . $factorkey, 'quizaccess_proctoring'),
-        'reason' => get_string('factorcoverage:' . $reason, 'quizaccess_proctoring'),
+        'reason' => $detectorfailed && $error !== ''
+            ? get_string('factorcoverage:detectorfailedwith', 'quizaccess_proctoring', $error)
+            : get_string('factorcoverage:' . $reason, 'quizaccess_proctoring'),
     ];
 }
 
@@ -1334,7 +1338,8 @@ if (
                 if (isset($factorcoverage['reasons'][$factorkey])) {
                     $notmonitored[] = quizaccess_proctoring_not_monitored_item(
                         $factorkey,
-                        $factorcoverage['reasons'][$factorkey]
+                        $factorcoverage['reasons'][$factorkey],
+                        $factorcoverage['detectorerrors'][$factorkey] ?? ''
                     );
                 } else {
                     $passedchecks[] = ['label' => get_string('riskfactorpassed:' . $factorkey, 'quizaccess_proctoring')];
@@ -1513,7 +1518,8 @@ if (
                 if (isset($factorcoverage['reasons'][$factorkey])) {
                     $notmonitored[] = quizaccess_proctoring_not_monitored_item(
                         $factorkey,
-                        $factorcoverage['reasons'][$factorkey]
+                        $factorcoverage['reasons'][$factorkey],
+                        $factorcoverage['detectorerrors'][$factorkey] ?? ''
                     );
                 } else {
                     $passedchecks[] = ['label' => get_string('riskfactorpassed:' . $factorkey, 'quizaccess_proctoring')];
