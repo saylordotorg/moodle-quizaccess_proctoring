@@ -249,7 +249,9 @@ class report_list {
             // is unknown falls back to the capture's own time, so it still has a date to show.
             $started = $attempt && (int)$attempt->timestart > 0
                 ? (int)$attempt->timestart : (int)($row['sorttimemodified'] ?? 0);
-            $rows[$index]['started'] = $started > 0 ? userdate($started) : '';
+            // Core's own format and the reader's timezone, as the results report has them: it
+            // was printing Moodle's long default ("Thursday, 16 October 2025, 7:59 PM") (CPIT-475).
+            $rows[$index]['started'] = $started > 0 ? userdate($started, display_time::staff_format(false)) : '';
             $rows[$index]['sortstarted'] = $started;
             // A separate presence flag, because a zero grade on a zero-decimals quiz renders as
             // "0", which Mustache treats as false: gated on the label alone, a real zero showed
@@ -267,14 +269,17 @@ class report_list {
                 }
             }
 
-            // Keyed off the signup date, not the elapsed time: an account created minutes ago has an
-            // age of about zero, which format_time() renders as "now" - the truth, where a blank cell
-            // would read as "we do not know".
+            // The account's age when the attempt started, not today (CPIT-475, Student Affairs): the
+            // question is whether it was made just for this exam. An account created minutes before
+            // has an age of about zero, which format_time() renders as "now" - the truth, where a
+            // blank cell would read as "we do not know".
             $created = isset($users[(int)$row['studentid']]) ? (int)$users[(int)$row['studentid']]->timecreated : 0;
-            $rows[$index]['accountage'] = $created > 0 ? format_time(max(0, time() - $created)) : '';
+            $agedat = $started > 0 ? $started : time();
+            $age = max(0, $agedat - $created);
+            $rows[$index]['accountage'] = $created > 0 ? format_time($age) : '';
             $rows[$index]['accountcreated'] = display_time::staff($created);
             // Older account first when sorting ascending, so the sort reads the way the column does.
-            $rows[$index]['sortaccountage'] = $created > 0 ? $created : PHP_INT_MAX;
+            $rows[$index]['sortaccountage'] = $created > 0 ? -$age : PHP_INT_MAX;
         }
     }
 

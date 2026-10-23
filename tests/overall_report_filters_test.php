@@ -455,6 +455,14 @@ final class overall_report_filters_test extends advanced_testcase {
         $this->assertStringContainsString('year', $aged['accountage']);
         $this->assertNotSame('', $aged['accountcreated']);
 
+        // The age is the account's age when the attempt started, not today (CPIT-475).
+        $DB->set_field('user', 'timecreated', $start - 3 * DAYSECS, ['id' => $user->id]);
+        foreach ($this->build()['rows'] as $candidate) {
+            if ($candidate['fullname'] === 'Cy Clark') {
+                $this->assertSame(format_time(3 * DAYSECS), $candidate['accountage']);
+            }
+        }
+
         // A brand-new account reads as an age rather than as an empty cell. Not pinned to
         // format_time(0) exactly: the generator stamps the account at "now", so a runner that
         // takes a second to get here legitimately renders "1 sec" instead, and that is still the

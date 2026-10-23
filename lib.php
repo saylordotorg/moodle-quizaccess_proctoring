@@ -3070,7 +3070,8 @@ function quizaccess_proctoring_certificate_date_for_release(int $timefinish, int
  *  - 'risk'       -> computed risk score (`riskscore`).
  *  - 'violations' -> scored findings, then the suspicious event count behind them.
  *  - 'score'      -> the attempt's own grade (`score`).
- *  - 'accountage' -> account creation time (`accountage`); ascending lists the oldest account first.
+ *  - 'accountage' -> the account's age when the attempt started (`accountage`); ascending lists
+ *                    the oldest account first.
  *
  * @param string $sort Requested sort key.
  * @param string $dir Requested direction ('asc' or 'desc'); anything else defaults to descending.
