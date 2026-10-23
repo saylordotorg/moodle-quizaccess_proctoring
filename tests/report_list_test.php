@@ -226,4 +226,51 @@ final class report_list_test extends advanced_testcase {
         $options['firstnameinitial'] = 'Z';
         $this->assertSame(['rows' => [], 'total' => 0], report_list::build($records, $options));
     }
+
+    /**
+     * "Started" is formatted as the quiz results report formats it, and the account age is the
+     * account's age when the attempt started, not today (CPIT-475, Student Affairs).
+     */
+    public function test_started_and_account_age_are_read_at_the_attempt(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $generator = $this->getDataGenerator();
+        $this->course = $generator->create_course();
+        $this->quiz = $generator->create_module('quiz', ['course' => $this->course->id]);
+
+        // An account made three days before an exam taken a month ago, and a three-year-old one.
+        $start = time() - 30 * DAYSECS;
+        $new = $generator->create_user(['lastname' => 'Anew']);
+        $old = $generator->create_user(['lastname' => 'Bold']);
+        $DB->set_field('user', 'timecreated', $start - 3 * DAYSECS, ['id' => $new->id]);
+        $DB->set_field('user', 'timecreated', $start - 3 * 365 * DAYSECS, ['id' => $old->id]);
+        $records = [];
+        foreach ([$new, $old] as $i => $user) {
+            $attemptid = (int)$DB->insert_record('quiz_attempts', (object)[
+                'quiz' => $this->quiz->id, 'userid' => $user->id, 'attempt' => 1, 'uniqueid' => 9100 + $i,
+                'layout' => '1,0', 'state' => 'finished', 'timestart' => $start, 'timefinish' => $start + 600,
+                'timemodified' => $start + 600, 'sumgrades' => 5,
+            ]);
+            $reportid = (int)$DB->insert_record('quizaccess_proctoring_logs', (object)[
+                'courseid' => $this->course->id, 'quizid' => $this->quiz->cmid, 'userid' => $user->id,
+                'webcampicture' => '', 'status' => $attemptid, 'timemodified' => $start + 60,
+            ]);
+            $records[(int)$user->id] = (object)[
+                'studentid' => (int)$user->id, 'firstname' => $user->firstname, 'lastname' => $user->lastname,
+                'email' => $user->email, 'warningid' => null, 'reportid' => $reportid, 'timemodified' => $start + 60,
+            ];
+        }
+
+        $rows = $this->build($records, 'accountage', 'asc')['rows'];
+        // Oldest account first when ascending.
+        $this->assertSame((int)$old->id, $rows[0]['studentid']);
+        $this->assertSame((int)$new->id, $rows[1]['studentid']);
+        $this->assertSame(format_time(3 * DAYSECS), $rows[1]['accountage']);
+        // The results report's own format: core's strftimedatetime without its comma, reader's zone.
+        $this->assertSame(
+            userdate($start, str_replace(',', ' ', get_string('strftimedatetime'))),
+            $rows[1]['started']
+        );
+    }
 }

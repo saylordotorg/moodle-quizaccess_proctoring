@@ -1045,10 +1045,13 @@ final class overall_report {
             if ($attempt && (int)$attempt->timestart > 0 && (int)$attempt->timefinish > (int)$attempt->timestart) {
                 $durationseconds = (int)$attempt->timefinish - (int)$attempt->timestart;
             }
-            // Keyed off the signup date, not the elapsed time: an account created minutes ago has an
-            // age of about zero, and format_time() renders that as "now" - which is the truth, where
-            // a blank cell would read as "we do not know".
-            $accountage = $a['usercreated'] > 0 ? max(0, time() - (int)$a['usercreated']) : null;
+            // The account's age when the attempt started, not today: a review weighs whether the
+            // account was made just for this exam, and an age counted to now grows with every day
+            // the attempt waits for review (CPIT-475, Student Affairs). An account created minutes
+            // before has an age of about zero, which format_time() renders as "now" - the truth,
+            // where a blank cell would read as "we do not know".
+            $agedat = $attempt && (int)$attempt->timestart > 0 ? (int)$attempt->timestart : time();
+            $accountage = $a['usercreated'] > 0 ? max(0, $agedat - (int)$a['usercreated']) : null;
 
             $notecount = (int)($notecounts[attempt_review::key(
                 (int)$a['courseid'],
