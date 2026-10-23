@@ -60,27 +60,33 @@ final class message_texts {
             'channel' => 'holdcreated',
             'settings' => ['holdcreatednotify'],
             'parts' => ['subject' => 'message:heldsubject', 'body' => 'message:heldbody'],
+            // The subjects name no exam; a student with two exams in review can tell which (CPIT-512).
+            'optional' => ['quiz', 'course'],
         ],
         'released' => [
             'channel' => 'holddecision',
             'settings' => ['holddecisionnotify', 'holddecisionnotifyautorelease'],
             'parts' => ['subject' => 'message:releasedsubject', 'body' => 'message:releasedbody'],
+            'optional' => ['quiz', 'course'],
         ],
         'confirmed' => [
             'channel' => 'holddecision',
             'settings' => ['holddecisionnotify'],
             'parts' => ['subject' => 'message:confirmedsubject', 'body' => 'message:confirmedbody'],
+            'optional' => ['quiz', 'course'],
         ],
         'autofailed' => [
             'channel' => 'holddecision',
             'settings' => ['holddecisionnotify', 'riskreviewenabled'],
             'parts' => ['subject' => 'message:autofailedsubject', 'body' => 'message:autofailedbody'],
+            'optional' => ['quiz', 'course'],
         ],
         // Shares its subject with 'autofailed'.
         'facestrikesautofailed' => [
             'channel' => 'holddecision',
             'settings' => ['holddecisionnotify', 'facestrikes', 'facestrikesoutcome'],
             'parts' => ['body' => 'message:facestrikesautofailedbody'],
+            'optional' => ['quiz', 'course'],
         ],
         'photoreset' => [
             'channel' => 'referencereset',

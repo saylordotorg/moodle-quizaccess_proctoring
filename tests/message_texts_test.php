@@ -130,6 +130,16 @@ final class message_texts_test extends advanced_testcase {
     public function test_optional_placeholders(): void {
         $this->assertSame(
             ['{$a->firstname}' => 'firstname', '{$a->fullname}' => 'fullname'],
+            message_texts::optional_placeholders('referencereset:donesubject')
+        );
+        // A hold message's subject can name the exam its body already names.
+        $this->assertSame(
+            [
+                '{$a->firstname}' => 'firstname',
+                '{$a->fullname}' => 'fullname',
+                '{$a->quiz}' => 'quiz',
+                '{$a->course}' => 'course',
+            ],
             message_texts::optional_placeholders('message:heldsubject')
         );
         $this->assertSame(
@@ -146,7 +156,8 @@ final class message_texts_test extends advanced_testcase {
             '[firstnam]',
             message_texts::validate($key, 'Hi [firstnam], [quiz] [course] [questions]', false)
         );
-        $this->assertStringContainsString('[course]', message_texts::validate('message:heldsubject', 'About [course]', true));
+        $this->assertSame('', message_texts::validate('message:heldsubject', 'Held for review: [quiz], [course]', true));
+        $this->assertStringContainsString('[course]', message_texts::validate('referencereset:donesubject', 'About [course]', true));
 
         $text = 'Hi [firstname], about [quiz]';
         $this->assertSame($text, message_texts::to_editor($key, message_texts::from_editor($key, $text)));
@@ -195,7 +206,7 @@ final class message_texts_test extends advanced_testcase {
         $quiz = $generator->create_module('quiz', ['course' => $course->id, 'name' => 'Final exam']);
         $student = $generator->create_user(['firstname' => 'Dana', 'lastname' => 'Okafor']);
 
-        message_texts::save('message:confirmedsubject', '[fullname], your review is complete', 2);
+        message_texts::save('message:confirmedsubject', '[fullname], your review of [course] is complete', 2);
         message_texts::save('message:confirmedbody', 'Hi [firstname], we reviewed [quiz] in [course]. [questions]', 2);
 
         $sink = $this->redirectMessages();
@@ -210,7 +221,7 @@ final class message_texts_test extends advanced_testcase {
         $sink->close();
 
         $this->assertCount(1, $messages);
-        $this->assertSame('Dana Okafor, your review is complete', $messages[0]->subject);
+        $this->assertSame('Dana Okafor, your review of Business 101 is complete', $messages[0]->subject);
         $expected = 'Hi Dana, we reviewed Final exam in Business 101. '
             . \quizaccess_proctoring\local\support_contact::questions_sentence();
         $this->assertSame($expected, $messages[0]->fullmessage);
