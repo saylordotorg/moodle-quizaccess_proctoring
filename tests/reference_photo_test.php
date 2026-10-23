@@ -45,6 +45,16 @@ require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 final class reference_photo_test extends advanced_testcase {
 
     /**
+     * Start from a site without a student support address, where reset requests go to the
+     * reviewers; the support-address tests set one (the setting ships with a default, PR #89 review).
+     */
+    protected function setUp(): void {
+        parent::setUp();
+        $this->resetAfterTest();
+        set_config('idexemptioncontactemail', '', 'quizaccess_proctoring');
+    }
+
+    /**
      * Give a user a reference photo row.
      *
      * @param int $userid User.
@@ -265,5 +275,61 @@ final class reference_photo_test extends advanced_testcase {
         $this->assertSame((int)$reviewer->id, (int)$row->decidedby);
         $this->assertNull(reference_photo::open_request((int)$student->id));
         $this->assertSame([], reference_photo::open_requests());
+    }
+
+    /**
+     * With a student support address, the request is emailed there alone, and replying answers
+     * the student (CPIT-476, Student Affairs).
+     */
+    public function test_request_goes_to_the_support_address_alone(): void {
+        $this->resetAfterTest();
+        set_config('idexemptioncontactemail', 'contact@example.org', 'quizaccess_proctoring');
+        $role = reviewer_role::ensure();
+        $reviewer = $this->getDataGenerator()->create_user();
+        role_assign($role->id, $reviewer->id, \context_system::instance());
+        $student = $this->getDataGenerator()->create_user(['email' => 'student@example.org']);
+        $this->photo((int)$student->id);
+        $this->setUser($student);
+
+        $messages = $this->redirectMessages();
+        $emails = $this->redirectEmails();
+        $sent = reference_photo::request_reset((int)$student->id, 'It is blurry');
+        $notified = $messages->get_messages();
+        $mailed = $emails->get_messages();
+        $messages->close();
+        $emails->close();
+
+        $this->assertSame(1, $sent);
+        $this->assertCount(0, $notified, 'The reviewers get no copy of their own.');
+        $this->assertCount(1, $mailed);
+        $this->assertSame('contact@example.org', $mailed[0]->to);
+        $this->assertMatchesRegularExpression('/^Reply-To: .*student@example\.org/mi', $mailed[0]->header);
+        // A multipart message, quoted-printable encoded.
+        $body = quoted_printable_decode($mailed[0]->body);
+        $this->assertStringContainsString('It is blurry', $body);
+        $this->assertStringContainsString('view=photoresets', $body);
+        // The queue still has it.
+        $this->assertNotNull(reference_photo::open_request((int)$student->id));
+    }
+
+    /**
+     * A student who replies to the outcome reaches student support, not the noreply address.
+     */
+    public function test_outcome_replies_go_to_student_support(): void {
+        $this->resetAfterTest();
+        $student = $this->getDataGenerator()->create_user();
+
+        // Without a support address, Reply-To is left to Moodle.
+        $message = reference_photo::outcome_message((int)$student->id, 'done');
+        $this->assertEmpty($message->replyto ?? '');
+
+        set_config('idexemptioncontactemail', 'contact@example.org', 'quizaccess_proctoring');
+        foreach (['done', 'declined', 'replaced'] as $outcome) {
+            $message = reference_photo::outcome_message((int)$student->id, $outcome);
+            $this->assertSame('contact@example.org', $message->replyto, $outcome);
+            $this->assertSame(\quizaccess_proctoring\local\support_contact::name(), $message->replytoname);
+            $this->assertSame((int)$student->id, (int)$message->userto->id);
+            $this->assertStringContainsString('contact@example.org', $message->fullmessage);
+        }
     }
 }

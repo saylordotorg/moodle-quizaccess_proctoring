@@ -82,9 +82,12 @@ $files = $fs->get_area_files(context_system::instance()->id, 'quizaccess_proctor
 if ($files) {
     $takenon = (int)reset($files)->get_timecreated();
 }
+// Dates in the institution's timezone with the zone named, as Student Affairs reads them, not in
+// whatever timezone the student's profile falls back to (CPIT-476).
+$displaytime = \quizaccess_proctoring\local\display_time::class;
 if ($takenon > 0) {
     echo html_writer::tag('p', get_string('myphoto:takenon', 'quizaccess_proctoring',
-        userdate($takenon)), ['class' => 'text-muted mb-1']);
+        $displaytime::staff($takenon)), ['class' => 'text-muted mb-1']);
 }
 $days = (int)get_config('quizaccess_proctoring', 'referenceretentiondays');
 if ($days > 0) {
@@ -99,7 +102,7 @@ if ($openrequest) {
     // survive an accidental click on an alert's close button (CPIT-476, Stephanie).
     echo html_writer::div(
         html_writer::tag('p', get_string('myphoto:requestpendingsince', 'quizaccess_proctoring',
-            userdate((int)$openrequest->timecreated)), ['class' => 'mb-1 font-weight-bold fw-bold'])
+            $displaytime::staff((int)$openrequest->timecreated)), ['class' => 'mb-1 font-weight-bold fw-bold'])
         . html_writer::tag('p', get_string('myphoto:requestturnaround', 'quizaccess_proctoring'), ['class' => 'mb-1'])
         . html_writer::tag('p', get_string('myphoto:requestcontact', 'quizaccess_proctoring',
             \quizaccess_proctoring\local\support_contact::address()), ['class' => 'mb-0']),
