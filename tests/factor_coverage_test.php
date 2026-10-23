@@ -196,6 +196,15 @@ final class factor_coverage_test extends advanced_testcase {
         monitoring_coverage::record_monitors($course->id, $quiz->cmid, $student->id, $attemptid, $phoneon, self::CHROME_WINDOWS);
         $reasons = factor_coverage::for_attempt($course->id, $quiz->cmid, $student->id, $attemptid)['reasons'];
         $this->assertSame(factor_coverage::REASON_DETECTOR_FAILED, $reasons['phonedetected']);
+        // What the browser said when the detector could not start goes with that reason (CPIT-484).
+        $DB->insert_record('quizaccess_proctoring_events', (object)[
+            'courseid' => $course->id, 'quizid' => $quiz->cmid, 'userid' => $student->id, 'attemptid' => $attemptid,
+            'eventtype' => 'phone_detection_unavailable',
+            'eventdetail' => json_encode(['error' => 'n is not a function']), 'timemodified' => time(),
+        ]);
+        $coverage = factor_coverage::for_attempt($course->id, $quiz->cmid, $student->id, $attemptid);
+        $this->assertSame(factor_coverage::REASON_DETECTOR_FAILED, $coverage['reasons']['phonedetected']);
+        $this->assertSame(['phonedetected' => 'n is not a function'], $coverage['detectorerrors']);
         $this->event($course->id, $quiz->cmid, $student->id, $attemptid, 'phone_detection_started');
         $reasons = factor_coverage::for_attempt($course->id, $quiz->cmid, $student->id, $attemptid)['reasons'];
         $this->assertArrayNotHasKey('phonedetected', $reasons);

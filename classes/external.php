@@ -426,6 +426,8 @@ class quizaccess_proctoring_external extends external_api {
             'multiple_monitors_detected',
             'monitor_detection_unavailable',
             'phone_detection_started',
+            // Why phone detection did not start in the browser (CPIT-484). Never scored.
+            'phone_detection_unavailable',
             'multiple_faces_detection_started',
             'face_missing_start',
             'face_missing_end',
