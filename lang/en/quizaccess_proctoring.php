@@ -218,6 +218,7 @@ $string['eventtype:id_exemption_approved'] = 'ID verification exception approved
 $string['eventtype:id_exemption_declined'] = 'ID verification exception declined';
 $string['eventtype:id_exemption_requested'] = 'Requested an ID verification exception';
 $string['eventtype:monitor_detection_unavailable'] = 'Monitor detection unavailable';
+$string['eventtype:phone_detection_unavailable'] = 'Phone detection could not start';
 $string['eventtype:mouse_left_window'] = 'Mouse left quiz window';
 $string['eventtype:mouse_returned_window'] = 'Mouse returned to quiz window';
 $string['eventtype:multiple_faces_detected'] = 'Multiple faces detected';

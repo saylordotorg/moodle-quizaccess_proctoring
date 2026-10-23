@@ -4,8 +4,8 @@ let isCameraAllowed = false;
 let precheckStream = null;
 
 define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proctoring/screenMonitorClient',
-    'quizaccess_proctoring/evidenceQueue', 'quizaccess_proctoring/globalScript', 'quizaccess_proctoring/faceStrikes'],
-    function($, Ajax, Notification, Str, ScreenMonitorClient, EvidenceQueue, GlobalScript, FaceStrikes) {
+    'quizaccess_proctoring/evidenceQueue', 'quizaccess_proctoring/phoneDetector', 'quizaccess_proctoring/faceStrikes'],
+    function($, Ajax, Notification, Str, ScreenMonitorClient, EvidenceQueue, PhoneDetector, FaceStrikes) {
         // Whether this looks like a phone or tablet. Only asked once screen sharing has turned out
         // to be unavailable: a tablet asking for the desktop site reports a desktop operating
         // system, so the touch screen is the tell (CPIT-495).
@@ -2084,21 +2084,16 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 }
 
                 try {
-                    // UMD bundles: a plain script tag registers them with RequireJS instead of
-                    // window, so detection never started (CPIT-484).
-                    if (!window.tf) {
-                        await GlobalScript.load(props.phonedetectliburl + '/tf.min.js');
-                    }
-                    if (!window.cocoSsd) {
-                        await GlobalScript.load(props.phonedetectliburl + '/coco-ssd.min.js');
-                    }
-                    phoneModel = await window.cocoSsd.load({
-                        modelUrl: props.phonedetectliburl + '/model/model.json'
-                    });
+                    // In a frame of its own: face-api.js's TensorFlow.js would otherwise capture
+                    // it, and detection never started (CPIT-484).
+                    phoneModel = await PhoneDetector.load(props.phonedetectliburl);
                 } catch (error) {
                     // Phone detection is best-effort: never interrupt the attempt when the
-                    // libraries or model are unavailable.
+                    // libraries or model are unavailable. The report says why it did not run.
                     window.console.debug('quizaccess_proctoring: phone detection unavailable', error);
+                    logEvent('phone_detection_unavailable', {
+                        error: String((error && error.message) || error).substring(0, 200)
+                    });
                     return;
                 }
 
@@ -2282,7 +2277,8 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                         !(captureDesktop && eventType === 'away_capture') &&
                         !(monitorDetectionEnabled && multiMonitorEvents.includes(eventType)) &&
                         !(monitorMouseActivity && mouseEvents.includes(eventType)) &&
-                        !(detectPhone && ['phone_detected', 'phone_detection_started'].includes(eventType)) &&
+                        !(detectPhone && ['phone_detected', 'phone_detection_started', 'phone_detection_unavailable']
+                            .includes(eventType)) &&
                         !(detectMultipleFaces &&
                             ['multiple_faces_detected', 'multiple_faces_detection_started'].includes(eventType))) {
                     return;
