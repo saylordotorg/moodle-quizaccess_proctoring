@@ -197,15 +197,15 @@ final class certificate_label_reconciliation_test extends advanced_testcase {
         $this->assertTrue($resolved['atstake']);
         $this->assertSame(quizaccess_proctoring_certificate_state_label('held'), $resolved['label']);
 
-        // With another finished attempt on record, the aggregate - not this attempt - decides the
-        // certificate, so even a failing held attempt keeps the plain label (Codex review).
+        // Stephanie's retest: an earlier passing attempt under "highest grade" passes the quiz
+        // whatever the review of a later failing attempt decides, so nothing hangs on it.
         $DB->delete_records('quizaccess_proctoring_risk_holds');
         $failing = $makeattempt(3, 990003, 6);
         $makehold($failing);
         $resolved = quizaccess_proctoring_resolve_certificate_label(
             (int)$course->id, (int)$cm->id, (int)$student->id, $failing, 0);
-        $this->assertTrue($resolved['atstake']);
-        $this->assertSame(quizaccess_proctoring_certificate_state_label('held'), $resolved['label']);
+        $this->assertFalse($resolved['atstake']);
+        $this->assertSame(get_string('certificatestate:nocertatstake', 'quizaccess_proctoring'), $resolved['label']);
 
         // No pass grade configured: unknown beats wrong, so the plain label stands.
         $DB->set_field('grade_items', 'gradepass', 0, [
@@ -218,6 +218,76 @@ final class certificate_label_reconciliation_test extends advanced_testcase {
             (int)$course->id, (int)$cm->id, (int)$student->id, $failing, 0);
         $this->assertTrue($resolved['atstake']);
         $this->assertSame(quizaccess_proctoring_certificate_state_label('held'), $resolved['label']);
+    }
+
+    /**
+     * With several attempts, the quiz's grading method decides whether the review decides the pass.
+     *
+     * Scenario (CPIT-463, Stephanie's second retest): the held attempt is weighed with the
+     * student's other finished attempts, released and voided, under the quiz's grading method.
+     */
+    public function test_other_attempts_decide_what_is_at_stake(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/mod/quiz/lib.php');
+
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course();
+        $quiz = $this->getDataGenerator()->create_module('quiz', [
+            'course' => $course->id, 'grade' => 10, 'sumgrades' => 10,
+        ]);
+        $cm = get_coursemodule_from_instance('quiz', $quiz->id, $course->id, false, MUST_EXIST);
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $course->id, 'student');
+        $DB->set_field('grade_items', 'gradepass', 7.0, [
+            'itemmodule' => 'quiz', 'iteminstance' => $quiz->id, 'courseid' => $course->id,
+        ]);
+
+        $now = time();
+        $uniqueid = 991000;
+        // Attempts in order, each [sumgrades, hold status or null]; returns the last attempt's stake.
+        $stake = function (int $grademethod, array $attempts) use ($DB, $course, $cm, $quiz, $student, $now, &$uniqueid): bool {
+            $DB->delete_records('quizaccess_proctoring_risk_holds');
+            $DB->delete_records('quiz_attempts', ['quiz' => $quiz->id]);
+            $DB->set_field('quiz', 'grademethod', $grademethod, ['id' => $quiz->id]);
+            $attemptid = 0;
+            foreach (array_values($attempts) as $i => [$sumgrades, $status]) {
+                $attemptid = (int)$DB->insert_record('quiz_attempts', (object)[
+                    'quiz' => $quiz->id, 'userid' => $student->id, 'attempt' => $i + 1, 'uniqueid' => ++$uniqueid,
+                    'layout' => '1,0', 'currentpage' => 0, 'preview' => 0, 'state' => 'finished',
+                    'timestart' => $now - 600, 'timefinish' => $now - 60, 'timemodified' => $now,
+                    'timemodifiedoffline' => 0, 'timecheckstate' => null, 'sumgrades' => $sumgrades,
+                ]);
+                if ($status !== null) {
+                    $DB->insert_record('quizaccess_proctoring_risk_holds', (object)[
+                        'courseid' => $course->id, 'quizid' => $cm->id, 'quizinstance' => $quiz->id,
+                        'userid' => $student->id, 'attemptid' => $attemptid, 'reportid' => 0,
+                        'riskscore' => 60, 'threshold' => 40, 'originalgrade' => null, 'status' => $status,
+                        'reviewerid' => 0, 'timecreated' => $now - 100, 'timemodified' => $now - 100,
+                        'timereviewed' => 0, 'autoreleaseblockedscore' => 0, 'autoreleaseblockedreason' => null,
+                    ]);
+                }
+            }
+            return quizaccess_proctoring_resolve_certificate_label(
+                (int)$course->id, (int)$cm->id, (int)$student->id, $attemptid, 0)['atstake'];
+        };
+        $active = QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE;
+        $released = QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED;
+        $confirmed = QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED;
+
+        // Highest grade: a released full mark passes the quiz either way; a failed first try
+        // leaves the pass on a passing held attempt; a confirmed full mark counts as zero.
+        $this->assertFalse($stake(QUIZ_GRADEHIGHEST, [[10, $released], [3, $active]]));
+        $this->assertTrue($stake(QUIZ_GRADEHIGHEST, [[3, null], [9, $active]]));
+        $this->assertTrue($stake(QUIZ_GRADEHIGHEST, [[10, $confirmed], [9, $active]]));
+        // Average: 9 and 8 pass at 8.5, while 9 and a voided 0 fail at 4.5.
+        $this->assertTrue($stake(QUIZ_GRADEAVERAGE, [[9, null], [8, $active]]));
+        $this->assertFalse($stake(QUIZ_GRADEAVERAGE, [[2, null], [8, $active]]));
+        // First and last attempt: only the counted attempt can matter.
+        $this->assertFalse($stake(QUIZ_ATTEMPTFIRST, [[9, null], [8, $active]]));
+        $this->assertTrue($stake(QUIZ_ATTEMPTLAST, [[3, null], [8, $active]]));
+        $this->assertFalse($stake(QUIZ_ATTEMPTLAST, [[9, null], [6, $active]]));
+        // Another attempt still under review leaves the outcome open: the plain label stands.
+        $this->assertTrue($stake(QUIZ_GRADEHIGHEST, [[10, $active], [3, $active]]));
     }
 
     /**

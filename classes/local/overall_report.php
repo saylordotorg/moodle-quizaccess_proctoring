@@ -1022,6 +1022,11 @@ final class overall_report {
                 'escalated' => get_string('overallreport:status_escalated', 'quizaccess_proctoring'),
                 'clean' => get_string('overallreport:status_clean', 'quizaccess_proctoring'),
             ];
+            // A hold whose decision cannot change the certificate withholds only the grade, as the
+            // hold column below says too (CPIT-463, Stephanie).
+            if ($reviewstate === 'needs' && empty($cert['atstake'])) {
+                $statuslabels['needs'] = get_string('overallreport:status_needs_nocert', 'quizaccess_proctoring');
+            }
 
             // What the attempt itself scored and how long it took, and how old the account was -
             // the three questions a reviewer asks about an attempt before opening anything.
@@ -1192,7 +1197,7 @@ final class overall_report {
         // reconciles the live hold + gradebook state, so a released/graded attempt is excluded even
         // if a stale hold row remains.
         // Every candidate is resolved before pagination, so the certificate-at-stake tri-state is
-        // precomputed for the whole batch in four set-based queries rather than four per row
+        // precomputed for the whole batch in set-based queries rather than five per row
         // (PR #81 review).
         $stakeinputs = [];
         foreach ($holds as $hold) {
