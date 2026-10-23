@@ -389,6 +389,34 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * Whether a phone's or tablet's browser can take this exam, for the Moodle app's notice
+     * (CPIT-454): only when the screen share is skipped there or never needed.
+     *
+     * @return bool True when the phone's browser can take it.
+     */
+    private function phone_browser_can_take_exam(): bool {
+        global $USER;
+
+        $bypass = self::mobile_screen_share_mode() === self::MOBILE_SCREEN_SHARE_BYPASS;
+        // The screen share a phone would be asked for, as the preflight resolves it for this
+        // student: the site and quiz first, then a per-student override, which can force the share
+        // even where phones skip it, or waive it (Codex review).
+        $share = !$bypass && $this->configured_requires_entire_screen();
+        if (!empty($this->quiz->course) && !empty($this->quiz->id)) {
+            $resolver = '\quizaccess_proctoring\local\override_resolver';
+            $share = $resolver::resolve_all(
+                (int)$this->quiz->course,
+                (int)$this->quiz->id,
+                (int)$USER->id,
+                time(),
+                [$resolver::REQ_SCREENSHARE => $share]
+            )[$resolver::REQ_SCREENSHARE];
+        }
+        // Where phones are not exempt, desktop capture during the attempt needs a share too.
+        return !$share && ($bypass || !self::site_captures_violation_desktop());
+    }
+
+    /**
      * Determine whether mobile/tablet users should be blocked because screen sharing is required.
      *
      * @return bool True when the student should use a desktop/laptop browser.
@@ -2261,7 +2289,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         // "Invalid response value detected". Web services get the header as plain text only:
         // the button cannot be rendered as text, and there is no page to attach the JS to.
         if ($this->is_web_service_request()) {
-            $messages = [clean_param(get_string('proctoringheader', 'quizaccess_proctoring'), PARAM_TEXT)];
+            // The app cannot run proctoring and blocks the attempt with its own message, which
+            // reads like an error: say first that the exam is taken in the browser, and how
+            // (CPIT-454, Student Affairs).
+            // A phone's browser only helps where the exam can run without sharing a screen.
+            $appnotice = $this->phone_browser_can_take_exam() ? 'appusebrowser' : 'appusecomputer';
+            $messages = [
+                clean_param(get_string($appnotice, 'quizaccess_proctoring'), PARAM_TEXT),
+                clean_param(get_string('proctoringheader', 'quizaccess_proctoring'), PARAM_TEXT),
+            ];
             $instructions = self::launch_instructions();
             if ($instructions !== '') {
                 $messages[] = clean_param(html_to_text($instructions, 0, false), PARAM_TEXT);
