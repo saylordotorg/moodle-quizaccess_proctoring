@@ -516,21 +516,28 @@ final class overall_report_filters_test extends advanced_testcase {
     }
 
     /**
-     * "Grade/10.00" over bare grades only when the page's graded rows share the maximum; a page
-     * that mixes quizzes keeps "Grade" and each row's own maximum (CPIT-515).
+     * "Grade/10.00" over bare grades, from the maximum most rows share; a row on another scale
+     * keeps its own maximum, and "10.0" and "10.00" are the same scale (CPIT-515).
      */
     public function test_grade_column_header_follows_the_page(): void {
         $row = fn(string $score, string $max) => [
-            'score' => $score, 'scoremax' => $max, 'scorelabel' => $score === '' ? 'Not graded' : "$score / $max",
+            'score' => $score, 'scoremax' => $max, 'scoremaxvalue' => (float)$max,
+            'scorelabel' => $score === '' ? 'Not graded' : "$score / $max",
         ];
 
         [$rows, $header] = overall_report::score_column([$row('8.00', '10.00'), $row('', ''), $row('6.50', '10.00')]);
         $this->assertSame('Grade/10.00', $header);
         $this->assertSame(['8.00', 'Not graded', '6.50'], array_column($rows, 'scorelabel'));
 
-        [$rows, $header] = overall_report::score_column([$row('8.00', '10.00'), $row('17.00', '20.00')]);
+        // One quiz on another scale no longer drops the header: it keeps its own maximum.
+        [$rows, $header] = overall_report::score_column(
+            [$row('8.00', '10.00'), $row('17.00', '20.00'), $row('6.5', '10.0')]
+        );
+        $this->assertSame('Grade/10.00', $header);
+        $this->assertSame(['8.00', '17.00 / 20.00', '6.5'], array_column($rows, 'scorelabel'));
+
+        [$rows, $header] = overall_report::score_column([$row('', '')]);
         $this->assertSame('Grade', $header);
-        $this->assertSame(['8.00 / 10.00', '17.00 / 20.00'], array_column($rows, 'scorelabel'));
     }
 
     /**
@@ -538,18 +545,23 @@ final class overall_report_filters_test extends advanced_testcase {
      */
     public function test_dates_use_the_quiz_grades_report_format(): void {
         $row = reset($this->build()['rows']);
-        // The format is the quiz grades report's, and the zone is the institution's with its name
-        // printed - staff read these reports against each other, and a bare wall-clock time that
-        // silently followed the server timezone is what made request times read as Central.
-        $expected = \quizaccess_proctoring\local\display_time::staff(
-            $row === false ? 0 : $this->lastactivity_of($row['fullname'])
-        );
+        // The format is the quiz grades report's, in the reader's own timezone as Moodle shows every
+        // other date (CPIT-512): staff read these reports against the attempt pages.
+        $time = $row === false ? 0 : $this->lastactivity_of($row['fullname']);
+        $expected = \quizaccess_proctoring\local\display_time::staff($time);
 
         $this->assertSame($expected, $row['lastactivity']);
         // The old format led with a weekday name; the grades report format does not.
         $this->assertStringNotContainsString('day,', $row['lastactivity']);
-        // And the zone is named, so nobody has to guess which one it is.
-        $this->assertMatchesRegularExpression('/ [A-Z]{2,5}$/', $row['lastactivity']);
+        $this->assertSame(userdate($time, str_replace(',', ' ', get_string('strftimedatetime'))), $row['lastactivity']);
+
+        // A reader in another timezone sees the same moment in theirs, as on the results page.
+        global $USER;
+        $USER->timezone = 'Australia/Perth';
+        $this->assertSame(
+            userdate($time, str_replace(',', ' ', get_string('strftimedatetime')), 'Australia/Perth'),
+            \quizaccess_proctoring\local\display_time::staff($time)
+        );
     }
 
     /**

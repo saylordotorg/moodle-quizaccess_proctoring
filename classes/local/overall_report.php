@@ -582,29 +582,36 @@ final class overall_report {
     /**
      * The grade column as the quiz results report has it: "Grade/10.00" over bare grades.
      *
-     * Only when every graded row on the page shares that maximum (CPIT-515, Student Affairs). This
-     * report spans quizzes, so where they differ the header stays "Grade" and each row keeps its
-     * "8.00 / 10.00", rather than a header that would misstate some rows' maximum.
+     * The header carries the maximum most graded rows on the page share, and those rows show the
+     * bare grade (CPIT-515, Student Affairs: every exam is out of 10). Maximums compare as numbers,
+     * so "10.0" and "10.00" are one scale. A row on another scale keeps its own "8.00 / 20.00"
+     * rather than be read against the header's maximum; with no graded row the header is "Grade".
      *
      * @param array $rows Rows from decorate_rows().
      * @return array [rows with scorelabel set for the column, the column header]
      */
     public static function score_column(array $rows): array {
-        $maxes = [];
+        $counts = [];
+        $labels = [];
         foreach ($rows as $row) {
-            if ($row['score'] !== '') {
-                $maxes[$row['scoremax']] = true;
+            if ($row['score'] === '') {
+                continue;
             }
+            $key = (string)(float)$row['scoremaxvalue'];
+            $counts[$key] = ($counts[$key] ?? 0) + 1;
+            $labels[$key] = $labels[$key] ?? $row['scoremax'];
         }
-        if (count($maxes) !== 1) {
+        if (!$counts) {
             return [$rows, get_string('overallreport:col_score', 'quizaccess_proctoring')];
         }
+        // The most common maximum; on a tie, the first one met.
+        $common = array_keys($counts, max($counts))[0];
         foreach ($rows as $index => $row) {
-            if ($row['score'] !== '') {
+            if ($row['score'] !== '' && (string)(float)$row['scoremaxvalue'] === (string)$common) {
                 $rows[$index]['scorelabel'] = $row['score'];
             }
         }
-        return [$rows, get_string('overallreport:col_scoreoutof', 'quizaccess_proctoring', array_key_first($maxes))];
+        return [$rows, get_string('overallreport:col_scoreoutof', 'quizaccess_proctoring', $labels[$common])];
     }
 
     /**
@@ -1095,14 +1102,16 @@ final class overall_report {
             $scorelabel = '';
             $score = '';
             $scoremax = '';
+            $scoremaxvalue = 0.0;
             if ($attempt && $quiz) {
                 if ($attempt->sumgrades === null) {
                     $scorelabel = get_string('overallreport:notgraded', 'quizaccess_proctoring');
                 } else {
                     // The bare grade and its maximum too: score_column() puts the maximum in the
-                    // header when the whole page shares it, as the results report does (CPIT-515).
+                    // header, as the results report does (CPIT-515).
                     $score = quiz_rescale_grade($attempt->sumgrades, $quiz, true);
                     $scoremax = format_float($quiz->grade, $quiz->decimalpoints);
+                    $scoremaxvalue = (float)$quiz->grade;
                     $scorelabel = get_string('overallreport:scoreoutof', 'quizaccess_proctoring', (object)[
                         'score' => $score,
                         'max' => $scoremax,
@@ -1149,6 +1158,7 @@ final class overall_report {
                 'scorelabel' => $scorelabel,
                 'score' => $score,
                 'scoremax' => $scoremax,
+                'scoremaxvalue' => $scoremaxvalue,
                 'started' => $started,
                 'duration' => $durationseconds > 0 ? format_time($durationseconds) : '',
                 'accountage' => $accountage === null ? '' : format_time($accountage),

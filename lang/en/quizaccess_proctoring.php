@@ -1838,7 +1838,7 @@ $string['messagetexts:placeholder_course'] = 'The course\'s full name, as studen
 $string['messagetexts:placeholder_firstname'] = 'The student\'s first name, for a greeting';
 $string['messagetexts:placeholder_fullname'] = 'The student\'s full name';
 $string['messagetexts:placeholder_questions'] = 'A whole sentence telling the student whom to ask: student support when its address is set, otherwise their instructor';
-$string['messagetexts:placeholder_quiz'] = 'The quiz name exactly as it is in the course, often just "Final Exam": use it with [course] so the student knows which exam';
+$string['messagetexts:placeholder_quiz'] = 'The quiz\'s full name exactly as it is in the course, such as "BUS101: Certificate Final Exam"';
 $string['messagetexts:placeholderoptional'] = 'optional';
 $string['messagetexts:placeholderrequired'] = 'must be kept';
 $string['messagetexts:placeholdersoptional'] = 'Can be added: {$a}';
@@ -1855,7 +1855,7 @@ $string['messagetexts:samplecourse'] = 'BUS101: Introduction to Business';
 $string['messagetexts:sampleempty'] = '(empty on this site)';
 $string['messagetexts:samplefirstname'] = 'Alex';
 $string['messagetexts:samplefullname'] = 'Alex Rivera';
-$string['messagetexts:samplequiz'] = 'Final Exam';
+$string['messagetexts:samplequiz'] = 'BUS101: Certificate Final Exam';
 // What the Moodle app shows on a proctored quiz (CPIT-454).
 $string['appusebrowser'] = 'This proctored exam cannot be taken in the Moodle app. Tap "Open in browser" to take it in your phone\'s web browser (Chrome or Safari), where the webcam checks work.';
 $string['appusecomputer'] = 'This proctored exam cannot be taken in the Moodle app or on a phone or tablet: it needs a laptop or desktop computer that can share its screen. Open the exam in Chrome or Edge on a computer.';
