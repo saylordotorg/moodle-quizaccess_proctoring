@@ -165,6 +165,48 @@ final class id_exception_test extends advanced_testcase {
     }
 
     /**
+     * The history keeps every request with what became of it, for the download (CPIT-515).
+     */
+    public function test_history_lists_every_request_with_its_outcome(): void {
+        global $DB;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        [$courseid, $cmid] = $this->create_quiz();
+        [$othercourse, $othercmid] = $this->create_quiz();
+        $student = $this->create_student($courseid, ['firstname' => 'Ada', 'lastname' => 'Lovelace']);
+        $other = $this->create_student($othercourse);
+        $reviewer = $this->getDataGenerator()->create_user();
+        $request = fn(string $detail) => ['reason' => id_exception::REASON_NOID, 'category' => 'never', 'detail' => $detail];
+        $decision = function (string $type, int $when) use ($DB, $cmid, $courseid, $student, $reviewer): void {
+            $DB->insert_record('quizaccess_proctoring_events', (object)[
+                'courseid' => $courseid, 'quizid' => $cmid, 'userid' => $student->id, 'attemptid' => 0, 'reportid' => 0,
+                'eventtype' => $type, 'eventdetail' => json_encode(['decidedby' => (int)$reviewer->id]),
+                'pagevisibility' => 'visible', 'currenturl' => '', 'screenshoturl' => '', 'timemodified' => $when,
+            ]);
+        };
+
+        // Declined, asked again, approved; then a request replaced by another one still pending.
+        $this->record_request($cmid, $courseid, (int)$student->id, $request('first'), 1000);
+        $decision('id_exemption_declined', 1100);
+        $this->record_request($cmid, $courseid, (int)$student->id, $request('second'), 1200);
+        $decision('id_exemption_approved', 1300);
+        $this->record_request($othercmid, $othercourse, (int)$other->id, $request('third'), 1400);
+        $this->record_request($othercmid, $othercourse, (int)$other->id, $request('fourth'), 1500);
+
+        $history = id_exception::history();
+        $this->assertSame(['fourth', 'third', 'second', 'first'], array_column($history, 'detail'));
+        $this->assertSame(['pending', 'replaced', 'approved', 'declined'], array_column($history, 'outcome'));
+        $this->assertSame((int)$reviewer->id, $history[3]['decidedby']);
+        $this->assertSame(1100, $history[3]['timedecided']);
+        $this->assertSame(1300, $history[2]['timedecided']);
+        $this->assertSame(0, $history[0]['decidedby']);
+        $this->assertSame('Ada Lovelace', $history[3]['student']);
+
+        // Limited to the exams the viewer may see.
+        $this->assertSame(['second', 'first'], array_column(id_exception::history([$cmid]), 'detail'));
+    }
+
+    /**
      * Approving waives ID verification for that student and exam, and emails them.
      */
     public function test_approval_creates_the_override_and_emails_the_student(): void {

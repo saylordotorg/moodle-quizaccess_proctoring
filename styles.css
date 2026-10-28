@@ -3698,6 +3698,20 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     display: block;
 }
 
+/* Bulk release and confirm, and the export, above the attempts table (CPIT-515). */
+.proctoring-overview-bulkbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin: 0 0 10px;
+}
+
+.proctoring-overview-table .proctoring-overview-cell-select {
+    width: 2rem;
+    text-align: center;
+}
+
 /* Release and confirm stay on screen when the table scrolls sideways (CPIT-515). */
 .proctoring-overview-table .proctoring-overview-cell-actions {
     position: sticky;
