@@ -50,13 +50,10 @@ class exemption_email {
     const ACCENT_RED = '#b3423a';
 
     /**
-     * @var string Timezone every date in these emails is shown in.
-     *
-     * Kept as an alias of {@see display_time::TIMEZONE} so the emails and the staff reports cannot
-     * drift apart: a reviewer and a student discussing the same request have to be reading the
-     * same wall-clock time.
+     * @var string Timezone every date in these emails is shown in, with the zone named: an email
+     * is read away from the site, so it states its zone rather than assuming the reader's.
      */
-    const DISPLAY_TIMEZONE = display_time::TIMEZONE;
+    const DISPLAY_TIMEZONE = 'America/New_York';
 
     /**
      * Sends the student the approval or decline decision.

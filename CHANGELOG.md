@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.18.1 — 2026-10-28
+- **Proctoring dates read as Moodle's own dates do (CPIT-512, Student Affairs).** Every staff-facing proctoring date — reports, queues, the message editor, the "My proctoring photo" page — was printed in one fixed institution timezone with the zone named, so a reviewer whose Moodle time was Central saw one time on an attempt's results page and another on its proctoring report, and could not change it: the Saylor profile form has no timezone field. `display_time` now formats in the reader's timezone (their profile's, or the site default), in core's quiz-report format, without a zone label — exactly as the rest of the site shows dates. The ID exception emails keep their named Eastern time, since an email is read away from the site.
+- **The message editor's sample exam name is a real one (CPIT-512).** The [quiz] sample was "Final Exam", which made it look as if messages would name a generic exam; it is now "BUS101: Certificate Final Exam", the shape of a real exam name.
+- **The Attempts report fits its page (CPIT-515, Student Affairs).**
+  - The grade header is "Grade/10.00" whenever most graded rows share that maximum, with bare grades beneath; one quiz on another scale no longer drops the header back to "Grade" — that row alone keeps its "/ 20.00". Maximums compare as numbers, so "10.0" and "10.00" are one scale.
+  - The report uses the page's full width, like the other tabs, instead of a centred 1120px box.
+  - Exam names wrap only between whole words ("MMGT608: Proctored Final Exam" no longer splits as "Pro / ctored").
+  - The Status column sits next to the student, so a row's state is in view without scrolling.
+
 # v1.18.0 — 2026-10-23
 - **The Proctoring reviews pages, first round of Student Affairs' requests (CPIT-515).**
   - The "Proctoring reviews" link in the top navigation, and the one on the profile page, open the Attempts report on All attempts instead of the review queue.

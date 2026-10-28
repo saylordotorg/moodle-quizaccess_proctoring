@@ -3414,8 +3414,9 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
    Overall reports redesign ("Exam integrity review")
    ============================================================ */
 .proctoring-overview {
-    max-width: 1120px;
-    margin: 0 auto;
+    /* The page's full width, like the other tabs: a centred fixed-width box left the attempts
+       table scrolling sideways on wide screens (CPIT-515). */
+    max-width: none;
     font-family: "Open Sans", "Segoe UI", sans-serif;
     color: #1e2a35;
 }
@@ -3808,6 +3809,17 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     font-size: 0.8rem;
     color: #5f6c79;
     word-break: break-all;
+}
+
+/* Exam names wrap between whole words only (CPIT-515); email addresses, which have no spaces, may
+   still break anywhere. */
+.proctoring-overview-quizname {
+    display: block;
+    font-size: 0.8rem;
+    color: #5f6c79;
+    min-width: 11rem;
+    overflow-wrap: normal;
+    word-break: normal;
 }
 
 .proctoring-overview-signal {
