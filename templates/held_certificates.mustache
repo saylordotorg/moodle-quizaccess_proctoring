@@ -35,7 +35,9 @@
             }
         ],
         "pagingbar": "<nav></nav>",
-        "downloadurl": "https://example.com/download"
+        "downloadurl": "https://example.com/download",
+        "formurl": "https://example.com/overall_reports.php",
+        "stakeoptions": [{"value": "", "label": "All held attempts", "selected": true}]
     }
 }}
 
@@ -52,6 +54,18 @@
     {{#truncated}}
     <div class="alert alert-warning">{{truncatednotice}}</div>
     {{/truncated}}
+
+    {{! Whether a certificate hangs on the hold (CPIT-515). }}
+    <form method="get" action="{{formurl}}" class="form-inline d-flex flex-wrap align-items-end gap-2 mb-3">
+        <input type="hidden" name="view" value="held">
+        <label class="mb-0 me-2 mr-2">
+            <span class="d-block small fw-bold font-weight-bold">{{#str}}heldcertificates:stakefilter, quizaccess_proctoring{{/str}}</span>
+            <select name="stake" class="custom-select form-select">
+                {{#stakeoptions}}<option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>{{/stakeoptions}}
+            </select>
+        </label>
+        <button type="submit" class="btn btn-secondary">{{#str}}overallreport:apply, quizaccess_proctoring{{/str}}</button>
+    </form>
 
     {{#hasrows}}
     <p><a class="btn btn-sm btn-secondary" href="{{downloadurl}}">{{#str}}heldcertificates:downloadcsv, quizaccess_proctoring{{/str}}</a></p>

@@ -87,6 +87,13 @@ $riskmax = min($scoremax, max(0, optional_param('riskmax', $scoremax, PARAM_INT)
 if ($riskmin > $riskmax) {
     [$riskmin, $riskmax] = [$riskmax, $riskmin];
 }
+// Only attempts that reached their quiz's pass grade (CPIT-515).
+$grade = optional_param('grade', '', PARAM_ALPHA) === 'pass' ? 'pass' : '';
+// Held certificates: only the holds a certificate does, or does not, hang on (CPIT-515).
+$stake = optional_param('stake', '', PARAM_ALPHA);
+if (!in_array($stake, ['atstake', 'nostake'], true)) {
+    $stake = '';
+}
 
 // Each list is limited to the quizzes where the viewer holds the capability it needs: a role at
 // system level sees every course, one on a category sees that category, and a prohibition on a
@@ -139,6 +146,7 @@ $activefilters = [
     'risklevel' => $risklevel,
     'riskmin' => $riskmin,
     'riskmax' => $riskmax,
+    'grade' => $grade,
 ];
 
 // Approve or decline pending ID exception requests, one row or a batch of them. Each
@@ -287,7 +295,7 @@ if (($action === 'release' || $action === 'confirm') && $holdid > 0) {
     $returnurl = new moodle_url(
         '/mod/quiz/accessrule/proctoring/overall_reports.php',
         $view === 'held'
-            ? ['view' => 'held', 'page' => $page]
+            ? ['view' => 'held', 'page' => $page, 'stake' => $stake]
             : $activefilters + ['page' => $page, 'queue' => $queue]
     );
 
@@ -316,6 +324,66 @@ if (($action === 'release' || $action === 'confirm') && $holdid > 0) {
         get_string('riskreview:confirmednotice', 'quizaccess_proctoring'),
         null,
         \core\output\notification::NOTIFY_SUCCESS
+    );
+}
+
+// Release or confirm several held attempts at once, from the attempts report (CPIT-515). Each hold is
+// checked as a single decision would be - still active, and the reviewer may review that quiz - and
+// one that fails the check is skipped and counted, never decided.
+if ($action === 'bulkdecide') {
+    require_sesskey();
+    $decision = optional_param('decision', '', PARAM_ALPHA);
+    $holdids = array_values(array_unique(array_filter(optional_param_array('holdids', [], PARAM_INT))));
+    $returnurl = new moodle_url(
+        '/mod/quiz/accessrule/proctoring/overall_reports.php',
+        $activefilters + ['page' => $page, 'queue' => $queue]
+    );
+    if (!in_array($decision, ['release', 'confirm'], true) || !$holdids) {
+        redirect(
+            $returnurl,
+            get_string('overallreport:bulknoneselected', 'quizaccess_proctoring'),
+            null,
+            \core\output\notification::NOTIFY_WARNING
+        );
+    }
+
+    $done = 0;
+    $skipped = 0;
+    foreach ($holdids as $bulkholdid) {
+        $hold = $DB->get_record('quizaccess_proctoring_risk_holds', ['id' => $bulkholdid]);
+        if (!$hold || (int)$hold->status !== QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
+            $skipped++;
+            continue;
+        }
+        try {
+            \quizaccess_proctoring\local\report_access::require_review((int)$hold->courseid, (int)$hold->quizid);
+        } catch (\moodle_exception $e) {
+            $skipped++;
+            continue;
+        }
+        $decided = $decision === 'release'
+            ? quizaccess_proctoring_release_risk_hold((int)$hold->id, (int)$USER->id)
+            : quizaccess_proctoring_confirm_risk_hold((int)$hold->id, (int)$USER->id);
+        if ($decided) {
+            $done++;
+        } else {
+            $skipped++;
+        }
+    }
+
+    $notice = get_string(
+        $decision === 'release' ? 'overallreport:bulkreleased' : 'overallreport:bulkconfirmed',
+        'quizaccess_proctoring',
+        $done
+    );
+    if ($skipped > 0) {
+        $notice .= ' ' . get_string('overallreport:bulkskipped', 'quizaccess_proctoring', $skipped);
+    }
+    redirect(
+        $returnurl,
+        $notice,
+        null,
+        $skipped > 0 ? \core\output\notification::NOTIFY_WARNING : \core\output\notification::NOTIFY_SUCCESS
     );
 }
 
@@ -533,6 +601,43 @@ if ($view === 'photoresets') {
 // Cross-exam ID exception queue: every pending request in one table, so a batch of decisions
 // spanning several exams is one pass here rather than a visit to each quiz in turn.
 if ($view === 'idexceptions') {
+    // Every request ever made and what became of it, as a spreadsheet: the queue only shows what
+    // is pending, so decided requests had no record Student Affairs could see (CPIT-515).
+    if (optional_param('download', '', PARAM_ALPHA) === 'history') {
+        require_sesskey();
+        $component = 'quizaccess_proctoring';
+        $columns = [];
+        foreach (['requested', 'student', 'email', 'userid', 'course', 'exam', 'reason', 'detail', 'alternatives',
+                'outcome', 'decided', 'decidedby'] as $column) {
+            $columns[$column] = get_string('idexemption:historycol_' . $column, $component);
+        }
+        $deciders = [];
+        $csvrows = [];
+        foreach (\quizaccess_proctoring\local\id_exception::history($exceptionscope) as $request) {
+            $deciderid = (int)$request['decidedby'];
+            if ($deciderid > 0 && !array_key_exists($deciderid, $deciders)) {
+                $decider = core_user::get_user($deciderid);
+                $deciders[$deciderid] = $decider ? fullname($decider) : (string)$deciderid;
+            }
+            $csvrows[] = [
+                'requested' => \quizaccess_proctoring\local\display_time::staff($request['timerequested']),
+                'student' => $request['student'],
+                'email' => $request['email'],
+                'userid' => $request['userid'],
+                'course' => $request['coursename'],
+                'exam' => $request['quizname'],
+                'reason' => \quizaccess_proctoring\local\id_exception::reason_label($request),
+                'detail' => $request['detail'],
+                'alternatives' => $request['alternatives'],
+                'outcome' => get_string('idexemption:outcome_' . $request['outcome'], $component),
+                'decided' => \quizaccess_proctoring\local\display_time::staff($request['timedecided']),
+                'decidedby' => $deciderid > 0 ? $deciders[$deciderid] : '',
+            ];
+        }
+        \core\dataformat::download_data('proctoring-id-exception-requests-' . date('Y-m-d'), 'csv', $columns, $csvrows);
+        exit;
+    }
+
     $pendingrequests = array_filter(
         \quizaccess_proctoring\local\id_exception::pending_requests(),
         fn($request) => $exceptionscope === null || in_array((int)$request['cmid'], $exceptionscope, true)
@@ -543,6 +648,11 @@ if ($view === 'idexceptions') {
     echo $OUTPUT->heading(get_string('idexemption:pendingheading', 'quizaccess_proctoring'));
     echo $viewtoggle;
     echo html_writer::div(get_string('idexemption:pendingintro', 'quizaccess_proctoring'), 'text-muted mb-3');
+    echo html_writer::div(html_writer::link(
+        new moodle_url($formurl, ['view' => 'idexceptions', 'download' => 'history', 'sesskey' => sesskey()]),
+        get_string('idexemption:downloadhistory', 'quizaccess_proctoring'),
+        ['class' => 'btn btn-secondary btn-sm']
+    ), 'mb-3');
 
     if (empty($pendingrequests)) {
         echo $OUTPUT->notification(
@@ -663,7 +773,7 @@ if ($view === 'held') {
     // The whole queue as a spreadsheet, for the office's own tracking (CPIT-474).
     if (optional_param('download', '', PARAM_ALPHA) === 'csv') {
         require_sesskey();
-        $all = \quizaccess_proctoring\local\overall_report::held_certificates(-1, $holdscope);
+        $all = \quizaccess_proctoring\local\overall_report::held_certificates(-1, $holdscope, $stake);
         $columns = [];
         foreach (['student', 'email', 'course', 'quiz', 'attemptfinished', 'heldsince', 'autorelease', 'risk',
                 'certificate'] as $column) {
@@ -684,9 +794,9 @@ if ($view === 'held') {
         exit;
     }
 
-    $data = \quizaccess_proctoring\local\overall_report::held_certificates($page, $holdscope);
+    $data = \quizaccess_proctoring\local\overall_report::held_certificates($page, $holdscope, $stake);
 
-    $baseurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', ['view' => 'held']);
+    $baseurl = new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php', ['view' => 'held', 'stake' => $stake]);
     $pagingbar = $OUTPUT->paging_bar($data['total'], $data['page'], $data['perpage'], $baseurl);
 
     $backlog = $data['backlog'];
@@ -713,6 +823,13 @@ if ($view === 'held') {
         ),
         'pagingbar' => $pagingbar,
         'downloadurl' => (new moodle_url($baseurl, ['download' => 'csv', 'sesskey' => sesskey()]))->out(false),
+        // The certificate-at-stake filter (CPIT-515).
+        'formurl' => (new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'))->out(false),
+        'stakeoptions' => array_map(fn($value) => [
+            'value' => $value,
+            'label' => get_string('heldcertificates:stake' . ($value === '' ? 'all' : $value), 'quizaccess_proctoring'),
+            'selected' => $value === $stake,
+        ], ['', 'atstake', 'nostake']),
     ];
 
     echo $OUTPUT->header();
@@ -721,6 +838,67 @@ if ($view === 'held') {
     echo $OUTPUT->render_from_template('quizaccess_proctoring/held_certificates', $templatecontext);
     echo $OUTPUT->footer();
     return;
+}
+
+// What the filters show, every page of it, as a spreadsheet (CPIT-515).
+if (optional_param('download', '', PARAM_ALPHA) === 'csv') {
+    require_sesskey();
+    $all = \quizaccess_proctoring\local\overall_report::build(
+        $courseid,
+        $range,
+        $minviolations,
+        $sort,
+        -1,
+        $queue,
+        $search,
+        $tifirst,
+        $tilast,
+        $risklevel,
+        $riskmin,
+        $riskmax,
+        $reportscope,
+        $grade === 'pass'
+    );
+    $component = 'quizaccess_proctoring';
+    $columns = [
+        'riskscore' => get_string('overallreport:col_risk', $component),
+        'risklevel' => get_string('overallreport:csv_risklevel', $component),
+        'student' => get_string('overallreport:col_student', $component),
+        'email' => get_string('heldcertificates:colemail', $component),
+        'userid' => get_string('overallreport:col_moodleid', $component),
+        'status' => get_string('overallreport:col_status', $component),
+        'decision' => get_string('overallreport:csv_decision', $component),
+        'course' => get_string('overallreport:col_course', $component),
+        'quiz' => get_string('overallreport:col_quiz', $component),
+        'started' => get_string('overallreport:col_started', $component),
+        'grade' => get_string('overallreport:col_score', $component),
+        'outof' => get_string('overallreport:csv_outof', $component),
+        'duration' => get_string('overallreport:col_duration', $component),
+        'accountage' => get_string('overallreport:col_accountage', $component),
+        'events' => get_string('overallreport:csv_events', $component),
+        'signals' => get_string('overallreport:col_signals', $component),
+    ];
+    $csvrows = array_map(fn($row) => [
+        'riskscore' => $row['riskscore'],
+        'risklevel' => $row['risklevel'],
+        'student' => $row['fullname'],
+        'email' => $row['email'],
+        'userid' => $row['userid'],
+        'status' => $row['statuslabel'],
+        'decision' => $row['signofflabel'],
+        'course' => $row['course'],
+        'quiz' => $row['quiz'],
+        'started' => $row['started'],
+        // The bare grade, with its maximum in a column of its own, so the sheet can be sorted.
+        'grade' => $row['score'] !== '' ? $row['score'] : $row['scorelabel'],
+        'outof' => $row['scoremax'],
+        'duration' => $row['duration'],
+        'accountage' => $row['accountage'],
+        'events' => $row['violations'],
+        'signals' => $row['signalsfull'],
+    ], $all['rows']);
+    \core\dataformat::download_data('proctoring-attempts-' . date('Y-m-d'), 'csv', $columns, $csvrows);
+    exit;
 }
 
 $data = \quizaccess_proctoring\local\overall_report::build(
@@ -736,7 +914,8 @@ $data = \quizaccess_proctoring\local\overall_report::build(
     $risklevel,
     $riskmin,
     $riskmax,
-    $reportscope
+    $reportscope,
+    $grade === 'pass'
 );
 
 $baseurl = new moodle_url(
@@ -923,7 +1102,7 @@ $templatecontext = [
     'hasrows' => $data['hasrows'],
     // A student or risk filter that matches nothing is not an empty queue, so it keeps the plain
     // "nothing matches these filters" message instead of claiming the queue is caught up.
-    'emptyqueue' => !$data['hasrows'] && $queue === 'needs' && !$hasstudentfilter && !$hasriskfilter,
+    'emptyqueue' => !$data['hasrows'] && $queue === 'needs' && !$hasstudentfilter && !$hasriskfilter && $grade === '',
     'emptytitle' => get_string($emptytitles[$holdreachability], 'quizaccess_proctoring'),
     'emptybody' => get_string($emptybodies[$holdreachability], 'quizaccess_proctoring'),
     'emptyisnotice' => $holdreachability !== 'reachable',
@@ -936,7 +1115,70 @@ $templatecontext = [
         \quizaccess_proctoring\local\overall_report::MAX_ATTEMPTS
     ),
     'pagingbar' => $pagingbar,
+    // Passing attempts only, the export, and the bulk decisions (CPIT-515).
+    'gradeoptions' => array_map(fn($value) => [
+        'value' => $value,
+        'label' => get_string('overallreport:grade' . ($value === '' ? 'all' : $value), 'quizaccess_proctoring'),
+        'selected' => $value === $grade,
+    ], ['', 'pass']),
+    'downloadurl' => (new moodle_url($baseurl, ['download' => 'csv', 'sesskey' => sesskey()]))->out(false),
+    'hasbulk' => (bool)array_filter(array_column($data['rows'], 'canact')),
+    'bulkformurl' => (new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'))->out(false),
 ];
+// The bulk form returns to this same filtered page.
+$bulkparams = $activefilters + ['page' => $page, 'queue' => $queue, 'action' => 'bulkdecide', 'sesskey' => sesskey()];
+$templatecontext['bulkhidden'] = array_map(
+    fn($name, $value) => ['name' => $name, 'value' => $value],
+    array_keys($bulkparams),
+    $bulkparams
+);
+
+if ($templatecontext['hasbulk']) {
+    // The bulk buttons ask first, naming how many attempts they will decide; a confirmed violation
+    // cannot be undone.
+    $PAGE->requires->js_amd_inline(<<<'JS'
+require(['core/notification'], function(Notification) {
+    var form = document.getElementById('proctoring-bulk-form');
+    var selectall = document.getElementById('proctoring-overview-selectall');
+    var boxes = function() {
+        return Array.prototype.slice.call(document.querySelectorAll('.proctoring-overview-select'));
+    };
+    if (!form) {
+        return;
+    }
+    if (selectall) {
+        selectall.addEventListener('change', function() {
+            boxes().forEach(function(box) {
+                box.checked = selectall.checked;
+            });
+        });
+    }
+    form.querySelectorAll('[data-proctoring-bulk]').forEach(function(button) {
+        button.addEventListener('click', function() {
+            var count = boxes().filter(function(box) {
+                return box.checked;
+            }).length;
+            if (!count) {
+                Notification.alert(button.dataset.confirmTitle, form.dataset.noneSelected);
+                return;
+            }
+            Notification.saveCancelPromise(
+                button.dataset.confirmTitle,
+                button.dataset.confirmBody.replace('{count}', count),
+                button.dataset.confirmYes
+            ).then(function() {
+                form.elements.decision.value = button.getAttribute('data-proctoring-bulk');
+                form.submit();
+                return null;
+            }).catch(function() {
+                // Cancelled.
+            });
+        });
+    });
+});
+JS
+    );
+}
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('overallreport:heading', 'quizaccess_proctoring'));

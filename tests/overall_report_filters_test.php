@@ -477,6 +477,12 @@ final class overall_report_filters_test extends advanced_testcase {
         // behaviour under test - an age, however small, rather than a blank.
         $this->assertMatchesRegularExpression('/^(now|\d+ secs?)$/', $row['accountage']);
 
+        // The export's signals are every scored signal, never the page's three-item summary.
+        $this->assertSame(
+            count(array_filter($row['breakdown'])),
+            $row['signalsfull'] === '' ? 0 : count(explode(' · ', $row['signalsfull']))
+        );
+
         // Straight into the attempt Moodle recorded.
         $this->assertStringContainsString('/mod/quiz/review.php', $row['attempturl']);
         $this->assertStringContainsString('attempt=' . $attemptid, $row['attempturl']);
@@ -513,6 +519,57 @@ final class overall_report_filters_test extends advanced_testcase {
             get_string('overallreport:confirmedbynone', 'quizaccess_proctoring', (object)['reviewer' => '', 'date' => $date]),
             get_string('overallreport:autofailedon', 'quizaccess_proctoring', (object)['reviewer' => '', 'date' => $date]),
         ], $labels);
+
+        // The CSV export's bulk path reads the same hold and states as the page (CPIT-515).
+        $fields = fn(array $rows) => array_map(
+            fn($r) => [$r['fullname'], $r['statuslabel'], $r['signofflabel'], $r['scorelabel'], $r['signalsfull']],
+            $rows
+        );
+        $this->assertSame(
+            $fields($this->build()['rows']),
+            $fields(overall_report::build((int)$this->course->id, 'all', 0, 'recent', -1, 'all')['rows'])
+        );
+    }
+
+    /**
+     * "Passing grades only" keeps attempts at or above the quiz's pass grade, and none when the
+     * quiz has no pass grade or the attempt no grade (CPIT-515).
+     */
+    public function test_passing_filter_uses_the_quiz_pass_grade(): void {
+        global $DB;
+
+        $DB->set_field('quiz', 'sumgrades', 10, ['id' => $this->quiz->id]);
+        $DB->set_field('quiz', 'grade', 10, ['id' => $this->quiz->id]);
+        $user = $this->students['clark'];
+        $ids = [];
+        foreach ([1 => 8.0, 2 => 6.0, 3 => 7.0, 4 => null] as $number => $sumgrades) {
+            $ids[$number] = (int)$DB->insert_record('quiz_attempts', (object)[
+                'quiz' => $this->quiz->id, 'userid' => $user->id, 'attempt' => $number, 'uniqueid' => 8100 + $number,
+                'layout' => '1,0', 'state' => 'finished', 'timestart' => time() - 600, 'timefinish' => time(),
+                'timemodified' => time(), 'sumgrades' => $sumgrades,
+            ]);
+        }
+        $rows = array_map(fn($id) => ['attemptid' => $id], array_values($ids));
+        $item = ['itemtype' => 'mod', 'itemmodule' => 'quiz', 'iteminstance' => $this->quiz->id, 'itemnumber' => 0];
+        $this->assertTrue($DB->record_exists('grade_items', $item));
+
+        // No pass grade: no attempt can be said to pass.
+        $DB->set_field('grade_items', 'gradepass', 0, $item);
+        $this->assertSame([], array_values(overall_report::filter_passing($rows)));
+
+        // 7 to pass: 8 and exactly 7 pass, 6 and the ungraded attempt do not.
+        $DB->set_field('grade_items', 'gradepass', 7, $item);
+        $this->assertSame(
+            [$ids[1], $ids[3]],
+            array_column(array_values(overall_report::filter_passing($rows)), 'attemptid')
+        );
+
+        // The gradebook's own adjustments count, as they do for its pass mark: +2 lifts the 6.
+        $DB->set_field('grade_items', 'plusfactor', 2, $item);
+        $this->assertSame(
+            [$ids[1], $ids[2], $ids[3]],
+            array_column(array_values(overall_report::filter_passing($rows)), 'attemptid')
+        );
     }
 
     /**

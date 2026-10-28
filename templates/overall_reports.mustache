@@ -25,6 +25,9 @@
         "rangeoptions": [{"value": "7days", "label": "Last 7 days", "selected": true}],
         "sortoptions": [{"value": "recent", "label": "Most recent activity", "selected": true}],
         "risklevoptions": [{"value": "", "label": "Any risk level", "selected": true}],
+        "gradeoptions": [{"value": "", "label": "All grades", "selected": true}],
+        "hasbulk": true, "bulkformurl": "https://example.com/overall_reports.php",
+        "bulkhidden": [{"name": "view", "value": "attempts"}], "downloadurl": "#",
         "riskmin": 0, "riskmax": 100, "riskmaxbound": 100,
         "pulse": [{"num": 2, "label": "Withheld certificates", "hint": "Grade and certificate held, no decision yet", "url": "#", "iscritical": true, "isactive": true}],
         "views": [{"label": "Withheld certificates (2)", "url": "#", "isactive": true}],
@@ -88,6 +91,13 @@
             <span>{{#str}}overallreport:filterrisklevel, quizaccess_proctoring{{/str}}</span>
             <select name="risklevel">
                 {{#risklevoptions}}<option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>{{/risklevoptions}}
+            </select>
+        </label>
+        {{! Passing attempts only (CPIT-515). }}
+        <label class="proctoring-overview-filter">
+            <span>{{#str}}overallreport:filtergrade, quizaccess_proctoring{{/str}}</span>
+            <select name="grade">
+                {{#gradeoptions}}<option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>{{/gradeoptions}}
             </select>
         </label>
         {{! Two inputs, so this one is a labelled group rather than a label: a label may only own
@@ -162,12 +172,37 @@
 
     {{#truncated}}<div class="alert alert-warning">{{truncatednotice}}</div>{{/truncated}}
 
+    {{! Export what the filters show, and decide several held attempts at once (CPIT-515). The row
+        checkboxes sit in the table and join this form through their form attribute. }}
+    <form method="post" action="{{bulkformurl}}" id="proctoring-bulk-form" class="proctoring-overview-bulkbar"
+          data-none-selected="{{#str}}overallreport:bulknoneselected, quizaccess_proctoring{{/str}}">
+        {{#bulkhidden}}<input type="hidden" name="{{name}}" value="{{value}}">{{/bulkhidden}}
+        <input type="hidden" name="decision" value="">
+        {{#hasbulk}}
+        <button type="button" class="btn btn-secondary btn-sm" data-proctoring-bulk="release"
+                data-confirm-title="{{#str}}overallreport:bulkreleasetitle, quizaccess_proctoring{{/str}}"
+                data-confirm-body="{{#str}}overallreport:bulkreleasebody, quizaccess_proctoring{{/str}}"
+                data-confirm-yes="{{#str}}overallreport:markreviewed, quizaccess_proctoring{{/str}}">{{#str}}overallreport:bulkrelease, quizaccess_proctoring{{/str}}</button>
+        <button type="button" class="btn btn-outline-danger btn-sm" data-proctoring-bulk="confirm"
+                data-confirm-title="{{#str}}overallreport:confirmtitle, quizaccess_proctoring{{/str}}"
+                data-confirm-body="{{#str}}overallreport:bulkconfirmbody, quizaccess_proctoring{{/str}}"
+                data-confirm-yes="{{#str}}overallreport:escalate, quizaccess_proctoring{{/str}}">{{#str}}overallreport:bulkconfirm, quizaccess_proctoring{{/str}}</button>
+        {{/hasbulk}}
+        <a class="btn btn-secondary btn-sm ms-auto ml-auto" href="{{downloadurl}}">{{#str}}overallreport:downloadcsv, quizaccess_proctoring{{/str}}</a>
+    </form>
+
     {{! One row per attempt, in columns. The score breakdown stays reachable through a
         disclosure inside its own cell, so no row needs a separate "Details" affordance. }}
     <div class="proctoring-overview-tablewrap">
         <table class="proctoring-overview-table generaltable">
             <thead>
                 <tr>
+                    {{#hasbulk}}
+                    <th scope="col" class="proctoring-overview-cell-select">
+                        <input type="checkbox" id="proctoring-overview-selectall"
+                               aria-label="{{#str}}overallreport:bulkselectall, quizaccess_proctoring{{/str}}">
+                    </th>
+                    {{/hasbulk}}
                     <th scope="col">{{#str}}overallreport:col_risk, quizaccess_proctoring{{/str}}</th>
                     <th scope="col">{{#str}}overallreport:col_student, quizaccess_proctoring{{/str}}</th>
                     {{! Next to the student, so it is never off-screen (CPIT-515). }}
@@ -184,6 +219,15 @@
             <tbody>
                 {{#rows}}
                 <tr class="{{#isneeds}}is-needs{{/isneeds}} {{#isclean}}is-clean{{/isclean}}">
+                    {{#hasbulk}}
+                    <td class="proctoring-overview-cell-select">
+                        {{#canact}}
+                        <input type="checkbox" name="holdids[]" value="{{holdid}}" form="proctoring-bulk-form"
+                               class="proctoring-overview-select"
+                               aria-label="{{#str}}overallreport:bulkselectrow, quizaccess_proctoring, {{fullname}}{{/str}}">
+                        {{/canact}}
+                    </td>
+                    {{/hasbulk}}
                     <td class="proctoring-overview-cell-risk">
                         <span class="proctoring-overview-score proctoring-risk-{{levelkey}}">
                             <span class="proctoring-overview-scorenum">{{riskscore}}</span>

@@ -136,6 +136,94 @@ class id_exception {
     }
 
     /**
+     * Every exception request ever made, with what became of it, newest first (CPIT-515).
+     *
+     * The queue shows only what is pending, and a decided request leaves it, so Student Affairs
+     * had no record of past requests. Each request is paired with the next decision for the same
+     * student and quiz; a request followed by another request first was replaced by it, and one
+     * with nothing after it is still pending.
+     *
+     * @param int[]|null $scope Quiz course module ids the viewer may see, or null for every quiz.
+     * @return array List of records: everything pending_requests() gives, plus outcome
+     *     ('approved', 'declined', 'replaced' or 'pending'), timedecided and decidedby (user id, or 0).
+     */
+    public static function history(?array $scope = null): array {
+        global $DB;
+
+        $types = ['id_exemption_requested', 'id_exemption_approved', 'id_exemption_declined'];
+        [$insql, $params] = $DB->get_in_or_equal($types, SQL_PARAMS_NAMED);
+        $events = $DB->get_records_select(
+            'quizaccess_proctoring_events',
+            "eventtype $insql",
+            $params,
+            'timemodified ASC, id ASC',
+            'id, courseid, quizid, userid, eventtype, eventdetail, timemodified'
+        );
+
+        // Each student's own timeline per quiz, in order.
+        $timelines = [];
+        foreach ($events as $event) {
+            if ($scope !== null && !in_array((int)$event->quizid, $scope, true)) {
+                continue;
+            }
+            $timelines[(int)$event->quizid . ':' . (int)$event->userid][] = $event;
+        }
+
+        $history = [];
+        $names = [];
+        $students = [];
+        foreach ($timelines as $timeline) {
+            foreach ($timeline as $index => $event) {
+                if ($event->eventtype !== 'id_exemption_requested') {
+                    continue;
+                }
+                $next = $timeline[$index + 1] ?? null;
+                $outcome = 'pending';
+                $timedecided = 0;
+                $decidedby = 0;
+                if ($next !== null && $next->eventtype === 'id_exemption_requested') {
+                    $outcome = 'replaced';
+                } else if ($next !== null) {
+                    $outcome = $next->eventtype === 'id_exemption_approved' ? 'approved' : 'declined';
+                    $timedecided = (int)$next->timemodified;
+                    $decision = json_decode((string)$next->eventdetail, true);
+                    $decidedby = is_array($decision) ? (int)($decision['decidedby'] ?? 0) : 0;
+                }
+
+                $detail = json_decode((string)$event->eventdetail, true);
+                $detail = is_array($detail) ? $detail : [];
+                $cmid = (int)$event->quizid;
+                $userid = (int)$event->userid;
+                $names[$cmid] = $names[$cmid] ?? self::names($cmid, (int)$event->courseid);
+                if (!array_key_exists($userid, $students)) {
+                    $students[$userid] = core_user::get_user($userid) ?: null;
+                }
+                $student = $students[$userid];
+                $history[] = [
+                    'cmid' => $cmid,
+                    'courseid' => (int)$event->courseid,
+                    'userid' => $userid,
+                    'student' => $student ? fullname($student) : (string)$userid,
+                    'email' => $student ? $student->email : '',
+                    'coursename' => $names[$cmid][0],
+                    'quizname' => $names[$cmid][1],
+                    'reason' => (string)($detail['reason'] ?? ''),
+                    'category' => (string)($detail['category'] ?? ''),
+                    'detail' => (string)($detail['detail'] ?? ''),
+                    'alternatives' => (string)($detail['alternatives'] ?? ''),
+                    'timerequested' => (int)$event->timemodified,
+                    'outcome' => $outcome,
+                    'timedecided' => $timedecided,
+                    'decidedby' => $decidedby,
+                ];
+            }
+        }
+
+        usort($history, fn(array $a, array $b) => $b['timerequested'] <=> $a['timerequested']);
+        return $history;
+    }
+
+    /**
      * Approve or decline one request.
      *
      * Approving creates the quiz-scoped override that waives ID verification; declining

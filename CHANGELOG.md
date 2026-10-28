@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.19.0 — 2026-10-28
+- **Bulk decisions, exports and two filters on the Proctoring reviews pages (CPIT-515, Student Affairs).**
+  - **Bulk Release / Confirm** on the Attempts report: a checkbox on every row with an active hold the reviewer may decide, a select-all for the page, and "Release selected — no concern" / "Confirm violation for selected" above the table. Each asks first, naming how many attempts it will decide. Every selected hold is checked as a single decision is — still active, and reviewable by this reviewer on that quiz — and one that fails the check is skipped and counted in the result, never decided.
+  - **Export to CSV** on the Attempts report: every row the current filters and queue select, not just the visible page — risk score and level, student, email, Moodle ID, status, who decided it, course, quiz, started, grade with its maximum in a column of its own, duration, account age at attempt, detected events and signals.
+  - **Download all ID exception requests** from the ID exceptions page, decided and pending: each request with the student's reason and explanation, and its outcome — approved, declined, replaced by a later request, or pending — with when and by whom it was decided (`id_exception::history()`). The queue only ever showed pending requests, so there was no record of past ones.
+  - **"Passing grades only"** on the Attempts report's filters: attempts whose own grade reached the quiz's pass grade in the gradebook. An ungraded attempt, or one on a quiz with no pass grade, is left out.
+  - **"Certificate" filter** on Held certificates: all held attempts, only those a certificate hangs on, or only those with no certificate at stake. The CSV download and decisions keep the filter.
+
 # v1.18.1 — 2026-10-28
 - **Proctoring dates read as Moodle's own dates do (CPIT-512, Student Affairs).** Every staff-facing proctoring date — reports, queues, the message editor, the "My proctoring photo" page — was printed in one fixed institution timezone with the zone named, so a reviewer whose Moodle time was Central saw one time on an attempt's results page and another on its proctoring report, and could not change it: the Saylor profile form has no timezone field. `display_time` now formats in the reader's timezone (their profile's, or the site default), in core's quiz-report format, without a zone label — exactly as the rest of the site shows dates. The ID exception emails keep their named Eastern time, since an email is read away from the site.
 - **The message editor's sample exam name is a real one (CPIT-512).** The [quiz] sample was "Final Exam", which made it look as if messages would name a generic exam; it is now "BUS101: Certificate Final Exam", the shape of a real exam name.
