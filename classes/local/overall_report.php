@@ -1252,6 +1252,8 @@ final class overall_report {
                     'face' => $a['facemismatch'],
                 ]),
                 'signalsummary' => $signalsummary,
+                // Every signal, for the CSV export: the summary above stops at three (CPIT-515).
+                'signalsfull' => implode(' · ', $signals),
                 'signals' => $breakdown,
                 'hassignals' => !empty($breakdown),
                 'breakdown' => $breakdown,

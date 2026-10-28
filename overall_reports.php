@@ -895,7 +895,7 @@ if (optional_param('download', '', PARAM_ALPHA) === 'csv') {
         'duration' => $row['duration'],
         'accountage' => $row['accountage'],
         'events' => $row['violations'],
-        'signals' => $row['hassignals'] ? $row['signalsummary'] : '',
+        'signals' => $row['signalsfull'],
     ], $all['rows']);
     \core\dataformat::download_data('proctoring-attempts-' . date('Y-m-d'), 'csv', $columns, $csvrows);
     exit;

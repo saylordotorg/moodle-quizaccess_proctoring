@@ -477,6 +477,12 @@ final class overall_report_filters_test extends advanced_testcase {
         // behaviour under test - an age, however small, rather than a blank.
         $this->assertMatchesRegularExpression('/^(now|\d+ secs?)$/', $row['accountage']);
 
+        // The export's signals are every scored signal, never the page's three-item summary.
+        $this->assertSame(
+            count(array_filter($row['breakdown'])),
+            $row['signalsfull'] === '' ? 0 : count(explode(' · ', $row['signalsfull']))
+        );
+
         // Straight into the attempt Moodle recorded.
         $this->assertStringContainsString('/mod/quiz/review.php', $row['attempturl']);
         $this->assertStringContainsString('attempt=' . $attemptid, $row['attempturl']);
