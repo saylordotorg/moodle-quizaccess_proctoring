@@ -1839,12 +1839,24 @@ function quizaccess_proctoring_get_risk_hold(
     }
 
     $records = $DB->get_records_select('quizaccess_proctoring_risk_holds', $where, $params, 'id DESC');
+    return quizaccess_proctoring_pick_risk_hold($records);
+}
+
+/**
+ * The one hold to show for an attempt, from all its hold records.
+ *
+ * A terminal automatic-failure decision wins over any duplicate active or released history.
+ * Otherwise the historical active -> confirmed -> released display precedence holds. Shared with
+ * the attempts report's bulk export, which loads every row's holds in one query (CPIT-515).
+ *
+ * @param array $records The attempt's hold records, newest first.
+ * @return stdClass|false The hold, or false when there are none.
+ */
+function quizaccess_proctoring_pick_risk_hold(array $records) {
     if (!$records) {
         return false;
     }
 
-    // A terminal automatic-failure decision wins over any duplicate active or released history.
-    // Otherwise retain the historical active -> confirmed -> released display precedence.
     $statuspriority = [
         QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
         QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,

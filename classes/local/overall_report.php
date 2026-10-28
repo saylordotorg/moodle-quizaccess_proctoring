@@ -543,7 +543,8 @@ final class overall_report {
         }
 
         $total = count($attempts);
-        if ($page < 0) {
+        $forexport = $page < 0;
+        if ($forexport) {
             // Every row, for the CSV export (CPIT-515).
             $pagerows = $attempts;
             $page = 0;
@@ -577,7 +578,9 @@ final class overall_report {
             'view' => 'attempts',
         ];
 
-        [$rows, $scoreheader] = self::score_column(self::decorate_rows($pagerows, $holdscope, $filterparams));
+        [$rows, $scoreheader] = self::score_column(
+            self::decorate_rows($pagerows, $holdscope, $filterparams, $forexport)
+        );
 
         return [
             'summary' => $summary,
@@ -715,30 +718,38 @@ final class overall_report {
         }
         $quizids = array_values(array_unique(array_map(fn($r) => (int)$r->quiz, $records)));
         $quizzes = [];
-        $passgrades = [];
+        $items = [];
         foreach (array_chunk($quizids, 1000) as $chunk) {
             $quizzes += $DB->get_records_list('quiz', 'id', $chunk, '', 'id, sumgrades, grade, decimalpoints');
             [$insql, $params] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED);
-            $passgrades += $DB->get_records_select_menu(
+            foreach ($DB->get_records_select(
                 'grade_items',
                 "itemtype = 'mod' AND itemmodule = 'quiz' AND itemnumber = 0 AND iteminstance $insql",
                 $params,
                 '',
-                'iteminstance, gradepass'
-            );
+                'id, iteminstance, gradepass, grademin, grademax, multfactor, plusfactor'
+            ) as $item) {
+                $items[(int)$item->iteminstance] = $item;
+            }
         }
 
-        return array_filter($attempts, function ($a) use ($records, $quizzes, $passgrades) {
+        return array_filter($attempts, function ($a) use ($records, $quizzes, $items) {
             $attempt = $records[(int)$a['attemptid']] ?? null;
             $quiz = $attempt ? ($quizzes[(int)$attempt->quiz] ?? null) : null;
-            if (!$attempt || !$quiz || $attempt->sumgrades === null || (float)$quiz->sumgrades <= 0) {
+            $item = $quiz ? ($items[(int)$quiz->id] ?? null) : null;
+            if (!$attempt || !$quiz || !$item || $attempt->sumgrades === null || (float)$quiz->sumgrades <= 0) {
                 return false;
             }
-            $pass = (float)($passgrades[(int)$quiz->id] ?? 0);
+            $pass = (float)$item->gradepass;
             if ($pass <= 0) {
                 return false;
             }
+            // The grade the gradebook compares with the pass grade: the quiz's rescaled mark with
+            // the grade item's multiplier and offset applied, kept within its range, as
+            // grade_item::adjust_raw_grade() does (Codex review).
             $grade = (float)quiz_rescale_grade($attempt->sumgrades, $quiz, false);
+            $grade = $grade * (float)$item->multfactor + (float)$item->plusfactor;
+            $grade = max((float)$item->grademin, min((float)$item->grademax, $grade));
             // Within rounding of the pass grade counts, as the gradebook's own comparison does.
             return $grade >= $pass - 0.000005;
         });
@@ -932,9 +943,18 @@ final class overall_report {
      * @param array $pagerows Raw attempt rows for the current page.
      * @param int[]|null $holdscope Quizzes where the viewer may release or confirm risk holds, or null for all.
      * @param array $filterparams Current filter params, echoed onto hold action URLs to return here.
+     * @param bool $forexport For the CSV export of every row (CPIT-515): holds and what is at stake
+     *                        load in bulk, and the AI review, which the export does not carry, is
+     *                        skipped - a page's per-row lookups, repeated for up to MAX_ATTEMPTS
+     *                        rows, would be thousands of queries (Codex review).
      * @return array Template-ready row data.
      */
-    private static function decorate_rows(array $pagerows, ?array $holdscope, array $filterparams): array {
+    private static function decorate_rows(
+        array $pagerows,
+        ?array $holdscope,
+        array $filterparams,
+        bool $forexport = false
+    ): array {
         global $CFG, $DB;
 
         // quiz_rescale_grade() turns a raw sumgrades into the grade the quiz reports show.
@@ -988,6 +1008,31 @@ final class overall_report {
             ? $DB->get_records_list('user', 'id', array_keys($reviewerids))
             : [];
 
+        // The export's holds, and whether a certificate hangs on each, for every row at once.
+        $exportholds = [];
+        $exportstakes = [];
+        if ($forexport && $attemptids) {
+            $byattempt = [];
+            foreach (array_chunk(array_keys($attemptids), 1000) as $chunk) {
+                [$insql, $params] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED);
+                $records = $DB->get_records_select('quizaccess_proctoring_risk_holds', "attemptid $insql", $params, 'id DESC');
+                foreach ($records as $record) {
+                    $key = $record->courseid . ':' . $record->quizid . ':' . $record->userid . ':' . $record->attemptid;
+                    $byattempt[$key][$record->id] = $record;
+                }
+            }
+            foreach ($byattempt as $key => $records) {
+                $exportholds[$key] = quizaccess_proctoring_pick_risk_hold($records);
+            }
+            $stakeinputs = [];
+            foreach ($pagerows as $a) {
+                if ((int)$a['attemptid'] > 0) {
+                    $stakeinputs[(int)$a['attemptid']] = (int)$a['userid'];
+                }
+            }
+            $exportstakes = quizaccess_proctoring_certificates_at_stake($stakeinputs);
+        }
+
         foreach ($pagerows as $rowkey => $a) {
             if (!isset($coursecache[$a['courseid']])) {
                 $shortname = $DB->get_field('course', 'shortname', ['id' => $a['courseid']]);
@@ -1003,21 +1048,28 @@ final class overall_report {
             }
 
             $risk = $a['risk'] ?? $pagescores[$rowkey];
-            $aireview = quizaccess_proctoring_get_ai_review(
-                $a['courseid'],
-                $a['cmid'],
-                $a['userid'],
-                $a['attemptid'],
-                $a['reportid']
-            );
-            $aidata = $aireview ? quizaccess_proctoring_format_ai_review_for_template($aireview, $aisettings) : null;
-            $hold = quizaccess_proctoring_get_risk_hold(
-                $a['courseid'],
-                $a['cmid'],
-                $a['userid'],
-                $a['attemptid'],
-                $a['reportid']
-            );
+            $aidata = null;
+            if ($forexport && (int)$a['attemptid'] > 0) {
+                $hold = $exportholds[$a['courseid'] . ':' . $a['cmid'] . ':' . $a['userid'] . ':' . $a['attemptid']] ?? false;
+            } else {
+                if (!$forexport) {
+                    $aireview = quizaccess_proctoring_get_ai_review(
+                        $a['courseid'],
+                        $a['cmid'],
+                        $a['userid'],
+                        $a['attemptid'],
+                        $a['reportid']
+                    );
+                    $aidata = $aireview ? quizaccess_proctoring_format_ai_review_for_template($aireview, $aisettings) : null;
+                }
+                $hold = quizaccess_proctoring_get_risk_hold(
+                    $a['courseid'],
+                    $a['cmid'],
+                    $a['userid'],
+                    $a['attemptid'],
+                    $a['reportid']
+                );
+            }
 
             $viewurl = new moodle_url('/mod/quiz/accessrule/proctoring/report.php', [
                 'courseid' => $a['courseid'],
@@ -1117,14 +1169,17 @@ final class overall_report {
             }
 
             // Derive the certificate label from live hold + gradebook state so it never shows a
-            // stale "held" label after a release/grade (Requirements 2.1, 2.2, 2.3).
-            $cert = quizaccess_proctoring_resolve_certificate_label(
-                (int)$a['courseid'],
-                (int)$a['cmid'],
-                (int)$a['userid'],
-                (int)$a['attemptid'],
-                (int)$a['reportid']
-            );
+            // stale "held" label after a release/grade (Requirements 2.1, 2.2, 2.3). The export
+            // carries no label, only whether a certificate is at stake, read in bulk above.
+            $cert = $forexport
+                ? ['label' => '', 'atstake' => ($exportstakes[(int)$a['attemptid']] ?? null) !== false]
+                : quizaccess_proctoring_resolve_certificate_label(
+                    (int)$a['courseid'],
+                    (int)$a['cmid'],
+                    (int)$a['userid'],
+                    (int)$a['attemptid'],
+                    (int)$a['reportid']
+                );
 
             // Detected-signals and score-breakdown come from the scored risk factors that fired.
             $factors = isset($risk['factors']) && is_array($risk['factors']) ? $risk['factors'] : [];

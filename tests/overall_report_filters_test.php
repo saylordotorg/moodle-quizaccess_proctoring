@@ -519,6 +519,16 @@ final class overall_report_filters_test extends advanced_testcase {
             get_string('overallreport:confirmedbynone', 'quizaccess_proctoring', (object)['reviewer' => '', 'date' => $date]),
             get_string('overallreport:autofailedon', 'quizaccess_proctoring', (object)['reviewer' => '', 'date' => $date]),
         ], $labels);
+
+        // The CSV export's bulk path reads the same hold and states as the page (CPIT-515).
+        $fields = fn(array $rows) => array_map(
+            fn($r) => [$r['fullname'], $r['statuslabel'], $r['signofflabel'], $r['scorelabel'], $r['signalsfull']],
+            $rows
+        );
+        $this->assertSame(
+            $fields($this->build()['rows']),
+            $fields(overall_report::build((int)$this->course->id, 'all', 0, 'recent', -1, 'all')['rows'])
+        );
     }
 
     /**
@@ -551,6 +561,13 @@ final class overall_report_filters_test extends advanced_testcase {
         $DB->set_field('grade_items', 'gradepass', 7, $item);
         $this->assertSame(
             [$ids[1], $ids[3]],
+            array_column(array_values(overall_report::filter_passing($rows)), 'attemptid')
+        );
+
+        // The gradebook's own adjustments count, as they do for its pass mark: +2 lifts the 6.
+        $DB->set_field('grade_items', 'plusfactor', 2, $item);
+        $this->assertSame(
+            [$ids[1], $ids[2], $ids[3]],
             array_column(array_values(overall_report::filter_passing($rows)), 'attemptid')
         );
     }

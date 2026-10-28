@@ -3712,6 +3712,10 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     text-align: center;
 }
 
+.proctoring-overview-select {
+    cursor: pointer;
+}
+
 /* Release and confirm stay on screen when the table scrolls sideways (CPIT-515). */
 .proctoring-overview-table .proctoring-overview-cell-actions {
     position: sticky;
