@@ -776,6 +776,19 @@ if ($canmanageproctoring) {
         ]
     ));
 
+    // Which browsers may start an exam; a proctoring profile can narrow it for its quizzes.
+    $settings->add(new admin_setting_configselect(
+        'quizaccess_proctoring/allowedbrowsers',
+        get_string('setting:allowedbrowsers', 'quizaccess_proctoring'),
+        get_string('setting:allowedbrowsers_desc', 'quizaccess_proctoring'),
+        'any',
+        [
+            'any' => get_string('setting:allowedbrowsers_any', 'quizaccess_proctoring'),
+            'nosafari' => get_string('setting:allowedbrowsers_nosafari', 'quizaccess_proctoring'),
+            'chromeedge' => get_string('setting:allowedbrowsers_chromeedge', 'quizaccess_proctoring'),
+        ]
+    ));
+
     $settings->add(new admin_setting_configcheckbox(
         'quizaccess_proctoring/blurquizwithoutface',
         get_string('setting:blurquizwithoutface', 'quizaccess_proctoring'),
@@ -1305,6 +1318,15 @@ if ($canmanageproctoring) {
         get_string('messagetexts:title', 'quizaccess_proctoring'),
         new moodle_url('/mod/quiz/accessrule/proctoring/student_messages.php'),
         $proctoringpagecap
+    ));
+
+    // Proctoring profiles: named sets of site settings a quiz can use, such as ACE credit or
+    // certificate exams. Site administrators only, as the settings they replace are.
+    $ADMIN->add($proctoringcategory, new admin_externalpage(
+        'quizaccess_proctoring_profiles',
+        get_string('profiles:title', 'quizaccess_proctoring'),
+        new moodle_url('/mod/quiz/accessrule/proctoring/profiles.php'),
+        'moodle/site:config'
     ));
 
     // 3. Risk factor scoring (per-factor enable/points/cap and risk level boundaries).

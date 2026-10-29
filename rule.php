@@ -146,12 +146,33 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
-     * Determine whether the site default requires an entire screen share before quiz start.
+     * This quiz's instance id, or 0 when the rule has no quiz.
      *
-     * @return bool True if the site default requires an entire screen share.
+     * @return int Quiz id.
      */
-    private static function site_requires_entire_screen() {
-        $setting = get_config('quizaccess_proctoring', 'requireentirescreen');
+    private function quizid(): int {
+        return (int)($this->quiz->id ?? 0);
+    }
+
+    /**
+     * A setting as it applies to a quiz: its proctoring profile's value, or the site's.
+     *
+     * @param int $quizid Quiz id; 0 reads the site setting.
+     * @param string $name Setting name.
+     * @return mixed What get_config() would return.
+     */
+    private static function quiz_config(int $quizid, string $name) {
+        return \quizaccess_proctoring\local\profile::config($quizid, $name);
+    }
+
+    /**
+     * Determine whether the site default, or the quiz's profile, requires an entire screen share.
+     *
+     * @param int $quizid Quiz id; 0 reads the site setting.
+     * @return bool True if the default requires an entire screen share.
+     */
+    private static function site_requires_entire_screen(int $quizid = 0) {
+        $setting = self::quiz_config($quizid, 'requireentirescreen');
 
         if ($setting === false || $setting === null || $setting === '') {
             return true;
@@ -169,7 +190,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $quizsetting = $this->quiz->requireentirescreen ?? -1;
 
         if ($quizsetting === null || (int)$quizsetting === -1) {
-            return self::site_requires_entire_screen();
+            return self::site_requires_entire_screen($this->quizid());
         }
 
         return (int)$quizsetting === 1;
@@ -191,12 +212,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
-     * Determine whether webcam phone detection is enabled site-wide.
+     * Determine whether webcam phone detection is enabled for the site or the quiz's profile.
      *
+     * @param int $quizid Quiz id; 0 reads the site setting.
      * @return bool True when phone detection is enabled.
      */
-    private static function site_detects_phone(): bool {
-        return (int)get_config('quizaccess_proctoring', 'detectphone') === 1;
+    private static function site_detects_phone(int $quizid = 0): bool {
+        return (int)self::quiz_config($quizid, 'detectphone') === 1;
     }
 
     /**
@@ -209,12 +231,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
-     * Get the mobile/tablet desktop screen-share policy.
+     * Get the mobile/tablet desktop screen-share policy, from the quiz's profile or the site.
      *
+     * @param int $quizid Quiz id; 0 reads the site setting.
      * @return string One of the MOBILE_SCREEN_SHARE_* constants.
      */
-    private static function mobile_screen_share_mode() {
-        $mode = get_config('quizaccess_proctoring', 'mobilescreensharemode');
+    private static function mobile_screen_share_mode(int $quizid = 0) {
+        $mode = self::quiz_config($quizid, 'mobilescreensharemode');
 
         if (
             in_array($mode, [
@@ -232,14 +255,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     /**
      * Get the effective browser multi-monitor detection mode.
      *
+     * @param int $quizid Quiz id; 0 reads the site setting.
      * @return string One of the MULTI_MONITOR_* constants.
      */
-    private static function multi_monitor_mode() {
+    private static function multi_monitor_mode(int $quizid = 0) {
         if (self::is_mobile_or_tablet()) {
             return self::MULTI_MONITOR_OFF;
         }
 
-        $mode = get_config('quizaccess_proctoring', 'multimonitormode');
+        $mode = self::quiz_config($quizid, 'multimonitormode');
 
         if (
             in_array($mode, [
@@ -403,7 +427,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             return false;
         }
 
-        $bypass = self::mobile_screen_share_mode() === self::MOBILE_SCREEN_SHARE_BYPASS;
+        $bypass = self::mobile_screen_share_mode($this->quizid()) === self::MOBILE_SCREEN_SHARE_BYPASS;
         // The screen share a phone would be asked for, as the preflight resolves it for this
         // student: the site and quiz first, then a per-student override, which can force the share
         // even where phones skip it, or waive it (Codex review).
@@ -432,13 +456,43 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * The browser policy for this quiz: its proctoring profile's, or the site's.
+     *
+     * @return string One of the device::BROWSERS_* constants.
+     */
+    private function browser_policy(): string {
+        $device = \quizaccess_proctoring\local\device::class;
+        $policy = (string)self::quiz_config($this->quizid(), 'allowedbrowsers');
+        return isset($device::BROWSER_POLICIES[$policy]) ? $policy : $device::BROWSERS_ANY;
+    }
+
+    /**
+     * Why this browser may not start the exam, or null when it may.
+     *
+     * @return string|null Message naming the browsers allowed and the one in use.
+     */
+    private function browser_block_message(): ?string {
+        $device = \quizaccess_proctoring\local\device::class;
+        $policy = $this->browser_policy();
+        $browser = $device::browser();
+        if ($device::browser_allowed($policy, $browser)) {
+            return null;
+        }
+        $ios = preg_match('~iPhone|iPad|iPod~', (string)\core_useragent::get_user_agent_string());
+        return get_string('browserblocked', 'quizaccess_proctoring', (object)[
+            'allowed' => get_string('browsers:allowed_' . $policy, 'quizaccess_proctoring'),
+            'browser' => get_string('browser:' . ($ios ? 'ios' : $browser), 'quizaccess_proctoring'),
+        ]);
+    }
+
+    /**
      * Whether this exam blocks phones and tablets: the site blocks them where a screen share is
      * needed, and this exam needs one, as configured.
      *
      * @return bool True when a phone or tablet browser is turned away.
      */
     private function mobile_screen_share_block_applies(): bool {
-        if (self::mobile_screen_share_mode() !== self::MOBILE_SCREEN_SHARE_BLOCK) {
+        if (self::mobile_screen_share_mode($this->quizid()) !== self::MOBILE_SCREEN_SHARE_BLOCK) {
             return false;
         }
 
@@ -455,7 +509,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             return false;
         }
 
-        if (self::is_mobile_or_tablet() && self::mobile_screen_share_mode() === self::MOBILE_SCREEN_SHARE_BYPASS) {
+        if (self::is_mobile_or_tablet() && self::mobile_screen_share_mode($this->quizid()) === self::MOBILE_SCREEN_SHARE_BYPASS) {
             return false;
         }
 
@@ -472,7 +526,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             return false;
         }
 
-        if (self::is_mobile_or_tablet() && self::mobile_screen_share_mode() === self::MOBILE_SCREEN_SHARE_BYPASS) {
+        if (self::is_mobile_or_tablet() && self::mobile_screen_share_mode($this->quizid()) === self::MOBILE_SCREEN_SHARE_BYPASS) {
             return false;
         }
 
@@ -480,12 +534,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
-     * Determine whether the site default requires CAPTCHA before starting a quiz attempt.
+     * Determine whether the site default, or the quiz's profile, requires CAPTCHA before an attempt.
      *
-     * @return bool True if the site default requires CAPTCHA.
+     * @param int $quizid Quiz id; 0 reads the site setting.
+     * @return bool True if the default requires CAPTCHA.
      */
-    private static function site_requires_captcha() {
-        $setting = get_config('quizaccess_proctoring', 'captchabeforeattemptenabled');
+    private static function site_requires_captcha(int $quizid = 0) {
+        $setting = self::quiz_config($quizid, 'captchabeforeattemptenabled');
 
         if ($setting === false || $setting === null || $setting === '') {
             return false;
@@ -503,7 +558,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $quizsetting = $this->quiz->captchamode ?? -1;
 
         if ($quizsetting === null || (int)$quizsetting === -1) {
-            return self::site_requires_captcha();
+            return self::site_requires_captcha($this->quizid());
         }
 
         return (int)$quizsetting === 1;
@@ -579,12 +634,13 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
-     * Determine whether the site requires ID verification before starting new proctored quiz attempts.
+     * Determine whether the site, or the quiz's profile, requires ID verification before new attempts.
      *
+     * @param int $quizid Quiz id; 0 reads the site setting.
      * @return bool True if ID verification is required.
      */
-    private static function site_requires_id_verification(): bool {
-        $setting = get_config('quizaccess_proctoring', 'idverificationenabled');
+    private static function site_requires_id_verification(int $quizid = 0): bool {
+        $setting = self::quiz_config($quizid, 'idverificationenabled');
 
         return $setting !== false && (int)$setting === 1;
     }
@@ -832,7 +888,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @return bool True when starting a new attempt requires ID verification.
      */
     private function should_require_id_verification($attemptid): bool {
-        return empty($attemptid) && self::site_requires_id_verification();
+        return empty($attemptid) && self::site_requires_id_verification($this->quizid());
     }
 
     /**
@@ -862,10 +918,10 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $resolver = '\quizaccess_proctoring\local\override_resolver';
         $states = [
             $resolver::REQ_CAPTCHA => $this->should_require_captcha($attemptid),
-            $resolver::REQ_WEBCAM => (int)get_config('quizaccess_proctoring', 'fcheckstartchk') === 1,
+            $resolver::REQ_WEBCAM => (int)self::quiz_config($this->quizid(), 'fcheckstartchk') === 1,
             $resolver::REQ_IDVERIFICATION => $this->should_require_id_verification($attemptid),
             $resolver::REQ_SCREENSHARE => (bool)$this->requires_entire_screen(),
-            $resolver::REQ_MULTIMONITOR => self::multi_monitor_mode() !== self::MULTI_MONITOR_OFF,
+            $resolver::REQ_MULTIMONITOR => self::multi_monitor_mode($this->quizid()) !== self::MULTI_MONITOR_OFF,
         ];
         if (empty($attemptid) && !empty($this->quiz->course) && !empty($this->quiz->id)) {
             $states = $resolver::resolve_all(
@@ -889,7 +945,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         if (empty($requirements[\quizaccess_proctoring\local\override_resolver::REQ_MULTIMONITOR])) {
             return self::MULTI_MONITOR_OFF;
         }
-        $mode = self::multi_monitor_mode();
+        $mode = self::multi_monitor_mode($this->quizid());
         return $mode === self::MULTI_MONITOR_OFF ? self::MULTI_MONITOR_BLOCK : $mode;
     }
 
@@ -1047,7 +1103,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $idverificationrequired,
         $faceidcheck,
         $requireentirescreen,
-        $multimonitormode
+        $multimonitormode,
+        int $quizid = 0
     ): string {
         $items = [
             get_string('privacynotice:item_eventlogs', 'quizaccess_proctoring'),
@@ -1059,7 +1116,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         if ((string)$faceidcheck === '1') {
             $items[] = get_string('privacynotice:item_webcam', 'quizaccess_proctoring');
         }
-        if (self::site_detects_phone()) {
+        if (self::site_detects_phone($quizid)) {
             $items[] = get_string('privacynotice:item_phonedetection', 'quizaccess_proctoring');
         }
         if (self::site_detects_multiple_faces()) {
@@ -1415,7 +1472,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             'screenmonitorwindowname' => $usepersistentmonitor ? 'quizaccess_proctoring_screen_' . $screenmonitorkey : '',
             // Whether a tablet the server took for a computer may report itself and skip screen
             // sharing, as detected phones and tablets do (CPIT-495).
-            'tabletbypass' => \quizaccess_proctoring\local\device::mobile_mode() === 'bypass' ? 1 : 0,
+            'tabletbypass' => self::mobile_screen_share_mode($this->quizid()) === self::MOBILE_SCREEN_SHARE_BYPASS ? 1 : 0,
             'tabletreported' => \quizaccess_proctoring\local\device::reported_tablet() ? 1 : 0,
         ];
 
@@ -1506,7 +1563,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                         $idverificationrequired,
                         $faceidcheck,
                         $requireentirescreen,
-                        $multimonitormode
+                        $multimonitormode,
+                        $this->quizid()
                     ),
                     'proctoring-privacy-notice alert alert-info mb-3'
                 )
@@ -1959,6 +2017,17 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $errors['proctoring'] = get_string('youmustagree', 'quizaccess_proctoring');
         }
 
+        // The browser rule again, server-side, in case the precheck was reached another way.
+        if (empty($attemptid)) {
+            $browserblock = $this->browser_block_message();
+            if ($browserblock !== null) {
+                // On a field the form shows: the honesty or privacy checkbox where there is one.
+                $errorkey = self::honor_statement_required() ? 'proctoring'
+                    : (self::privacy_notice_required() ? 'proctoringprivacy' : 'entirescreenconfirmed');
+                $errors[$errorkey] = $browserblock;
+            }
+        }
+
         $requirements = $this->effective_preflight_requirements($attemptid);
         $resolver = '\quizaccess_proctoring\local\override_resolver';
         if ($requirements[$resolver::REQ_SCREENSHARE] && empty($data['entirescreenconfirmed'])) {
@@ -2089,6 +2158,12 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             return get_string('mobilescreenshare:blocked', 'quizaccess_proctoring');
         }
 
+        // Exams whose profile allows only some browsers turn the others away before the precheck.
+        $browserblock = $this->browser_block_message();
+        if ($browserblock !== null) {
+            return $browserblock;
+        }
+
         return false;
     }
 
@@ -2114,6 +2189,17 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
 
         // Add a help button for the proctoring setting.
         $mform->addHelpButton('proctoringrequired', 'proctoringrequired', 'quizaccess_proctoring');
+
+        // A proctoring profile, such as ACE credit or certificate, replaces chosen site settings.
+        $mform->addElement(
+            'select',
+            'profileid',
+            get_string('profile:quizsetting', 'quizaccess_proctoring'),
+            \quizaccess_proctoring\local\profile::menu()
+        );
+        $mform->setDefault('profileid', 0);
+        $mform->addHelpButton('profileid', 'profile:quizsetting', 'quizaccess_proctoring');
+        $mform->hideIf('profileid', 'proctoringrequired', 'eq', 0);
 
         $mform->addElement(
             'select',
@@ -2230,9 +2316,14 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             if ($facestrikes !== -1) {
                 $facestrikes = \quizaccess_proctoring\local\face_strikes::clamp_limit($facestrikes);
             }
+            $profileid = (int)($quiz->profileid ?? 0);
+            if ($profileid > 0 && !$DB->record_exists(\quizaccess_proctoring\local\profile::TABLE, ['id' => $profileid])) {
+                $profileid = 0;
+            }
             $record = (object)[
                 'quizid' => $quiz->id,
                 'proctoringrequired' => 1,
+                'profileid' => $profileid,
                 'requireentirescreen' => isset($quiz->requireentirescreen) ? (int)$quiz->requireentirescreen : -1,
                 'captchamode' => isset($quiz->captchamode) ? (int)$quiz->captchamode : -1,
                 'riskreviewmode' => $riskreviewmode,
@@ -2253,6 +2344,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 $DB->insert_record('quizaccess_proctoring', $record);
             }
         }
+        \quizaccess_proctoring\local\profile::reset_cache();
     }
 
     /**
@@ -2280,7 +2372,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         return [
             'proctoring.proctoringrequired, proctoring.requireentirescreen, ' .
                 'proctoring.captchamode, proctoring.riskreviewmode, ' .
-                'proctoring.riskreviewthreshold, proctoring.expectedtools, proctoring.facestrikes', // Fields to select.
+                'proctoring.riskreviewthreshold, proctoring.expectedtools, proctoring.facestrikes, ' .
+                'proctoring.profileid', // Fields to select.
             'LEFT JOIN {quizaccess_proctoring} proctoring ON proctoring.quizid = quiz.id', // Join clause.
             [], // No additional parameters.
         ];
@@ -2525,7 +2618,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->captureviolationdesktop = $this->should_capture_violation_desktop() ? 1 : 0;
             $record->coveragescreens = !empty($record->captureviolationdesktop) &&
                 (int)get_config('quizaccess_proctoring', 'monitoringcoveragescreens') === 1 ? 1 : 0;
-            $record->multimonitormode = self::multi_monitor_mode();
+            $record->multimonitormode = self::multi_monitor_mode($this->quizid());
             // While the student is away from the quiz, the shared screen is captured every so often,
             // up to a limit per absence, so a long absence is not one frame of evidence (CPIT-471).
             $awayinterval = (int)(get_config('quizaccess_proctoring', 'awaycaptureinterval') ?: 15);
@@ -2575,7 +2668,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->detectphone = 0;
             $record->detectphoneminscore = 0.6;
             $record->phonedetectliburl = '';
-            if (self::site_detects_phone()) {
+            if (self::site_detects_phone($this->quizid())) {
                 $resolver = '\quizaccess_proctoring\local\override_resolver';
                 $resolved = $resolver::resolve_all(
                     (int)$COURSE->id,

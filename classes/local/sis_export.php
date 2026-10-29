@@ -393,7 +393,7 @@ final class sis_export {
      * as `reused_pass` so the SIS can tell "checked for this attempt" from "covered by an earlier check".
      *
      * An earlier pass is only credited when it could have governed the attempt (PR #32 review): an ID
-     * check was required at the start (the site setting, as changed by any per-student override that
+     * check was required at the start (the site setting or quiz profile, as changed by any per-student override that
      * stood then), reuse was allowed (not "verify every attempt"), and the pass was within the maximum
      * age at the start. Otherwise the attempt reports `none` - an exempted student is not "verified".
      * Limitation: the site settings are read as they are now, and the name/policy-change rechecks are
@@ -424,8 +424,7 @@ final class sis_export {
         // the attempt STARTED. A check made after the start - for a later attempt, say - cannot have
         // governed this one. One query for the whole page, matched back per attempt in PHP.
         $policy = identity_recheck_policy::config();
-        $siterequired = (int)get_config('quizaccess_proctoring', 'idverificationenabled') === 1;
-        $missing = array_filter($byid, function ($row) use ($out, $overrides, $siterequired, $policy) {
+        $missing = array_filter($byid, function ($row) use ($out, $overrides, $policy) {
             $attemptid = (int)$row->attemptid;
             if (isset($out[$attemptid]) || !empty($policy['eachattempt'])) {
                 return false;
@@ -434,7 +433,9 @@ final class sis_export {
             if (in_array('idverification:off', $states, true)) {
                 return false;
             }
-            return $siterequired || in_array('idverification:on', $states, true);
+            // The site setting, or the quiz's proctoring profile.
+            $required = (int)profile::config((int)$row->quizid, 'idverificationenabled') === 1;
+            return $required || in_array('idverification:on', $states, true);
         });
         if (!empty($missing)) {
             // Exactly the (course, quiz, student) scopes on the page, not the cross-product of every

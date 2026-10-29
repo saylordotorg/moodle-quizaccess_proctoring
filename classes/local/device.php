@@ -34,6 +34,81 @@ final class device {
     /** @var string Session key holding the tablet report. */
     private const SESSION_KEY = 'quizaccess_proctoring_reportedtablet';
 
+    /** @var string Browser family: Microsoft Edge. */
+    public const BROWSER_EDGE = 'edge';
+
+    /** @var string Browser family: Google Chrome. */
+    public const BROWSER_CHROME = 'chrome';
+
+    /** @var string Browser family: Mozilla Firefox. */
+    public const BROWSER_FIREFOX = 'firefox';
+
+    /** @var string Browser family: Safari, and every browser on an iPhone or iPad, which runs Safari's engine. */
+    public const BROWSER_SAFARI = 'safari';
+
+    /** @var string Browser family: anything else (Opera, Samsung Internet, unknown). */
+    public const BROWSER_OTHER = 'other';
+
+    /** @var string Browser policy: any browser may start the exam. */
+    public const BROWSERS_ANY = 'any';
+
+    /** @var string Browser policy: Chrome, Edge or Firefox; not Safari. */
+    public const BROWSERS_NO_SAFARI = 'nosafari';
+
+    /** @var string Browser policy: Chrome or Edge only. */
+    public const BROWSERS_CHROME_EDGE = 'chromeedge';
+
+    /** @var array<string, string[]> Browser policy => families allowed to start an attempt. */
+    public const BROWSER_POLICIES = [
+        self::BROWSERS_NO_SAFARI => [self::BROWSER_CHROME, self::BROWSER_EDGE, self::BROWSER_FIREFOX],
+        self::BROWSERS_CHROME_EDGE => [self::BROWSER_CHROME, self::BROWSER_EDGE],
+    ];
+
+    /**
+     * The browser family a user agent belongs to.
+     *
+     * Every browser on an iPhone or iPad runs Safari's engine and has Safari's limits whatever its
+     * name, so Chrome, Edge and Firefox there count as Safari. Brave and Vivaldi report themselves
+     * as Chrome and are Chrome underneath, so they count as Chrome. A user agent can be changed
+     * by the student, so this is a gate for honest students, not proof.
+     *
+     * @param string|null $useragent User agent; null reads the current request's.
+     * @return string One of the BROWSER_* constants.
+     */
+    public static function browser(?string $useragent = null): string {
+        $useragent = $useragent ?? self::user_agent();
+        if (preg_match('~iPhone|iPad|iPod|CriOS/|FxiOS/|EdgiOS/~', $useragent)) {
+            return self::BROWSER_SAFARI;
+        }
+        if (preg_match('~\bEdg(?:e|A)?/~', $useragent)) {
+            return self::BROWSER_EDGE;
+        }
+        if (preg_match('~\b(?:OPR|Opera|SamsungBrowser|UCBrowser|YaBrowser)/~', $useragent)) {
+            return self::BROWSER_OTHER;
+        }
+        if (preg_match('~\bFirefox/~', $useragent)) {
+            return self::BROWSER_FIREFOX;
+        }
+        if (preg_match('~\b(?:Chrome|Chromium)/~', $useragent)) {
+            return self::BROWSER_CHROME;
+        }
+        if (preg_match('~\bVersion/[\d.]+.*\bSafari/~', $useragent)) {
+            return self::BROWSER_SAFARI;
+        }
+        return self::BROWSER_OTHER;
+    }
+
+    /**
+     * Whether a browser policy lets a browser family start an attempt.
+     *
+     * @param string $policy One of the BROWSERS_* constants; anything unknown allows every browser.
+     * @param string $browser One of the BROWSER_* constants.
+     * @return bool True when the browser may start.
+     */
+    public static function browser_allowed(string $policy, string $browser): bool {
+        return !isset(self::BROWSER_POLICIES[$policy]) || in_array($browser, self::BROWSER_POLICIES[$policy], true);
+    }
+
     /**
      * The site's phone/tablet screen-sharing setting: bypass, require or block.
      *

@@ -70,12 +70,13 @@ final class face_strikes {
     const FINISH_GRACE_SECONDS = 120;
 
     /**
-     * The site's strike limit: 0 when the rule is off.
+     * The site's strike limit, or that of the quiz's proctoring profile: 0 when the rule is off.
      *
+     * @param int $quizid Quiz id; 0 reads the site setting.
      * @return int 0, or MIN_LIMIT to MAX_LIMIT.
      */
-    public static function site_limit(): int {
-        return self::clamp_limit((int)get_config('quizaccess_proctoring', 'facestrikes'));
+    public static function site_limit(int $quizid = 0): int {
+        return self::clamp_limit((int)profile::config($quizid, 'facestrikes'));
     }
 
     /**
@@ -134,7 +135,7 @@ final class face_strikes {
         }
         $quizlimit = $DB->get_field('quizaccess_proctoring', 'facestrikes', ['quizid' => $quizid]);
         $quizlimit = $quizlimit === false ? -1 : (int)$quizlimit;
-        $base = $quizlimit === -1 ? self::site_limit() : self::clamp_limit($quizlimit);
+        $base = $quizlimit === -1 ? self::site_limit($quizid) : self::clamp_limit($quizlimit);
 
         $resolved = override_resolver::resolve_all(
             $courseid,
@@ -146,7 +147,7 @@ final class face_strikes {
         if (empty($resolved[override_resolver::REQ_FACESTRIKES])) {
             return 0;
         }
-        return $base > 0 ? $base : (self::site_limit() ?: self::DEFAULT_LIMIT);
+        return $base > 0 ? $base : (self::site_limit($quizid) ?: self::DEFAULT_LIMIT);
     }
 
     /**
