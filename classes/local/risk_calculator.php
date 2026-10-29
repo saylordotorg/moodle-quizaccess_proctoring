@@ -722,6 +722,23 @@ final class risk_calculator {
     }
 
     /**
+     * Whether phone detection runs on a quiz: the site setting, or its proctoring profile's.
+     *
+     * @param int $cmid Quiz course-module id; 0 reads the site setting.
+     * @return bool True when the phone monitor is on.
+     */
+    private static function detects_phone(int $cmid): bool {
+        global $DB;
+
+        // One lookup per quiz for a whole report, not per row.
+        static $quizids = [];
+        if ($cmid > 0 && !array_key_exists($cmid, $quizids)) {
+            $quizids[$cmid] = (int)$DB->get_field('course_modules', 'instance', ['id' => $cmid]);
+        }
+        return (int)profile::config($quizids[$cmid] ?? 0, 'detectphone') === 1;
+    }
+
+    /**
      * Calculate a proctoring risk score for one quiz attempt.
      *
      * @param int $courseid Course id.
@@ -737,7 +754,7 @@ final class risk_calculator {
         $evidence = self::gather_evidence($courseid, $cmid, $studentid, $reportid, $attemptid);
         $fpmarks = self::get_false_positive_marks($courseid, $cmid, $studentid, $attemptid, $reportid);
 
-        return self::assemble_result($evidence, $attemptid, $fpmarks);
+        return self::assemble_result($evidence, $attemptid, $fpmarks, $cmid);
     }
 
     /**
@@ -1018,9 +1035,10 @@ final class risk_calculator {
      * @param array $evidence Output of {@see self::gather_evidence()} for one attempt.
      * @param int $attemptid Quiz attempt id, or 0 when unknown.
      * @param array $fpmarks Active false-positive marks keyed by factor key.
+     * @param int $cmid Quiz course-module id, for settings its proctoring profile changes.
      * @return array Risk score template data.
      */
-    private static function assemble_result(array $evidence, int $attemptid, array $fpmarks): array {
+    private static function assemble_result(array $evidence, int $attemptid, array $fpmarks, int $cmid): array {
         $counts = $evidence['counts'];
         $durationseconds = (int)$evidence['durationseconds'];
         $questioncount = (int)$evidence['questioncount'];
@@ -1062,7 +1080,7 @@ final class risk_calculator {
         // phone evidence, the factor is omitted entirely so reports list it as "not monitored"
         // rather than "passed". Existing evidence keeps scoring even after the monitor is
         // switched off.
-        if ((int)get_config('quizaccess_proctoring', 'detectphone') !== 1 && $phonedetectedcount === 0) {
+        if (!self::detects_phone($cmid) && $phonedetectedcount === 0) {
             unset($factorcounts['phonedetected']);
         }
 
@@ -1213,7 +1231,8 @@ final class risk_calculator {
                 $results[$key] = self::assemble_result(
                     $evidence[$key]['evidence'],
                     (int)$request['attemptid'],
-                    $evidence[$key]['fpmarks']
+                    $evidence[$key]['fpmarks'],
+                    (int)$request['cmid']
                 );
             }
         }

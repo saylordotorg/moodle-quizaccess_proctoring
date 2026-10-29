@@ -24,6 +24,7 @@
 namespace quizaccess_proctoring;
 
 use advanced_testcase;
+use quizaccess_proctoring\local\device;
 use quizaccess_proctoring\local\face_strikes;
 use quizaccess_proctoring\local\profile;
 
@@ -41,6 +42,7 @@ require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/rule.php');
  *
  * @covers \quizaccess_proctoring\local\profile
  * @covers \quizaccess_proctoring\local\face_strikes
+ * @covers \quizaccess_proctoring\local\device
  * @covers ::quizaccess_proctoring_get_effective_risk_review_settings
  * @covers ::quizaccess_proctoring_risk_hold_reachability
  * @covers \quizaccess_proctoring
@@ -254,5 +256,24 @@ final class profile_test extends advanced_testcase {
         \core_useragent::instance(true, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
             . 'Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0');
         $this->assertFalse($rule($acequiz)->prevent_new_attempt(0, null));
+    }
+
+    /**
+     * A tablet asking for the desktop site may skip the screen share on a quiz whose profile lets
+     * phones and tablets skip it, even where the site blocks them.
+     */
+    public function test_tablet_report_follows_profile(): void {
+        set_config('mobilescreensharemode', 'block', 'quizaccess_proctoring');
+        $bypass = profile::save(0, 'Tablets welcome', '', ['mobilescreensharemode' => 'bypass']);
+        $quiz = $this->quiz($bypass);
+        $plain = $this->quiz(0);
+        $this->setUser($this->getDataGenerator()->create_and_enrol($this->course, 'student'));
+        \core_useragent::instance(true, 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
+            . 'Chrome/129.0.0.0 Safari/537.36');
+
+        $this->assertSame('bypass', device::mobile_mode((int)$quiz->id));
+        $this->assertSame('block', device::mobile_mode((int)$plain->id));
+        $this->assertFalse(device::report_tablet(\context_module::instance((int)$plain->cmid)));
+        $this->assertTrue(device::report_tablet(\context_module::instance((int)$quiz->cmid)));
     }
 }

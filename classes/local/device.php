@@ -110,12 +110,14 @@ final class device {
     }
 
     /**
-     * The site's phone/tablet screen-sharing setting: bypass, require or block.
+     * The phone/tablet screen-sharing setting: bypass, require or block. A quiz's proctoring
+     * profile can change the site's.
      *
+     * @param int $quizid Quiz id; 0 reads the site setting.
      * @return string
      */
-    public static function mobile_mode(): string {
-        $mode = get_config('quizaccess_proctoring', 'mobilescreensharemode');
+    public static function mobile_mode(int $quizid = 0): string {
+        $mode = profile::config($quizid, 'mobilescreensharemode');
         return in_array($mode, ['bypass', 'require', 'block'], true) ? $mode : 'bypass';
     }
 
@@ -167,9 +169,10 @@ final class device {
      * @return bool Whether the report was accepted.
      */
     public static function report_tablet(\context_module $context): bool {
-        global $SESSION, $USER;
+        global $DB, $SESSION, $USER;
         $useragent = self::user_agent();
-        if (self::mobile_mode() !== 'bypass' || !self::desktop_mode_tablet_agent($useragent)) {
+        $quizid = (int)$DB->get_field('course_modules', 'instance', ['id' => $context->instanceid]);
+        if (self::mobile_mode($quizid) !== 'bypass' || !self::desktop_mode_tablet_agent($useragent)) {
             return false;
         }
         $SESSION->{self::SESSION_KEY} = ['userid' => (int)$USER->id, 'useragent' => $useragent];

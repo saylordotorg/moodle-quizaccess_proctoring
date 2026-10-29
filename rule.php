@@ -1106,6 +1106,8 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         $multimonitormode,
         int $quizid = 0
     ): string {
+        global $DB;
+
         $items = [
             get_string('privacynotice:item_eventlogs', 'quizaccess_proctoring'),
         ];
@@ -1152,8 +1154,15 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
         if ((int)get_config('quizaccess_proctoring', 'aireviewenabled') === 1) {
             $items[] = get_string('privacynotice:item_aireview', 'quizaccess_proctoring');
         }
+        // The quiz's own high-risk action, else its profile's or the site's.
+        $riskaction = $quizid > 0
+            ? $DB->get_field('quizaccess_proctoring', 'riskreviewmode', ['quizid' => $quizid])
+            : false;
+        if ($riskaction === false || (int)$riskaction === -1) {
+            $riskaction = self::quiz_config($quizid, 'riskreviewenabled');
+        }
         if (
-            (int)get_config('quizaccess_proctoring', 'riskreviewenabled') > 0 ||
+            (int)$riskaction > 0 ||
                 (int)get_config('quizaccess_proctoring', 'cheatinglockoutenabled') === 1
         ) {
             $items[] = get_string('privacynotice:item_riskreview', 'quizaccess_proctoring');
