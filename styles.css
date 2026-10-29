@@ -4965,8 +4965,15 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
 }
 
 .proctoring-calculator {
-    width: 220px;
+    width: 300px;
+    max-width: calc(100vw - 32px);
     padding: 8px;
+}
+
+.proctoring-calculator-header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 4px;
 }
 
 .proctoring-calculator-display {
@@ -4977,8 +4984,18 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
 
 .proctoring-calculator-keys {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 4px;
+}
+
+.proctoring-calculator-keys .btn {
+    padding-left: 0;
+    padding-right: 0;
+    white-space: nowrap;
+}
+
+.proctoring-calculator-keys .proctoring-calculator-equals {
+    grid-column: 1 / -1;
 }
 
 /* A capture whose image is no longer stored (CPIT-488). */
