@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026102900"
+<XMLDB PATH="mod/quiz/accessrule/proctoring/db" VERSION="2026102901"
        COMMENT="XMLDB file for Moodle mod/quiz/accessrule/proctoring"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:noNamespaceSchemaLocation="../../../../../lib/xmldb/xmldb.xsd"
@@ -30,13 +30,19 @@
                        PREVIOUS="captchamode" NEXT="facestrikes"/>
                 <FIELD NAME="facestrikes" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="false" DEFAULT="-1"
                        SEQUENCE="false" COMMENT="Times the face may leave the webcam frame before the attempt ends: 2 to 10; 0 never ends it; -1 inherits the site setting."
-                       PREVIOUS="expectedtools"/>
+                       PREVIOUS="expectedtools" NEXT="profileid"/>
+                <FIELD NAME="profileid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Proctoring profile the quiz uses; 0 uses the site settings."
+                       PREVIOUS="facestrikes"/>
             </FIELDS>
             <KEYS>
                 <KEY NAME="primary" TYPE="primary" FIELDS="id" NEXT="quizid"/>
                 <KEY NAME="quizid" TYPE="foreign-unique" FIELDS="quizid" REFTABLE="quiz" REFFIELDS="id"
                      PREVIOUS="primary"/>
             </KEYS>
+            <INDEXES>
+                <INDEX NAME="profileid" UNIQUE="false" FIELDS="profileid"/>
+            </INDEXES>
         </TABLE>
 
         <TABLE NAME="quizaccess_proctoring_logs" COMMENT="Stores all validations for reporting">
@@ -546,5 +552,24 @@
             </INDEXES>
         </TABLE>
 
+        <TABLE NAME="quizaccess_proctoring_profiles" COMMENT="Named sets of site settings a quiz can use, such as ACE credit or certificate exams">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="true"/>
+                <FIELD NAME="name" TYPE="char" LENGTH="100" NOTNULL="true" SEQUENCE="false" COMMENT="Name staff pick the profile by"/>
+                <FIELD NAME="description" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="When to use the profile"/>
+                <FIELD NAME="settings" TYPE="text" NOTNULL="true" SEQUENCE="false"
+                       COMMENT="JSON map of the site settings the profile changes; a setting left out uses the site value"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Creation timestamp"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="false" DEFAULT="0"
+                       SEQUENCE="false" COMMENT="Last save timestamp"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="name" UNIQUE="true" FIELDS="name"/>
+            </INDEXES>
+        </TABLE>
     </TABLES>
 </XMLDB>

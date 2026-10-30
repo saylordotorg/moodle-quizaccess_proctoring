@@ -1226,7 +1226,7 @@ class quizaccess_proctoring_external extends external_api {
         if ($attemptid > 0) {
             self::get_owned_quiz_attempt($attemptid, $cm);
         }
-        $idenabled = (int)get_config('quizaccess_proctoring', 'idverificationenabled') === 1;
+        $idenabled = (int)\quizaccess_proctoring\local\profile::config((int)$cm->instance, 'idverificationenabled') === 1;
         if (!$idenabled && $attemptid === 0) {
             // A student-specific requirement must be completable even when the site default is off.
             $resolver = \quizaccess_proctoring\local\override_resolver::class;
@@ -1555,7 +1555,7 @@ class quizaccess_proctoring_external extends external_api {
 
         $contact = trim((string)get_config('quizaccess_proctoring', 'idexemptioncontactemail'));
         if (
-            (int)get_config('quizaccess_proctoring', 'idverificationenabled') !== 1 ||
+            (int)\quizaccess_proctoring\local\profile::config((int)$cm->instance, 'idverificationenabled') !== 1 ||
                 $contact === '' || !validate_email($contact)
         ) {
             return [

@@ -87,7 +87,7 @@ final class monitoring_coverage {
         $desktopsetting = get_config('quizaccess_proctoring', 'captureviolationdesktop');
         $desktop = $desktopsetting === false || $desktopsetting === null || $desktopsetting === '' ||
             (int)$desktopsetting === 1;
-        $mobilemode = get_config('quizaccess_proctoring', 'mobilescreensharemode');
+        $mobilemode = profile::config((int)$cm->instance, 'mobilescreensharemode');
         if (!in_array($mobilemode, ['bypass', 'require', 'block'], true)) {
             $mobilemode = 'bypass';
         }

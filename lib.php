@@ -1038,20 +1038,22 @@ function quizaccess_proctoring_get_effective_risk_review_settings(int $cmid): ar
         QUIZACCESS_PROCTORING_RISK_ACTION_HOLD,
         QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL,
     ];
-    $siteaction = (int)get_config('quizaccess_proctoring', 'riskreviewenabled');
-    if (!in_array($siteaction, $validactions, true)) {
-        $siteaction = QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED;
-    }
-    $sitethreshold = (int)get_config('quizaccess_proctoring', 'riskreviewthreshold');
-    if ($sitethreshold <= 0) {
-        $sitethreshold = 80;
-    }
-    $sitethreshold = max(1, min(100, $sitethreshold));
     $quizid = 0;
     $cm = get_coursemodule_from_id('quiz', $cmid, 0, false, IGNORE_MISSING);
     if ($cm) {
         $quizid = (int)$cm->instance;
     }
+    // The quiz's proctoring profile, where it has one, stands in for the site defaults.
+    $profile = \quizaccess_proctoring\local\profile::class;
+    $siteaction = (int)$profile::config($quizid, 'riskreviewenabled');
+    if (!in_array($siteaction, $validactions, true)) {
+        $siteaction = QUIZACCESS_PROCTORING_RISK_ACTION_DISABLED;
+    }
+    $sitethreshold = (int)$profile::config($quizid, 'riskreviewthreshold');
+    if ($sitethreshold <= 0) {
+        $sitethreshold = 80;
+    }
+    $sitethreshold = max(1, min(100, $sitethreshold));
     $quizsetting = $quizid > 0 ? $DB->get_record('quizaccess_proctoring', ['quizid' => $quizid]) : false;
     $mode = isset($quizsetting->riskreviewmode) ? (int)$quizsetting->riskreviewmode : -1;
     if (!in_array($mode, array_merge([-1], $validactions), true)) {
@@ -1089,13 +1091,15 @@ function quizaccess_proctoring_risk_hold_reachability(): string {
     $siteaction = (int)get_config('quizaccess_proctoring', 'riskreviewenabled');
     $holdreachable = $siteaction === QUIZACCESS_PROCTORING_RISK_ACTION_HOLD
         || quizaccess_proctoring_get_cheating_lockout_days() > 0
-        || $DB->record_exists('quizaccess_proctoring', ['riskreviewmode' => QUIZACCESS_PROCTORING_RISK_ACTION_HOLD]);
+        || $DB->record_exists('quizaccess_proctoring', ['riskreviewmode' => QUIZACCESS_PROCTORING_RISK_ACTION_HOLD])
+        || \quizaccess_proctoring\local\profile::quiz_inherits_risk_action(QUIZACCESS_PROCTORING_RISK_ACTION_HOLD);
     if ($holdreachable) {
         return 'reachable';
     }
 
     $autofailreachable = $siteaction === QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL
-        || $DB->record_exists('quizaccess_proctoring', ['riskreviewmode' => QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL]);
+        || $DB->record_exists('quizaccess_proctoring', ['riskreviewmode' => QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL])
+        || \quizaccess_proctoring\local\profile::quiz_inherits_risk_action(QUIZACCESS_PROCTORING_RISK_ACTION_AUTO_FAIL);
     if (!$autofailreachable) {
         return 'off';
     }

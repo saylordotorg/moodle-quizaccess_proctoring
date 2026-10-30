@@ -1601,6 +1601,37 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026102203, 'quizaccess', 'proctoring');
     }
 
+    // 2026102901, not 2026102900: the scientific calculator shipped as 2026102900 first, so a site
+    // already there would never run a step guarded by it.
+    if ($oldversion < 2026102901) {
+        // Proctoring profiles: named sets of site settings, such as ACE credit or certificate exams.
+        $table = new xmldb_table('quizaccess_proctoring_profiles');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('name', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('description', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('settings', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('name', XMLDB_INDEX_UNIQUE, ['name']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        // The profile each quiz uses; 0 keeps the site settings, as every quiz had before.
+        $table = new xmldb_table('quizaccess_proctoring');
+        $field = new xmldb_field('profileid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'facestrikes');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        $index = new xmldb_index('profileid', XMLDB_INDEX_NOTUNIQUE, ['profileid']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        upgrade_plugin_savepoint(true, 2026102901, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
 

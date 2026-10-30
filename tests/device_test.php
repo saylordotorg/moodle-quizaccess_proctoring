@@ -135,4 +135,52 @@ final class device_test extends advanced_testcase {
         $this->use_agent('Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/129.0 Mobile Safari/537.36');
         $this->assertTrue(device::is_phone_or_tablet());
     }
+
+    /**
+     * User agents and the browser family each belongs to.
+     *
+     * @return array
+     */
+    public static function browser_provider(): array {
+        return [
+            'chrome' => [self::WINDOWS, device::BROWSER_CHROME],
+            'edge' => [self::WINDOWS . ' Edg/129.0.0.0', device::BROWSER_EDGE],
+            'edge android' => ['Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/130.0.0.0 '
+                . 'Mobile Safari/537.36 EdgA/130.0.0.0', device::BROWSER_EDGE],
+            'firefox' => ['Mozilla/5.0 (Macintosh; Intel Mac OS X 14.5; rv:131.0) Gecko/20100101 Firefox/131.0',
+                device::BROWSER_FIREFOX],
+            'safari' => ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) '
+                . 'Version/18.0 Safari/605.1.15', device::BROWSER_SAFARI],
+            'chrome on iphone' => ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 '
+                . '(KHTML, like Gecko) CriOS/130.0.6723.37 Mobile/15E148 Safari/604.1', device::BROWSER_SAFARI],
+            'opera' => [self::WINDOWS . ' OPR/114.0.0.0', device::BROWSER_OTHER],
+            'samsung' => ['Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 SamsungBrowser/26.0 '
+                . 'Chrome/122.0.0.0 Mobile Safari/537.36', device::BROWSER_OTHER],
+            'empty' => ['', device::BROWSER_OTHER],
+        ];
+    }
+
+    /**
+     * Each user agent is put in its browser family.
+     *
+     * @dataProvider browser_provider
+     * @param string $useragent User agent.
+     * @param string $expected Browser family.
+     */
+    public function test_browser(string $useragent, string $expected): void {
+        $this->assertSame($expected, device::browser($useragent));
+    }
+
+    /**
+     * Each browser policy allows exactly its browsers; an unknown policy allows all.
+     */
+    public function test_browser_allowed(): void {
+        $this->assertTrue(device::browser_allowed(device::BROWSERS_CHROME_EDGE, device::BROWSER_EDGE));
+        $this->assertFalse(device::browser_allowed(device::BROWSERS_CHROME_EDGE, device::BROWSER_FIREFOX));
+        $this->assertTrue(device::browser_allowed(device::BROWSERS_NO_SAFARI, device::BROWSER_FIREFOX));
+        $this->assertFalse(device::browser_allowed(device::BROWSERS_NO_SAFARI, device::BROWSER_SAFARI));
+        $this->assertFalse(device::browser_allowed(device::BROWSERS_NO_SAFARI, device::BROWSER_OTHER));
+        $this->assertTrue(device::browser_allowed(device::BROWSERS_ANY, device::BROWSER_SAFARI));
+        $this->assertTrue(device::browser_allowed('', device::BROWSER_OTHER));
+    }
 }
