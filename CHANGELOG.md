@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.20.0 — 2026-10-29
+- **The on-page calculator is now a scientific calculator** (exams that allow a calculator, CPIT-482). It adds sin, cos and tan and their inverses, ln, log, √, x², xʸ, x!, %, π, e and Ans (the previous answer), with a Deg/Rad switch that starts in degrees. In degrees, sin(180) and cos(90) are exactly 0. It still never runs what the student types as code. Keys whose label isn't clear have spoken names for screen readers. Typing works like the keypad: after a result, a typed number starts a new calculation and a typed operator carries on from the answer. On a short screen, such as a phone held sideways, the taller panel scrolls inside itself instead of running off the top.
+
 # v1.19.0 — 2026-10-28
 - **Bulk decisions, exports and two filters on the Proctoring reviews pages (CPIT-515, Student Affairs).**
   - **Bulk Release / Confirm** on the Attempts report: a checkbox on every row with an active hold the reviewer may decide, a select-all for the page, and "Release selected — no concern" / "Confirm violation for selected" above the table. Each asks first, naming how many attempts it will decide. Every selected hold is checked as a single decision is — still active, and reviewable by this reviewer on that quiz — and one that fails the check is skipped and counted in the result, never decided.
