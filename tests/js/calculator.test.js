@@ -44,6 +44,16 @@ test('rejects anything that is not arithmetic, without evaluating it', () => {
     }
 });
 
+test('after a result, operators carry on from it and anything else starts afresh', () => {
+    const calc = load();
+    for (const input of ['×', '÷', '+', '−', '^', '!', '%', ')', '*', '/', '-']) {
+        assert.ok(calc.continuesAnswer(input), input);
+    }
+    for (const input of ['3', '.', '(', 'π', 'e', 'sin(', '√(', 'Ans']) {
+        assert.ok(!calc.continuesAnswer(input), input);
+    }
+});
+
 test('scientific functions, constants and powers', () => {
     const calc = load();
     const near = (input, expected, options) => assert.strictEqual(calc.format(calc.evaluate(input, options)), expected, input);

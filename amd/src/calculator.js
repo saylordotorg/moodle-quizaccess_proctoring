@@ -238,6 +238,17 @@ define(['core/str'], function(Str) {
         return String(parseFloat(value.toPrecision(12)));
     };
 
+    /**
+     * Whether input after a result carries on from it, as an operator does, rather than starting a
+     * new calculation, as a number or function does. Typed operators may be ASCII (* / -).
+     *
+     * @param {string} input The key's text, or the typed character.
+     * @return {boolean}
+     */
+    const continuesAnswer = function(input) {
+        return /^[×÷+−\-*/^!%)]/.test(input);
+    };
+
     // Each key: what it shows, what it types (or the action it takes), and its spoken name when the
     // label alone is not clear.
     const KEYS = [
@@ -260,6 +271,7 @@ define(['core/str'], function(Str) {
     return {
         evaluate: evaluate,
         format: format,
+        continuesAnswer: continuesAnswer,
 
         /**
          * Add the calculator to the attempt page.
@@ -326,6 +338,20 @@ define(['core/str'], function(Str) {
             display.className = 'form-control proctoring-calculator-display';
             display.setAttribute('aria-label', title);
             display.autocomplete = 'off';
+            // Typing follows the keypad: after a result or an error, a number starts afresh. This
+            // runs before the browser inserts the character, so the old result is gone first
+            // (Codex review).
+            display.addEventListener('beforeinput', function(event) {
+                if (!/^insert/.test(event.inputType || '')) {
+                    return;
+                }
+                const typed = event.data
+                    || (event.dataTransfer && event.dataTransfer.getData('text/plain'))
+                    || '';
+                if (display.value === error || (showingResult && typed !== '' && !continuesAnswer(typed))) {
+                    display.value = '';
+                }
+            });
             display.addEventListener('input', function() {
                 showingResult = false;
             });
@@ -364,7 +390,7 @@ define(['core/str'], function(Str) {
                     } else if (key.action === 'back') {
                         display.value = display.value.slice(0, -1);
                     } else {
-                        if (showingResult && !/^[×÷+−^!%)]/.test(insert)) {
+                        if (showingResult && !continuesAnswer(insert)) {
                             display.value = '';
                         }
                         // "2" then "e" then "3" would read as 2e3, two thousand.
