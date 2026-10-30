@@ -1601,7 +1601,9 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026102203, 'quizaccess', 'proctoring');
     }
 
-    if ($oldversion < 2026102900) {
+    // 2026102901, not 2026102900: the scientific calculator shipped as 2026102900 first, so a site
+    // already there would never run a step guarded by it.
+    if ($oldversion < 2026102901) {
         // Proctoring profiles: named sets of site settings, such as ACE credit or certificate exams.
         $table = new xmldb_table('quizaccess_proctoring_profiles');
         $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
@@ -1627,7 +1629,7 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
             $dbman->add_index($table, $index);
         }
 
-        upgrade_plugin_savepoint(true, 2026102900, 'quizaccess', 'proctoring');
+        upgrade_plugin_savepoint(true, 2026102901, 'quizaccess', 'proctoring');
     }
 
     return true;
