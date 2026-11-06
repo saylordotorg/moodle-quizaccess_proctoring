@@ -64,12 +64,13 @@ final class readiness {
      * @return array Effective readiness requirements.
      */
     public static function requirements(\stdClass|\cm_info $cm, \stdClass $settings, int $userid): array {
+        $quizid = (int)$cm->instance;
         $screen = (int)($settings->requireentirescreen ?? -1);
         if ($screen === -1) {
-            $site = get_config('quizaccess_proctoring', 'requireentirescreen');
+            $site = profile::config($quizid, 'requireentirescreen');
             $screen = $site === false || $site === '' ? 1 : (int)$site;
         }
-        $mobilemode = get_config('quizaccess_proctoring', 'mobilescreensharemode');
+        $mobilemode = profile::config($quizid, 'mobilescreensharemode');
         if (!in_array($mobilemode, ['bypass', 'require', 'block'], true)) {
             $mobilemode = 'bypass';
         }
@@ -78,8 +79,8 @@ final class readiness {
             $screen = 0;
         }
         return override_resolver::resolve_all((int)$cm->course, (int)$cm->instance, $userid, time(), [
-            override_resolver::REQ_WEBCAM => (int)get_config('quizaccess_proctoring', 'fcheckstartchk') === 1,
-            override_resolver::REQ_IDVERIFICATION => (int)get_config('quizaccess_proctoring', 'idverificationenabled') === 1,
+            override_resolver::REQ_WEBCAM => (int)profile::config($quizid, 'fcheckstartchk') === 1,
+            override_resolver::REQ_IDVERIFICATION => (int)profile::config($quizid, 'idverificationenabled') === 1,
             override_resolver::REQ_SCREENSHARE => $screen === 1,
         ]);
     }
