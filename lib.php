@@ -994,10 +994,11 @@ function quizaccess_proctoring_build_risk_factor(
  * Get risk-level presentation details for a score.
  *
  * @param int $score Score from 0 to 100.
+ * @param int $cmid Quiz course-module id, whose proctoring profile may move the levels; 0 for the site.
  * @return array Risk-level template data.
  */
-function quizaccess_proctoring_get_risk_level(int $score): array {
-    return \quizaccess_proctoring\local\risk_calculator::get_level($score);
+function quizaccess_proctoring_get_risk_level(int $score, int $cmid = 0): array {
+    return \quizaccess_proctoring\local\risk_calculator::get_level($score, $cmid);
 }
 
 /**
@@ -1109,7 +1110,7 @@ function quizaccess_proctoring_risk_hold_reachability(): string {
     // (CPIT-468), so the review queue is reachable whenever such a detector is running.
     if (
         (int)get_config('quizaccess_proctoring', 'detectmultiplefaces') === 1
-        && \quizaccess_proctoring\local\risk_calculator::factor_enabled('multiplefaces')
+        && \quizaccess_proctoring\local\risk_calculator::factor_enabled_anywhere('multiplefaces')
     ) {
         return 'reachable';
     }
@@ -1117,7 +1118,7 @@ function quizaccess_proctoring_risk_hold_reachability(): string {
     // running it can hold an attempt for a reviewer under auto-fail mode just the same.
     if (
         quizaccess_proctoring_event_ai_review_active()
-        && \quizaccess_proctoring\local\risk_calculator::factor_enabled('aireviewconfirmed')
+        && \quizaccess_proctoring\local\risk_calculator::factor_enabled_anywhere('aireviewconfirmed')
     ) {
         return 'reachable';
     }
@@ -3647,7 +3648,10 @@ function quizaccess_proctoring_reevaluate_hold_after_event_review(stdClass $revi
 
     try {
         $attemptid = (int)$review->attemptid;
-        if ($attemptid <= 0 || !\quizaccess_proctoring\local\risk_calculator::factor_enabled('aireviewconfirmed')) {
+        if (
+            $attemptid <= 0
+            || !\quizaccess_proctoring\local\risk_calculator::factor_enabled('aireviewconfirmed', (int)$review->quizid)
+        ) {
             return;
         }
         // Only a finished attempt: event reviews are queued during the attempt, so this can run

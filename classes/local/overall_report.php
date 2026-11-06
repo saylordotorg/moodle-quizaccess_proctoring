@@ -841,6 +841,13 @@ final class overall_report {
             'high' => get_string('riskscore:high', 'quizaccess_proctoring') . ' (' . $high . '-' . ($critical - 1) . ')',
             'critical' => get_string('riskscore:critical', 'quizaccess_proctoring') . ' (' . $critical . '+)',
         ];
+        // Each attempt is filtered on its own quiz's levels. Once a proctoring profile moves them,
+        // the site's ranges would misdescribe some of the attempts the filter keeps.
+        if (profile::levels_vary()) {
+            foreach (['low', 'moderate', 'high', 'critical'] as $level) {
+                $labels[$level] = get_string('riskscore:' . $level, 'quizaccess_proctoring');
+            }
+        }
         $options = [];
         foreach ($labels as $value => $label) {
             $options[] = ['value' => $value, 'label' => $label, 'selected' => $value === $selected];
@@ -1505,6 +1512,7 @@ final class overall_report {
         global $DB;
 
         ['high' => $high, 'critical' => $critical] = risk_calculator::get_level_boundaries();
+        $levelsvary = profile::levels_vary();
         $total = 0;
         $backlog = ['critical' => 0, 'high' => 0, 'lower' => 0, 'oldest' => 0, 'expiringsoon' => 0];
         $days = quizaccess_proctoring_get_risk_review_auto_release_days();
@@ -1523,8 +1531,28 @@ final class overall_report {
             );
             $chunktotal = (int)($counts->total ?? 0);
             $total += $chunktotal;
-            $backlog['critical'] += (int)($counts->critical ?? 0);
-            $backlog['high'] += (int)($counts->high ?? 0);
+            if ($levelsvary) {
+                // A profile moves the levels for its quizzes, so band each quiz's holds on its own.
+                $rows = $DB->get_recordset_sql(
+                    "SELECT quizid, riskscore, COUNT(1) AS cnt
+                       FROM {quizaccess_proctoring_risk_holds}
+                      WHERE status = :active{$scopesql}
+                   GROUP BY quizid, riskscore",
+                    $active
+                );
+                foreach ($rows as $row) {
+                    $levels = risk_calculator::get_level_boundaries((int)$row->quizid);
+                    if ((int)$row->riskscore >= $levels['critical']) {
+                        $backlog['critical'] += (int)$row->cnt;
+                    } else if ((int)$row->riskscore >= $levels['high']) {
+                        $backlog['high'] += (int)$row->cnt;
+                    }
+                }
+                $rows->close();
+            } else {
+                $backlog['critical'] += (int)($counts->critical ?? 0);
+                $backlog['high'] += (int)($counts->high ?? 0);
+            }
             if ($chunktotal > 0 && ($backlog['oldest'] === 0 || (int)$counts->oldest < $backlog['oldest'])) {
                 $backlog['oldest'] = (int)$counts->oldest;
             }

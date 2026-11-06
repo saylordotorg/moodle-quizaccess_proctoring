@@ -1261,7 +1261,7 @@ if (
             }
         }
 
-        $boundaries = \quizaccess_proctoring\local\risk_calculator::get_level_boundaries();
+        $boundaries = \quizaccess_proctoring\local\risk_calculator::get_level_boundaries((int)$cmid);
         $zonedefs = [
             ['zone' => 'low', 'from' => 0, 'to' => $boundaries['moderate'],
                 'label' => get_string('riskscore:low', 'quizaccess_proctoring')],
@@ -1511,7 +1511,7 @@ if (
             if (
                 $factorkey === 'phonedetected'
                 && !in_array($factorkey, $scoredkeys, true)
-                && \quizaccess_proctoring\local\risk_calculator::factor_enabled($factorkey)
+                && \quizaccess_proctoring\local\risk_calculator::factor_enabled($factorkey, (int)$cmid)
             ) {
                 // Scoring leaves the phone factor out whenever the site detector is off now, but what
                 // matters is whether the detector ran during this attempt, which coverage records.

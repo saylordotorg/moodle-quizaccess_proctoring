@@ -27,7 +27,8 @@ namespace quizaccess_proctoring\local;
 /**
  * A proctoring profile replaces chosen site settings for the quizzes that use it, so one site can
  * run, say, an "ACE credit" exam with ID verification, a desktop-only rule and a strict risk
- * threshold beside a "Certificate" exam with only the webcam.
+ * threshold beside a "Certificate" exam with only the webcam. A profile can also score the
+ * evidence differently: each risk factor's on/off, points and cap, and the risk level boundaries.
  *
  * Resolution
  * ----------
@@ -51,7 +52,8 @@ final class profile {
     public const MAX_NAME_LENGTH = 100;
 
     /**
-     * The site settings a profile can change, in the order the edit form lists them.
+     * The proctoring settings a profile can change, in the order the edit form lists them. The
+     * risk scoring settings follow them in {@see self::definitions()}, which is the full list.
      *
      * `options` maps each allowed stored value to its label's string id; `range` allows an
      * integer within bounds instead.
@@ -124,8 +126,84 @@ final class profile {
         ],
     ];
 
+    /** @var string Form section of the per-factor risk scoring settings. */
+    public const SECTION_SCORING = 'scoring';
+
+    /** @var string Form section of the risk level boundaries. */
+    public const SECTION_LEVELS = 'levels';
+
+    /** @var string[] Risk level boundary settings, lowest first. */
+    public const LEVEL_SETTINGS = ['risklevelmoderate', 'risklevelhigh', 'risklevelcritical'];
+
     /** @var array<int, array<string, string>> Request cache: quiz id => the settings its profile changes. */
     private static array $quizcache = [];
+
+    /** @var array<int, array<string, string>>|null Request cache: profile id => the settings it changes. */
+    private static ?array $allcache = null;
+
+    /** @var array<string, array>|null Every setting a profile can change, built once. */
+    private static ?array $definitions = null;
+
+    /**
+     * Every site setting a profile can change: {@see self::SETTINGS}, then the risk scoring
+     * settings, so a Certificate profile can score evidence differently from a Degree or ACE one.
+     *
+     * The scoring settings use the site's own config names (`riskfactor_{key}_enabled`, `_points`,
+     * `_cap` for each factor in {@see risk_calculator::FACTOR_DEFAULTS}, and the three risk level
+     * boundaries), so {@see self::config()} resolves them like any other setting. A definition may
+     * carry `labelarg`, a string id passed to its label string, and `section`, the form section
+     * it is shown in; `factor` names the scoring factor it belongs to.
+     *
+     * The score cap stays site-wide on purpose: it decides what a score of "100" means on every
+     * report, and two exams on one report must not be on different scales.
+     *
+     * @return array<string, array> Setting => definition, in the order the edit form lists them.
+     */
+    public static function definitions(): array {
+        if (self::$definitions !== null) {
+            return self::$definitions;
+        }
+        $definitions = self::SETTINGS;
+        $onoff = ['1' => 'profile:on', '0' => 'profile:off'];
+        foreach (array_keys(risk_calculator::FACTOR_DEFAULTS) as $factor) {
+            $common = ['labelarg' => 'riskscore:' . $factor, 'section' => self::SECTION_SCORING, 'factor' => $factor];
+            $definitions['riskfactor_' . $factor . '_enabled'] = $common + [
+                'label' => 'setting:riskfactorenabled',
+                'options' => $onoff,
+            ];
+            $definitions['riskfactor_' . $factor . '_points'] = $common + [
+                'label' => 'setting:riskfactorpoints',
+                'options' => [],
+                'range' => [0, 100],
+            ];
+            $definitions['riskfactor_' . $factor . '_cap'] = $common + [
+                'label' => 'setting:riskfactorcap',
+                'options' => [],
+                'range' => [0, 100],
+            ];
+        }
+        foreach (self::LEVEL_SETTINGS as $name) {
+            $definitions[$name] = [
+                'label' => 'setting:' . $name,
+                'options' => [],
+                'range' => [1, 100],
+                'section' => self::SECTION_LEVELS,
+            ];
+        }
+        return self::$definitions = $definitions;
+    }
+
+    /**
+     * A setting's label, as the edit form and the profile summary show it.
+     *
+     * @param string $name Setting name from {@see self::definitions()}.
+     * @return string Label.
+     */
+    public static function label(string $name): string {
+        $definition = self::definitions()[$name];
+        $arg = isset($definition['labelarg']) ? get_string($definition['labelarg'], self::COMPONENT) : null;
+        return get_string($definition['label'], self::COMPONENT, $arg);
+    }
 
     /**
      * A setting as it applies to one quiz: its profile's value, or the site's.
@@ -135,7 +213,7 @@ final class profile {
      * @return mixed What get_config() would return for it.
      */
     public static function config(int $quizid, string $name) {
-        if ($quizid > 0 && isset(self::SETTINGS[$name])) {
+        if ($quizid > 0 && isset(self::definitions()[$name])) {
             $values = self::values_for_quiz($quizid);
             if (array_key_exists($name, $values)) {
                 return $values[$name];
@@ -197,6 +275,22 @@ final class profile {
     }
 
     /**
+     * The settings every profile changes, for site-wide questions such as "can any quiz score
+     * this factor" or "how high can any score go".
+     *
+     * @return array<int, array<string, string>> Profile id => setting => value.
+     */
+    public static function all_values(): array {
+        if (self::$allcache === null) {
+            self::$allcache = [];
+            foreach (self::all() as $profile) {
+                self::$allcache[(int)$profile->id] = self::decode((string)$profile->settings);
+            }
+        }
+        return self::$allcache;
+    }
+
+    /**
      * Options for the quiz settings form's profile menu.
      *
      * @return array<int, string> Profile id => name, with 0 for the site settings.
@@ -224,6 +318,21 @@ final class profile {
            GROUP BY profileid'
         );
         return array_map('intval', $rows);
+    }
+
+    /**
+     * Whether any profile moves a risk level boundary, so one score can sit in different
+     * levels on different quizzes.
+     *
+     * @return bool True when some profile sets a level.
+     */
+    public static function levels_vary(): bool {
+        foreach (self::all_values() as $values) {
+            if (array_intersect_key($values, array_flip(self::LEVEL_SETTINGS))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -266,11 +375,11 @@ final class profile {
      * site setting" and is dropped.
      *
      * @param array $values Setting => submitted value.
-     * @return array<string, string> Setting => value, in SETTINGS order.
+     * @return array<string, string> Setting => value, in definitions() order.
      */
     public static function clean(array $values): array {
         $clean = [];
-        foreach (self::SETTINGS as $name => $definition) {
+        foreach (self::definitions() as $name => $definition) {
             if (!array_key_exists($name, $values) || $values[$name] === null || trim((string)$values[$name]) === '') {
                 continue;
             }
@@ -366,8 +475,8 @@ final class profile {
     public static function describe(array $values): array {
         $lines = [];
         foreach (self::clean($values) as $name => $value) {
-            $definition = self::SETTINGS[$name];
-            $label = get_string($definition['label'], self::COMPONENT);
+            $definition = self::definitions()[$name];
+            $label = self::label($name);
             if (isset($definition['options'][$value])) {
                 $shown = get_string($definition['options'][$value], self::COMPONENT);
             } else if ($name === 'facestrikes') {
@@ -385,5 +494,6 @@ final class profile {
      */
     public static function reset_cache(): void {
         self::$quizcache = [];
+        self::$allcache = null;
     }
 }

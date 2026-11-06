@@ -42,6 +42,9 @@ namespace quizaccess_proctoring\local;
  * `riskfactor_{key}_points`, `riskfactor_{key}_cap`; see {@see risk_calculator::FACTOR_DEFAULTS}).
  * A disabled factor contributes nothing and is omitted from the risk score details. The values in
  * the canonical table below are the shipped defaults, used whenever no override is configured.
+ * A quiz's proctoring profile can change any of these, and the risk level boundaries, for its own
+ * quizzes ({@see profile::definitions()}), so the functions that read them take the quiz's
+ * course-module id; without one they answer for the site. The score cap stays site-wide.
  *
  * The canonical table below mirrors the factors built in {@see risk_calculator::calculate_attempt()}:
  *
@@ -185,21 +188,76 @@ final class risk_calculator {
      * keep scoring after a monitor is disabled, and overestimating errs on the safe side for
      * consumers such as the auto-release ceiling (a hold is retained rather than released).
      *
+     * A proctoring profile can raise a factor's cap or switch a factor on, so without a quiz the
+     * answer is the highest of the site's maximum and every profile's: a site-wide report filter
+     * or ceiling must not cut off a score that one profile's quizzes can reach.
+     *
+     * @param int $cmid Quiz course-module id, for that quiz's maximum; 0 for any quiz on the site.
      * @return int Maximum achievable score.
      */
-    public static function max_possible_score(): int {
+    public static function max_possible_score(int $cmid = 0): int {
         if (self::score_cap_enabled()) {
             return 100;
         }
 
+        if ($cmid > 0) {
+            return self::max_for(fn(string $name) => self::setting($cmid, $name));
+        }
+        $max = self::max_for(fn(string $name) => get_config('quizaccess_proctoring', $name));
+        foreach (profile::all_values() as $values) {
+            $max = max($max, self::max_for(fn(string $name) => array_key_exists($name, $values)
+                ? $values[$name] : get_config('quizaccess_proctoring', $name)));
+        }
+        return $max;
+    }
+
+    /**
+     * The sum of the enabled factors' caps, reading each setting through a resolver.
+     *
+     * @param callable $setting Setting name => stored value.
+     * @return int Maximum uncapped score.
+     */
+    private static function max_for(callable $setting): int {
         $max = 0;
-        foreach (array_keys(self::FACTOR_DEFAULTS) as $key) {
-            if (self::factor_enabled($key)) {
-                $max += self::factor_cap($key);
+        foreach (self::FACTOR_DEFAULTS as $key => $defaults) {
+            if (self::enabled_value($setting('riskfactor_' . $key . '_enabled'))) {
+                $max += self::number_value($setting('riskfactor_' . $key . '_cap'), $defaults['cap']);
             }
         }
-
         return $max;
+    }
+
+    /**
+     * A scoring setting as it applies to one quiz: its proctoring profile's value, or the site's.
+     *
+     * @param int $cmid Quiz course-module id; 0 reads the site setting.
+     * @param string $name Config name.
+     * @return mixed What get_config() would return for it.
+     */
+    private static function setting(int $cmid, string $name) {
+        return profile::config(self::quiz_for_cm($cmid), $name);
+    }
+
+    /**
+     * The quiz instance behind a course module, looked up once per request.
+     *
+     * Scoring is keyed by course module (the evidence tables' `quizid` column holds it), while
+     * proctoring profiles hang off the quiz instance.
+     *
+     * @param int $cmid Quiz course-module id.
+     * @return int Quiz instance id, 0 when there is none.
+     */
+    private static function quiz_for_cm(int $cmid): int {
+        global $DB;
+
+        static $quizids = [];
+        if ($cmid <= 0) {
+            return 0;
+        }
+        if (!array_key_exists($cmid, $quizids)) {
+            $quizids[$cmid] = (int)$DB->get_field('course_modules', 'instance', ['id' => $cmid]);
+        }
+        return $quizids[$cmid];
     }
 
     /** A no-face run must last at least this many seconds from first to last capture (CPIT-469). */
@@ -362,10 +420,42 @@ final class risk_calculator {
      * Determine whether a scoring factor is enabled (factors default to enabled).
      *
      * @param string $key Factor key from {@see self::FACTOR_DEFAULTS}.
+     * @param int $cmid Quiz course-module id, whose proctoring profile may change it; 0 for the site.
      * @return bool True when the factor should score evidence.
      */
-    public static function factor_enabled(string $key): bool {
-        $value = get_config('quizaccess_proctoring', 'riskfactor_' . $key . '_enabled');
+    public static function factor_enabled(string $key, int $cmid = 0): bool {
+        return self::enabled_value(self::setting($cmid, 'riskfactor_' . $key . '_enabled'));
+    }
+
+    /**
+     * Whether a factor scores anywhere: on the site, or in any proctoring profile.
+     *
+     * For site-wide questions with no quiz to ask about, such as whether the review queue can
+     * ever be reached through a review-only factor.
+     *
+     * @param string $key Factor key from {@see self::FACTOR_DEFAULTS}.
+     * @return bool True when some quiz can score the factor.
+     */
+    public static function factor_enabled_anywhere(string $key): bool {
+        if (self::factor_enabled($key)) {
+            return true;
+        }
+        $name = 'riskfactor_' . $key . '_enabled';
+        foreach (profile::all_values() as $values) {
+            if (array_key_exists($name, $values) && self::enabled_value($values[$name])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether a stored factor switch is on; unset means on.
+     *
+     * @param mixed $value Stored value.
+     * @return bool True when on.
+     */
+    private static function enabled_value($value): bool {
         if ($value === false || $value === null || $value === '') {
             return true;
         }
@@ -377,20 +467,22 @@ final class risk_calculator {
      * Get the configured points-per-event for a scoring factor.
      *
      * @param string $key Factor key from {@see self::FACTOR_DEFAULTS}.
+     * @param int $cmid Quiz course-module id, whose proctoring profile may change it; 0 for the site.
      * @return int Points per event, clamped to 0-100.
      */
-    public static function factor_points(string $key): int {
-        return self::factor_value($key, 'points');
+    public static function factor_points(string $key, int $cmid = 0): int {
+        return self::factor_value($key, 'points', $cmid);
     }
 
     /**
      * Get the configured maximum points (cap) for a scoring factor.
      *
      * @param string $key Factor key from {@see self::FACTOR_DEFAULTS}.
+     * @param int $cmid Quiz course-module id, whose proctoring profile may change it; 0 for the site.
      * @return int Factor cap, clamped to 0-100.
      */
-    public static function factor_cap(string $key): int {
-        return self::factor_value($key, 'cap');
+    public static function factor_cap(string $key, int $cmid = 0): int {
+        return self::factor_value($key, 'cap', $cmid);
     }
 
     /**
@@ -398,11 +490,24 @@ final class risk_calculator {
      *
      * @param string $key Factor key from {@see self::FACTOR_DEFAULTS}.
      * @param string $field Either 'points' or 'cap'.
+     * @param int $cmid Quiz course-module id; 0 for the site.
      * @return int Configured value clamped to 0-100, or the default when unset/invalid.
      */
-    private static function factor_value(string $key, string $field): int {
-        $default = self::FACTOR_DEFAULTS[$key][$field] ?? 0;
-        $value = get_config('quizaccess_proctoring', 'riskfactor_' . $key . '_' . $field);
+    private static function factor_value(string $key, string $field, int $cmid = 0): int {
+        return self::number_value(
+            self::setting($cmid, 'riskfactor_' . $key . '_' . $field),
+            self::FACTOR_DEFAULTS[$key][$field] ?? 0
+        );
+    }
+
+    /**
+     * A stored points or cap value, clamped to 0-100, or the default when unset or invalid.
+     *
+     * @param mixed $value Stored value.
+     * @param int $default Shipped default.
+     * @return int Value.
+     */
+    private static function number_value($value, int $default): int {
         if ($value === false || $value === null || $value === '' || !is_numeric($value)) {
             return $default;
         }
@@ -415,18 +520,19 @@ final class risk_calculator {
      *
      * @param string $key Factor key from {@see self::FACTOR_DEFAULTS}.
      * @param int $count Evidence count.
+     * @param int $cmid Quiz course-module id, whose proctoring profile may score it; 0 for the site.
      * @return array|null Factor data, or null when the factor is disabled or unknown.
      */
-    public static function build_configured_factor(string $key, int $count): ?array {
-        if (!isset(self::FACTOR_DEFAULTS[$key]) || !self::factor_enabled($key)) {
+    public static function build_configured_factor(string $key, int $count, int $cmid = 0): ?array {
+        if (!isset(self::FACTOR_DEFAULTS[$key]) || !self::factor_enabled($key, $cmid)) {
             return null;
         }
 
         $factor = self::build_factor(
             get_string('riskscore:' . $key, 'quizaccess_proctoring'),
             $count,
-            self::factor_points($key),
-            self::factor_cap($key)
+            self::factor_points($key, $cmid),
+            self::factor_cap($key, $cmid)
         );
         $factor['key'] = $key;
 
@@ -631,10 +737,11 @@ final class risk_calculator {
      *
      * @param string $name Config name (risklevelmoderate, risklevelhigh, risklevelcritical).
      * @param int $default Default boundary score.
+     * @param int $cmid Quiz course-module id; 0 for the site.
      * @return int Boundary clamped to 1-100.
      */
-    private static function level_boundary(string $name, int $default): int {
-        $value = get_config('quizaccess_proctoring', $name);
+    private static function level_boundary(string $name, int $default, int $cmid = 0): int {
+        $value = self::setting($cmid, $name);
         if ($value === false || $value === null || $value === '' || !is_numeric($value)) {
             return $default;
         }
@@ -647,13 +754,15 @@ final class risk_calculator {
      *
      * Boundaries are site-configurable (defaults: Moderate 20, High 50, Critical 80) and are
      * clamped so they never invert: High never exceeds Critical and Moderate never exceeds High.
+     * A quiz's proctoring profile can move them for that quiz.
      *
+     * @param int $cmid Quiz course-module id; 0 for the site's boundaries.
      * @return array ['moderate' => int, 'high' => int, 'critical' => int]
      */
-    public static function get_level_boundaries(): array {
-        $critical = self::level_boundary('risklevelcritical', 80);
-        $high = min(self::level_boundary('risklevelhigh', 50), $critical);
-        $moderate = min(self::level_boundary('risklevelmoderate', 20), $high);
+    public static function get_level_boundaries(int $cmid = 0): array {
+        $critical = self::level_boundary('risklevelcritical', 80, $cmid);
+        $high = min(self::level_boundary('risklevelhigh', 50, $cmid), $critical);
+        $moderate = min(self::level_boundary('risklevelmoderate', 20, $cmid), $high);
 
         return ['moderate' => $moderate, 'high' => $high, 'critical' => $critical];
     }
@@ -662,10 +771,11 @@ final class risk_calculator {
      * Get risk-level presentation details for a score.
      *
      * @param int $score Score from 0 to 100.
+     * @param int $cmid Quiz course-module id, whose proctoring profile may move the levels; 0 for the site.
      * @return array Risk-level template data.
      */
-    public static function get_level(int $score): array {
-        ['moderate' => $moderate, 'high' => $high, 'critical' => $critical] = self::get_level_boundaries();
+    public static function get_level(int $score, int $cmid = 0): array {
+        ['moderate' => $moderate, 'high' => $high, 'critical' => $critical] = self::get_level_boundaries($cmid);
 
         if ($score >= $critical) {
             return [
@@ -728,14 +838,7 @@ final class risk_calculator {
      * @return bool True when the phone monitor is on.
      */
     private static function detects_phone(int $cmid): bool {
-        global $DB;
-
-        // One lookup per quiz for a whole report, not per row.
-        static $quizids = [];
-        if ($cmid > 0 && !array_key_exists($cmid, $quizids)) {
-            $quizids[$cmid] = (int)$DB->get_field('course_modules', 'instance', ['id' => $cmid]);
-        }
-        return (int)profile::config($quizids[$cmid] ?? 0, 'detectphone') === 1;
+        return (int)self::setting($cmid, 'detectphone') === 1;
     }
 
     /**
@@ -889,7 +992,7 @@ final class risk_calculator {
         // Evidence counts are only queried for enabled factors; a disabled factor scores nothing,
         // so its count query would be wasted work.
         $webcamcount = 0;
-        if (self::factor_enabled('webcammissing')) {
+        if (self::factor_enabled('webcammissing', $cmid)) {
             $webcamcount = $DB->count_records_select(
                 'quizaccess_proctoring_logs',
                 $logwhere . " AND COALESCE(webcampicture, '') <> ''",
@@ -898,7 +1001,7 @@ final class risk_calculator {
         }
 
         $facemismatchcount = 0;
-        if (self::factor_enabled('facemismatch')) {
+        if (self::factor_enabled('facemismatch', $cmid)) {
             $facemismatchcount = $DB->count_records_select(
                 'quizaccess_proctoring_logs',
                 $logwhere . ' AND awsflag = :riskawschecked AND awsscore < :riskthreshold',
@@ -911,7 +1014,7 @@ final class risk_calculator {
 
         $nofaceruncount = 0;
         $nofaceeventcount = 0;
-        if (self::factor_enabled('noface')) {
+        if (self::factor_enabled('noface', $cmid)) {
             $nofaceruncount = array_sum(self::no_face_run_counts($faceimagewhere, $faceimageparams));
             $nofaceeventcount = self::count_events(
                 $eventwhere,
@@ -921,59 +1024,59 @@ final class risk_calculator {
         }
 
         $openresource = (bool)self::open_resource_quizzes([$cmid]);
-        $tabactivitycount = self::factor_enabled('tabactivity') && !$openresource ? self::count_events(
+        $tabactivitycount = self::factor_enabled('tabactivity', $cmid) && !$openresource ? self::count_events(
             $eventwhere,
             $eventparams,
             ['focus_lost', 'tab_hidden', 'page_exit']
         ) : 0;
-        $clipboardcount = self::factor_enabled('clipboard') ? self::count_events(
+        $clipboardcount = self::factor_enabled('clipboard', $cmid) ? self::count_events(
             $eventwhere,
             $eventparams,
             ['clipboard_copy', 'clipboard_cut', 'clipboard_paste', 'contextmenu']
         ) : 0;
-        $screenissuecount = self::factor_enabled('screenshare') ? self::count_events(
+        $screenissuecount = self::factor_enabled('screenshare', $cmid) ? self::count_events(
             $eventwhere,
             $eventparams,
             ['screen_marker_missing', 'screen_share_stopped']
         ) : 0;
-        $multimonitorcount = self::factor_enabled('multimonitor') ? self::count_events(
+        $multimonitorcount = self::factor_enabled('multimonitor', $cmid) ? self::count_events(
             $eventwhere,
             $eventparams,
             ['multiple_monitors_detected']
         ) : 0;
-        $aitoolcount = self::factor_enabled('aitool') ? self::count_events(
+        $aitoolcount = self::factor_enabled('aitool', $cmid) ? self::count_events(
             $eventwhere,
             $eventparams,
             ['possible_ai_tool']
         ) : 0;
-        $aitoolscreenshotcount = self::factor_enabled('aitoolscreenshot') ? self::count_events(
+        $aitoolscreenshotcount = self::factor_enabled('aitoolscreenshot', $cmid) ? self::count_events(
             $eventwhere,
             $eventparams,
             ['possible_ai_tool'],
             true
         ) : 0;
-        $aireviewconfirmedcount = self::factor_enabled('aireviewconfirmed')
+        $aireviewconfirmedcount = self::factor_enabled('aireviewconfirmed', $cmid)
             ? self::count_confirmed_ai_event_reviews($courseid, $cmid, $studentid, $attemptid) : 0;
         // The F12 count also feeds the other-shortcuts subtraction below, so it is needed whenever
         // either shortcut factor is enabled. Disabling the F12 factor does not move F12 presses
         // into the other-shortcuts factor: each factor scores its own evidence or nothing.
-        $f12count = (self::factor_enabled('f12') || self::factor_enabled('shortcut'))
+        $f12count = (self::factor_enabled('f12', $cmid) || self::factor_enabled('shortcut', $cmid))
             ? self::count_shortcuts($eventwhere, $eventparams, 'F12') : 0;
         // Non-F12 monitored shortcuts (Alt+Tab, Ctrl+T/N/W/R/A/L, Ctrl+Shift+I/J/C, Ctrl+C/X/V).
         // overall_report counts every 'shortcut' event as a violation, but only F12 was scored; the
         // remaining shortcut rows are scored here. F12 rows are excluded so no row is scored twice.
         // On an open-resource exam the shortcuts that leave the page are not scored either.
-        $othershortcutcount = self::factor_enabled('shortcut') ? max(
+        $othershortcutcount = self::factor_enabled('shortcut', $cmid) ? max(
             0,
             self::count_events($eventwhere, $eventparams, ['shortcut']) - $f12count
                 - ($openresource ? self::count_navigation_shortcuts($eventwhere, $eventparams) : 0)
         ) : 0;
-        $multiplefacescount = self::factor_enabled('multiplefaces') ? self::count_events(
+        $multiplefacescount = self::factor_enabled('multiplefaces', $cmid) ? self::count_events(
             $eventwhere,
             $eventparams,
             ['multiple_faces_detected']
         ) : 0;
-        $phonedetectedcount = self::factor_enabled('phonedetected') ? self::count_events(
+        $phonedetectedcount = self::factor_enabled('phonedetected', $cmid) ? self::count_events(
             $eventwhere,
             $eventparams,
             ['phone_detected']
@@ -1094,14 +1197,14 @@ final class risk_calculator {
 
         $factors = [];
         foreach ($factorcounts as $factorkey => $factorcount) {
-            $factor = self::build_configured_factor($factorkey, $factorcount);
+            $factor = self::build_configured_factor($factorkey, $factorcount, $cmid);
             if ($factor !== null) {
                 $factors[] = $factor;
             }
         }
 
         if ($speedenabled && $durationseconds > 0 && $questioncount > 0) {
-            $factor = self::build_configured_factor('speed', $speedcount);
+            $factor = self::build_configured_factor('speed', $speedcount, $cmid);
             if ($factor !== null) {
                 $factors[] = $factor;
             }
@@ -1127,7 +1230,7 @@ final class risk_calculator {
         if (self::score_cap_enabled()) {
             $score = min(100, $score);
         }
-        $level = self::get_level($score);
+        $level = self::get_level($score, $cmid);
 
         $secondsperquestion = $questioncount > 0 ? (int)round($durationseconds / $questioncount) : 0;
         $durationformatted = $durationseconds > 0 ? format_time($durationseconds) : '';
@@ -1308,7 +1411,20 @@ final class risk_calculator {
             'phonedetected' => ['phonedetected', ['phone_detected']],
         ];
 
-        $needf12 = self::factor_enabled('f12') || self::factor_enabled('shortcut');
+        // A quiz's proctoring profile can switch factors on or off for that quiz, so each count is
+        // gated per attempt on its own quiz, and a query is skipped only when no quiz here needs it.
+        $cmids = array_values(array_unique(array_map(fn($request) => (int)$request['cmid'], $requests)));
+        $anyenabled = function (string $factor) use ($cmids): bool {
+            foreach ($cmids as $cmid) {
+                if (self::factor_enabled($factor, $cmid)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        $enabledfor = fn(string $factor, string $tuple): bool => self::factor_enabled($factor, (int)explode(':', $tuple)[1]);
+
+        $needf12 = $anyenabled('f12') || $anyenabled('shortcut');
 
         foreach (array_chunk($tuples, self::BULK_CHUNK, true) as $chunk) {
             [$insql, $params] = $DB->get_in_or_equal(array_values($chunk), SQL_PARAMS_NAMED, 'att');
@@ -1346,14 +1462,14 @@ final class risk_calculator {
             foreach ($eventcounts as $tuple => $bytype) {
                 $openquiz = isset($openquizzes[(int)explode(':', $tuple)[1]]);
                 foreach ($eventfactors as $countkey => [$factorkey, $types]) {
-                    if (!self::factor_enabled($factorkey) || ($factorkey === 'tabactivity' && $openquiz)) {
+                    if (!$enabledfor($factorkey, $tuple) || ($factorkey === 'tabactivity' && $openquiz)) {
                         continue;
                     }
                     foreach ($types as $type) {
                         $counts[$tuple][$countkey] += $bytype[$type][0] ?? 0;
                     }
                 }
-                if (self::factor_enabled('aitoolscreenshot')) {
+                if ($enabledfor('aitoolscreenshot', $tuple)) {
                     $counts[$tuple]['aitoolscreenshot'] += $bytype['possible_ai_tool'][1] ?? 0;
                 }
             }
@@ -1381,8 +1497,11 @@ final class risk_calculator {
                 }
                 $shortcutrows->close();
 
-                if (self::factor_enabled('shortcut')) {
+                if ($anyenabled('shortcut')) {
                     foreach ($shortcuttuples as $tuple => $unused) {
+                        if (!$enabledfor('shortcut', $tuple)) {
+                            continue;
+                        }
                         $total = $eventcounts[$tuple]['shortcut'][0] ?? 0;
                         $counts[$tuple]['othershortcut'] = max(0, $total - $counts[$tuple]['f12'] - ($navigation[$tuple] ?? 0));
                     }
@@ -1391,7 +1510,7 @@ final class risk_calculator {
 
             // 2b. Completed event-level AI reviews that confirmed the capture (CPIT-483), the
             //     same terminal, affirmative verdict the single-attempt path counts.
-            if (self::factor_enabled('aireviewconfirmed')) {
+            if ($anyenabled('aireviewconfirmed')) {
                 [$webcamsql, $webcamparams] = $DB->get_in_or_equal(
                     self::WEBCAM_FRAME_EVENTS,
                     SQL_PARAMS_NAMED,
@@ -1414,7 +1533,7 @@ final class risk_calculator {
                 );
                 foreach ($airows as $row) {
                     $tuple = $row->courseid . ':' . $row->quizid . ':' . $row->userid . ':' . $row->attemptid;
-                    if (isset($counts[$tuple])) {
+                    if (isset($counts[$tuple]) && $enabledfor('aireviewconfirmed', $tuple)) {
                         $counts[$tuple]['aireviewconfirmed'] = (int)$row->cnt;
                     }
                 }
@@ -1436,19 +1555,19 @@ final class risk_calculator {
                 if (!isset($counts[$tuple])) {
                     continue;
                 }
-                if (self::factor_enabled('webcammissing')) {
+                if ($enabledfor('webcammissing', $tuple)) {
                     $counts[$tuple]['webcam'] = (int)$row->webcam;
                 }
-                if (self::factor_enabled('facemismatch')) {
+                if ($enabledfor('facemismatch', $tuple)) {
                     $counts[$tuple]['facemismatch'] = (int)$row->facemismatch;
                 }
             }
             $logrows->close();
 
             // 4. Captures with no face, grouped into sustained runs.
-            if (self::factor_enabled('noface')) {
+            if ($anyenabled('noface')) {
                 foreach (self::no_face_run_counts("l.deletionprogress = 0 AND l.status {$insql}", $params) as $tuple => $runs) {
-                    if (isset($counts[$tuple])) {
+                    if (isset($counts[$tuple]) && $enabledfor('noface', $tuple)) {
                         $counts[$tuple]['nofaceruns'] = $runs;
                     }
                 }

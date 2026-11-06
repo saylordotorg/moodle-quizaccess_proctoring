@@ -1,6 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.22.0 — 2026-11-06
+- **Proctoring profiles can score risk their own way.** A profile's edit page has two new sections, *Risk factor scoring* and *Risk levels*. For each risk factor a profile can switch it on or off and set its points per event and its maximum; it can also set where Moderate, High and Critical start. So a Certificate profile can score the same evidence more lightly than a Degree or ACE credit profile, on top of the high-risk threshold and action profiles could already set. Blank fields follow the site's Risk factor scoring page, whose value each field shows. The score cap stays site-wide, so every report keeps one scale.
+  - Scores, levels, the attempt report's risk meter and "not monitored" list, hold decisions after submission and after an event AI review, and the Attempts report's band filter all use the attempt's own quiz's profile.
+  - Site-wide questions take the profiles into account: the highest reachable score (report filters and the auto-release ceiling) is the highest of the site's and every profile's, and a review-only factor switched on in any profile keeps the review queue reachable.
+  - When a profile moves the risk levels, the band filter stops printing the site's score ranges, and the review backlog bands each hold by its own quiz's levels.
+  - The profile form refuses levels that would fall (for example Critical below High), counting the site's value for any level left blank.
+
 # v1.21.0 — 2026-10-30
 - **Proctoring profiles: different rules for different kinds of exam.** Site administrators define named profiles under Saylor Proctored Quiz > Proctoring profiles, and each proctored quiz picks one in its settings ("Proctoring profile"). A profile replaces only the site settings it names, so an "ACE credit" profile can require photo ID verification, block phones and tablets (desktop or laptop only), hold attempts at a lower risk score and end an attempt after fewer face strikes, while a "Certificate" profile requires only the webcam with a lighter threshold. Settings resolve site → profile → the quiz's own setting → per-student override; a quiz's "Use the profile or site default" choices follow its profile. Profiles can change: webcam face check, ID verification, entire-screen share, phone/tablet behaviour, CAPTCHA, multiple-monitor detection, phone detection, face strikes, the high-risk action and the high-risk threshold. Deleting a profile returns its quizzes to the site settings. Quizzes without a profile behave exactly as before.
   - ID verification can now differ per quiz (through its profile); it was a site-only setting.
