@@ -526,6 +526,16 @@ define([], function() {
             bands.appendChild(bandCard);
         });
 
+        // Pressing Enter in a field submits the form while the field still has focus, and a
+        // browser need not fire "change" first. Put the fields in order on submit as well, so
+        // what is posted is always what the preview showed.
+        const anyInput = inputs.risklevelmoderate || inputs.risklevelhigh || inputs.risklevelcritical;
+        if (anyInput && anyInput.form) {
+            anyInput.form.addEventListener('submit', function() {
+                refresh();
+            }, true);
+        }
+
         return {element: card, refresh: refresh};
     };
 
