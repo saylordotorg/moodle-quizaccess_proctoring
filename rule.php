@@ -950,6 +950,36 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     }
 
     /**
+     * The multi-monitor policy the attempt page runs, after the student's override (CPIT-480).
+     *
+     * The pre-check honoured a "Single-monitor check" override, but the attempt page went on
+     * using the site (or profile) mode, so a waived student was still warned, blurred and
+     * logged for a second monitor during the exam.
+     *
+     * @param string $sitemode The quiz's mode without overrides, one of the MULTI_MONITOR_* modes.
+     * @param bool $siteblur Whether the site blurs the quiz while extra monitors are connected.
+     * @param int $overridestate The winning override state, an override_resolver::STATE_* value.
+     * @return array ['mode' => string, 'blur' => bool]
+     */
+    private static function attempt_monitor_policy(string $sitemode, bool $siteblur, int $overridestate): array {
+        $resolver = '\quizaccess_proctoring\local\override_resolver';
+        if ($overridestate === $resolver::STATE_DISABLED) {
+            // Waived: nothing watches for extra monitors, the blur included.
+            return ['mode' => self::MULTI_MONITOR_OFF, 'blur' => false];
+        }
+        $mode = $sitemode;
+        if ($overridestate === $resolver::STATE_ENABLED && $mode === self::MULTI_MONITOR_OFF) {
+            // Forced on where the site has it off: the same enforceable mode the pre-check uses.
+            $mode = self::MULTI_MONITOR_BLOCK;
+        }
+        // Log and Warn are explicit "allow extra monitors" policies, so they win
+        // over the blur checkbox: the blur enforcement only runs when the mode is
+        // Block (belt and braces) or Off (blur as the sole enforcement).
+        $blur = $siteblur && !in_array($mode, [self::MULTI_MONITOR_LOG, self::MULTI_MONITOR_WARN], true);
+        return ['mode' => $mode, 'blur' => $blur];
+    }
+
+    /**
      * Determine whether students must accept the pre-quiz integrity statement.
      *
      * @return bool True if the integrity statement checkbox is required.
@@ -2627,18 +2657,30 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
             $record->captureviolationdesktop = $this->should_capture_violation_desktop() ? 1 : 0;
             $record->coveragescreens = !empty($record->captureviolationdesktop) &&
                 (int)get_config('quizaccess_proctoring', 'monitoringcoveragescreens') === 1 ? 1 : 0;
-            $record->multimonitormode = self::multi_monitor_mode($this->quizid());
+            // Like phone detection below, this is resolved live: an override granted mid-course
+            // takes effect on the student's next attempt page load.
+            $monitorresolver = '\quizaccess_proctoring\local\override_resolver';
+            $monitorpolicy = self::attempt_monitor_policy(
+                self::multi_monitor_mode($this->quizid()),
+                self::blur_quiz_with_multiple_monitors(),
+                $monitorresolver::pick_winner(
+                    $monitorresolver::applicable_overrides(
+                        (int)$COURSE->id,
+                        (int)$contextquiz->instance,
+                        (int)$USER->id,
+                        time()
+                    ),
+                    $monitorresolver::REQ_MULTIMONITOR
+                )
+            );
+            $record->multimonitormode = $monitorpolicy['mode'];
             // While the student is away from the quiz, the shared screen is captured every so often,
             // up to a limit per absence, so a long absence is not one frame of evidence (CPIT-471).
             $awayinterval = (int)(get_config('quizaccess_proctoring', 'awaycaptureinterval') ?: 15);
             $record->awaycaptureinterval = max(5, min(120, $awayinterval));
             $awaymax = get_config('quizaccess_proctoring', 'awaycapturemax');
             $record->awaycapturemax = max(0, min(30, $awaymax === false || $awaymax === '' ? 10 : (int)$awaymax));
-            // Log and Warn are explicit "allow extra monitors" policies, so they win
-            // over the blur checkbox: the blur enforcement only runs when the mode is
-            // Block (belt and braces) or Off (blur as the sole enforcement).
-            $record->blurquizwithmultiplemonitors = (self::blur_quiz_with_multiple_monitors() &&
-                !in_array($record->multimonitormode, [self::MULTI_MONITOR_LOG, self::MULTI_MONITOR_WARN], true)) ? 1 : 0;
+            $record->blurquizwithmultiplemonitors = $monitorpolicy['blur'] ? 1 : 0;
             $record->blurquizwithoutface = (int)(get_config('quizaccess_proctoring', 'blurquizwithoutface') ?? 0);
             $faceblurminscore = (float)(get_config('quizaccess_proctoring', 'faceblurminscore') ?: 0.30);
             $record->faceblurminscore = max(0.10, min(0.95, $faceblurminscore));
