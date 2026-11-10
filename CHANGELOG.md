@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.22.1 — 2026-11-10
+- **Risk level labels can be edited again on the Risk factor scoring page.** Typing a new "starts at" value for High or Critical was corrected on every keystroke: with Moderate at 40, the first digit of "70" was replaced by 40 and the next digit made it 400, which became 100 and pushed Critical to 100 with it. The colour bar and ranges still follow as you type, but the fields are only put back in order (High not below Moderate, Critical not below High) when you leave the field or press Enter.
+
 # v1.22.0 — 2026-11-06
 - **Proctoring profiles can score risk their own way.** A profile's edit page has two new sections, *Risk factor scoring* and *Risk levels*. For each risk factor a profile can switch it on or off and set its points per event and its maximum; it can also set where Moderate, High and Critical start. So a Certificate profile can score the same evidence more lightly than a Degree or ACE credit profile, on top of the high-risk threshold and action profiles could already set. Blank fields follow the site's Risk factor scoring page, whose value each field shows. The score cap stays site-wide, so every report keeps one scale.
   - Scores, levels, the attempt report's risk meter and "not monitored" list, hold decisions after submission and after an event AI review, and the Attempts report's band filter all use the attempt's own quiz's profile.
