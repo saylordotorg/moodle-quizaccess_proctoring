@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.22.3 — 2026-11-10
+- **The webcam sees the whole width of a computer's camera (CPIT-510, Student Affairs).** During the pre-check face photo and the exam, the plugin asked every camera for a portrait picture (960x1280). A laptop or desktop webcam is landscape, so the browser cut the picture down to its middle and dropped the left and right of the view, about half of it on a 16:9 camera. Computers are now asked for a landscape picture (1280x720), so the saved photos, the face checks and phone detection all get the camera's full width; phones and tablets still use portrait. The round preview on the exam page shows the middle of that picture, and the saved photos in the reports show all of it.
+- **"Width of the webcam image" says what it does.** The setting is the width each webcam photo is saved at; it never changed how much the camera sees or the size of the preview, which is why changing it showed no difference on the exam page. It is renamed "Width of each saved webcam photo (pixels)" and its description says so. A landscape photo is saved at least 480 pixels wide (a portrait one at least 240, as before), so a low setting such as the default 230 no longer produces a strip too short to check a face in.
+
 # v1.22.2 — 2026-11-10
 - **A "Single-monitor check" override now applies during the exam, not only at the pre-check (CPIT-480, Student Affairs).** With the override set to Disabled, the pre-check let the student through, but the attempt page still used the site (or profile) setting, so a second monitor was still warned about, blurred and logged against the student in Chrome and Edge. The attempt page now reads the student's override on each page load: Disabled switches off the detection and the blur, and the report lists extra monitors as not monitored for that attempt; Enabled turns the check on (as Block) where the site has it off.
 

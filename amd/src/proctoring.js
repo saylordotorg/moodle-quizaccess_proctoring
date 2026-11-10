@@ -190,16 +190,45 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
         let firstcalldelay = 3000; // 3 seconds after the page load.
         let takepicturedelay = 30000; // 30 seconds.
 
+        // A computer's webcam is landscape. Asking it for a portrait picture makes the browser cut
+        // the picture down to its middle, which throws away the left and right of what the camera
+        // sees: the part of the desk where a phone or a second person shows up (CPIT-510). Only a
+        // phone or tablet, held upright, is asked for portrait.
         const getUserCameraConstraints = function() {
+            if (isPhoneOrTablet()) {
+                return {
+                    video: {
+                        facingMode: 'user',
+                        width: {ideal: 960},
+                        height: {ideal: 1280},
+                        aspectRatio: {ideal: 0.75},
+                    },
+                    audio: false,
+                };
+            }
             return {
                 video: {
                     facingMode: 'user',
-                    width: {ideal: 960},
-                    height: {ideal: 1280},
-                    aspectRatio: {ideal: 0.75},
+                    width: {ideal: 1280},
+                    height: {ideal: 720},
                 },
                 audio: false,
             };
+        };
+
+        /**
+         * How wide a webcam photo is saved, in pixels.
+         *
+         * The site setting is the width. A landscape picture that narrow would be very short, with
+         * a face too small to check, so it is saved at least 480 wide (a portrait one at least 240).
+         *
+         * @param {(number|string)} configured The "width of the webcam image" setting.
+         * @param {HTMLVideoElement} video The playing webcam video.
+         * @returns {number}
+         */
+        const captureWidthFor = function(configured, video) {
+            const landscape = !!video && video.videoWidth > video.videoHeight;
+            return Math.max(landscape ? 480 : 240, parseInt(configured, 10) || 480);
         };
 
         const requestUserCamera = function() {
@@ -2987,7 +3016,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                     });
                 }
 
-                const width = Math.max(240, parseInt(props.image_width, 10) || 480);
+                let width = captureWidthFor(props.image_width, null);
                 let height = 0; // This will be computed based on the input stream.
                 let streaming = false;
                 let data = null;
@@ -3671,6 +3700,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 if (video) {
                     video.addEventListener('canplay', function() {
                         if (!streaming) {
+                            width = captureWidthFor(props.image_width, video);
                             height = video.videoHeight / (video.videoWidth / width);
                             // Firefox currently has a bug where the height can't be read from.
                             // The video, so we will make assumptions if this happens.
@@ -3773,7 +3803,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 let canvas = null;
                 let photo = null;
                 let data = null;
-                const width = Math.max(240, parseInt(props.image_width, 10) || 480);
+                let width = captureWidthFor(props.image_width, null);
 
                 /**
                  * Startup
@@ -3791,6 +3821,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
 
                         video.addEventListener('canplay', function() {
                             if (!streaming) {
+                                width = captureWidthFor(props.image_width, video);
                                 height = video.videoHeight / (video.videoWidth / width);
                                 // Firefox currently has a bug where the height can't be read from.
                                 // The video, so we will make assumptions if this happens.
