@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.22.2 — 2026-11-10
+- **A "Single-monitor check" override now applies during the exam, not only at the pre-check (CPIT-480, Student Affairs).** With the override set to Disabled, the pre-check let the student through, but the attempt page still used the site (or profile) setting, so a second monitor was still warned about, blurred and logged against the student in Chrome and Edge. The attempt page now reads the student's override on each page load: Disabled switches off the detection and the blur, and the report lists extra monitors as not monitored for that attempt; Enabled turns the check on (as Block) where the site has it off.
+
 # v1.22.1 — 2026-11-10
 - **Risk level labels can be edited again on the Risk factor scoring page.** Typing a new "starts at" value for High or Critical was corrected on every keystroke: with Moderate at 40, the first digit of "70" was replaced by 40 and the next digit made it 400, which became 100 and pushed Critical to 100 with it. The colour bar and ranges still follow as you type, but the fields are only put back in order (High not below Moderate, Critical not below High) when you leave the field or press Enter.
 
