@@ -464,7 +464,7 @@ define([], function() {
             return clampInt(inputs[key] ? inputs[key].value : fallback, 1, 100);
         };
 
-        const refresh = function() {
+        const refresh = function(event) {
             const mod = value('risklevelmoderate', 20);
             let high = value('risklevelhigh', 50);
             let crit = value('risklevelcritical', 80);
@@ -473,11 +473,17 @@ define([], function() {
 
             // Persist the non-inverting order back into the real inputs so what is saved matches
             // what is shown (the backend also clamps on read, but this keeps stored data clean).
-            if (inputs.risklevelhigh && inputs.risklevelhigh.value !== String(high)) {
-                inputs.risklevelhigh.value = high;
-            }
-            if (inputs.risklevelcritical && inputs.risklevelcritical.value !== String(crit)) {
-                inputs.risklevelcritical.value = crit;
+            // Never while the admin is still typing: rewriting a field on each keystroke turns a
+            // half-typed "7" into the lower bound, and the next digit is appended to that, so the
+            // field jumps to 100 and drags the bounds above it along. Only the read-outs follow
+            // live; the fields are normalised once the edit is committed (blur or Enter).
+            if (!event || event.type !== 'input') {
+                const corrected = {risklevelmoderate: mod, risklevelhigh: high, risklevelcritical: crit};
+                Object.keys(corrected).forEach(function(key) {
+                    if (inputs[key] && inputs[key].value !== String(corrected[key])) {
+                        inputs[key].value = corrected[key];
+                    }
+                });
             }
 
             gradient.style.background = 'linear-gradient(to right, ' + LOWCOLOR + ' 0%, ' + LOWCOLOR + ' ' + mod + '%, '
