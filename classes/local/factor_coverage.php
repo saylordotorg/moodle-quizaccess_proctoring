@@ -81,6 +81,7 @@ final class factor_coverage {
     private const BROWSER_FACTOR_MONITORS = [
         'aitool' => ['activity'],
         'aitoolscreenshot' => ['activity', 'screen'],
+        'automation' => ['activity'],
         'clipboard' => ['clipboard'],
         'tabactivity' => ['activity'],
         'f12' => ['activity'],

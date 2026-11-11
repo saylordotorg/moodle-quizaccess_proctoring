@@ -415,6 +415,8 @@ class quizaccess_proctoring_external extends external_api {
             'mouse_returned_window',
             'shortcut',
             'possible_ai_tool',
+            // A sign that software is operating the quiz page: scored, review-only.
+            'automation_signal',
             'page_exit',
             'screen_marker_missing',
             'screen_share_stopped',

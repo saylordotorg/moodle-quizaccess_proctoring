@@ -47,7 +47,7 @@ final class overall_report {
         'focus_lost', 'tab_hidden', 'page_exit',
         'clipboard_copy', 'clipboard_cut', 'clipboard_paste', 'contextmenu',
         'screen_marker_missing', 'screen_share_stopped',
-        'multiple_monitors_detected', 'possible_ai_tool', 'shortcut',
+        'multiple_monitors_detected', 'possible_ai_tool', 'automation_signal', 'shortcut',
         'multiple_faces_detected',
         'face_missing', 'no_face_detected', 'phone_detected',
     ];

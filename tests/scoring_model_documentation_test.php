@@ -88,6 +88,7 @@ final class scoring_model_documentation_test extends advanced_testcase {
             ['Multiple monitors', 25],
             ['Possible AI tool', 30],
             ['AI tool w/ screenshot', 30],
+            ['Automation signs', 45],
             ['Clipboard/context menu', 24],
             ['Tab/focus activity', 20],
             ['F12', 15],

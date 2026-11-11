@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.23.0 — 2026-11-11
+- **Signs that software, not the student, is operating the exam page.** An AI browser or agent can read a quiz and answer it by driving the page. The exam page now watches for the traces that leaves and logs each as a "Sign of software operating the exam page" event, which says which sign was seen:
+  - a click or key press on the answer form that a script generated, rather than a mouse, keyboard or touch screen;
+  - an answer that changed with no key press, click or touch just before it (choice buttons, checkboxes and typed text; a dropdown only when the last press was not on it, since choosing from its list can take any length of time);
+  - a mouse pointer that jumped from one click to a far-away next click without moving across the page;
+  - a browser that reports it is controlled by automation software;
+  - use of a hidden control beside the answer form that people cannot see, tab to or hear in a screen reader, and that only software reading the page can find.
+- **New risk factor: "Signs of software operating the exam page"** (AI tools & copying group; 15 points per event, 45 at most, adjustable per site and per proctoring profile). Each kind of sign is logged at most once per quiz page. Voice control, switch access and remote-desktop tools can leave the same signs, so the factor is review-only: it can hold an attempt for a reviewer but never fails one automatically. When desktop capture is on, the event carries a capture of the screen at that moment.
+- It runs as part of "Monitor browser activity", with no new setting; with that off, reports list the factor as not monitored. Only which kind of sign was seen is stored, never what the student typed or chose, and the student privacy notice's browser-activity line now says so.
+- This raises the cost of using an agent and gives reviewers something to act on; it does not make one impossible. An agent that moves the pointer like a hand, or works from another device, leaves none of these signs. A lockdown browser such as Safe Exam Browser is the control that keeps in-browser agents out.
+
 # v1.22.3 — 2026-11-10
 - **The webcam sees the whole width of a computer's camera (CPIT-510, Student Affairs).** During the pre-check face photo and the exam, the plugin asked every camera for a portrait picture (960x1280). A laptop or desktop webcam is landscape, so the browser cut the picture down to its middle and dropped the left and right of the view, about half of it on a 16:9 camera. Computers are now asked for a landscape picture (1280x720), so the saved photos, the face checks and phone detection all get the camera's full width; phones and tablets still use portrait. The round preview on the exam page shows the middle of that picture, and the saved photos in the reports show all of it.
 - **"Width of the webcam image" says what it does.** The setting is the width each webcam photo is saved at; it never changed how much the camera sees or the size of the preview, which is why changing it showed no difference on the exam page. It is renamed "Width of each saved webcam photo (pixels)" and its description says so. A landscape photo is saved at least 480 pixels wide (a portrait one at least 240, as before), so a low setting such as the default 230 no longer produces a strip too short to check a face in.
