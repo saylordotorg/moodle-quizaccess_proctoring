@@ -68,7 +68,7 @@ final class factor_coverage_test extends advanced_testcase {
         $started = ['phonedetected' => true, 'multiplefaces' => true];
 
         // Everything on and the browser reported in: passed.
-        foreach (['aitool', 'aitoolscreenshot', 'clipboard', 'tabactivity', 'f12', 'shortcut', 'screenshare',
+        foreach (['aitool', 'aitoolscreenshot', 'automation', 'clipboard', 'tabactivity', 'f12', 'shortcut', 'screenshare',
                 'multimonitor', 'phonedetected', 'multiplefaces'] as $factorkey) {
             $this->assertNull(factor_coverage::reason($factorkey, $all, true, false, 1, 1, $started), $factorkey);
         }

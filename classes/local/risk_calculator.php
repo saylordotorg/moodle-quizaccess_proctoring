@@ -58,6 +58,7 @@ namespace quizaccess_proctoring\local;
  * | Multiple monitors          |           25 |  25 | events: multiple_monitors_detected                                |
  * | Possible AI tool           |           20 |  30 | events: possible_ai_tool                                          |
  * | AI tool w/ screenshot      |           15 |  30 | events: possible_ai_tool having a desktop screenshot              |
+ * | Automation signs           |           15 |  45 | events: automation_signal (review-only)                           |
  * | AI review confirmed        |           20 |  40 | completed event-level AI reviews of desktop captures whose decision is highly_suspicious (review-only; webcam-frame reviews never count; factor shown only when event AI review is active or evidence exists) |
  * | Clipboard/context menu     |            8 |  24 | events: clipboard_copy, clipboard_cut, clipboard_paste, contextmenu |
  * | Tab/focus activity         |            5 |  20 | events: focus_lost, tab_hidden, page_exit                         |
@@ -76,6 +77,7 @@ namespace quizaccess_proctoring\local;
  * - screen_marker_missing, screen_share_stopped                -> Screen-share issues factor
  * - multiple_monitors_detected                                 -> Multiple monitors factor
  * - possible_ai_tool                                           -> Possible AI tool (+ AI tool w/ screenshot) factors
+ * - automation_signal                                          -> Automation signs factor
  * - shortcut                                                   -> F12 factor (F12 detail) and Other keyboard shortcuts factor (non-F12 detail)
  * - multiple_faces_detected                                    -> Multiple faces factor
  * - face_missing, no_face_detected                             -> No face factor
@@ -125,6 +127,7 @@ final class risk_calculator {
         'aitool' => ['points' => 20, 'cap' => 30],
         'aitoolscreenshot' => ['points' => 15, 'cap' => 30],
         'aireviewconfirmed' => ['points' => 20, 'cap' => 40],
+        'automation' => ['points' => 15, 'cap' => 45],
         'clipboard' => ['points' => 8, 'cap' => 24],
         'tabactivity' => ['points' => 5, 'cap' => 20],
         'f12' => ['points' => 15, 'cap' => 15],
@@ -138,9 +141,11 @@ final class risk_calculator {
      *
      * A second face is often a family member walking past or sitting nearby; only a person can
      * judge it from the webcam frame (CPIT-468). And a model's reading of a desktop capture is
-     * a reason for a person to look at that capture, never a verdict by itself (CPIT-483).
+     * a reason for a person to look at that capture, never a verdict by itself (CPIT-483). Signs
+     * that software is operating the page are also left by voice control, switch access and
+     * remote-desktop tools, so a person decides what they mean.
      */
-    public const REVIEW_ONLY_FACTORS = ['multiplefaces', 'aireviewconfirmed'];
+    public const REVIEW_ONLY_FACTORS = ['multiplefaces', 'aireviewconfirmed', 'automation'];
 
     /**
      * The attempt's score without the points of review-only factors, capped like the score.
@@ -1049,6 +1054,11 @@ final class risk_calculator {
             $eventparams,
             ['possible_ai_tool']
         ) : 0;
+        $automationcount = self::factor_enabled('automation', $cmid) ? self::count_events(
+            $eventwhere,
+            $eventparams,
+            ['automation_signal']
+        ) : 0;
         $aitoolscreenshotcount = self::factor_enabled('aitoolscreenshot', $cmid) ? self::count_events(
             $eventwhere,
             $eventparams,
@@ -1118,6 +1128,7 @@ final class risk_calculator {
                 'multimonitor' => $multimonitorcount,
                 'aitool' => $aitoolcount,
                 'aitoolscreenshot' => $aitoolscreenshotcount,
+                'automation' => $automationcount,
                 'aireviewconfirmed' => $aireviewconfirmedcount,
                 'f12' => $f12count,
                 'othershortcut' => $othershortcutcount,
@@ -1172,6 +1183,7 @@ final class risk_calculator {
             'aitool' => (int)$counts['aitool'],
             'aitoolscreenshot' => (int)$counts['aitoolscreenshot'],
             'aireviewconfirmed' => (int)$counts['aireviewconfirmed'],
+            'automation' => (int)$counts['automation'],
             'clipboard' => (int)$counts['clipboard'],
             'tabactivity' => (int)$counts['tabactivity'],
             'f12' => (int)$counts['f12'],
@@ -1384,7 +1396,7 @@ final class risk_calculator {
         $zero = [
             'webcam' => 0, 'facemismatch' => 0, 'nofaceruns' => 0, 'nofaceevent' => 0,
             'tabactivity' => 0, 'clipboard' => 0, 'screenissue' => 0, 'multimonitor' => 0, 'aitool' => 0,
-            'aitoolscreenshot' => 0, 'aireviewconfirmed' => 0, 'f12' => 0, 'othershortcut' => 0,
+            'aitoolscreenshot' => 0, 'aireviewconfirmed' => 0, 'automation' => 0, 'f12' => 0, 'othershortcut' => 0,
             'multiplefaces' => 0, 'phonedetected' => 0,
         ];
         $counts = [];
@@ -1407,6 +1419,7 @@ final class risk_calculator {
             'screenissue' => ['screenshare', ['screen_marker_missing', 'screen_share_stopped']],
             'multimonitor' => ['multimonitor', ['multiple_monitors_detected']],
             'aitool' => ['aitool', ['possible_ai_tool']],
+            'automation' => ['automation', ['automation_signal']],
             'multiplefaces' => ['multiplefaces', ['multiple_faces_detected']],
             'phonedetected' => ['phonedetected', ['phone_detected']],
         ];

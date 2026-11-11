@@ -44,7 +44,7 @@ define([], function() {
         {
             title: 'AI tools & copying',
             desc: 'Signals on the exam page only: AI used in another window, app or device is not detected.',
-            factors: ['aitool', 'aitoolscreenshot', 'clipboard'],
+            factors: ['aitool', 'aitoolscreenshot', 'automation', 'clipboard'],
         },
         {
             title: 'Keyboard shortcuts',
@@ -393,6 +393,7 @@ define([], function() {
         tabactivity: 'Switched away from the exam',
         aitool: 'Possible AI tool: side panel or AI link on the exam page',
         aitoolscreenshot: 'Desktop captures at a possible AI tool',
+        automation: 'Signs of software operating the exam page',
         clipboard: 'Copying, pasting or right-clicking',
         f12: 'Developer tools opened (F12)',
         shortcut: 'Other monitored shortcuts',
@@ -423,6 +424,11 @@ define([], function() {
             + 'also be bookmarks or developer tools, so treat it as a reason to look, not as proof.',
         aitoolscreenshot: 'A desktop capture was taken when a side panel or an AI link was seen. Look at the '
             + 'capture to see what was actually on screen.',
+        automation: 'The exam page was operated the way an AI browser or agent does it: clicks made by a script, '
+            + 'answers changed with no key press or click, a pointer that jumps between clicks, a browser that '
+            + 'says it is automated, or a hidden control only software can find. Voice control, switch access and '
+            + 'remote-desktop tools can look the same, so it can hold an attempt for review but never fails it '
+            + 'automatically. Only counted when browser activity monitoring is on.',
         clipboard: 'The student copied question text or pasted something into an answer.',
         f12: 'Developer tools can reveal answers hidden in the page or disable monitoring.',
         shortcut: 'Other watched key combinations, like screenshots or window switching.',

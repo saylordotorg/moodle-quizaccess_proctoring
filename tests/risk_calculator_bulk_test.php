@@ -66,7 +66,7 @@ final class risk_calculator_bulk_test extends advanced_testcase {
         'multiple_monitors_detected', 'possible_ai_tool',
         'multiple_faces_detected', 'audio_detected',
         'face_missing', 'no_face_detected', 'phone_detected',
-        'shortcut',
+        'shortcut', 'automation_signal',
     ];
 
     protected function setUp(): void {

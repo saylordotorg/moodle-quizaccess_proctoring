@@ -4,8 +4,10 @@ let isCameraAllowed = false;
 let precheckStream = null;
 
 define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proctoring/screenMonitorClient',
-    'quizaccess_proctoring/evidenceQueue', 'quizaccess_proctoring/phoneDetector', 'quizaccess_proctoring/faceStrikes'],
-    function($, Ajax, Notification, Str, ScreenMonitorClient, EvidenceQueue, PhoneDetector, FaceStrikes) {
+    'quizaccess_proctoring/evidenceQueue', 'quizaccess_proctoring/phoneDetector', 'quizaccess_proctoring/faceStrikes',
+    'quizaccess_proctoring/automationSignals'],
+    function($, Ajax, Notification, Str, ScreenMonitorClient, EvidenceQueue, PhoneDetector, FaceStrikes,
+        AutomationSignals) {
         // Whether this looks like a phone or tablet. Only asked once screen sharing has turned out
         // to be unavailable: a tablet asking for the desktop site reports a desktop operating
         // system, so the touch screen is the tell (CPIT-495).
@@ -677,6 +679,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
                 'contextmenu',
                 'shortcut',
                 'possible_ai_tool',
+                'automation_signal',
                 'page_exit',
                 'screen_marker_missing',
                 'multiple_monitors_detected'
@@ -724,7 +727,7 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             let awayCaptureTimer = null;
             let awayEvidenceFrame = '';
             // Events whose attached frame must show the screen at the time, not a cached frame.
-            const freshFrameEvents = ['possible_ai_tool', 'screen_marker_missing'];
+            const freshFrameEvents = ['possible_ai_tool', 'automation_signal', 'screen_marker_missing'];
             const freshFrameMaxAgeMs = 2000;
             const activeAttemptWarnings = {};
             const attemptWarningTimers = {};
@@ -2668,6 +2671,18 @@ define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proc
             }
 
             initMouseActivityMonitoring();
+
+            // Signs that software, not the student, is operating the page (an AI browser or agent).
+            // Part of browser activity monitoring; each kind of sign is logged once per page.
+            if (monitorActivity && AutomationSignals && AutomationSignals.create) {
+                AutomationSignals.create({
+                    document: document,
+                    window: window,
+                    report: function(kind, detail) {
+                        logEvent('automation_signal', detail);
+                    }
+                });
+            }
 
             document.addEventListener('copy', function(event) {
                 if (blockClipboard) {
