@@ -61,8 +61,10 @@ const target = function() {
 };
 
 /** An element inside (or outside) the answer form. */
-const element = function(inForm) {
+const element = function(inForm, tagName, type) {
     return {
+        tagName: tagName || 'INPUT',
+        type: type || 'radio',
         closest(selector) {
             return inForm && selector === '#responseform' ? {} : null;
         },
@@ -206,6 +208,43 @@ const page = function(module, options) {
         p.wait(5000);
         p.doc.fire('change', {isTrusted: true, target: p.answer});
         assert.deepStrictEqual(p.kinds(), ['answer_without_input']);
+    });
+
+    test(name + ': a choice made slowly in a dropdown opened by a real press reports nothing', function() {
+        const p = page(module);
+        const select = element(true, 'SELECT', 'select-one');
+        // The press opens the list, which belongs to the browser; the page hears nothing until the choice.
+        p.doc.fire('pointerdown', {isTrusted: true, target: select});
+        p.wait(8000);
+        p.doc.fire('change', {isTrusted: true, target: select});
+        // Opened from the keyboard, and from a press on one of its options.
+        p.doc.fire('keydown', {isTrusted: true, target: select});
+        p.wait(8000);
+        p.doc.fire('change', {isTrusted: true, target: select});
+        p.doc.fire('mousedown', {isTrusted: true, target: {closest: selector => (selector === 'select' ? select : null)}});
+        p.wait(8000);
+        p.doc.fire('change', {isTrusted: true, target: select});
+        assert.deepStrictEqual(p.kinds(), []);
+    });
+
+    test(name + ': a dropdown that changes with no press on it is reported', function() {
+        const p = page(module);
+        p.humanClick(100, 100);
+        p.wait(5000);
+        p.doc.fire('change', {isTrusted: true, target: element(true, 'SELECT', 'select-one')});
+        assert.deepStrictEqual(p.kinds(), ['answer_without_input']);
+    });
+
+    test(name + ': a text or hidden field reporting its change late reports nothing', function() {
+        const p = page(module);
+        p.doc.fire('keydown', {isTrusted: true, target: p.answer});
+        p.wait(20000);
+        // Focus leaves a text answer when the student switches windows; a drag-and-drop
+        // question updates its hidden field from a script.
+        p.doc.fire('change', {isTrusted: true, target: element(true, 'INPUT', 'text')});
+        p.doc.fire('change', {isTrusted: true, target: element(true, 'TEXTAREA', 'textarea')});
+        p.doc.fire('change', {isTrusted: false, target: element(true, 'INPUT', 'hidden')});
+        assert.deepStrictEqual(p.kinds(), []);
     });
 
     test(name + ': text typed into an answer with no key presses is reported', function() {

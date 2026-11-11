@@ -95,10 +95,25 @@ define([], function() {
             movesSinceClick = 0;
         };
 
+        // What that key press or pointer press was on.
+        let lastRealTarget = null;
+
         const noteRealInput = function(event) {
             if (event.isTrusted) {
                 lastRealInput = now();
+                lastRealTarget = event.target || null;
             }
+        };
+
+        /**
+         * Whether the last real key press or pointer press was on this dropdown or one of its options.
+         *
+         * @param {Element} select
+         * @returns {Boolean}
+         */
+        const lastPressedOn = function(select) {
+            return !!lastRealTarget && (lastRealTarget === select
+                || (typeof lastRealTarget.closest === 'function' && lastRealTarget.closest('select') === select));
         };
         ['keydown', 'pointerdown', 'mousedown', 'touchstart', 'compositionstart'].forEach(function(type) {
             doc.addEventListener(type, noteRealInput, true);
@@ -124,6 +139,22 @@ define([], function() {
                 // Only plain typed text is judged: pasting, dropping, spell-check replacement,
                 // dictation and input-method composition all insert text without a key press.
                 if (event.inputType !== 'insertText' || event.isComposing) {
+                    return;
+                }
+            } else {
+                const control = event.target;
+                const tag = String(control.tagName || '').toUpperCase();
+                const type = String(control.type || '').toLowerCase();
+                if (tag === 'SELECT') {
+                    // The list of a dropdown belongs to the browser: the page sees the press that
+                    // opened it and nothing more until a choice is made, however long that takes.
+                    if (lastPressedOn(control)) {
+                        return;
+                    }
+                } else if (!(tag === 'INPUT' && (type === 'radio' || type === 'checkbox'))) {
+                    // Only controls that change at the moment they are used are judged. A text
+                    // field reports its change when focus leaves it, which can be long after the
+                    // typing; hidden fields are set by the scripts of the question itself.
                     return;
                 }
             }

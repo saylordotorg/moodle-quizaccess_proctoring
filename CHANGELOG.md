@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 # v1.23.0 — 2026-11-11
 - **Signs that software, not the student, is operating the exam page.** An AI browser or agent can read a quiz and answer it by driving the page. The exam page now watches for the traces that leaves and logs each as a "Sign of software operating the exam page" event, which says which sign was seen:
   - a click or key press on the answer form that a script generated, rather than a mouse, keyboard or touch screen;
-  - an answer that changed with no key press, click or touch just before it;
+  - an answer that changed with no key press, click or touch just before it (choice buttons, checkboxes and typed text; a dropdown only when the last press was not on it, since choosing from its list can take any length of time);
   - a mouse pointer that jumped from one click to a far-away next click without moving across the page;
   - a browser that reports it is controlled by automation software;
   - use of a hidden control beside the answer form that people cannot see, tab to or hear in a screen reader, and that only software reading the page can find.
