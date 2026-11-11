@@ -115,9 +115,10 @@ function makeElement(id) {
 /**
  * Construct a fresh mock environment (DOM + Moodle AMD deps + getUserMedia spy).
  */
-function createEnvironment() {
+function createEnvironment(userAgent = '') {
     let getUserMediaCalls = 0;
     let lastStream = null;
+    let lastConstraints = null;
 
     const makeTrack = () => ({stopped: false, kind: 'video', stop() {
         this.stopped = true;
@@ -130,13 +131,14 @@ function createEnvironment() {
     };
 
     const mediaDevices = {
-        getUserMedia() {
+        getUserMedia(constraints) {
             getUserMediaCalls++;
+            lastConstraints = constraints;
             lastStream = makeStream();
             return Promise.resolve(lastStream);
         },
     };
-    const navigator = {mediaDevices};
+    const navigator = {mediaDevices, userAgent};
 
     const video = makeElement('video');
     const canvas = makeElement('canvas');
@@ -255,6 +257,9 @@ function createEnvironment() {
         },
         lastStream() {
             return lastStream;
+        },
+        lastConstraints() {
+            return lastConstraints;
         },
         openModal() {
             video._open = true;
@@ -445,4 +450,37 @@ test('Req 6.3 - beforeunload (navigation away) tears down the camera', async () 
 
     assert.ok(stream._tracks.every((t) => t.stopped), 'every MediaStreamTrack must be stopped on beforeunload');
     assert.strictEqual(env.video.srcObject, null, 'video.srcObject must be nulled on beforeunload');
+});
+
+// CPIT-510: a computer's webcam is landscape, and asking it for portrait made the browser crop
+// away the sides of the view, where a phone or a second person would show up.
+test('CPIT-510 - a computer is asked for a landscape camera picture', async () => {
+    const env = createEnvironment('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0.0.0 Safari/537.36');
+    const mod = loadModule(env);
+
+    await mod.init(PROPS);
+    env.openModal();
+    env.syncModal();
+    await flush();
+
+    const video = env.lastConstraints().video;
+    assert.strictEqual(video.facingMode, 'user');
+    assert.strictEqual(video.width.ideal, 1280);
+    assert.strictEqual(video.height.ideal, 720);
+    assert.strictEqual(video.aspectRatio, undefined, 'no portrait aspect ratio on a computer');
+});
+
+test('CPIT-510 - a phone is still asked for a portrait camera picture', async () => {
+    const env = createEnvironment('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148 Safari/604.1');
+    const mod = loadModule(env);
+
+    await mod.init(PROPS);
+    env.openModal();
+    env.syncModal();
+    await flush();
+
+    const video = env.lastConstraints().video;
+    assert.strictEqual(video.width.ideal, 960);
+    assert.strictEqual(video.height.ideal, 1280);
+    assert.strictEqual(video.aspectRatio.ideal, 0.75);
 });
