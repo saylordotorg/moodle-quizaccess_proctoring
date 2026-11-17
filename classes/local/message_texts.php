@@ -35,6 +35,12 @@ namespace quizaccess_proctoring\local;
  *
  * Only the words are stored: the edited text is used for every recipient, whatever their
  * language, and in-exam warnings stay on Language customisation.
+ *
+ * A proctoring profile ({@see profile}) can have its own wording of a message about an exam, so
+ * an ACE credit exam can say something a certificate exam does not. A message about a quiz on
+ * that profile uses the profile's wording, then the site's wording, then the language string.
+ * The messages in {@see self::SITE_ONLY} are about the student rather than one exam and have
+ * the site's wording only.
  */
 final class message_texts {
     /** @var string Capability that lets staff edit the wording. */
@@ -126,6 +132,48 @@ final class message_texts {
     const OPTIONAL = ['firstname', 'fullname'];
 
     /**
+     * Messages that are not about one exam, so no proctoring profile applies to them: the
+     * reference photo belongs to the student across every quiz.
+     */
+    const SITE_ONLY = ['photoreset', 'photodeclined', 'photoreplaced'];
+
+    /** @var string Table holding the wording. */
+    private const TABLE = 'quizaccess_proctoring_msg_texts';
+
+    /**
+     * Whether a proctoring profile can have its own wording of a message.
+     *
+     * @param string $id Catalogue message id.
+     * @return bool True for a message about one exam.
+     */
+    public static function per_profile(string $id): bool {
+        return isset(self::MESSAGES[$id]) && !in_array($id, self::SITE_ONLY, true);
+    }
+
+    /**
+     * The proctoring profile of a quiz, for the wording of a message about it.
+     *
+     * @param int $cmid Quiz course-module id.
+     * @return int Profile id, 0 when the quiz is on the site settings (or no longer exists).
+     */
+    public static function profile_for_cm(int $cmid): int {
+        global $DB;
+
+        if ($cmid <= 0) {
+            return 0;
+        }
+        return (int)$DB->get_field_sql(
+            "SELECT p.id
+               FROM {course_modules} cm
+               JOIN {modules} m ON m.id = cm.module AND m.name = :quiz
+               JOIN {quizaccess_proctoring} q ON q.quizid = cm.instance
+               JOIN {" . profile::TABLE . "} p ON p.id = q.profileid
+              WHERE cm.id = :cmid",
+            ['quiz' => 'quiz', 'cmid' => $cmid]
+        );
+    }
+
+    /**
      * Values of the optional placeholders that come from the student.
      *
      * @param \stdClass $user The student.
@@ -146,10 +194,17 @@ final class message_texts {
      * @param mixed $a Placeholder values, as for get_string().
      * @param string|null $lang Language for the language string; the edited text has one wording.
      * @param array $optional Values of the optional placeholders, by name; only edited text has them.
+     * @param int $profileid Proctoring profile of the exam the message is about; 0 for none.
      * @return string Text.
      */
-    public static function get(string $key, $a = null, ?string $lang = null, array $optional = []): string {
-        $stored = self::locate($key) === null ? null : self::stored($key);
+    public static function get(
+        string $key,
+        $a = null,
+        ?string $lang = null,
+        array $optional = [],
+        int $profileid = 0
+    ): string {
+        $stored = self::locate($key) === null ? null : self::effective($key, $profileid);
         if ($stored === null) {
             return get_string_manager()->get_string($key, 'quizaccess_proctoring', $a, $lang);
         }
@@ -251,13 +306,45 @@ final class message_texts {
      * The wording staff stored for a string, or null when it is not edited.
      *
      * @param string $key Language string key.
+     * @param int $profileid Proctoring profile whose own wording to read; 0 for the site's.
      * @return string|null Stored text, with {$a} tokens.
      */
-    public static function stored(string $key): ?string {
+    public static function stored(string $key, int $profileid = 0): ?string {
         global $DB;
 
-        $text = $DB->get_field('quizaccess_proctoring_msg_texts', 'text', ['stringid' => $key]);
+        $text = $DB->get_field(self::TABLE, 'text', ['stringid' => $key, 'profileid' => $profileid]);
         return $text === false ? null : (string)$text;
+    }
+
+    /**
+     * The stored wording a message about a profile's exam uses: the profile's own, else the
+     * site's; null when neither is edited.
+     *
+     * @param string $key Language string key.
+     * @param int $profileid Proctoring profile; 0 for none.
+     * @return string|null Stored text, with {$a} tokens.
+     */
+    public static function effective(string $key, int $profileid = 0): ?string {
+        $located = self::locate($key);
+        if ($profileid > 0 && $located !== null && self::per_profile($located[0])) {
+            $own = self::stored($key, $profileid);
+            if ($own !== null) {
+                return $own;
+            }
+        }
+        return self::stored($key);
+    }
+
+    /**
+     * The wording a profile has before it is given its own: the site's edited wording, else the
+     * shipped text. For the site itself, the shipped text.
+     *
+     * @param string $key Language string key.
+     * @param int $profileid Proctoring profile; 0 for the site.
+     * @return string Text, with {$a} tokens.
+     */
+    public static function inherited(string $key, int $profileid = 0): string {
+        return $profileid > 0 ? (self::stored($key) ?? self::default_text($key)) : self::default_text($key);
     }
 
     /**
@@ -338,10 +425,11 @@ final class message_texts {
      *
      * @param string $key Language string key.
      * @param string|null $text Text with {$a} tokens; the current wording when null.
+     * @param int $profileid Proctoring profile whose current wording to show; 0 for the site's.
      * @return string Text.
      */
-    public static function to_editor(string $key, ?string $text = null): string {
-        $text = $text ?? (self::stored($key) ?? self::default_text($key));
+    public static function to_editor(string $key, ?string $text = null, int $profileid = 0): string {
+        $text = $text ?? (self::effective($key, $profileid) ?? self::default_text($key));
         $replace = [];
         foreach (self::all_placeholders($key) as $token => $name) {
             $replace[$token] = '[' . $name . ']';
@@ -409,56 +497,83 @@ final class message_texts {
     }
 
     /**
-     * Store new wording for a string. Wording that matches the shipped text resets it.
+     * Store new wording for a string. Wording that matches what it would have anyway resets it:
+     * the shipped text for the site, the site's wording for a profile.
      *
      * @param string $key Language string key.
      * @param string $text Text with [name] placeholders, already validated.
      * @param int $userid Who edited it.
+     * @param int $profileid Proctoring profile the wording is for; 0 for the site's wording.
      */
-    public static function save(string $key, string $text, int $userid): void {
+    public static function save(string $key, string $text, int $userid, int $profileid = 0): void {
         global $DB;
 
+        $located = self::locate($key);
+        if ($profileid > 0 && ($located === null || !self::per_profile($located[0]))) {
+            throw new \coding_exception('This message has no wording per proctoring profile.');
+        }
         $stored = self::from_editor($key, trim($text));
-        if ($stored === self::default_text($key)) {
-            self::reset($key);
+        if ($stored === self::inherited($key, $profileid)) {
+            self::reset($key, $profileid);
             return;
         }
-        $existing = $DB->get_record('quizaccess_proctoring_msg_texts', ['stringid' => $key]);
+        $existing = $DB->get_record(self::TABLE, ['stringid' => $key, 'profileid' => $profileid]);
         $record = (object)[
             'stringid' => $key,
+            'profileid' => $profileid,
             'text' => $stored,
             'usermodified' => $userid,
             'timemodified' => time(),
         ];
         if ($existing) {
             $record->id = $existing->id;
-            $DB->update_record('quizaccess_proctoring_msg_texts', $record);
+            $DB->update_record(self::TABLE, $record);
         } else {
-            $DB->insert_record('quizaccess_proctoring_msg_texts', $record);
+            $DB->insert_record(self::TABLE, $record);
         }
     }
 
     /**
-     * Go back to the shipped wording.
+     * Go back to the wording it would have anyway: the shipped text for the site, the site's
+     * wording for a profile. Resetting the site's wording leaves each profile's own in place.
      *
      * @param string $key Language string key.
+     * @param int $profileid Proctoring profile whose own wording to drop; 0 for the site's.
      */
-    public static function reset(string $key): void {
+    public static function reset(string $key, int $profileid = 0): void {
         global $DB;
 
-        $DB->delete_records('quizaccess_proctoring_msg_texts', ['stringid' => $key]);
+        $DB->delete_records(self::TABLE, ['stringid' => $key, 'profileid' => $profileid]);
+    }
+
+    /**
+     * Drop every wording a profile has of its own, when the profile is deleted.
+     *
+     * @param int $profileid Proctoring profile.
+     */
+    public static function delete_for_profile(int $profileid): void {
+        global $DB;
+
+        if ($profileid > 0) {
+            $DB->delete_records(self::TABLE, ['profileid' => $profileid]);
+        }
     }
 
     /**
      * Who last edited a string and when, or null when it is not edited.
      *
      * @param string $key Language string key.
+     * @param int $profileid Proctoring profile whose own wording to ask about; 0 for the site's.
      * @return \stdClass|null Record with usermodified and timemodified.
      */
-    public static function edit_record(string $key): ?\stdClass {
+    public static function edit_record(string $key, int $profileid = 0): ?\stdClass {
         global $DB;
 
-        $record = $DB->get_record('quizaccess_proctoring_msg_texts', ['stringid' => $key], 'id, usermodified, timemodified');
+        $record = $DB->get_record(
+            self::TABLE,
+            ['stringid' => $key, 'profileid' => $profileid],
+            'id, usermodified, timemodified'
+        );
         return $record ?: null;
     }
 

@@ -35,6 +35,8 @@ require_once("$CFG->libdir/formslib.php");
  *
  * Expected `$this->_customdata` entries:
  * - `message` (string): the catalogue id, a key of {@see message_texts::MESSAGES}.
+ * - `profile` (int, optional): the proctoring profile whose own wording is edited; 0 or
+ *   absent for the site's wording.
  *
  * @package   quizaccess_proctoring
  * @copyright 2026 Saylor Academy
@@ -49,8 +51,12 @@ class message_text_form extends \moodleform {
         $component = 'quizaccess_proctoring';
         $id = (string)$this->_customdata['message'];
 
+        $profileid = (int)($this->_customdata['profile'] ?? 0);
+
         $mform->addElement('hidden', 'edit', $id);
         $mform->setType('edit', PARAM_ALPHANUMEXT);
+        $mform->addElement('hidden', 'profile', $profileid);
+        $mform->setType('profile', PARAM_INT);
 
         // The placeholders this message has, what each becomes, and a button to insert it.
         $mform->addElement('html', $this->placeholder_bank($id));
@@ -63,7 +69,8 @@ class message_text_form extends \moodleform {
                 $mform->addElement('textarea', $part, $label, ['rows' => 8, 'cols' => 80]);
             }
             $mform->setType($part, PARAM_TEXT);
-            $mform->setDefault($part, message_texts::to_editor($key));
+            // A profile starts from the wording its exams receive now: its own, else the site's.
+            $mform->setDefault($part, message_texts::to_editor($key, null, $profileid));
             $names = array_unique(array_values(message_texts::placeholders($key)));
             $optional = array_values(message_texts::optional_placeholders($key));
             $keep = get_string(

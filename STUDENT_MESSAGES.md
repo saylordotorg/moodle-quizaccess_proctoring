@@ -4,6 +4,8 @@ Every student-facing string in the plugin, grouped by where the student sees it 
 
 **Emails and notifications can be reworded in Moodle (since 1.14.0, CPIT-512):** the "Messages to students" page, reached from the Proctoring reports page, lists every email and notification sent to students — when it is sent, how, which settings control it, and the wording in use now. Staff with the `quizaccess/proctoring:editstudentmessages` capability edit the subject and body there, with placeholders written as `[quiz]`, `[course]`, and so on. The edited wording takes precedence over the strings below (and over Language customisation) until it is reset. In-exam warnings stay on Language customisation.
 
+**A proctoring profile can have its own wording (since 1.25.0):** once the site has proctoring profiles, the page has a tab for the site's wording ("All exams") and one per profile. A message about an exam on a profile — the grade hold and its decisions, and the photo ID exception emails — uses that profile's wording where it has its own, then the site's wording, then the strings below. The three reference photo messages are about the student rather than one exam and have the site's wording only.
+
 Generated from `lang/en/quizaccess_proctoring.php`; `{$a}` and `{$a->...}` are filled in when the message is shown.
 
 ## Before the exam: setup steps
