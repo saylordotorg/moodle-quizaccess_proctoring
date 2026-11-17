@@ -107,6 +107,12 @@ $tabs = [
         get_string('riskfactorspage', 'quizaccess_proctoring')
     ),
     new tabobject(
+        \quizaccess_proctoring\local\admin_settings_pages::FLAGRULES_SECTION,
+        new moodle_url('/mod/quiz/accessrule/proctoring/adminsettings.php',
+            ['section' => \quizaccess_proctoring\local\admin_settings_pages::FLAGRULES_SECTION]),
+        get_string('flagrulespage', 'quizaccess_proctoring')
+    ),
+    new tabobject(
         'overallreports',
         new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'),
         get_string('overallreports', 'quizaccess_proctoring')

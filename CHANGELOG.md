@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.24.0 — 2026-11-17
+- **Flag rules: what lists an attempt as "Flagged" can be set (Student Affairs).** An attempt with no grade hold was listed as Flagged as soon as one event of any kind was recorded, so a single tab switch sat in the same list as a face mismatch. A new page, Saylor Proctored Quiz > Flag rules, has a setting "What flags an attempt": *Any detected event* (the default, so nothing changes on upgrade) or *The flag rules below*. On the rules, an attempt is flagged only when a risk factor reaches its count, or its risk score reaches the flag score. The page ships with the counts Student Affairs proposed: face mismatch, phone visible in webcam, possible AI tool, desktop captures at a possible AI tool, no webcam capture and faster than the minimum pace at 1; screen share stopped or wrong monitor at 2; no face visible at 3; tab switching or focus loss at 5; and a risk score of 60. "Signs of software operating the exam page" (new in v1.23.0, after that list) also starts at 1. The other factors start at 0, which means they never flag by themselves.
+  - A proctoring profile can change the setting, every count and the flag score for its quizzes (new *Flag rules* section on the profile's edit page), so ACE and degree exams can be flagged on less than certificate exams.
+  - A flagged row on the Attempts report names the rules it met ("Flagged for: No face visible (3)"), and the CSV export's Status column carries the same text.
+  - The rules use the counts the risk score uses. A factor that is switched off on the Risk factor scoring page, or in the quiz's profile, is not counted and cannot flag; neither can a factor a reviewer marked as a false positive.
+  - Only the Flagged list changes. Holds, grades and certificates still follow the high-risk threshold, and an attempt with a hold keeps the state its hold gives it.
+  - An attempt a reviewer signed off stays Reviewed, with their name on it, when the rules no longer list it.
+  - On the rules, the Attempts report scores every unheld attempt in the selected period to judge it, as the risk filters already do; with the setting on *Any detected event* and no profile on rules, the report runs exactly as before.
+- **The Attempts report can be filtered by proctoring profile (Student Affairs).** A new "Proctoring profile" filter on Proctoring reviews > Attempts lists only the attempts on quizzes that use one profile (for example ACE credit), or only those on no profile; the counts above the list, the paging and the CSV export follow it. Each row names its quiz's profile under the exam name, and the CSV has a "Proctoring profile" column. The filter appears once the site has at least one profile. A quiz is listed under the profile it has now, so attempts taken before the quiz was given a profile move with it.
+
 # v1.23.0 — 2026-11-11
 - **Signs that software, not the student, is operating the exam page.** An AI browser or agent can read a quiz and answer it by driving the page. The exam page now watches for the traces that leaves and logs each as a "Sign of software operating the exam page" event, which says which sign was seen:
   - a click or key press on the answer form that a script generated, rather than a mouse, keyboard or touch screen;

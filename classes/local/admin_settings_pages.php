@@ -43,6 +43,9 @@ class admin_settings_pages {
     /** @var string The risk factor scoring page's section name. */
     public const RISKFACTORS_SECTION = 'quizaccess_proctoring_riskfactors';
 
+    /** @var string The flag rules page's section name. */
+    public const FLAGRULES_SECTION = 'quizaccess_proctoring_flagrules';
+
     /**
      * Build the plugin's settings pages as settings.php defines them.
      *

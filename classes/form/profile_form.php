@@ -24,6 +24,7 @@
 
 namespace quizaccess_proctoring\form;
 
+use quizaccess_proctoring\local\flag_rules;
 use quizaccess_proctoring\local\profile;
 use quizaccess_proctoring\local\risk_calculator;
 
@@ -91,8 +92,52 @@ class profile_form extends \moodleform {
 
         $this->add_scoring_section();
         $this->add_levels_section();
+        $this->add_flags_section();
 
         $this->add_action_buttons();
+    }
+
+    /**
+     * What lists an attempt as Flagged: the mode, each factor's count and the risk score.
+     * Blank follows the site's Flag rules page, whose value each field shows.
+     */
+    private function add_flags_section(): void {
+        $mform = $this->_form;
+        $component = 'quizaccess_proctoring';
+
+        $mform->addElement('header', 'flagsheader', get_string('profile:flagsheading', $component));
+        $mform->setExpanded('flagsheader', false);
+        $mform->addElement('static', 'flagsintro', '', get_string('profile:flagsintro', $component));
+
+        $sitemode = get_string('setting:flagmode_' . flag_rules::mode(), $component);
+        $mform->addElement('select', flag_rules::MODE_SETTING, profile::label(flag_rules::MODE_SETTING), [
+            '' => get_string('profile:usesite', $component, $sitemode),
+            flag_rules::MODE_RULES => get_string('setting:flagmode_rules', $component),
+            flag_rules::MODE_ANY => get_string('setting:flagmode_any', $component),
+        ]);
+        $mform->setType(flag_rules::MODE_SETTING, PARAM_RAW);
+
+        $never = get_string('flagrules:never', $component);
+        foreach (risk_calculator::FACTOR_DEFAULTS as $factor => $unused) {
+            $name = flag_rules::factor_setting($factor);
+            $site = flag_rules::threshold($factor);
+            $inherit = get_string('profile:usesite', $component, $site > 0 ? $site : $never);
+            $mform->addElement('text', $name, get_string('riskscore:' . $factor, $component), [
+                'size' => 4,
+                'placeholder' => $inherit,
+                'aria-label' => profile::label($name),
+            ]);
+            $mform->setType($name, PARAM_RAW_TRIMMED);
+        }
+
+        $sitescore = flag_rules::min_score();
+        $inherit = get_string('profile:usesite', $component, $sitescore > 0 ? $sitescore : $never);
+        $mform->addElement('text', flag_rules::SCORE_SETTING, profile::label(flag_rules::SCORE_SETTING), [
+            'size' => 4,
+            'placeholder' => $inherit,
+        ]);
+        $mform->setType(flag_rules::SCORE_SETTING, PARAM_RAW_TRIMMED);
+        $mform->addElement('static', flag_rules::SCORE_SETTING . 'hint', '', $inherit);
     }
 
     /**
@@ -162,7 +207,7 @@ class profile_form extends \moodleform {
         $mform = $this->_form;
         // The factor fields sit in groups, so read the raw values rather than the elements.
         $values = array_merge((array)$mform->_defaultValues, (array)$mform->_submitValues);
-        $open = [profile::SECTION_SCORING => false, profile::SECTION_LEVELS => false];
+        $open = [profile::SECTION_SCORING => false, profile::SECTION_LEVELS => false, profile::SECTION_FLAGS => false];
         foreach (profile::definitions() as $name => $definition) {
             if (isset($definition['section']) && is_scalar($values[$name] ?? null) && trim((string)$values[$name]) !== '') {
                 $open[$definition['section']] = true;
@@ -173,6 +218,9 @@ class profile_form extends \moodleform {
         }
         if ($open[profile::SECTION_LEVELS]) {
             $mform->setExpanded('levelsheader', true);
+        }
+        if ($open[profile::SECTION_FLAGS]) {
+            $mform->setExpanded('flagsheader', true);
         }
     }
 

@@ -3745,6 +3745,22 @@ body.quizaccess-proctoring-rfs-page .quizaccess-proctoring-rfs-savebar [type="su
     white-space: nowrap;
 }
 
+/* The proctoring profile of a row's quiz. */
+.proctoring-overview-profile {
+    display: block;
+    margin: 2px 0 0;
+    font-size: 0.75rem;
+    color: #5f6b7a;
+}
+
+/* Which flag rules a flagged attempt met. */
+.proctoring-overview-flagreason {
+    display: block;
+    margin: 4px 0 0;
+    font-size: 0.82rem;
+    color: #5f6b7a;
+}
+
 /* Who signed a flagged attempt off, and when. */
 .proctoring-overview-signoff {
     margin: 0 0 12px;
