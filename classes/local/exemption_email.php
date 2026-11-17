@@ -91,22 +91,24 @@ class exemption_email {
         ];
         // Placeholders Student Affairs can add to the subject and introduction (CPIT-512).
         $optional = message_texts::student_values($student) + ['course' => $coursename];
+        // An exam on a proctoring profile uses that profile's wording, where it has its own.
+        $profileid = message_texts::profile_for_cm($cmid);
 
         if ($approved) {
             $quizurl = new \moodle_url('/mod/quiz/view.php', ['id' => $cmid]);
             $spec += [
-                'subject' => self::str($lang, 'idexemptionemail:approved:subject', $quizname, $optional),
+                'subject' => self::str($lang, 'idexemptionemail:approved:subject', $quizname, $optional, $profileid),
                 'preheader' => self::str($lang, 'idexemptionemail:approved:title'),
                 'accent' => self::ACCENT_GREEN,
                 'eyebrow' => self::str($lang, 'idexemptionemail:approved:eyebrow'),
                 'title' => self::str($lang, 'idexemptionemail:approved:title'),
-                'intro' => self::str($lang, 'idexemptionemail:approved:intro', $quizname, $optional),
+                'intro' => self::str($lang, 'idexemptionemail:approved:intro', $quizname, $optional, $profileid),
                 'ctaurl' => $quizurl->out(false),
                 'ctalabel' => self::str($lang, 'idexemptionemail:approved:cta'),
             ];
         } else {
             $spec += [
-                'subject' => self::str($lang, 'idexemptionemail:declined:subject', $quizname, $optional),
+                'subject' => self::str($lang, 'idexemptionemail:declined:subject', $quizname, $optional, $profileid),
                 'preheader' => self::str($lang, 'idexemptionemail:declined:title'),
                 'accent' => self::ACCENT_RED,
                 'eyebrow' => self::str($lang, 'idexemptionemail:declined:eyebrow'),
@@ -114,7 +116,7 @@ class exemption_email {
                 'intro' => self::str($lang, 'idexemptionemail:declined:intro', (object)[
                     'quiz' => $quizname,
                     'contact' => $contact,
-                ], $optional),
+                ], $optional, $profileid),
             ];
         }
 
@@ -292,12 +294,13 @@ class exemption_email {
      * @param string $key String key.
      * @param mixed $a Placeholder value.
      * @param array $optional Values of the placeholders Student Affairs can add, by name.
+     * @param int $profileid Proctoring profile of the exam, for its own wording; 0 for none.
      * @return string Localized string.
      */
-    private static function str(string $lang, string $key, $a = null, array $optional = []): string {
+    private static function str(string $lang, string $key, $a = null, array $optional = [], int $profileid = 0): string {
         // The subject and introduction can be reworded by Student Affairs in Moodle (CPIT-512);
         // every other string of the email stays a language string.
-        return message_texts::get($key, $a, $lang, $optional);
+        return message_texts::get($key, $a, $lang, $optional, $profileid);
     }
 
     /**
