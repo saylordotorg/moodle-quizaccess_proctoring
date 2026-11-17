@@ -372,6 +372,41 @@ final class flag_rules_test extends advanced_testcase {
     }
 
     /**
+     * The words that explain "Flagged" follow the quizzes in view: one mode when the site and
+     * every profile agree or one profile is chosen, mixed when a list holds both kinds.
+     */
+    public function test_scope_mode_follows_the_quizzes_in_view(): void {
+        $this->assertSame(flag_rules::MODE_ANY, flag_rules::scope_mode());
+        $this->assertSame(flag_rules::MODE_ANY, flag_rules::scope_mode(0));
+
+        // A profile on rules while the site stays on any detected event: both kinds in one list.
+        $ace = profile::save(0, 'ACE credit', '', [flag_rules::MODE_SETTING => flag_rules::MODE_RULES]);
+        $plain = profile::save(0, 'Certificate', '', ['riskreviewthreshold' => '80']);
+        $this->assertSame(flag_rules::MODE_MIXED, flag_rules::scope_mode());
+        $this->assertSame(flag_rules::MODE_RULES, flag_rules::scope_mode($ace));
+        $this->assertSame(flag_rules::MODE_ANY, flag_rules::scope_mode($plain));
+        $this->assertSame(flag_rules::MODE_ANY, flag_rules::scope_mode(0));
+        $this->assertSame(flag_rules::MODE_ANY, flag_rules::scope_mode($plain + 1000));
+
+        // The site on rules too: every quiz agrees, and a profile with no mode follows the site.
+        set_config(flag_rules::MODE_SETTING, flag_rules::MODE_RULES, 'quizaccess_proctoring');
+        $this->assertSame(flag_rules::MODE_RULES, flag_rules::scope_mode());
+        $this->assertSame(flag_rules::MODE_RULES, flag_rules::scope_mode($plain));
+
+        // A profile back on any detected event makes the list mixed again.
+        profile::save($plain, 'Certificate', '', [flag_rules::MODE_SETTING => flag_rules::MODE_ANY]);
+        $this->assertSame(flag_rules::MODE_MIXED, flag_rules::scope_mode());
+        $this->assertSame(flag_rules::MODE_ANY, flag_rules::scope_mode($plain));
+
+        $manager = get_string_manager();
+        foreach (['', '_rules', '_mixed'] as $suffix) {
+            foreach (['overallreport:flow_flagged', 'overallreport:flow_clean', 'overallreport:pulse_flagged_hint'] as $id) {
+                $this->assertTrue($manager->string_exists($id . $suffix, 'quizaccess_proctoring'), $id . $suffix);
+            }
+        }
+    }
+
+    /**
      * A profile keeps flag settings within their ranges, names them in its summary, and its
      * form refuses a count out of range.
      */

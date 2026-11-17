@@ -117,6 +117,43 @@ final class flag_rules {
             : self::MODE_ANY;
     }
 
+    /** @var string Some quizzes in view flag by rules and others by any detected event. */
+    public const MODE_MIXED = 'mixed';
+
+    /**
+     * How the quizzes a report shows are flagged, for the words that explain "Flagged".
+     *
+     * With a profile chosen it is that profile's mode (its own, else the site's); for quizzes on
+     * no profile, the site's. With every quiz in view it is {@see self::MODE_MIXED} as soon as
+     * the site and the profiles do not all agree, since one list then holds attempts flagged by
+     * a rule next to attempts flagged by a single event (Codex review).
+     *
+     * @param int $profileid Profile the report is filtered to; 0 for quizzes on no profile, -1
+     *                       for every quiz.
+     * @return string {@see self::MODE_ANY}, {@see self::MODE_RULES} or {@see self::MODE_MIXED}.
+     */
+    public static function scope_mode(int $profileid = -1): string {
+        $site = self::mode();
+        $profilemode = function (array $values) use ($site): string {
+            if (!array_key_exists(self::MODE_SETTING, $values)) {
+                return $site;
+            }
+            return $values[self::MODE_SETTING] === self::MODE_RULES ? self::MODE_RULES : self::MODE_ANY;
+        };
+        $profiles = profile::all_values();
+        if ($profileid === 0) {
+            return $site;
+        }
+        if ($profileid > 0) {
+            return isset($profiles[$profileid]) ? $profilemode($profiles[$profileid]) : $site;
+        }
+        $modes = [$site => true];
+        foreach ($profiles as $values) {
+            $modes[$profilemode($values)] = true;
+        }
+        return count($modes) > 1 ? self::MODE_MIXED : $site;
+    }
+
     /**
      * Whether any quiz can flag by rules: the site does, or some proctoring profile does.
      *

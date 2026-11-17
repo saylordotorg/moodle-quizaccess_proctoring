@@ -968,8 +968,14 @@ $risksettingsurl = (new moodle_url('/admin/settings.php', ['section' => 'modsett
 // "confirmed violations", not "waiting for your review" and "escalated". All attempts leads because
 // it is the set every other card is a slice of; Clean has no card (nothing there is ever work) but
 // keeps its view pill, so no row is unreachable.
-// Where any quiz flags by rules, "Flagged" means a flag rule was met, not that something was detected.
-$flagrulessuffix = \quizaccess_proctoring\local\flag_rules::used_anywhere() ? '_rules' : '';
+// On quizzes that flag by rules, "Flagged" means a flag rule was met, not that something was
+// detected. The words follow the quizzes in view: the chosen profile's mode, or, with some quizzes
+// on rules and others on any detected event, wording that covers both (Codex review).
+$flagrulessuffix = [
+    \quizaccess_proctoring\local\flag_rules::MODE_ANY => '',
+    \quizaccess_proctoring\local\flag_rules::MODE_RULES => '_rules',
+    \quizaccess_proctoring\local\flag_rules::MODE_MIXED => '_mixed',
+][\quizaccess_proctoring\local\flag_rules::scope_mode($profilefilter)];
 $profileoptions = \quizaccess_proctoring\local\overall_report::profile_options($profilefilter);
 $pulse = [
     [
