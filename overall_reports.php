@@ -89,6 +89,12 @@ if ($riskmin > $riskmax) {
 }
 // Only attempts that reached their quiz's pass grade (CPIT-515).
 $grade = optional_param('grade', '', PARAM_ALPHA) === 'pass' ? 'pass' : '';
+// Only attempts on quizzes using one proctoring profile: 0 for quizzes on no profile, -1 for all.
+$profilefilter = optional_param('profile', -1, PARAM_INT);
+if ($profilefilter < 0
+        || ($profilefilter > 0 && !isset(\quizaccess_proctoring\local\profile::all()[$profilefilter]))) {
+    $profilefilter = -1;
+}
 // Held certificates: only the holds a certificate does, or does not, hang on (CPIT-515).
 $stake = optional_param('stake', '', PARAM_ALPHA);
 if (!in_array($stake, ['atstake', 'nostake'], true)) {
@@ -147,7 +153,7 @@ $activefilters = [
     'riskmin' => $riskmin,
     'riskmax' => $riskmax,
     'grade' => $grade,
-];
+] + ($profilefilter >= 0 ? ['profile' => $profilefilter] : []);
 
 // Approve or decline pending ID exception requests, one row or a batch of them. Each
 // decision resolves its own quiz context, so a batch spanning several exams is fine and
@@ -857,7 +863,8 @@ if (optional_param('download', '', PARAM_ALPHA) === 'csv') {
         $riskmin,
         $riskmax,
         $reportscope,
-        $grade === 'pass'
+        $grade === 'pass',
+        $profilefilter
     );
     $component = 'quizaccess_proctoring';
     $columns = [
@@ -870,6 +877,7 @@ if (optional_param('download', '', PARAM_ALPHA) === 'csv') {
         'decision' => get_string('overallreport:csv_decision', $component),
         'course' => get_string('overallreport:col_course', $component),
         'quiz' => get_string('overallreport:col_quiz', $component),
+        'profile' => get_string('overallreport:filterprofile', $component),
         'started' => get_string('overallreport:col_started', $component),
         'grade' => get_string('overallreport:col_score', $component),
         'outof' => get_string('overallreport:csv_outof', $component),
@@ -884,10 +892,12 @@ if (optional_param('download', '', PARAM_ALPHA) === 'csv') {
         'student' => $row['fullname'],
         'email' => $row['email'],
         'userid' => $row['userid'],
-        'status' => $row['statuslabel'],
+        // A flagged row names the flag rules it met, where its quiz flags by rules.
+        'status' => $row['statuslabel'] . ($row['flaglabel'] !== '' ? ' - ' . $row['flaglabel'] : ''),
         'decision' => $row['signofflabel'],
         'course' => $row['course'],
         'quiz' => $row['quiz'],
+        'profile' => $row['profilename'],
         'started' => $row['started'],
         // The bare grade, with its maximum in a column of its own, so the sheet can be sorted.
         'grade' => $row['score'] !== '' ? $row['score'] : $row['scorelabel'],
@@ -915,7 +925,8 @@ $data = \quizaccess_proctoring\local\overall_report::build(
     $riskmin,
     $riskmax,
     $reportscope,
-    $grade === 'pass'
+    $grade === 'pass',
+    $profilefilter
 );
 
 $baseurl = new moodle_url(
@@ -957,6 +968,9 @@ $risksettingsurl = (new moodle_url('/admin/settings.php', ['section' => 'modsett
 // "confirmed violations", not "waiting for your review" and "escalated". All attempts leads because
 // it is the set every other card is a slice of; Clean has no card (nothing there is ever work) but
 // keeps its view pill, so no row is unreachable.
+// Where any quiz flags by rules, "Flagged" means a flag rule was met, not that something was detected.
+$flagrulessuffix = \quizaccess_proctoring\local\flag_rules::used_anywhere() ? '_rules' : '';
+$profileoptions = \quizaccess_proctoring\local\overall_report::profile_options($profilefilter);
 $pulse = [
     [
         'num' => $summary['totalattempts'],
@@ -969,7 +983,7 @@ $pulse = [
     [
         'num' => $summary['flagged'],
         'label' => get_string('overallreport:pulse_flagged', 'quizaccess_proctoring'),
-        'hint' => get_string('overallreport:pulse_flagged_hint', 'quizaccess_proctoring'),
+        'hint' => get_string('overallreport:pulse_flagged_hint' . $flagrulessuffix, 'quizaccess_proctoring'),
         'url' => $queueurl('flagged'),
         'iscritical' => false,
         'isactive' => $queue === 'flagged',
@@ -1077,6 +1091,9 @@ $templatecontext = [
             + ['queue' => $queue]
     ))->out(false),
     'queue' => $queue,
+    // What "Flagged" and "Clean" mean depends on whether any quiz flags by rules.
+    'flowflagged' => get_string('overallreport:flow_flagged' . $flagrulessuffix, 'quizaccess_proctoring'),
+    'flowclean' => get_string('overallreport:flow_clean' . $flagrulessuffix, 'quizaccess_proctoring'),
     'pulse' => $pulse,
     'views' => $views,
     // The withheld-certificate rows are also the Held certificates tab's population, so the
@@ -1102,7 +1119,8 @@ $templatecontext = [
     'hasrows' => $data['hasrows'],
     // A student or risk filter that matches nothing is not an empty queue, so it keeps the plain
     // "nothing matches these filters" message instead of claiming the queue is caught up.
-    'emptyqueue' => !$data['hasrows'] && $queue === 'needs' && !$hasstudentfilter && !$hasriskfilter && $grade === '',
+    'emptyqueue' => !$data['hasrows'] && $queue === 'needs' && !$hasstudentfilter && !$hasriskfilter && $grade === ''
+        && $profilefilter < 0,
     'emptytitle' => get_string($emptytitles[$holdreachability], 'quizaccess_proctoring'),
     'emptybody' => get_string($emptybodies[$holdreachability], 'quizaccess_proctoring'),
     'emptyisnotice' => $holdreachability !== 'reachable',
@@ -1121,6 +1139,9 @@ $templatecontext = [
         'label' => get_string('overallreport:grade' . ($value === '' ? 'all' : $value), 'quizaccess_proctoring'),
         'selected' => $value === $grade,
     ], ['', 'pass']),
+    // Attempts by proctoring profile; the filter is left out while the site has no profiles.
+    'profileoptions' => $profileoptions,
+    'hasprofiles' => !empty($profileoptions),
     'downloadurl' => (new moodle_url($baseurl, ['download' => 'csv', 'sesskey' => sesskey()]))->out(false),
     'hasbulk' => (bool)array_filter(array_column($data['rows'], 'canact')),
     'bulkformurl' => (new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'))->out(false),

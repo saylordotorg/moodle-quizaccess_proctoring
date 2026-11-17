@@ -67,7 +67,12 @@ final class admin_settings_wrapper_test extends advanced_testcase {
 
         $root = admin_settings_pages::build(false);
 
-        foreach ([admin_settings_pages::MAIN_SECTION, admin_settings_pages::RISKFACTORS_SECTION] as $section) {
+        $sections = [
+            admin_settings_pages::MAIN_SECTION,
+            admin_settings_pages::RISKFACTORS_SECTION,
+            admin_settings_pages::FLAGRULES_SECTION,
+        ];
+        foreach ($sections as $section) {
             $page = $root->locate($section);
             $this->assertInstanceOf(\admin_settingpage::class, $page, "$section must exist");
             $this->assertTrue($page->check_access(), "$section must grant a capability holder");

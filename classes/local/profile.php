@@ -132,6 +132,9 @@ final class profile {
     /** @var string Form section of the risk level boundaries. */
     public const SECTION_LEVELS = 'levels';
 
+    /** @var string Form section of the rules that list an attempt as Flagged. */
+    public const SECTION_FLAGS = 'flags';
+
     /** @var string[] Risk level boundary settings, lowest first. */
     public const LEVEL_SETTINGS = ['risklevelmoderate', 'risklevelhigh', 'risklevelcritical'];
 
@@ -153,6 +156,10 @@ final class profile {
      * boundaries), so {@see self::config()} resolves them like any other setting. A definition may
      * carry `labelarg`, a string id passed to its label string, and `section`, the form section
      * it is shown in; `factor` names the scoring factor it belongs to.
+     *
+     * Last come the flag rules ({@see flag_rules}): what lists an attempt as Flagged on the
+     * Proctoring reviews pages, so an ACE or degree exam can be flagged on less than a
+     * certificate exam.
      *
      * The score cap stays site-wide on purpose: it decides what a score of "100" means on every
      * report, and two exams on one report must not be on different scales.
@@ -190,6 +197,30 @@ final class profile {
                 'section' => self::SECTION_LEVELS,
             ];
         }
+        // What lists an attempt as Flagged ({@see flag_rules}), under the site's config names.
+        $definitions[flag_rules::MODE_SETTING] = [
+            'label' => 'setting:flagmode',
+            'options' => [
+                flag_rules::MODE_RULES => 'setting:flagmode_rules',
+                flag_rules::MODE_ANY => 'setting:flagmode_any',
+            ],
+            'section' => self::SECTION_FLAGS,
+        ];
+        foreach (array_keys(risk_calculator::FACTOR_DEFAULTS) as $factor) {
+            $definitions[flag_rules::factor_setting($factor)] = [
+                'label' => 'setting:flagrule',
+                'labelarg' => 'riskscore:' . $factor,
+                'options' => [],
+                'range' => [0, flag_rules::MAX_VALUE],
+                'section' => self::SECTION_FLAGS,
+            ];
+        }
+        $definitions[flag_rules::SCORE_SETTING] = [
+            'label' => 'setting:flagminscore',
+            'options' => [],
+            'range' => [0, flag_rules::MAX_VALUE],
+            'section' => self::SECTION_FLAGS,
+        ];
         return self::$definitions = $definitions;
     }
 
