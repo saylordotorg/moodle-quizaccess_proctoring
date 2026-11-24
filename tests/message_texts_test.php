@@ -310,4 +310,199 @@ final class message_texts_test extends advanced_testcase {
         $this->assertSame('Your grade is back', $record->text);
         $this->assertSame(0, (int)$record->usermodified);
     }
+
+    /**
+     * A proctoring profile's own wording wins for its exams; without one the profile follows the
+     * site's wording, then the shipped text. Resetting either side leaves the other alone.
+     */
+    public function test_a_profile_has_its_own_wording(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        \quizaccess_proctoring\local\profile::reset_cache();
+        $ace = \quizaccess_proctoring\local\profile::save(0, 'ACE credit', '', []);
+        $certificate = \quizaccess_proctoring\local\profile::save(0, 'Certificate', '', []);
+        $key = 'message:confirmedsubject';
+        $a = (object)['quiz' => 'Final exam', 'course' => 'Business 101'];
+        $default = get_string($key, 'quizaccess_proctoring', $a);
+
+        message_texts::save($key, 'ACE review of [course] is complete', 7, $ace);
+        $this->assertSame('ACE review of Business 101 is complete', message_texts::get($key, $a, null, [], $ace));
+        $this->assertSame($default, message_texts::get($key, $a));
+        $this->assertSame($default, message_texts::get($key, $a, null, [], $certificate));
+        $this->assertSame('ACE review of [course] is complete', message_texts::to_editor($key, null, $ace));
+        $this->assertSame(7, (int)message_texts::edit_record($key, $ace)->usermodified);
+        $this->assertNull(message_texts::edit_record($key));
+        $this->assertNull(message_texts::edit_record($key, $certificate));
+
+        // The site's wording reaches a profile with none of its own, not the one that has.
+        message_texts::save($key, 'Review of [course] is complete', 7);
+        $this->assertSame('Review of Business 101 is complete', message_texts::get($key, $a, null, [], $certificate));
+        $this->assertSame('ACE review of Business 101 is complete', message_texts::get($key, $a, null, [], $ace));
+
+        // Resetting the site's wording keeps the profile's; resetting the profile's keeps the site's.
+        message_texts::reset($key);
+        $this->assertSame($default, message_texts::get($key, $a));
+        $this->assertSame('ACE review of Business 101 is complete', message_texts::get($key, $a, null, [], $ace));
+        message_texts::save($key, 'Review of [course] is complete', 7);
+        message_texts::reset($key, $ace);
+        $this->assertSame('Review of Business 101 is complete', message_texts::get($key, $a, null, [], $ace));
+
+        // Saving the wording a profile would have anyway stores nothing for it.
+        message_texts::save($key, 'Review of [course] is complete', 7, $ace);
+        $this->assertFalse($DB->record_exists('quizaccess_proctoring_msg_texts', ['stringid' => $key, 'profileid' => $ace]));
+
+        // Deleting a profile drops its wording and leaves the site's.
+        message_texts::save($key, 'ACE again: [course]', 7, $ace);
+        \quizaccess_proctoring\local\profile::delete($ace);
+        $this->assertFalse($DB->record_exists('quizaccess_proctoring_msg_texts', ['profileid' => $ace]));
+        $this->assertTrue($DB->record_exists('quizaccess_proctoring_msg_texts', ['stringid' => $key, 'profileid' => 0]));
+    }
+
+    /**
+     * A message about the student rather than one exam has the site's wording only.
+     */
+    public function test_messages_not_about_an_exam_have_no_profile_wording(): void {
+        $this->resetAfterTest();
+        \quizaccess_proctoring\local\profile::reset_cache();
+        $ace = \quizaccess_proctoring\local\profile::save(0, 'ACE credit', '', []);
+
+        foreach (array_keys(message_texts::MESSAGES) as $id) {
+            $this->assertSame(!in_array($id, message_texts::SITE_ONLY, true), message_texts::per_profile($id), $id);
+        }
+        $this->assertFalse(message_texts::per_profile('nosuchmessage'));
+
+        $key = 'referencereset:donebody';
+        $a = (object)['contact' => 'help@example.org'];
+        message_texts::save($key, 'New photo next time. Ask [contact].', 7);
+        $this->assertSame('New photo next time. Ask help@example.org.', message_texts::get($key, $a, null, [], $ace));
+
+        $this->expectException(\coding_exception::class);
+        message_texts::save($key, 'Only for ACE. Ask [contact].', 7, $ace);
+    }
+
+    /**
+     * A confirmed hold on an exam that uses a profile sends the profile's wording; the same
+     * decision on an exam with no profile sends the site's.
+     */
+    public function test_a_hold_decision_uses_the_exams_profile_wording(): void {
+        $this->resetAfterTest();
+        \quizaccess_proctoring\local\profile::reset_cache();
+        set_config('holddecisionnotify', 1, 'quizaccess_proctoring');
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course(['fullname' => 'Business 101']);
+        $ace = \quizaccess_proctoring\local\profile::save(0, 'ACE credit', '', []);
+        $acequiz = $generator->create_module('quiz', [
+            'course' => $course->id,
+            'name' => 'ACE final',
+            'proctoringrequired' => 1,
+            'profileid' => $ace,
+        ]);
+        $plainquiz = $generator->create_module('quiz', [
+            'course' => $course->id,
+            'name' => 'Certificate final',
+            'proctoringrequired' => 1,
+        ]);
+        $student = $generator->create_user(['firstname' => 'Dana', 'lastname' => 'Okafor']);
+        $this->assertSame($ace, message_texts::profile_for_cm((int)$acequiz->cmid));
+        $this->assertSame(0, message_texts::profile_for_cm((int)$plainquiz->cmid));
+        $this->assertSame(0, message_texts::profile_for_cm(0));
+
+        message_texts::save('message:confirmedsubject', 'Review of [quiz] is complete', 2);
+        message_texts::save('message:confirmedsubject', 'ACE credit: review of [quiz] is complete', 2, $ace);
+
+        $subjects = [];
+        foreach ([$acequiz, $plainquiz] as $quiz) {
+            $sink = $this->redirectMessages();
+            quizaccess_proctoring_notify_hold_decision((object)[
+                'courseid' => (int)$course->id,
+                'quizid' => (int)$quiz->cmid,
+                'quizinstance' => (int)$quiz->id,
+                'userid' => (int)$student->id,
+                'attemptid' => 4242,
+            ], 'confirmed');
+            $messages = $sink->get_messages();
+            $sink->close();
+            $this->assertCount(1, $messages);
+            $subjects[] = $messages[0]->subject;
+        }
+        $this->assertSame(
+            ['ACE credit: review of ACE final is complete', 'Review of Certificate final is complete'],
+            $subjects
+        );
+    }
+
+    /**
+     * The ID exception email for an exam on a profile uses the profile's subject.
+     */
+    public function test_the_id_exception_email_uses_the_exams_profile_wording(): void {
+        $this->resetAfterTest();
+        \quizaccess_proctoring\local\profile::reset_cache();
+        $generator = $this->getDataGenerator();
+        $course = $generator->create_course();
+        $ace = \quizaccess_proctoring\local\profile::save(0, 'ACE credit', '', []);
+        $quiz = $generator->create_module('quiz', [
+            'course' => $course->id,
+            'proctoringrequired' => 1,
+            'profileid' => $ace,
+        ]);
+        $student = $generator->create_user(['firstname' => 'Dana']);
+        message_texts::save('idexemptionemail:approved:subject', 'Good news about [quiz]', 2);
+        message_texts::save('idexemptionemail:approved:subject', 'ACE credit: good news about [quiz]', 2, $ace);
+
+        $sink = $this->redirectEmails();
+        \quizaccess_proctoring\local\exemption_email::notify_student_decision(
+            $student,
+            true,
+            'Business 101',
+            'Final exam',
+            (int)$quiz->cmid,
+            ''
+        );
+        $emails = $sink->get_messages();
+        $sink->close();
+
+        $this->assertCount(1, $emails);
+        $this->assertSame('ACE credit: good news about Final exam', $emails[0]->subject);
+    }
+
+    /**
+     * The upgrade adds the profile to stored wording and lets one string have a row per profile,
+     * keeping the wording already stored as the site's.
+     */
+    public function test_upgrade_adds_the_profile_to_stored_wording(): void {
+        global $CFG, $DB;
+
+        $this->resetAfterTest();
+        require_once($CFG->libdir . '/upgradelib.php');
+        require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/db/upgrade.php');
+        $dbman = $DB->get_manager();
+        $table = new \xmldb_table('quizaccess_proctoring_msg_texts');
+
+        // The table as 1.24.0 had it: no profile, one row per string.
+        $dbman->drop_index($table, new \xmldb_index('stringprofile', XMLDB_INDEX_UNIQUE, ['stringid', 'profileid']));
+        $dbman->drop_field($table, new \xmldb_field('profileid'));
+        $dbman->add_index($table, new \xmldb_index('stringid', XMLDB_INDEX_UNIQUE, ['stringid']));
+        $DB->insert_record('quizaccess_proctoring_msg_texts', (object)[
+            'stringid' => 'message:releasedsubject',
+            'text' => 'Your grade is back',
+            'usermodified' => 2,
+            'timemodified' => 12345,
+        ]);
+
+        for ($run = 0; $run < 2; $run++) {
+            set_config('version', 2026111700, 'quizaccess_proctoring');
+            ob_start();
+            try {
+                $this->assertTrue(xmldb_quizaccess_proctoring_upgrade(2026111700));
+            } finally {
+                ob_end_clean();
+            }
+            $this->assertTrue($dbman->field_exists($table, new \xmldb_field('profileid')));
+        }
+
+        $this->assertSame('Your grade is back', message_texts::stored('message:releasedsubject'));
+        message_texts::save('message:releasedsubject', 'ACE: your grade is back', 2, 5);
+        $this->assertSame(2, $DB->count_records('quizaccess_proctoring_msg_texts', ['stringid' => 'message:releasedsubject']));
+    }
 }

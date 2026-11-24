@@ -493,6 +493,8 @@ final class profile {
         $transaction = $DB->start_delegated_transaction();
         $DB->set_field('quizaccess_proctoring', 'profileid', 0, ['profileid' => $id]);
         $DB->delete_records(self::TABLE, ['id' => $id]);
+        // Its own wording of the student messages goes with it.
+        message_texts::delete_for_profile($id);
         $transaction->allow_commit();
         self::reset_cache();
     }

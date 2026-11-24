@@ -1632,6 +1632,26 @@ function xmldb_quizaccess_proctoring_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026102901, 'quizaccess', 'proctoring');
     }
 
+    if ($oldversion < 2026111701) {
+        // A proctoring profile can have its own wording of a student message: the wording is now
+        // unique per string and profile, with 0 for the site's wording every row had before.
+        $table = new xmldb_table('quizaccess_proctoring_msg_texts');
+        $field = new xmldb_field('profileid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'stringid');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        $oldindex = new xmldb_index('stringid', XMLDB_INDEX_UNIQUE, ['stringid']);
+        if ($dbman->index_exists($table, $oldindex)) {
+            $dbman->drop_index($table, $oldindex);
+        }
+        $index = new xmldb_index('stringprofile', XMLDB_INDEX_UNIQUE, ['stringid', 'profileid']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        upgrade_plugin_savepoint(true, 2026111701, 'quizaccess', 'proctoring');
+    }
+
     return true;
 }
 

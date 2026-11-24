@@ -27,9 +27,12 @@ require_once(__DIR__ . '/../../../../config.php');
 require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
 use quizaccess_proctoring\local\message_texts;
+use quizaccess_proctoring\local\profile;
 
 $edit = optional_param('edit', '', PARAM_ALPHANUMEXT);
 $reset = optional_param('reset', '', PARAM_ALPHANUMEXT);
+// The proctoring profile whose own wording is shown and edited; 0 for the site's wording.
+$profileid = optional_param('profile', 0, PARAM_INT);
 $component = 'quizaccess_proctoring';
 
 require_login();
@@ -39,7 +42,19 @@ if (!message_texts::can_view()) {
 }
 $canedit = message_texts::can_edit();
 
-$baseurl = new moodle_url('/mod/quiz/accessrule/proctoring/student_messages.php');
+$profiles = profile::all();
+// A profile that no longer exists shows the site's wording, but a change aimed at it is refused
+// below: falling back would save or reset the site's wording, for every exam (Codex review).
+$unknownprofile = $profileid < 0 || ($profileid > 0 && !isset($profiles[$profileid]));
+if ($unknownprofile) {
+    $profileid = 0;
+}
+$profilename = $profileid > 0 ? format_string($profiles[$profileid]->name, true, ['context' => $context]) : '';
+
+$baseurl = new moodle_url(
+    '/mod/quiz/accessrule/proctoring/student_messages.php',
+    $profileid > 0 ? ['profile' => $profileid] : []
+);
 $PAGE->set_context($context);
 $PAGE->set_url($baseurl);
 $PAGE->set_pagelayout('report');
@@ -47,8 +62,21 @@ $PAGE->set_title(get_string('messagetexts:title', $component));
 $PAGE->set_heading(get_string('messagetexts:title', $component));
 $PAGE->requires->css('/mod/quiz/accessrule/proctoring/styles.css');
 
+if ($unknownprofile && ($edit !== '' || $reset !== '')) {
+    redirect(
+        $baseurl,
+        get_string('messagetexts:profilegone', $component),
+        null,
+        \core\output\notification::NOTIFY_ERROR
+    );
+}
+
 foreach ([$edit, $reset] as $id) {
     if ($id !== '' && !isset(message_texts::MESSAGES[$id])) {
+        throw new moodle_exception('invalidparameter', 'debug');
+    }
+    // A message that is not about one exam has the site's wording only.
+    if ($id !== '' && $profileid > 0 && !message_texts::per_profile($id)) {
         throw new moodle_exception('invalidparameter', 'debug');
     }
 }
@@ -57,11 +85,14 @@ if ($reset !== '') {
     require_capability(message_texts::CAPABILITY, $context);
     require_sesskey();
     foreach (message_texts::MESSAGES[$reset]['parts'] as $key) {
-        message_texts::reset($key);
+        message_texts::reset($key, $profileid);
     }
+    $resetname = get_string('messagetexts:message_' . $reset, $component);
     redirect(
         new moodle_url($baseurl, [], 'message-' . $reset),
-        get_string('messagetexts:resetdone', $component, get_string('messagetexts:message_' . $reset, $component)),
+        $profileid > 0
+            ? get_string('messagetexts:resetprofiledone', $component, (object)['message' => $resetname, 'profile' => $profilename])
+            : get_string('messagetexts:resetdone', $component, $resetname),
         null,
         \core\output\notification::NOTIFY_SUCCESS
     );
@@ -69,17 +100,23 @@ if ($reset !== '') {
 
 if ($edit !== '') {
     require_capability(message_texts::CAPABILITY, $context);
-    $form = new \quizaccess_proctoring\form\message_text_form(new moodle_url($baseurl, ['edit' => $edit]), ['message' => $edit]);
+    $form = new \quizaccess_proctoring\form\message_text_form(
+        new moodle_url($baseurl, ['edit' => $edit]),
+        ['message' => $edit, 'profile' => $profileid]
+    );
     if ($form->is_cancelled()) {
         redirect(new moodle_url($baseurl, [], 'message-' . $edit));
     }
     if ($data = $form->get_data()) {
         foreach (message_texts::MESSAGES[$edit]['parts'] as $part => $key) {
-            message_texts::save($key, (string)$data->$part, (int)$USER->id);
+            message_texts::save($key, (string)$data->$part, (int)$USER->id, $profileid);
         }
+        $savedname = get_string('messagetexts:message_' . $edit, $component);
         redirect(
             new moodle_url($baseurl, [], 'message-' . $edit),
-            get_string('messagetexts:saved', $component, get_string('messagetexts:message_' . $edit, $component)),
+            $profileid > 0
+                ? get_string('messagetexts:savedprofile', $component, (object)['message' => $savedname, 'profile' => $profilename])
+                : get_string('messagetexts:saved', $component, $savedname),
             null,
             \core\output\notification::NOTIFY_SUCCESS
         );
@@ -102,6 +139,14 @@ if ($edit !== '') {
     );
     echo $OUTPUT->heading(get_string('messagetexts:message_' . $edit, $component), 3);
     echo html_writer::tag('p', s(get_string('messagetexts:when_' . $edit, $component)), ['class' => 'text-muted']);
+    if ($profileid > 0) {
+        // Say whose wording this is: only exams on this profile receive it.
+        echo $OUTPUT->notification(
+            get_string('messagetexts:editingfor', $component, $profilename),
+            \core\output\notification::NOTIFY_INFO,
+            false
+        );
+    }
     $form->display();
     echo html_writer::end_div();
     echo $OUTPUT->footer();
@@ -118,8 +163,33 @@ echo html_writer::link(
 );
 echo html_writer::tag('p', s(get_string($canedit ? 'messagetexts:introedit' : 'messagetexts:introview', $component)));
 
+// One tab for the site's wording and one per proctoring profile, once the site has profiles: an
+// exam on a profile uses that profile's wording of a message, where it has its own.
+if ($profiles) {
+    $pageurl = '/mod/quiz/accessrule/proctoring/student_messages.php';
+    $tabs = [new tabobject('profile0', new moodle_url($pageurl), get_string('messagetexts:profiletab_site', $component))];
+    foreach ($profiles as $record) {
+        $tabs[] = new tabobject(
+            'profile' . (int)$record->id,
+            new moodle_url($pageurl, ['profile' => (int)$record->id]),
+            format_string($record->name, true, ['context' => $context])
+        );
+    }
+    echo $OUTPUT->tabtree($tabs, 'profile' . $profileid);
+    // The profile's name is already escaped by format_string(), so it is not escaped again.
+    echo html_writer::tag(
+        'p',
+        $profileid > 0
+            ? get_string('messagetexts:profileintro', $component, $profilename)
+            : s(get_string('messagetexts:profileshint', $component))
+    );
+}
+
 $canlinksettings = quizaccess_proctoring_can_manage_admin_settings();
 foreach (message_texts::MESSAGES as $id => $message) {
+    // On a profile's tab, a message that is not about one exam is listed for completeness but
+    // keeps the site's wording.
+    $siteonly = $profileid > 0 && !message_texts::per_profile($id);
     $out = html_writer::tag('h3', s(get_string('messagetexts:message_' . $id, $component)), ['class' => 'h5']);
     $out .= html_writer::tag('p', s(get_string('messagetexts:when_' . $id, $component)), ['class' => 'mb-1']);
 
@@ -146,10 +216,14 @@ foreach (message_texts::MESSAGES as $id => $message) {
         );
     $out .= html_writer::tag('dl', $details, ['class' => 'row small mb-2']);
 
+    if ($siteonly) {
+        $out .= html_writer::tag('p', s(get_string('messagetexts:siteonly', $component)), ['class' => 'small text-muted mb-1']);
+    }
+
     $customised = false;
     foreach ($message['parts'] as $part => $key) {
-        $record = message_texts::edit_record($key);
-        $status = get_string('messagetexts:default', $component);
+        $record = $siteonly ? null : message_texts::edit_record($key, $profileid);
+        $status = get_string($profileid > 0 ? 'messagetexts:usessite' : 'messagetexts:default', $component);
         if ($record) {
             $customised = true;
             $editor = core_user::get_user((int)$record->usermodified);
@@ -165,13 +239,13 @@ foreach (message_texts::MESSAGES as $id => $message) {
                 . html_writer::span(s($status), $badge),
             'mt-2'
         );
-        $out .= html_writer::tag('div', s(message_texts::to_editor($key)), [
+        $out .= html_writer::tag('div', s(message_texts::to_editor($key, null, $profileid)), [
             'class' => 'proctoring-message-text border rounded p-2 bg-light',
             'style' => 'white-space: pre-wrap;',
         ]);
     }
 
-    if ($canedit) {
+    if ($canedit && !$siteonly) {
         $buttons = html_writer::link(
             new moodle_url($baseurl, ['edit' => $id]),
             get_string('messagetexts:edit', $component),
@@ -180,9 +254,11 @@ foreach (message_texts::MESSAGES as $id => $message) {
         if ($customised) {
             $button = new single_button(
                 new moodle_url($baseurl, ['reset' => $id, 'sesskey' => sesskey()]),
-                get_string('messagetexts:reset', $component)
+                get_string($profileid > 0 ? 'messagetexts:resetprofile' : 'messagetexts:reset', $component)
             );
-            $button->add_confirm_action(get_string('messagetexts:resetconfirm', $component));
+            $button->add_confirm_action(
+                get_string($profileid > 0 ? 'messagetexts:resetprofileconfirm' : 'messagetexts:resetconfirm', $component)
+            );
             $buttons .= ' ' . $OUTPUT->render($button);
         }
         $out .= html_writer::div($buttons, 'mt-2 d-flex gap-2 align-items-start');
