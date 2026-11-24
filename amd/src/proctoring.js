@@ -1,13 +1,19 @@
 // @SuppressWarnings("javascript:S4144");
-let isCameraAllowed = false;
-// Module-scoped handle to the MediaStream acquired for the Pre-Check modal (Req 6.2).
-let precheckStream = null;
-
+// Nothing may be declared out here, before define(). Moodle serves every plugin's modules as one
+// script, and sends that whole script again whenever a page asks for a single module by URL. A
+// top-level let or const is then declared twice in the page, which is a SyntaxError that makes
+// the browser discard the entire second copy ("Identifier 'isCameraAllowed' has already been
+// declared", seen on Learn pages that had nothing to do with an exam).
 define(['jquery', 'core/ajax', 'core/notification', 'core/str', 'quizaccess_proctoring/screenMonitorClient',
     'quizaccess_proctoring/evidenceQueue', 'quizaccess_proctoring/phoneDetector', 'quizaccess_proctoring/faceStrikes',
     'quizaccess_proctoring/automationSignals'],
     function($, Ajax, Notification, Str, ScreenMonitorClient, EvidenceQueue, PhoneDetector, FaceStrikes,
         AutomationSignals) {
+        // Whether the Pre-Check camera was granted.
+        let isCameraAllowed = false;
+        // Module-scoped handle to the MediaStream acquired for the Pre-Check modal (Req 6.2).
+        let precheckStream = null;
+
         // Whether this looks like a phone or tablet. Only asked once screen sharing has turned out
         // to be unavailable: a tablet asking for the desktop site reports a desktop operating
         // system, so the touch screen is the tell (CPIT-495).
