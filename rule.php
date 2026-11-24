@@ -2215,14 +2215,14 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
     public static function add_settings_form_fields($quizform, MoodleQuickForm $mform) {
         $mform->addElement('header', 'quizaccess_proctoring_section', get_string('proctoringsection', 'quizaccess_proctoring'));
 
-        // Add the "Proctoring Required" dropdown.
+        // "Enable proctoring": No or Yes.
         $mform->addElement(
             'select',
             'proctoringrequired',
             get_string('proctoringrequired', 'quizaccess_proctoring'),
             [
-                0 => get_string('notrequired', 'quizaccess_proctoring'),
-                1 => get_string('proctoringrequiredoption', 'quizaccess_proctoring'),
+                0 => get_string('no'),
+                1 => get_string('yes'),
             ]
         );
 

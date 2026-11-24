@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.25.1 — 2026-11-24
+- **The quiz setting that turns proctoring on is now "Enable proctoring", with Yes or No.** In a quiz's settings, under Proctoring, the setting was labelled "Webcam identity validation" and its choices were "Not required" and "Enable webcam capture by Proctoring". The setting turns on all of a quiz's proctoring, not only the webcam, so the label and choices now say so. Wording only: the stored value and every quiz's current choice are unchanged.
+
 # v1.25.0 — 2026-11-17
 - **Messages to students can be worded per proctoring profile (Student Affairs).** Once the site has proctoring profiles, the "Messages to students" page has a tab for the site's wording ("All exams") and one for each profile. On a profile's tab, a message can be given wording of its own, which the students of exams on that profile receive: an ACE credit exam can say something a certificate exam does not. A message with no wording of its own on a profile uses the site's wording, as before, and "Use the site wording" goes back to it. The editor, its placeholders and its preview work as they do for the site's wording.
   - This covers the messages about an exam: grade held, hold released, violation confirmed, failed automatically (both kinds), and the two photo ID exception emails. The three reference photo messages are about the student rather than one exam, so they keep one wording for everyone; a profile's tab lists them and says so.
