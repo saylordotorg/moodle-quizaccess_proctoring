@@ -67,7 +67,12 @@ final class admin_settings_wrapper_test extends advanced_testcase {
 
         $root = admin_settings_pages::build(false);
 
-        foreach ([admin_settings_pages::MAIN_SECTION, admin_settings_pages::RISKFACTORS_SECTION] as $section) {
+        $sections = [
+            admin_settings_pages::MAIN_SECTION,
+            admin_settings_pages::RISKFACTORS_SECTION,
+            admin_settings_pages::FLAGRULES_SECTION,
+        ];
+        foreach ($sections as $section) {
             $page = $root->locate($section);
             $this->assertInstanceOf(\admin_settingpage::class, $page, "$section must exist");
             $this->assertTrue($page->check_access(), "$section must grant a capability holder");
@@ -94,6 +99,62 @@ final class admin_settings_wrapper_test extends advanced_testcase {
         foreach ($adminonly as $secret) {
             $this->assertNotContains($secret, $mainnames, "$secret must stay site-administrator only");
         }
+    }
+
+    /**
+     * Capability holders may manage proctoring profiles because a profile opens nothing new:
+     * every setting a profile can change is one their own settings pages already let them
+     * change for the whole site. A profile setting that only a site administrator could set
+     * would turn the profiles page into a way around that.
+     */
+    public function test_a_profile_changes_only_settings_a_capability_holder_can_set(): void {
+        global $DB;
+        $this->resetAfterTest();
+
+        $user = $this->getDataGenerator()->create_user();
+        $managerrole = $DB->get_record('role', ['shortname' => 'manager'], '*', MUST_EXIST);
+        role_assign($managerrole->id, $user->id, context_system::instance()->id);
+        $this->setUser($user);
+
+        $root = admin_settings_pages::build(false);
+        $names = [];
+        $sections = [
+            admin_settings_pages::MAIN_SECTION,
+            admin_settings_pages::RISKFACTORS_SECTION,
+            admin_settings_pages::FLAGRULES_SECTION,
+        ];
+        foreach ($sections as $section) {
+            foreach ($this->settings_of($root->locate($section)) as $setting) {
+                $names[(string)$setting->name] = true;
+            }
+        }
+
+        foreach (array_keys(\quizaccess_proctoring\local\profile::definitions()) as $name) {
+            $this->assertArrayHasKey($name, $names, "a profile must not change '$name', which a capability holder cannot set");
+        }
+    }
+
+    /**
+     * The tabs a capability holder sees lead to the three settings pages, the profiles page and
+     * the two stand-alone pages, each once.
+     */
+    public function test_tabs_include_the_profiles_page(): void {
+        $tabs = admin_settings_pages::tabs();
+        $ids = array_map(static fn(\tabobject $tab): string => (string)$tab->id, $tabs);
+
+        $this->assertSame(
+            [
+                admin_settings_pages::MAIN_SECTION,
+                admin_settings_pages::RISKFACTORS_SECTION,
+                admin_settings_pages::FLAGRULES_SECTION,
+                admin_settings_pages::PROFILES_TAB,
+                'overallreports',
+                'userslist',
+            ],
+            $ids
+        );
+        $profiles = $tabs[3];
+        $this->assertStringContainsString('/mod/quiz/accessrule/proctoring/profiles.php', $profiles->link->out(false));
     }
 
     /**

@@ -93,31 +93,7 @@ echo $OUTPUT->header();
 
 // The plugin's pages a capability holder can work with, the settings pages served here and the
 // stand-alone pages that check the capability themselves.
-$tabs = [
-    new tabobject(
-        \quizaccess_proctoring\local\admin_settings_pages::MAIN_SECTION,
-        new moodle_url('/mod/quiz/accessrule/proctoring/adminsettings.php',
-            ['section' => \quizaccess_proctoring\local\admin_settings_pages::MAIN_SECTION]),
-        get_string('settings', 'quizaccess_proctoring')
-    ),
-    new tabobject(
-        \quizaccess_proctoring\local\admin_settings_pages::RISKFACTORS_SECTION,
-        new moodle_url('/mod/quiz/accessrule/proctoring/adminsettings.php',
-            ['section' => \quizaccess_proctoring\local\admin_settings_pages::RISKFACTORS_SECTION]),
-        get_string('riskfactorspage', 'quizaccess_proctoring')
-    ),
-    new tabobject(
-        'overallreports',
-        new moodle_url('/mod/quiz/accessrule/proctoring/overall_reports.php'),
-        get_string('overallreports', 'quizaccess_proctoring')
-    ),
-    new tabobject(
-        'userslist',
-        new moodle_url('/mod/quiz/accessrule/proctoring/userslist.php'),
-        get_string('users_list', 'quizaccess_proctoring')
-    ),
-];
-echo $OUTPUT->tabtree($tabs, $section);
+echo $OUTPUT->tabtree(\quizaccess_proctoring\local\admin_settings_pages::tabs(), $section);
 
 if ($savefailed) {
     echo $OUTPUT->notification(get_string('errorwithsettings', 'admin'), \core\output\notification::NOTIFY_ERROR);

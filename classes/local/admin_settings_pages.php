@@ -43,6 +43,55 @@ class admin_settings_pages {
     /** @var string The risk factor scoring page's section name. */
     public const RISKFACTORS_SECTION = 'quizaccess_proctoring_riskfactors';
 
+    /** @var string The flag rules page's section name. */
+    public const FLAGRULES_SECTION = 'quizaccess_proctoring_flagrules';
+
+    /** @var string Tab id of the proctoring profiles page. */
+    public const PROFILES_TAB = 'profiles';
+
+    /**
+     * The tabs a capability holder works with: the settings pages adminsettings.php serves, and
+     * the stand-alone pages that check the capability themselves.
+     *
+     * Proctoring profiles are among them: a profile can change only settings these pages already
+     * let the holder change for the whole site, so the tab opens nothing new.
+     *
+     * @return \tabobject[] Tabs, in the order they are shown.
+     */
+    public static function tabs(): array {
+        $component = 'quizaccess_proctoring';
+        $base = '/mod/quiz/accessrule/proctoring/';
+        $tabs = [];
+        $sections = [
+            self::MAIN_SECTION => 'settings',
+            self::RISKFACTORS_SECTION => 'riskfactorspage',
+            self::FLAGRULES_SECTION => 'flagrulespage',
+        ];
+        foreach ($sections as $section => $stringid) {
+            $tabs[] = new \tabobject(
+                $section,
+                new \moodle_url($base . 'adminsettings.php', ['section' => $section]),
+                get_string($stringid, $component)
+            );
+        }
+        $tabs[] = new \tabobject(
+            self::PROFILES_TAB,
+            new \moodle_url($base . 'profiles.php'),
+            get_string('profiles:title', $component)
+        );
+        $tabs[] = new \tabobject(
+            'overallreports',
+            new \moodle_url($base . 'overall_reports.php'),
+            get_string('overallreports', $component)
+        );
+        $tabs[] = new \tabobject(
+            'userslist',
+            new \moodle_url($base . 'userslist.php'),
+            get_string('users_list', $component)
+        );
+        return $tabs;
+    }
+
     /**
      * Build the plugin's settings pages as settings.php defines them.
      *

@@ -1461,6 +1461,53 @@ if ($canmanageproctoring) {
 
     $ADMIN->add($proctoringcategory, $riskfactorspage);
 
+    // 3b. Flag rules: what lists an attempt with no grade hold as "Flagged" on the Proctoring
+    // reviews pages. A plain settings page; proctoring profiles can change every value on it.
+    $flagrulespage = new admin_settingpage(
+        \quizaccess_proctoring\local\admin_settings_pages::FLAGRULES_SECTION,
+        get_string('flagrulespage', 'quizaccess_proctoring'),
+        $proctoringpagecap
+    );
+    $flagrulespage->add(new admin_setting_heading(
+        'quizaccess_proctoring_flagrulesheading',
+        '',
+        get_string('setting:flagrulesheading_desc', 'quizaccess_proctoring')
+    ));
+    $flagrulespage->add(new admin_setting_configselect(
+        'quizaccess_proctoring/' . \quizaccess_proctoring\local\flag_rules::MODE_SETTING,
+        get_string('setting:flagmode', 'quizaccess_proctoring'),
+        get_string('setting:flagmode_desc', 'quizaccess_proctoring'),
+        \quizaccess_proctoring\local\flag_rules::MODE_ANY,
+        [
+            \quizaccess_proctoring\local\flag_rules::MODE_ANY => get_string('setting:flagmode_any', 'quizaccess_proctoring'),
+            \quizaccess_proctoring\local\flag_rules::MODE_RULES => get_string('setting:flagmode_rules', 'quizaccess_proctoring'),
+        ]
+    ));
+    foreach (array_keys(\quizaccess_proctoring\local\risk_calculator::FACTOR_DEFAULTS) as $factorkey) {
+        $flagdefault = \quizaccess_proctoring\local\flag_rules::default_count($factorkey);
+        $flagrulespage->add(new admin_setting_configtext(
+            'quizaccess_proctoring/' . \quizaccess_proctoring\local\flag_rules::factor_setting($factorkey),
+            get_string(
+                'setting:flagrule',
+                'quizaccess_proctoring',
+                get_string('riskscore:' . $factorkey, 'quizaccess_proctoring')
+            ),
+            get_string('setting:flagrule_desc', 'quizaccess_proctoring'),
+            $flagdefault,
+            PARAM_INT,
+            4
+        ));
+    }
+    $flagrulespage->add(new admin_setting_configtext(
+        'quizaccess_proctoring/' . \quizaccess_proctoring\local\flag_rules::SCORE_SETTING,
+        get_string('setting:flagminscore', 'quizaccess_proctoring'),
+        get_string('setting:flagminscore_desc', 'quizaccess_proctoring'),
+        \quizaccess_proctoring\local\flag_rules::DEFAULT_MIN_SCORE,
+        PARAM_INT,
+        4
+    ));
+    $ADMIN->add($proctoringcategory, $flagrulespage);
+
     // 4. Review diagnostics. Kept site-administrator only: it reports provider request failures,
     // which can echo credential and endpoint detail.
     $ADMIN->add($proctoringcategory, new admin_externalpage(

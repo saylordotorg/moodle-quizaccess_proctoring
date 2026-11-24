@@ -263,6 +263,8 @@ final class overall_report {
      *                     possible score, means no upper bound.
      * @param int[]|null $scope Quizzes the viewer may see, or null for every quiz (CPIT-474).
      * @param bool $passingonly Only attempts that reached their quiz's pass grade (CPIT-515).
+     * @param int $profilefilter Only attempts on quizzes using this proctoring profile; 0 for
+     *                           quizzes on no profile (the site settings), -1 for every quiz.
      * @return array Template-ready report data.
      */
     public static function build(
@@ -279,7 +281,8 @@ final class overall_report {
         int $riskmin = 0,
         int $riskmax = -1,
         ?array $scope = null,
-        bool $passingonly = false
+        bool $passingonly = false,
+        int $profilefilter = -1
     ): array {
         global $CFG, $DB;
 
@@ -405,6 +408,9 @@ final class overall_report {
                 return $a['violations'] >= $minviolations;
             });
         }
+        if ($profilefilter >= 0) {
+            $attempts = self::filter_by_profile($attempts, $profilefilter);
+        }
 
         // Resolve the students once for the whole set, not just the visible page: the search box,
         // the initials bars and the name/email sorts all order or exclude rows that pagination has
@@ -450,6 +456,9 @@ final class overall_report {
         // but not parked in the actionable queue, since there is no hold to act on); everything
         // else is clean.
         $holdstates = self::hold_states($attemptids);
+        // Under flag rules, what flags an unheld attempt is its risk factors and score rather than
+        // any detected event; this scores those attempts and records why each is flagged.
+        $attempts = self::apply_flag_rules($attempts, $holdstates);
         // A flagged attempt has no hold to release, so its only decision is a reviewer sign-off.
         $signoffs = attempt_review::active_for($attempts);
         $pulse = ['needs' => 0, 'flagged' => 0, 'reviewed' => 0, 'escalated' => 0, 'clean' => 0];
@@ -476,10 +485,16 @@ final class overall_report {
                 $reviewstate = 'escalated';
             } else if ($status === \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE) {
                 $reviewstate = 'needs';
-            } else if ($a['violations'] > 0) {
+            } else if (array_key_exists('flagreasons', $a) ? !empty($a['flagreasons']) : $a['violations'] > 0) {
                 // Signed off counts as reviewed: a decision has been recorded either way, and the
                 // row names who made it. Without one the attempt stays flagged and keeps asking.
                 $reviewstate = $signoff !== null ? 'reviewed' : 'flagged';
+            } else if ($signoff !== null && array_key_exists('flagreasons', $a)) {
+                // The flag rules no longer list it, but a reviewer signed it off: that decision
+                // still stands, with their name on the row. It does not depend on the count of
+                // detected events, since a rule can flag an attempt that has none - no webcam
+                // capture, or a pace faster than the minimum (Codex review).
+                $reviewstate = 'reviewed';
             } else {
                 $reviewstate = 'clean';
             }
@@ -576,7 +591,7 @@ final class overall_report {
             'grade' => $passingonly ? 'pass' : '',
             // Decisions return to this report, not to the review queue the page opens on.
             'view' => 'attempts',
-        ];
+        ] + ($profilefilter >= 0 ? ['profile' => $profilefilter] : []);
 
         [$rows, $scoreheader] = self::score_column(
             self::decorate_rows($pagerows, $holdscope, $filterparams, $forexport)
@@ -756,6 +771,88 @@ final class overall_report {
     }
 
     /**
+     * The proctoring profile each quiz uses.
+     *
+     * @param int[] $cmids Quiz course-module ids.
+     * @return array<int, int> Course-module id => profile id, for the quizzes that are on a profile.
+     */
+    private static function quiz_profile_ids(array $cmids): array {
+        global $DB;
+
+        $profileids = [];
+        $cmids = array_values(array_unique(array_map('intval', $cmids)));
+        foreach (array_chunk($cmids, self::SCOPE_CHUNK) as $chunk) {
+            [$insql, $params] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'pcm');
+            $rows = $DB->get_recordset_sql(
+                "SELECT cm.id, q.profileid
+                   FROM {course_modules} cm
+                   JOIN {modules} m ON m.id = cm.module AND m.name = :quiz
+                   JOIN {quizaccess_proctoring} q ON q.quizid = cm.instance
+                   JOIN {" . profile::TABLE . "} p ON p.id = q.profileid
+                  WHERE cm.id {$insql}",
+                $params + ['quiz' => 'quiz']
+            );
+            foreach ($rows as $row) {
+                $profileids[(int)$row->id] = (int)$row->profileid;
+            }
+            $rows->close();
+        }
+        return $profileids;
+    }
+
+    /**
+     * Keep only the attempts on quizzes that use one proctoring profile, or none.
+     *
+     * A quiz follows its profile as it is set now: an attempt taken before its quiz was given a
+     * profile is listed under that profile, as its scores and risk levels already are.
+     *
+     * @param array $attempts Attempt rows.
+     * @param int $profileid Profile id, or 0 for quizzes on no profile (the site settings).
+     * @return array The surviving attempt rows.
+     */
+    private static function filter_by_profile(array $attempts, int $profileid): array {
+        if (empty($attempts)) {
+            return $attempts;
+        }
+        $profileids = self::quiz_profile_ids(array_column($attempts, 'cmid'));
+        return array_filter($attempts, function ($a) use ($profileids, $profileid) {
+            return ($profileids[(int)$a['cmid']] ?? 0) === $profileid;
+        });
+    }
+
+    /**
+     * Options for the proctoring profile filter; empty when the site has no profiles, so the
+     * page leaves the filter out.
+     *
+     * @param int $selected Selected profile id; 0 for no profile, -1 for all.
+     * @return array List of option rows for the template.
+     */
+    public static function profile_options(int $selected): array {
+        $profiles = profile::all();
+        if (!$profiles) {
+            return [];
+        }
+        $options = [[
+            'value' => -1,
+            'label' => get_string('overallreport:profileall', 'quizaccess_proctoring'),
+            'selected' => $selected < 0,
+        ]];
+        foreach ($profiles as $profile) {
+            $options[] = [
+                'value' => (int)$profile->id,
+                'label' => format_string($profile->name, true, ['context' => \context_system::instance()]),
+                'selected' => $selected === (int)$profile->id,
+            ];
+        }
+        $options[] = [
+            'value' => 0,
+            'label' => get_string('overallreport:profilenone', 'quizaccess_proctoring'),
+            'selected' => $selected === 0,
+        ];
+        return $options;
+    }
+
+    /**
      * Apply the risk band and risk score range filters.
      *
      * Risk scores are not stored - they are recomputed from current evidence and current factor
@@ -803,6 +900,83 @@ final class overall_report {
         }
 
         return $kept;
+    }
+
+    /**
+     * Judge unheld attempts by the flag rules ({@see flag_rules}), where a quiz uses them.
+     *
+     * A quiz on "any detected event" is left alone: its rows carry no 'flagreasons' and keep the
+     * old test. A quiz on rules has each unheld attempt scored - the rules read the risk factors
+     * and the score - and the row gains 'flagreasons', empty when no rule is met. The score stays
+     * on the row so the visible page does not compute it again. An attempt with a hold is never
+     * judged here: its hold decides its state.
+     *
+     * Nothing is scored while neither the site nor any profile uses rules.
+     *
+     * @param array $attempts Attempt rows.
+     * @param array $holdstates Hold status by attempt id, from {@see self::hold_states()}.
+     * @return array The rows, with 'flagreasons' on those judged by rules.
+     */
+    private static function apply_flag_rules(array $attempts, array $holdstates): array {
+        global $DB;
+
+        if (empty($attempts) || !flag_rules::used_anywhere()) {
+            return $attempts;
+        }
+
+        // Profiles hang off the quiz instance; the rows know only the course module.
+        $cmids = [];
+        foreach ($attempts as $a) {
+            $cmids[(int)$a['cmid']] = true;
+        }
+        // A course module that no longer exists has no profile to ask, so it follows the site (0).
+        $quizids = array_fill_keys(array_keys($cmids), 0);
+        foreach (array_chunk(array_keys($cmids), self::SCOPE_CHUNK) as $chunk) {
+            foreach ($DB->get_records_list('course_modules', 'id', $chunk, '', 'id, instance') as $cm) {
+                $quizids[(int)$cm->id] = (int)$cm->instance;
+            }
+        }
+        $rulequizzes = array_filter($quizids, function (int $quizid): bool {
+            return flag_rules::mode($quizid) === flag_rules::MODE_RULES;
+        });
+
+        // The hold states that decide a row's review state on their own, as build() reads them.
+        $deciding = [
+            \QUIZACCESS_PROCTORING_RISK_HOLD_ACTIVE,
+            \QUIZACCESS_PROCTORING_RISK_HOLD_RELEASED,
+            \QUIZACCESS_PROCTORING_RISK_HOLD_CONFIRMED,
+            \QUIZACCESS_PROCTORING_RISK_HOLD_AUTO_FAILED,
+        ];
+        $judged = [];
+        foreach ($attempts as $key => $a) {
+            if (!array_key_exists((int)$a['cmid'], $rulequizzes)) {
+                continue;
+            }
+            $status = (int)$a['attemptid'] > 0 ? ($holdstates[(int)$a['attemptid']] ?? null) : null;
+            if ($status !== null && in_array($status, $deciding, true)) {
+                continue;
+            }
+            $judged[$key] = $a;
+        }
+        if (empty($judged)) {
+            return $attempts;
+        }
+
+        $unscored = array_filter($judged, function ($a) {
+            return !isset($a['risk']);
+        });
+        $scores = !empty($unscored) ? self::score_attempts($unscored) : [];
+        foreach ($judged as $key => $a) {
+            $risk = $a['risk'] ?? ($scores[$key] ?? null);
+            if ($risk === null) {
+                // It could not be scored, so the rules cannot speak for it: keep the old test.
+                continue;
+            }
+            $attempts[$key]['risk'] = $risk;
+            $attempts[$key]['flagreasons'] = flag_rules::reasons($risk, $rulequizzes[(int)$a['cmid']]);
+        }
+
+        return $attempts;
     }
 
     /**
@@ -976,6 +1150,19 @@ final class overall_report {
         $quizcache = [];
         $quizinfo = [];
         $rows = [];
+
+        // The proctoring profile behind each visible row's quiz, named on the row.
+        $profilenames = [];
+        $profiles = profile::all();
+        if ($profiles) {
+            foreach (self::quiz_profile_ids(array_column($pagerows, 'cmid')) as $cmid => $profileid) {
+                $profilenames[$cmid] = format_string(
+                    $profiles[$profileid]->name,
+                    true,
+                    ['context' => \context_system::instance()]
+                );
+            }
+        }
 
         // One bulk scoring pass for the page. Rows a risk filter already scored keep that result.
         $unscored = array_filter($pagerows, function ($a) {
@@ -1282,6 +1469,11 @@ final class overall_report {
                 'profileurl' => (new moodle_url('/user/profile.php', ['id' => $a['userid']]))->out(false),
                 'course' => $coursecache[$a['courseid']],
                 'quiz' => $quizcache[$a['cmid']],
+                // The quiz's proctoring profile; empty when it is on the site settings.
+                'profilename' => $profilenames[(int)$a['cmid']] ?? '',
+                'profilelabel' => isset($profilenames[(int)$a['cmid']])
+                    ? get_string('overallreport:profileline', 'quizaccess_proctoring', $profilenames[(int)$a['cmid']])
+                    : '',
                 'scorelabel' => $scorelabel,
                 'score' => $score,
                 'scoremax' => $scoremax,
@@ -1321,6 +1513,14 @@ final class overall_report {
                 'breakdown' => $breakdown,
                 'reviewstate' => $reviewstate,
                 'statuslabel' => $statuslabels[$reviewstate] ?? $statuslabels['clean'],
+                // Which flag rules the attempt met, where its quiz flags by rules.
+                'flaglabel' => $reviewstate === 'flagged' && !empty($a['flagreasons'])
+                    ? get_string(
+                        'overallreport:flaggedfor',
+                        'quizaccess_proctoring',
+                        flag_rules::describe($a['flagreasons'])
+                    )
+                    : '',
                 'isneeds' => $reviewstate === 'needs',
                 'isclean' => $reviewstate === 'clean',
                 'aireview' => $aidata,

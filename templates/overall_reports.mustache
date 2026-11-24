@@ -26,12 +26,16 @@
         "sortoptions": [{"value": "recent", "label": "Most recent activity", "selected": true}],
         "risklevoptions": [{"value": "", "label": "Any risk level", "selected": true}],
         "gradeoptions": [{"value": "", "label": "All grades", "selected": true}],
+        "hasprofiles": true,
+        "profileoptions": [{"value": -1, "label": "All profiles", "selected": true}, {"value": 3, "label": "ACE credit", "selected": false}],
         "hasbulk": true, "bulkformurl": "https://example.com/overall_reports.php",
         "bulkhidden": [{"name": "view", "value": "attempts"}], "downloadurl": "#",
         "riskmin": 0, "riskmax": 100, "riskmaxbound": 100,
         "pulse": [{"num": 2, "label": "Withheld certificates", "hint": "Grade and certificate held, no decision yet", "url": "#", "iscritical": true, "isactive": true}],
         "views": [{"label": "Withheld certificates (2)", "url": "#", "isactive": true}],
         "flowheldnote": "The same withheld attempts are listed on the <a href=\"#\">Held certificates</a> tab.",
+        "flowflagged": "<strong>Flagged attempts</strong> - signals were detected but no hold opened.",
+        "flowclean": "<strong>Clean</strong> - nothing was detected during the attempt.",
         "countnote": "Showing 2 of 12 attempts",
         "scoreheader": "Grade/20.00",
         "rows": [
@@ -39,7 +43,7 @@
                 "fullname": "John Doe", "email": "john.doe@example.com", "userurl": "#", "course": "CS105", "quiz": "Final exam",
                 "violations": 7, "violationsbreakdown": "(5 events, 2 face mismatches)", "eventcountlabel": "7 detected events",
                 "lastactivity": "1 January 2026  10:00 AM", "riskscore": 85, "risklevel": "Critical", "levelkey": "critical",
-                "signalsummary": "AI tool (2) · Tab switching (5)", "statuslabel": "Certificate withheld", "reviewstate": "needs",
+                "signalsummary": "AI tool (2) · Tab switching (5)", "statuslabel": "Certificate withheld", "reviewstate": "needs", "flaglabel": "", "profilelabel": "Profile: ACE credit",
                 "isneeds": true, "hassignals": true,
                 "signals": [{"factor": "AI tool", "pts": "+30"}],
                 "breakdown": [{"factor": "AI tool", "pts": "+30"}],
@@ -100,6 +104,15 @@
                 {{#gradeoptions}}<option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>{{/gradeoptions}}
             </select>
         </label>
+        {{! Attempts on quizzes using one proctoring profile; shown once the site has profiles. }}
+        {{#hasprofiles}}
+        <label class="proctoring-overview-filter">
+            <span>{{#str}}overallreport:filterprofile, quizaccess_proctoring{{/str}}</span>
+            <select name="profile">
+                {{#profileoptions}}<option value="{{value}}" {{#selected}}selected{{/selected}}>{{label}}</option>{{/profileoptions}}
+            </select>
+        </label>
+        {{/hasprofiles}}
         {{! Two inputs, so this one is a labelled group rather than a label: a label may only own
             one control, and pointing one at two of them leaves it ambiguous which it activates.
             Each input keeps its own aria-label, so both are named on their own. }}
@@ -152,11 +165,11 @@
         <div class="proctoring-overview-flowbody">
             <p>{{#str}}overallreport:flowintro, quizaccess_proctoring{{/str}}</p>
             <ul>
-                <li>{{#str}}overallreport:flow_flagged, quizaccess_proctoring{{/str}}</li>
+                <li>{{{flowflagged}}}</li>
                 <li>{{#str}}overallreport:flow_needs, quizaccess_proctoring{{/str}}</li>
                 <li>{{#str}}overallreport:flow_escalated, quizaccess_proctoring{{/str}}</li>
                 <li>{{#str}}overallreport:flow_reviewed, quizaccess_proctoring{{/str}}</li>
-                <li>{{#str}}overallreport:flow_clean, quizaccess_proctoring{{/str}}</li>
+                <li>{{{flowclean}}}</li>
             </ul>
             <p>{{{flowheldnote}}}</p>
         </div>
@@ -241,6 +254,7 @@
                     </td>
                     <td>
                         <span class="proctoring-overview-status proctoring-overview-status-{{reviewstate}}">{{statuslabel}}</span>
+                        {{#flaglabel}}<span class="proctoring-overview-flagreason">{{flaglabel}}</span>{{/flaglabel}}
                         {{#signofflabel}}<span class="proctoring-overview-signoff">{{signofflabel}}</span>{{/signofflabel}}
                         {{! There is context to read before deciding whether to open the report. }}
                         {{#notelabel}}<span class="proctoring-overview-notecount">{{notelabel}}</span>{{/notelabel}}
@@ -248,6 +262,7 @@
                     <td class="proctoring-overview-cell-exam">
                         <span class="proctoring-overview-course">{{course}}</span>
                         <span class="proctoring-overview-quizname">{{quiz}}</span>
+                        {{#profilelabel}}<span class="proctoring-overview-profile">{{profilelabel}}</span>{{/profilelabel}}
                     </td>
                     <td class="proctoring-overview-when">{{started}}</td>
                     <td>{{scorelabel}}</td>
