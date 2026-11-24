@@ -25,7 +25,9 @@
 
 require_once(__DIR__ . '/../../../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
+require_once($CFG->dirroot . '/mod/quiz/accessrule/proctoring/lib.php');
 
+use quizaccess_proctoring\local\admin_settings_pages;
 use quizaccess_proctoring\local\profile;
 
 $edit = optional_param('edit', -1, PARAM_INT);
@@ -33,11 +35,21 @@ $delete = optional_param('delete', 0, PARAM_INT);
 $confirm = optional_param('confirm', 0, PARAM_BOOL);
 $component = 'quizaccess_proctoring';
 
-admin_externalpage_setup('quizaccess_proctoring_profiles');
+require_login(null, false);
 $context = context_system::instance();
-require_capability('moodle/site:config', $context);
-
 $baseurl = new moodle_url('/mod/quiz/accessrule/proctoring/profiles.php');
+// Site administrators open this from Site administration. Staff holding the plugin's own
+// settings capability cannot be given the admin tree's page - core builds it only for
+// moodle/site:config - so they get the page itself, beside the settings tabs they already have.
+// A profile changes only settings those tabs let them change for the whole site.
+$issiteconfig = has_capability('moodle/site:config', $context);
+if ($issiteconfig) {
+    admin_externalpage_setup('quizaccess_proctoring_profiles');
+} else {
+    require_capability(QUIZACCESS_PROCTORING_CAP_ADMIN_SETTINGS, $context);
+    $PAGE->set_context($context);
+    $PAGE->set_pagelayout('admin');
+}
 $PAGE->set_url($baseurl);
 $PAGE->set_title(get_string('profiles:title', $component));
 $PAGE->set_heading(get_string('profiles:title', $component));
@@ -87,6 +99,9 @@ if ($edit >= 0) {
         ));
     }
     echo $OUTPUT->header();
+    if (!$issiteconfig) {
+        echo $OUTPUT->tabtree(admin_settings_pages::tabs(), admin_settings_pages::PROFILES_TAB);
+    }
     echo $OUTPUT->heading(get_string($edit > 0 ? 'profiles:edit' : 'profiles:add', $component));
     $form->display();
     echo $OUTPUT->footer();
@@ -94,6 +109,10 @@ if ($edit >= 0) {
 }
 
 echo $OUTPUT->header();
+// Without Site administration's menu, the settings tabs are how these staff move between pages.
+if (!$issiteconfig) {
+    echo $OUTPUT->tabtree(admin_settings_pages::tabs(), admin_settings_pages::PROFILES_TAB);
+}
 echo $OUTPUT->heading(get_string('profiles:title', $component));
 echo html_writer::tag('p', get_string('profiles:intro', $component));
 echo $OUTPUT->single_button(new moodle_url($baseurl, ['edit' => 0]), get_string('profiles:add', $component), 'get');
