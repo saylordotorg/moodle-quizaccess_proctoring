@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+# v1.25.2 — 2026-11-25
+- **The browser notice before an exam follows the browsers the exam allows (CPIT-538).** The quiz page and the device-readiness page always said "Safari works but has had less testing", even where "Browsers allowed to start an exam" (site setting or proctoring profile, since v1.20.0) turns Safari away. The notice now reads the quiz's setting:
+  - *Any browser*: the wording is unchanged.
+  - *Chrome, Edge or Firefox (not Safari)*: Chrome or Edge for full monitoring, Firefox without the second-monitor check, and Safari, or any browser on an iPhone or iPad, cannot start the exam.
+  - *Chrome or Edge only*: Chrome or Edge on a Windows or Mac computer; other browsers, Firefox and Safari included, cannot start the exam.
+
+  A quiz on a proctoring profile gets its profile's notice. Each wording is a language string (`supportedbrowsers`, `supportedbrowsers_nosafari`, `supportedbrowsers_chromeedge`), so Student Affairs can still adjust it without a release. Which browsers are allowed is unchanged: the site default is still *Any browser*, so Safari stays allowed on a site until that setting or a profile says otherwise.
+
 # v1.25.1 — 2026-11-24
 - **The quiz setting that turns proctoring on is now "Enable proctoring", with Yes or No.** In a quiz's settings, under Proctoring, the setting was labelled "Webcam identity validation" and its choices were "Not required" and "Enable webcam capture by Proctoring". The setting turns on all of a quiz's proctoring, not only the webcam, so the label and choices now say so. Wording only: the stored value and every quiz's current choice are unchanged.
 

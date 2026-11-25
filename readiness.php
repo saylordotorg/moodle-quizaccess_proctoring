@@ -48,8 +48,11 @@ $PAGE->requires->js_call_amd('quizaccess_proctoring/deviceReadiness', 'init', [[
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('readiness:title', 'quizaccess_proctoring'));
-// Which browsers work, before the student starts (CPIT-487).
-echo html_writer::div(get_string('supportedbrowsers', 'quizaccess_proctoring'), 'alert alert-info proctoring-supported-browsers');
+// Which browsers work, before the student starts (CPIT-487), as this quiz allows them (CPIT-538).
+echo html_writer::div(
+    \quizaccess_proctoring\local\device::supported_browsers_message((int)$cm->instance),
+    'alert alert-info proctoring-supported-browsers'
+);
 echo $OUTPUT->render_from_template('quizaccess_proctoring/readiness', [
     'quizurl' => (new moodle_url('/mod/quiz/view.php', ['id' => $cmid]))->out(false),
     'screenrequired' => !empty($requirements['screenshare']),

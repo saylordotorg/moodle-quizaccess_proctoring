@@ -110,6 +110,30 @@ final class device {
     }
 
     /**
+     * The browser policy for a quiz: its proctoring profile's, or the site's.
+     *
+     * @param int $quizid Quiz id; 0 reads the site setting.
+     * @return string One of the BROWSERS_* constants; anything unknown reads as BROWSERS_ANY.
+     */
+    public static function browser_policy(int $quizid = 0): string {
+        $policy = (string)profile::config($quizid, 'allowedbrowsers');
+        return isset(self::BROWSER_POLICIES[$policy]) ? $policy : self::BROWSERS_ANY;
+    }
+
+    /**
+     * The "Browsers:" notice shown before a student starts (CPIT-487), worded for the browsers the
+     * quiz actually lets start (CPIT-538): it never says Safari works where Safari is turned away.
+     *
+     * @param int $quizid Quiz id; 0 reads the site setting.
+     * @return string HTML from a language string.
+     */
+    public static function supported_browsers_message(int $quizid = 0): string {
+        $policy = self::browser_policy($quizid);
+        $key = $policy === self::BROWSERS_ANY ? 'supportedbrowsers' : 'supportedbrowsers_' . $policy;
+        return get_string($key, 'quizaccess_proctoring');
+    }
+
+    /**
      * The phone/tablet screen-sharing setting: bypass, require or block. A quiz's proctoring
      * profile can change the site's.
      *

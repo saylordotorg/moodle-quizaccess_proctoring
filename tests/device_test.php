@@ -183,4 +183,44 @@ final class device_test extends advanced_testcase {
         $this->assertTrue(device::browser_allowed(device::BROWSERS_ANY, device::BROWSER_SAFARI));
         $this->assertTrue(device::browser_allowed('', device::BROWSER_OTHER));
     }
+
+    /**
+     * The browser notice follows the site's allowed browsers, and a quiz's profile over the site's
+     * (CPIT-538): Safari is only called usable where it may start the exam.
+     */
+    public function test_supported_browsers_message_follows_policy(): void {
+        $this->resetAfterTest();
+        $component = 'quizaccess_proctoring';
+
+        set_config('allowedbrowsers', 'any', $component);
+        $this->assertSame(get_string('supportedbrowsers', $component), device::supported_browsers_message());
+        $this->assertStringContainsString('Safari works', device::supported_browsers_message());
+
+        set_config('allowedbrowsers', 'nosafari', $component);
+        $this->assertSame(get_string('supportedbrowsers_nosafari', $component), device::supported_browsers_message());
+        $this->assertStringContainsString('Safari cannot start this exam', device::supported_browsers_message());
+
+        set_config('allowedbrowsers', 'chromeedge', $component);
+        $this->assertSame(get_string('supportedbrowsers_chromeedge', $component), device::supported_browsers_message());
+
+        set_config('allowedbrowsers', 'nonsense', $component);
+        $this->assertSame(device::BROWSERS_ANY, device::browser_policy());
+        $this->assertSame(get_string('supportedbrowsers', $component), device::supported_browsers_message());
+
+        // A quiz on a Chrome-or-Edge profile gets that notice while the site allows any browser.
+        set_config('allowedbrowsers', 'any', $component);
+        $course = $this->getDataGenerator()->create_course();
+        $ace = \quizaccess_proctoring\local\profile::save(0, 'ACE credit', '', ['allowedbrowsers' => 'chromeedge']);
+        $quiz = $this->getDataGenerator()->create_module('quiz', [
+            'course' => $course->id,
+            'proctoringrequired' => 1,
+            'profileid' => $ace,
+        ]);
+        \quizaccess_proctoring\local\profile::reset_cache();
+        $this->assertSame(
+            get_string('supportedbrowsers_chromeedge', $component),
+            device::supported_browsers_message((int)$quiz->id)
+        );
+        $this->assertSame(get_string('supportedbrowsers', $component), device::supported_browsers_message());
+    }
 }

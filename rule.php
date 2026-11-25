@@ -461,9 +461,7 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
      * @return string One of the device::BROWSERS_* constants.
      */
     private function browser_policy(): string {
-        $device = \quizaccess_proctoring\local\device::class;
-        $policy = (string)self::quiz_config($this->quizid(), 'allowedbrowsers');
-        return isset($device::BROWSER_POLICIES[$policy]) ? $policy : $device::BROWSERS_ANY;
+        return \quizaccess_proctoring\local\device::browser_policy($this->quizid());
     }
 
     /**
@@ -2515,9 +2513,9 @@ class quizaccess_proctoring extends quizaccess_proctoring_parent_class_alias {
                 ['class' => 'btn btn-outline-secondary']
             );
         }
-        // Which browsers work, before the student starts (CPIT-487).
+        // Which browsers work, before the student starts (CPIT-487), as this quiz allows them (CPIT-538).
         $messages[] = html_writer::div(
-            get_string('supportedbrowsers', 'quizaccess_proctoring'),
+            \quizaccess_proctoring\local\device::supported_browsers_message($this->quizid()),
             'proctoring-supported-browsers small text-muted'
         );
 
